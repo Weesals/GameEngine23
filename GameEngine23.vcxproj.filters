@@ -24,44 +24,44 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Source\D3DShader.h">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\GraphicsDeviceD3D12.h">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\FBXImport.h">
-      <Filter>Resources</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\GraphicsDeviceBase.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Input.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Material.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Math.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Mesh.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Model.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\Shader.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="Source\WindowWin32.h">
-      <Filter>Core\Platforms\Windows</Filter>
-    </ClInclude>
     <ClInclude Include="inc\SimpleMath.h">
       <Filter>Libraries</Filter>
     </ClInclude>
-    <ClInclude Include="Source\WindowBase.h">
+    <ClInclude Include="src\GraphicsDeviceD3D12.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="src\GraphicsDeviceBase.h">
       <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Input.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Math.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Mesh.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Model.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Shader.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\WindowBase.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Material.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\WindowWin32.h">
+      <Filter>Core\Platforms\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FBXImport.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\D3DShader.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -71,15 +71,15 @@
     <ClCompile Include="inc\ofbx.cpp">
       <Filter>Libraries</Filter>
     </ClCompile>
-    <ClCompile Include="Source\main.cpp" />
-    <ClCompile Include="Source\GraphicsDeviceD3D12.cpp">
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\GraphicsDeviceD3D12.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
-    <ClCompile Include="Source\FBXImport.cpp">
-      <Filter>Resources</Filter>
-    </ClCompile>
-    <ClCompile Include="Source\WindowWin32.cpp">
+    <ClCompile Include="src\WindowWin32.cpp">
       <Filter>Core\Platforms\Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="src\FBXImport.cpp">
+      <Filter>Resources</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
