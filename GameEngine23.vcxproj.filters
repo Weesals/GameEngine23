@@ -1,0 +1,101 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Core">
+      <UniqueIdentifier>{10ff2546-1144-4fd2-aed0-39711a97572d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Libraries">
+      <UniqueIdentifier>{5be9e48e-c0ef-4621-91bc-29ccf02de743}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Content">
+      <UniqueIdentifier>{02fba6cc-030f-46b1-95f0-aad7ee6d8806}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Resources">
+      <UniqueIdentifier>{b77b0055-ef49-4c7a-a5ff-c051ad730a47}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Platforms">
+      <UniqueIdentifier>{149404c7-f57a-4e56-bd35-1a8d46d0a1b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Platforms\Windows">
+      <UniqueIdentifier>{13a7c4a3-56b9-4278-9854-8fc9e8f64b78}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Platforms\Windows\D3D12">
+      <UniqueIdentifier>{4acdbe75-ba74-487e-8f68-39930407b67d}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Source\D3DShader.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\GraphicsDeviceD3D12.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\FBXImport.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\GraphicsDeviceBase.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Input.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Material.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Math.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Mesh.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Model.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Shader.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\WindowWin32.h">
+      <Filter>Core\Platforms\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\SimpleMath.h">
+      <Filter>Libraries</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\WindowBase.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="inc\miniz.c">
+      <Filter>Libraries</Filter>
+    </ClCompile>
+    <ClCompile Include="inc\ofbx.cpp">
+      <Filter>Libraries</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\main.cpp" />
+    <ClCompile Include="Source\GraphicsDeviceD3D12.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\FBXImport.cpp">
+      <Filter>Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Source\WindowWin32.cpp">
+      <Filter>Core\Platforms\Windows</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\test.fbx">
+      <Filter>Content</Filter>
+    </None>
+    <None Include="inc\SimpleMath.inl">
+      <Filter>Libraries</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="res\skybox.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="res\lit.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+  </ItemGroup>
+</Project>
