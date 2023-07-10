@@ -136,7 +136,7 @@
     <ClInclude Include="src\D3DGraphicsDevice.h" />
     <ClInclude Include="src\D3DShader.h" />
     <ClInclude Include="src\FBXImport.h" />
-    <ClInclude Include="src\game\Entity.h" />
+    <ClInclude Include="src\game\Camera.h" />
     <ClInclude Include="src\game\Platform.h" />
     <ClInclude Include="src\game\Play.h" />
     <ClInclude Include="src\game\World.h" />
@@ -158,7 +158,7 @@
     <ClCompile Include="inc\SimpleMath.cpp" />
     <ClCompile Include="src\D3DGraphicsDevice.cpp" />
     <ClCompile Include="src\FBXImport.cpp" />
-    <ClCompile Include="src\game\Entity.cpp" />
+    <ClCompile Include="src\game\Camera.cpp" />
     <ClCompile Include="src\game\Platform.cpp" />
     <ClCompile Include="src\game\Play.cpp" />
     <ClCompile Include="src\game\World.cpp" />

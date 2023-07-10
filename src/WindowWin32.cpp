@@ -122,4 +122,7 @@ void WindowWin32::_MouseButtonEvent(HWND hWnd, WPARAM wParam, LPARAM lParam, uns
     if (state) pointer->mCurrentButtonState |= buttonMask;
     else pointer->mCurrentButtonState &= ~buttonMask;
     pointer->mPositionCurrent = Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
+
+    // Extend input to outside of window
+    if (state) SetCapture(hWnd); else ReleaseCapture();
 }

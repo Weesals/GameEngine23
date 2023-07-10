@@ -9,6 +9,8 @@
 #include "D3DShader.h"
 #include <d3dx12.h>
 
+// Stores a cache of Constant Buffers that have been generated
+// so that they can be efficiently reused where appropriate
 class D3DConstantBufferCache
 {
 public:
@@ -18,23 +20,27 @@ public:
         ComPtr<ID3D12Resource> mConstantBuffer;
         D3D12_GPU_DESCRIPTOR_HANDLE mConstantBufferHandle;
         size_t mDataHash;
-        int mLastUsedFrame;
+        UINT64 mLastUsedFrame;
         int mSize;
-    };
-    struct OrderedCB {
-        D3DConstantBuffer* mCB;
-        OrderedCB(D3DConstantBuffer* cb) : mCB(cb) { }
-        bool operator <(const OrderedCB& other) const { return mCB->mLastUsedFrame < other.mCB->mLastUsedFrame; }
-        bool operator ==(const OrderedCB& other) const { return mCB == other.mCB; }
     };
 
 private:
+    // All constant buffers, organised by the hash of their data
+    // NOTE: Two buffers of different size could have the same hash
+    //    which would break this storage (but is very unlikely)
     std::unordered_map<size_t, D3DConstantBuffer*> mConstantBuffersByHash;
-    std::deque<OrderedCB> mUsageQueue;
+    // All constant buffers, roughly ordered by their last usage
+    std::deque<D3DConstantBuffer*> mUsageQueue;
+    // Temporary data store for filling CB data (before hashing it)
+    std::vector<unsigned char> data;
+    // The offset applied to the next constant buffer allocated
     int mCBOffset;
-    int mLockFrameId;
-    int mFrameCounter;
+    // No CBs should be written to from this frame ID
+    UINT64 mLockFrameId;
+    // When used, CBs get assigned this frame ID
+    UINT64 mFrameId;
 
+    // Generate a hash for the specified binary data
     size_t ComputeHash(const std::vector<unsigned char>& data)
     {
         int wsize = (int)(data.size() / sizeof(size_t));
@@ -46,22 +52,23 @@ private:
         }
         return hash;
     }
-
-    std::vector<unsigned char> data;
 public:
     D3DConstantBufferCache()
-        : mCBOffset(0), mFrameCounter(0) { }
+        : mCBOffset(0), mFrameId(0) { }
 
-    void SetResourceLockIds(int lockFrameId, int writeFrameId)
+    // Update the lock/current frames
+    void SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId)
     {
         mLockFrameId = lockFrameId;
-        mFrameCounter = writeFrameId;
+        mFrameId = writeFrameId;
     }
 
+    // Find or allocate a constant buffer for the specified material and CB layout
     D3DConstantBuffer* RequireConstantBuffer(const Material& material
         , const D3DShader::ConstantBuffer& cBuffer
         , D3DGraphicsDevice& d3d12)
     {
+        // CB should be padded to multiples of 256
         auto allocSize = (cBuffer.mSize + 255) & ~255;
 
         // Copy data into the constant buffer
@@ -84,13 +91,13 @@ public:
         {
             // If this is the first time we're using it this frame
             // update its last used frame
-            if (constantBufferKV->second->mLastUsedFrame != mFrameCounter)
+            if (constantBufferKV->second->mLastUsedFrame != mFrameId)
             {
-                auto q = std::find(mUsageQueue.begin(), mUsageQueue.end(), OrderedCB(constantBufferKV->second));
+                auto q = std::find(mUsageQueue.begin(), mUsageQueue.end(), constantBufferKV->second);
                 //auto q = mUsageQueue.find(OrderedCB(constantBufferKV->second));
                 if (q != mUsageQueue.end()) mUsageQueue.erase(q);
-                constantBufferKV->second->mLastUsedFrame = mFrameCounter;
-                mUsageQueue.push_back(OrderedCB(constantBufferKV->second));
+                constantBufferKV->second->mLastUsedFrame = mFrameId;
+                mUsageQueue.push_back(constantBufferKV->second);
             }
             return constantBufferKV->second;
         }
@@ -100,11 +107,11 @@ public:
         if (mUsageQueue.size() > 400)
         {
             auto reuse = mUsageQueue.begin();
-            while (reuse != mUsageQueue.end() && reuse->mCB->mSize != allocSize)
+            while (reuse != mUsageQueue.end() && (*reuse)->mSize != allocSize)
                 ++reuse;
             if (reuse != mUsageQueue.end())
             {
-                cbuffer = reuse->mCB;
+                cbuffer = *reuse;
                 mUsageQueue.erase(reuse);
                 mConstantBuffersByHash.erase(mConstantBuffersByHash.find(cbuffer->mDataHash));
             }
@@ -151,8 +158,8 @@ public:
         std::memcpy(cbDataBegin, data.data(), data.size());
         cbuffer->mConstantBuffer->Unmap(0, nullptr);
         cbuffer->mDataHash = hash;
-        cbuffer->mLastUsedFrame = mFrameCounter;
-        mUsageQueue.push_back(OrderedCB(cbuffer));
+        cbuffer->mLastUsedFrame = mFrameId;
+        mUsageQueue.push_back(cbuffer);
 
         mConstantBuffersByHash.insert({ hash, cbuffer, });
 

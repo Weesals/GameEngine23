@@ -242,7 +242,7 @@ namespace DirectX
             void Cross(const Vector3& V, Vector3& result) const noexcept;
             Vector3 Cross(const Vector3& V) const noexcept;
 
-            void Normalize() noexcept;
+            Vector3 Normalize() noexcept;
             void Normalize(Vector3& result) const noexcept;
 
             void Clamp(const Vector3& vmin, const Vector3& vmax) noexcept;
@@ -700,7 +700,7 @@ namespace DirectX
             void Conjugate() noexcept;
             void Conjugate(Quaternion& result) const noexcept;
 
-            void Inverse(Quaternion& result) const noexcept;
+            Quaternion Inverse() const noexcept;
 
             float Dot(const Quaternion& Q) const noexcept;
 

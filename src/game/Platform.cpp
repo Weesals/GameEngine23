@@ -17,6 +17,17 @@ void Platform::Initialize()
 
     // Set the platform references
     mWindow = window;
-    mGraphicsDevice = device;
+    mGraphics = device;
     mInput = input;
+}
+
+int Platform::MessagePump()
+{
+    return mWindow->MessagePump();
+}
+void Platform::Present()
+{
+    mGraphics->Present();
+    // Tell the input to flush per-frame data
+    mInput->GetMutator().ReceiveTickEvent();
 }

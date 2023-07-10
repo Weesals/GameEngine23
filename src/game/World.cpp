@@ -84,3 +84,10 @@ void World::Render(CommandBuffer& cmdBuffer)
     });
 }
 
+void World::RaycastEntities(Ray& ray, const std::function<void(flecs::entity e)>& onentity)
+{
+    mECS.filter<Transform>().each([=](flecs::entity e, Transform& t)
+        {
+            if (ray.GetDistanceSqr(t.Position + Vector3(0.0f, 0.5f, 0.0f)) < 1.0f) onentity(e);
+        });
+}

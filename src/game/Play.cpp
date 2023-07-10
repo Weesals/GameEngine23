@@ -21,12 +21,10 @@ void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
 void Play::Initialise(Platform& platform)
 {
     // Get references we need from the platform
-    mWindow = platform.mWindow;
-    mGraphics = platform.mGraphicsDevice;
-    mInput = platform.mInput;
+    mGraphics = platform.GetGraphics();
+    mInput = platform.GetInput();
 
     // Create root resources
-    mCameraMatrix = Matrix::CreateTranslation(0, 1.0f, 6.0f);
     mRootMaterial = std::make_shared<Material>();
 
     mSkybox = std::make_shared<Skybox>();
@@ -34,10 +32,10 @@ void Play::Initialise(Platform& platform)
 
     // Compute material parameters
     auto clientSize = mGraphics->GetClientSize();
-    auto projMat = Matrix::CreatePerspectiveFieldOfView(3.14f / 4.0f, clientSize.x / clientSize.y, 0.1f, 100.0f);
-    auto lightVec = Vector3(0.8f, 0.1f, 0.5f);
-    lightVec.Normalize();
-    mRootMaterial->SetUniform("Projection", projMat.Transpose());
+    auto lightVec = Vector3(0.8f, 0.1f, 0.5f).Normalize();
+    mCamera.SetPosition(Vector3(0.0f, 2.0f, 10.0f));
+    mCamera.SetAspect(clientSize.x / clientSize.y);
+
     mRootMaterial->SetUniform("Resolution", clientSize);
     mRootMaterial->SetUniform("DayTime", 0.5f);
     mRootMaterial->SetUniform("_WorldSpaceLightDir0", lightVec);
@@ -71,6 +69,11 @@ void Play::Initialise(Platform& platform)
     mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceUpVector", [=](auto context) {
         return context.GetUniform<Matrix>(iMVMat).Transpose().Up();
     });
+
+    mWorld = std::make_shared<World>();
+
+    // Initialise world
+    mWorld->Initialise(mRootMaterial);
 }
 
 void Play::Step()
@@ -85,17 +88,35 @@ void Play::Step()
     // Testing input stuff
     for (auto& pointer : mInput->GetPointers())
     {
-        if (pointer->IsButtonDown(0))
+        // On right-click, allow dragging to move view
+        if (pointer->IsButtonDown(1))
         {
-            // If mouse is clicked, allow dragging to move view
-            mCameraMatrix = mCameraMatrix
-                * Matrix::CreateFromAxisAngle(mCameraMatrix.Right(), pointer->GetPositionDelta().y * -0.005f)
-                * Matrix::CreateRotationY(pointer->GetPositionDelta().x * -0.005f);
+            auto pos = mCamera.GetPosition();
+            auto rot = mCamera.GetOrientation();
+            auto newRot =
+                Quaternion::CreateFromAxisAngle(Vector3::Right, pointer->GetPositionDelta().y * -0.005f)
+                * rot
+                * Quaternion::CreateFromAxisAngle(Vector3::Up, pointer->GetPositionDelta().x * -0.005f);
+            pos = Vector3::Transform(pos, rot.Inverse() * newRot);
+            mCamera.SetPosition(pos);
+            mCamera.SetOrientation(newRot);
+        }
+        // On left-click, move all entities under the cursor to 0,0,0
+        if (pointer->IsButtonPress(0))
+        {
+            Ray ray = mCamera.ViewportToRay(pointer->mPositionCurrent / mGraphics->GetClientSize());
+            mWorld->RaycastEntities(ray, [=](flecs::entity e)
+                {
+                    auto t = e.get_mut<Transform>();
+                    t->Position = Vector3::Zero;
+                });
         }
     }
 
     // Update uniform parameters
-    auto viewMat = mCameraMatrix.Invert();
+    auto projMat = mCamera.GetProjectionMatrix();
+    auto viewMat = mCamera.GetViewMatrix();
+    mRootMaterial->SetUniform("Projection", projMat.Transpose());
     mRootMaterial->SetUniform("View", viewMat.Transpose());
     mRootMaterial->SetUniform("Time", mTime);
     mWorld->Step(dt);

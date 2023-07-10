@@ -16,16 +16,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     Play play;
     play.Initialise(platform);
 
-    // Initialise world
-    auto world = std::make_shared<World>();
-    world->Initialise(play.mRootMaterial);
-    play.mWorld = world;
-
     // Create a command buffer
-    auto cmdBuffer = play.mGraphics->CreateCommandBuffer();
+    auto cmdBuffer = play.GetGraphics()->CreateCommandBuffer();
 
     // Respond to window events and run rendering code
-    while (play.mWindow->MessagePump() == 0)
+    while (platform.MessagePump() == 0)
     {
         // Update the game
         play.Step();
@@ -41,10 +36,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
         // Finish rendering
         cmdBuffer.Execute();
-        play.mGraphics->Present();
 
-        // Tell the input to flush per-frame data
-        play.mInput->GetMutator().ReceiveTickEvent();
+        platform.Present();
     }
 
 }

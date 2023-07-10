@@ -59,7 +59,7 @@ private:
     void CopyVertexData(const Mesh& mesh, void* buffer, int stride);
 
 public:
-    void SetResourceLockIds(int lockFrameId, int writeFrameId);
+    void SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId);
 
     D3DMesh* RequireMesh(const Mesh& mesh, D3DGraphicsDevice& d3d12);
     D3DPipelineState* RequirePipelineState(const Material& material, std::span<D3D12_INPUT_ELEMENT_DESC> vertElements, D3DGraphicsDevice& d3d12);

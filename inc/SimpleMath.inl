@@ -907,12 +907,12 @@ inline Vector3 Vector3::Cross(const Vector3& V) const noexcept
     return result;
 }
 
-inline void Vector3::Normalize() noexcept
+inline Vector3 Vector3::Normalize() noexcept
 {
     using namespace DirectX;
     const XMVECTOR v1 = XMLoadFloat3(this);
     const XMVECTOR X = XMVector3Normalize(v1);
-    XMStoreFloat3(this, X);
+    return X;
 }
 
 inline void Vector3::Normalize(Vector3& result) const noexcept
@@ -3062,11 +3062,13 @@ inline void Quaternion::Conjugate(Quaternion& result) const noexcept
     XMStoreFloat4(&result, XMQuaternionConjugate(q));
 }
 
-inline void Quaternion::Inverse(Quaternion& result) const noexcept
+inline Quaternion Quaternion::Inverse() const noexcept
 {
     using namespace DirectX;
     const XMVECTOR q = XMLoadFloat4(this);
+    Quaternion result;
     XMStoreFloat4(&result, XMQuaternionInverse(q));
+    return result;
 }
 
 inline float Quaternion::Dot(const Quaternion& q) const noexcept

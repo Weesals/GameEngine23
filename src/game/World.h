@@ -3,7 +3,6 @@
 #include <vector>
 #include <flecs.h>
 
-#include "Entity.h"
 #include "../GraphicsDeviceBase.h"
 #include "../Model.h"
 #include "../Math.h"
@@ -42,6 +41,9 @@ public:
 
     // Render the game world
     void Render(CommandBuffer& cmdBuffer);
+
+    // Calls the callback for every entity that this ray intersects
+    void RaycastEntities(Ray& ray, const std::function<void(flecs::entity e)>& onentity);
 
 };
 

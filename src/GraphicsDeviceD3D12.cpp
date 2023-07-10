@@ -143,7 +143,7 @@ void D3DResourceCache::CopyVertexData(const Mesh& mesh, void* buffer, int stride
     auto colors = mesh.GetColors();
     if (!colors.empty()) CopyElements(buffer, colors, PostIncrement(offset, 16), stride);
 }
-void D3DResourceCache::SetResourceLockIds(int lockFrameId, int writeFrameId)
+void D3DResourceCache::SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId)
 {
     mConstantBufferCache.SetResourceLockIds(lockFrameId, writeFrameId);
 }

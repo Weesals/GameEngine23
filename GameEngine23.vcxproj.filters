@@ -72,9 +72,6 @@
     <ClInclude Include="src\game\Play.h">
       <Filter>Game</Filter>
     </ClInclude>
-    <ClInclude Include="src\game\Entity.h">
-      <Filter>Game</Filter>
-    </ClInclude>
     <ClInclude Include="src\game\World.h">
       <Filter>Game</Filter>
     </ClInclude>
@@ -90,6 +87,7 @@
     <ClInclude Include="src\D3DGraphicsDevice.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
+    <ClInclude Include="src\game\Camera.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -114,9 +112,6 @@
     <ClCompile Include="src\game\Play.cpp">
       <Filter>Game</Filter>
     </ClCompile>
-    <ClCompile Include="src\game\Entity.cpp">
-      <Filter>Game</Filter>
-    </ClCompile>
     <ClCompile Include="src\game\World.cpp">
       <Filter>Game</Filter>
     </ClCompile>
@@ -132,6 +127,7 @@
     <ClCompile Include="src\D3DGraphicsDevice.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
+    <ClCompile Include="src\game\Camera.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="res\test.fbx">

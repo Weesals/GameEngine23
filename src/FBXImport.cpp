@@ -67,7 +67,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		{
 			std::transform(normals, normals + vertCount, mesh->GetNormals(true).begin(), [xform](const auto item) {
 				auto normal = Vector3::TransformNormal(Vector3((float)item.x, (float)item.y, (float)item.z), xform);
-				normal.Normalize();
+				normal = normal.Normalize();
 				return normal;
 			});
 		}
