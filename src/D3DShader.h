@@ -7,6 +7,8 @@
 
 #include <d3dx12.h>
 
+#include "Resources.h"
+
 using Microsoft::WRL::ComPtr;
 
 // Identifies a usage of a shader (by its path and entrypoint)
@@ -14,12 +16,12 @@ using Microsoft::WRL::ComPtr;
 // TODO: Could also differentiate via keyword usage
 struct ShaderKey {
 public:
-    std::wstring mPath;
-    std::string mEntryPoint;
+    int mPathId;
+    int mEntryPointId;
     int compare(const ShaderKey& other) const {
         int compare;
-        if (compare = mPath.compare(other.mPath)) return compare;
-        if (compare = mEntryPoint.compare(other.mEntryPoint)) return compare;
+        if (compare = (mPathId - other.mPathId)) return compare;
+        if (compare = (mEntryPointId - other.mEntryPointId)) return compare;
         return 0;
     }
     bool operator <(const ShaderKey& other) const { return compare(other) < 0; }
@@ -31,7 +33,7 @@ template <> struct std::hash<ShaderKey>
 {
     std::size_t operator()(const ShaderKey& k) const
     {
-        return ((std::hash<std::wstring>()(k.mPath) ^ (std::hash<std::string>()(k.mEntryPoint) << 1)) >> 1);
+        return ((std::hash<int>()(k.mPathId) ^ (std::hash<int>()(k.mEntryPointId) << 1)) >> 1);
     }
 };
 
@@ -41,11 +43,13 @@ public:
     // Reflected uniforms that can be set by the application
     struct UniformValue {
         std::string mName;
+        Identifier mNameId;
         int mOffset;
         int mSize;
     };
     struct ConstantBuffer {
         std::string mName;
+        Identifier mNameId;
         int mSize;
         int mBindPoint;
         std::vector<UniformValue> mValues;
@@ -105,6 +109,7 @@ public:
             // The data we have extracted for this constant buffer
             ConstantBuffer cbuffer;
             cbuffer.mName = bufferDesc.Name;
+            cbuffer.mNameId = Resources::RequireStringId(cbuffer.mName);
             cbuffer.mSize = bufferDesc.Size;
             cbuffer.mBindPoint = bindDesc.BindPoint;
 
@@ -119,6 +124,7 @@ public:
                 // The values for this uniform
                 UniformValue value = {
                     variableDesc.Name,
+                    Resources::RequireStringId(variableDesc.Name),
                     (int)variableDesc.StartOffset,
                     (int)variableDesc.Size,
                 };

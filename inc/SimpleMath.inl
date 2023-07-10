@@ -80,34 +80,6 @@ inline Rectangle Rectangle::Intersect(const Rectangle& ra, const Rectangle& rb) 
     return result;
 }
 
-inline RECT Rectangle::Intersect(const RECT& rcta, const RECT& rctb) noexcept
-{
-    const long maxX = rcta.left > rctb.left ? rcta.left : rctb.left;
-    const long maxY = rcta.top > rctb.top ? rcta.top : rctb.top;
-
-    const long minRight = rcta.right < rctb.right ? rcta.right : rctb.right;
-    const long minBottom = rcta.bottom < rctb.bottom ? rcta.bottom : rctb.bottom;
-
-    RECT result;
-
-    if ((minRight > maxX) && (minBottom > maxY))
-    {
-        result.left = maxX;
-        result.top = maxY;
-        result.right = minRight;
-        result.bottom = minBottom;
-    }
-    else
-    {
-        result.left = 0;
-        result.top = 0;
-        result.right = 0;
-        result.bottom = 0;
-    }
-
-    return result;
-}
-
 inline Rectangle Rectangle::Union(const Rectangle& ra, const Rectangle& rb) noexcept
 {
     const long righta = ra.x + ra.width;
@@ -127,16 +99,6 @@ inline Rectangle Rectangle::Union(const Rectangle& ra, const Rectangle& rb) noex
     result.y = minY;
     result.width = maxRight - minX;
     result.height = maxBottom - minY;
-    return result;
-}
-
-inline RECT Rectangle::Union(const RECT& rcta, const RECT& rctb) noexcept
-{
-    RECT result;
-    result.left = rcta.left < rctb.left ? rcta.left : rctb.left;
-    result.top = rcta.top < rctb.top ? rcta.top : rctb.top;
-    result.right = rcta.right > rctb.right ? rcta.right : rctb.right;
-    result.bottom = rcta.bottom > rctb.bottom ? rcta.bottom : rctb.bottom;
     return result;
 }
 
@@ -3743,15 +3705,6 @@ inline bool Viewport::operator != (const Viewport& vp) const noexcept
 //------------------------------------------------------------------------------
 // Assignment operators
 //------------------------------------------------------------------------------
-
-inline Viewport& Viewport::operator= (const RECT& rct) noexcept
-{
-    x = float(rct.left); y = float(rct.top);
-    width = float(rct.right - rct.left);
-    height = float(rct.bottom - rct.top);
-    minDepth = 0.f; maxDepth = 1.f;
-    return *this;
-}
 
 #if defined(__d3d11_h__) || defined(__d3d11_x_h__)
 inline Viewport& Viewport::operator= (const D3D11_VIEWPORT& vp) noexcept

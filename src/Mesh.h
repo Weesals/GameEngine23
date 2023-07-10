@@ -2,8 +2,9 @@
 
 #include <span>
 #include <vector>
-#include "Math.h"
 #include <memory>
+
+#include "Math.h"
 
 // Store data related to drawing a mesh
 class Mesh

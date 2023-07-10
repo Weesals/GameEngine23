@@ -8,12 +8,6 @@
 // http://go.microsoft.com/fwlink/?LinkID=615561
 //-------------------------------------------------------------------------------------
 
-#pragma once
-
-#if (defined(_WIN32) || defined(WINAPI_FAMILY)) && !(defined(_XBOX_ONE) && defined(_TITLE)) && !defined(_GAMING_XBOX)
-#include <dxgi1_2.h>
-#endif
-
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -27,13 +21,7 @@
 #include <DirectXPackedVector.h>
 #include <DirectXCollision.h>
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wfloat-equal"
-#pragma clang diagnostic ignored "-Wunknown-warning-option"
-#pragma clang diagnostic ignored "-Wunsafe-buffer-usage"
-#endif
-
+#pragma once
 
 namespace DirectX
 {
@@ -57,18 +45,12 @@ namespace DirectX
             // Creators
             Rectangle() noexcept : x(0), y(0), width(0), height(0) {}
             constexpr Rectangle(long ix, long iy, long iw, long ih) noexcept : x(ix), y(iy), width(iw), height(ih) {}
-            explicit Rectangle(const RECT& rct) noexcept : x(rct.left), y(rct.top), width(rct.right - rct.left), height(rct.bottom - rct.top) {}
 
             Rectangle(const Rectangle&) = default;
             Rectangle& operator=(const Rectangle&) = default;
 
             Rectangle(Rectangle&&) = default;
             Rectangle& operator=(Rectangle&&) = default;
-
-            operator RECT() noexcept { RECT rct; rct.left = x; rct.top = y; rct.right = (x + width); rct.bottom = (y + height); return rct; }
-        #ifdef __cplusplus_winrt
-            operator Windows::Foundation::Rect() noexcept { return Windows::Foundation::Rect(float(x), float(y), float(width), float(height)); }
-        #endif
 
             // Comparison operators
         #if (__cplusplus >= 202002L)
@@ -78,11 +60,6 @@ namespace DirectX
             bool operator == (const Rectangle& r) const noexcept { return (x == r.x) && (y == r.y) && (width == r.width) && (height == r.height); }
             bool operator != (const Rectangle& r) const noexcept { return (x != r.x) || (y != r.y) || (width != r.width) || (height != r.height); }
         #endif
-            bool operator == (const RECT& rct) const noexcept { return (x == rct.left) && (y == rct.top) && (width == (rct.right - rct.left)) && (height == (rct.bottom - rct.top)); }
-            bool operator != (const RECT& rct) const noexcept { return (x != rct.left) || (y != rct.top) || (width != (rct.right - rct.left)) || (height != (rct.bottom - rct.top)); }
-
-            // Assignment operators
-            Rectangle& operator=(_In_ const RECT& rct) noexcept { x = rct.left; y = rct.top; width = (rct.right - rct.left); height = (rct.bottom - rct.top); return *this; }
 
             // Rectangle operations
             Vector2 Location() const noexcept;
@@ -93,21 +70,17 @@ namespace DirectX
             bool Contains(long ix, long iy) const noexcept { return (x <= ix) && (ix < (x + width)) && (y <= iy) && (iy < (y + height)); }
             bool Contains(const Vector2& point) const noexcept;
             bool Contains(const Rectangle& r) const noexcept { return (x <= r.x) && ((r.x + r.width) <= (x + width)) && (y <= r.y) && ((r.y + r.height) <= (y + height)); }
-            bool Contains(const RECT& rct) const noexcept { return (x <= rct.left) && (rct.right <= (x + width)) && (y <= rct.top) && (rct.bottom <= (y + height)); }
 
             void Inflate(long horizAmount, long vertAmount) noexcept;
 
             bool Intersects(const Rectangle& r) const noexcept { return (r.x < (x + width)) && (x < (r.x + r.width)) && (r.y < (y + height)) && (y < (r.y + r.height)); }
-            bool Intersects(const RECT& rct) const noexcept { return (rct.left < (x + width)) && (x < rct.right) && (rct.top < (y + height)) && (y < rct.bottom); }
 
             void Offset(long ox, long oy) noexcept { x += ox; y += oy; }
 
             // Static functions
             static Rectangle Intersect(const Rectangle& ra, const Rectangle& rb) noexcept;
-            static RECT Intersect(const RECT& rcta, const RECT& rctb) noexcept;
 
             static Rectangle Union(const Rectangle& ra, const Rectangle& rb) noexcept;
-            static RECT Union(const RECT& rcta, const RECT& rctb) noexcept;
         };
 
         //------------------------------------------------------------------------------
@@ -923,13 +896,6 @@ namespace DirectX
                 x(ix), y(iy), width(iw), height(ih), minDepth(iminz), maxDepth(imaxz)
             {
             }
-            explicit Viewport(const RECT& rct) noexcept :
-                x(float(rct.left)), y(float(rct.top)),
-                width(float(rct.right - rct.left)),
-                height(float(rct.bottom - rct.top)),
-                minDepth(0.f), maxDepth(1.f)
-            {
-            }
 
         #if defined(__d3d11_h__) || defined(__d3d11_x_h__)
             // Direct3D 11 interop
@@ -974,9 +940,6 @@ namespace DirectX
             bool operator != (const Viewport& vp) const noexcept;
         #endif
 
-            // Assignment operators
-            Viewport& operator= (const RECT& rct) noexcept;
-
             // Viewport operations
             float AspectRatio() const noexcept;
 
@@ -985,12 +948,6 @@ namespace DirectX
 
             Vector3 Unproject(const Vector3& p, const Matrix& proj, const Matrix& view, const Matrix& world) const noexcept;
             void Unproject(const Vector3& p, const Matrix& proj, const Matrix& view, const Matrix& world, Vector3& result) const noexcept;
-
-            // Static methods
-        #if defined(__dxgi1_2_h__) || defined(__d3d11_x_h__) || defined(__d3d12_x_h__) || defined(__XBOX_D3D12_X__)
-            static RECT __cdecl ComputeDisplayArea(DXGI_SCALING scaling, UINT backBufferWidth, UINT backBufferHeight, int outputWidth, int outputHeight) noexcept;
-        #endif
-            static RECT __cdecl ComputeTitleSafeArea(UINT backBufferWidth, UINT backBufferHeight) noexcept;
         };
 
     #include "SimpleMath.inl"

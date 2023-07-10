@@ -44,6 +44,9 @@ class GraphicsDeviceBase
 public:
     virtual ~GraphicsDeviceBase() { }
 
+    // Get the resolution of the client area
+    virtual Vector2 GetClientSize() const = 0;
+
     // Create a command buffer which allows draw calls to be submitted
     virtual CommandBuffer CreateCommandBuffer() = 0;
 

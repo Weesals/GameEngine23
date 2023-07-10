@@ -2,13 +2,16 @@
 
 #define PI 3.14159265359
 
-cbuffer ConstantBuffer : register(b0)
+cbuffer WorldCB : register(b0)
 {
-    matrix ModelView;
-    matrix ModelViewProjection;
     float3 _ViewSpaceLightDir0;
     float3 _LightColor0;
     float3 _ViewSpaceUpVector;
+}
+cbuffer ConstantBuffer : register(b1)
+{
+    matrix ModelView;
+    matrix ModelViewProjection;
 };
 
 struct VSInput
@@ -105,25 +108,26 @@ float3 SampleEnvironment(float3 normal, float roughness)
 {
     float3 FloorColor = float3(148, 124, 93) / 255;
     float3 SkyColor = float3(184, 226, 255) / 255;
-    float skyness = 1.0 - pow(saturate(1.0 - dot(normal, _ViewSpaceUpVector)), 4.0);
+    float skyness = 1.0 - pow(saturate(1.0 - dot(normal, _ViewSpaceUpVector)), 1.0);
     skyness = lerp(skyness, 0.5, roughness);
-    return lerp(FloorColor, SkyColor, skyness) * 0.2;
+    return lerp(FloorColor, SkyColor, skyness) * 0.3;
 }
 float3 SampleAmbientLight(float3 normal)
 {
     float3 FloorColor = float3(148, 124, 93) / 255;
     float3 SkyColor = float3(184, 226, 255) / 255;
-    float skyness = 1.0 - pow(saturate(1.0 - dot(normal, _ViewSpaceUpVector)), 4.0);
-    return lerp(FloorColor, SkyColor, skyness) * 0.2;
+    float skyness = 1.0 - pow(saturate(1.0 - dot(normal, _ViewSpaceUpVector)), 1.0);
+    return lerp(FloorColor, SkyColor, skyness) * 0.3;
 }
 
 float4 PSMain(PSInput input) : SV_TARGET
 {    
     float3 viewDir = normalize(input.worldPos);
+    input.normal = normalize(input.normal);
     // TODO: Should be sampled from textures
     float3 Albedo = 0.9;
     float3 Specular = 0.5;
-    float Roughness = 0.8;
+    float Roughness = 0.7;
     float Metallic = 0.0;
     
     // The light
