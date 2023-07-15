@@ -4,8 +4,8 @@
 
 cbuffer WorldCB : register(b0)
 {
-    float3 _ViewSpaceLightDir0;
     float3 _LightColor0;
+    float3 _ViewSpaceLightDir0;
     float3 _ViewSpaceUpVector;
 }
 cbuffer ConstantBuffer : register(b1)
@@ -23,7 +23,7 @@ struct VSInput
 struct PSInput
 {
     float4 position : SV_POSITION;
-    float3 worldPos : TEXCOORD1;
+    float3 viewPos : TEXCOORD1;
     float3 normal : NORMAL;
 };
 
@@ -32,8 +32,12 @@ PSInput VSMain(VSInput input)
     PSInput result;
 
     result.position = mul(float4(input.position.xyz, 1.0), ModelViewProjection);
-    result.worldPos = mul(float4(input.position.xyz, 1.0), ModelView);
+    result.viewPos = mul(float4(input.position.xyz, 1.0), ModelView);
     result.normal = mul(float4(input.normal.xyz, 0.0), ModelView);
+    
+#if defined(VULKAN)
+    result.position.y = -result.position.y;
+#endif
 
     return result;
 }
@@ -122,7 +126,7 @@ float3 SampleAmbientLight(float3 normal)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {    
-    float3 viewDir = normalize(input.worldPos);
+    float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);
     // TODO: Should be sampled from textures
     float3 Albedo = 0.9;

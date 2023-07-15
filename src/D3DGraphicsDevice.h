@@ -3,13 +3,14 @@
 #include <d3dx12.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
-#include <tuple>
 
 #include "WindowWin32.h"
 
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
 
+// This wraps and alows access to raw D3D types
+// It should never be used directly by the client application
 class D3DGraphicsDevice
 {
     // This renderer supports 2 backbuffers
@@ -28,7 +29,7 @@ class D3DGraphicsDevice
 
     int mDescriptorHandleSize;
     // Size of the client rect of the window
-    std::tuple<int, int> mClientSize;
+    std::pair<int, int> mClientSize;
 
     // Each frame needs its own allocator
     ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
@@ -46,6 +47,6 @@ public:
     IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
     ID3D12CommandQueue* GetCmdQueue() const { return mCmdQueue.Get(); }
 
-    Vector2 GetClientSize() const { return Vector2((float)std::get<0>(mClientSize), (float)std::get<1>(mClientSize)); }
+    Vector2 GetClientSize() const { return Vector2((float)mClientSize.first, (float)mClientSize.second); }
 };
 

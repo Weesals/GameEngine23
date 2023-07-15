@@ -64,8 +64,8 @@ cbuffer ConstantBuffer : register(b0)
     matrix ModelViewProjection;
     matrix InvModelViewProjection;
     float2 Resolution;
-    float Time;
-    float DayTime;
+    //float Time;
+    //float DayTime;
     float3 _WorldSpaceLightDir0;
     float3 _LightColor0;
 };
@@ -87,7 +87,11 @@ PSInput VSMain(VSInput input)
 
     result.position = input.position;
     result.position.z = 0.9999;
-    result.time = Time;
+    result.time = 0.0;
+
+#if defined(VULKAN)
+    result.position.y = -result.position.y;
+#endif
 
     return result;
 }
@@ -182,7 +186,7 @@ float4 PSMain(PSInput input) : SV_TARGET
 {
     float2 vpos = input.position.xy / Resolution.xy * 2 - 1;
     vpos.y = -vpos.y;
-    
+        
     float4 clipSpacePosition = float4(vpos, 1.0f, 1.0f);
     float4 viewSpacePosition = mul(clipSpacePosition, InvModelViewProjection);
     viewSpacePosition.xyz /= viewSpacePosition.w;

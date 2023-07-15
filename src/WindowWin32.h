@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Windows.h>
+#undef min
+#undef max
 #include <string>
 #include <memory>
 
@@ -29,6 +31,9 @@ public:
     void SetInput(std::shared_ptr<Input> input);
 
     HWND GetHWND() const { return hWnd; }
+
+    // Get the size of the inner window area (not including border or title bar)
+    std::pair<int, int> GetClientSize() const override;
 
     // Process window messages and then return control to the callee
     // Non-zero values mean the window was closed

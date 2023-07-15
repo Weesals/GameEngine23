@@ -2,7 +2,7 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
-#include <tuple>
+#include <utility>
 #include <algorithm>
 
 #include "GraphicsDeviceD3D12.h"
@@ -22,25 +22,6 @@ inline void ThrowIfFailed(HRESULT hr)
     {
         throw std::exception();
     }
-}
-
-template<class T>
-static void CopyElements(void* dest, std::span<T> source, int offset, int stride)
-{
-    *(__int8**)&dest += offset;
-    for (int i = 0; i < source.size(); ++i) {
-        std::memcpy((__int8*)dest + i * stride, &source[i], sizeof(source[i]));
-    }
-}
-static unsigned int PostIncrement(int& v, int a) { int t = v; v += a; return t; }
-template<class K, class T>
-static T* GetOrCreate(std::unordered_map<K, std::unique_ptr<T>>& map, const K key)
-{
-    auto i = map.find(key);
-    if (i != map.end()) return i->second.get();
-    auto newItem = new T();
-    map.insert(std::make_pair(key, newItem));
-    return newItem;
 }
 
 // Allocate or retrieve a container for GPU buffers for this item
@@ -119,15 +100,15 @@ void D3DResourceCache::UpdateMeshData(const Mesh& mesh, D3DGraphicsDevice& d3d12
 // Generate a descriptor of the required vertex attributes for this mesh
 int D3DResourceCache::GenerateElementDesc(const Mesh& mesh, std::vector<D3D12_INPUT_ELEMENT_DESC>& vertDesc)
 {
-    int offset = 0;
+    uint32_t offset = 0;
     if (!mesh.GetPositions().empty())
-        vertDesc.push_back({ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, PostIncrement(offset, 12), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
+        vertDesc.push_back({ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, PostIncrement(offset, 12u), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
     if (!mesh.GetNormals().empty())
-        vertDesc.push_back({ "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, PostIncrement(offset, 12), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
+        vertDesc.push_back({ "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, PostIncrement(offset, 12u), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
     if (!mesh.GetUVs().empty())
-        vertDesc.push_back({ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, PostIncrement(offset, 8),  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
+        vertDesc.push_back({ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, PostIncrement(offset, 8u),  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
     if (!mesh.GetColors().empty())
-        vertDesc.push_back({ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, PostIncrement(offset, 16),  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
+        vertDesc.push_back({ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, PostIncrement(offset, 16u),  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
     return offset;
 }
 // Copy mesh data so that it matches a generated descriptor
@@ -212,18 +193,18 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
     }
     return pipelineState;
 }
-D3DConstantBufferCache::D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(const D3DShader::ConstantBuffer& cb, const Material& material, D3DGraphicsDevice& d3d12)
+D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(const D3DShader::ConstantBuffer& cb, const Material& material, D3DGraphicsDevice& d3d12)
 {
     return mConstantBufferCache.RequireConstantBuffer(material, cb, d3d12);
 }
 
 // Handles receiving rendering events from the user application
 // and issuing relevant draw commands
-class D3DInterop : public CommandBufferInteropBase {
+class D3DCommandBuffer : public CommandBufferInteropBase {
     GraphicsDeviceD3D12* mDevice;
     ComPtr<ID3D12GraphicsCommandList> mCmdList;
 public:
-    D3DInterop(GraphicsDeviceD3D12* device) : mDevice(device) {
+    D3DCommandBuffer(GraphicsDeviceD3D12* device) : mDevice(device) {
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
         queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -251,7 +232,7 @@ public:
         SetResourceBarrier(D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
         auto descriptor = mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart();
-        descriptor.ptr += mDevice->GetDescriptorHandleSize() * mDevice->GetFrameId();
+        descriptor.ptr += mDevice->GetDescriptorHandleSize() * mDevice->GetBackBufferIndex();
         auto depth = mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart();
         mCmdList->OMSetRenderTargets(1, &descriptor, FALSE, &depth);
     }
@@ -261,7 +242,7 @@ public:
         if (clear.HasClearColor())
         {
             auto descriptor = mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart();
-            descriptor.ptr += mDevice->GetDescriptorHandleSize() * mDevice->GetFrameId();
+            descriptor.ptr += mDevice->GetDescriptorHandleSize() * mDevice->GetBackBufferIndex();
             mCmdList->ClearRenderTargetView(descriptor, clear.ClearColor, 0, nullptr);
         }
         auto flags = (clear.HasClearDepth() ? D3D12_CLEAR_FLAG_DEPTH : 0)
@@ -276,16 +257,17 @@ public:
 
     const D3DResourceCache::D3DPipelineState* mLastPipeline;
     const D3DResourceCache::D3DMesh* mLastMesh;
-    const D3DConstantBufferCache::D3DConstantBuffer* mLastCBs[10];
+    const D3DConstantBuffer* mLastCBs[10];
 
     // Draw a mesh with the specified material
-    void DrawMesh(std::shared_ptr<Mesh> mesh, std::shared_ptr<Material> material) override
+    void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) override
     {
         auto& cache = mDevice->GetResourceCache();
         auto d3dMesh = cache.RequireMesh(*mesh.get(), mDevice->GetDevice());
         auto pipelineState = cache.RequirePipelineState(*material, d3dMesh->mVertElements, mDevice->GetDevice());
 
-        if (mLastPipeline != pipelineState) {
+        if (mLastPipeline != pipelineState)
+        {
             mLastPipeline = pipelineState;
             mCmdList->SetPipelineState(pipelineState->mPipelineState.Get());
 
@@ -325,15 +307,16 @@ public:
 
 };
 
-GraphicsDeviceD3D12::GraphicsDeviceD3D12(const WindowWin32& window)
-    : mDevice(window)
+GraphicsDeviceD3D12::GraphicsDeviceD3D12(std::shared_ptr<WindowWin32>& window)
+    : mWindow(window)
+    , mDevice(*window)
 {
     auto mD3DDevice = mDevice.GetD3DDevice();
     auto mSwapChain = mDevice.GetSwapChain();
     // Create fence for frame synchronisation
-    mFrameId = mSwapChain->GetCurrentBackBufferIndex();
+    mBackBufferIndex = mSwapChain->GetCurrentBackBufferIndex();
     for (int i = 0; i < FrameCount; ++i) mFenceValues[i] = 0;
-    ThrowIfFailed(mD3DDevice->CreateFence(mFenceValues[mFrameId]++, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+    ThrowIfFailed(mD3DDevice->CreateFence(mFenceValues[mBackBufferIndex]++, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (mFenceEvent == nullptr) ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
     WaitForGPU();
@@ -373,7 +356,7 @@ GraphicsDeviceD3D12::~GraphicsDeviceD3D12()
 
 CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
 {
-    return CommandBuffer(new D3DInterop(this));
+    return CommandBuffer(new D3DCommandBuffer(this));
 }
 
 // Flip the backbuffer and wait until a frame is available to be rendered
@@ -387,35 +370,35 @@ void GraphicsDeviceD3D12::Present()
 void GraphicsDeviceD3D12::WaitForFrame()
 {
     // Schedule a Signal command in the queue.
-    const UINT64 currentFenceValue = mFenceValues[mFrameId];
+    const UINT64 currentFenceValue = mFenceValues[mBackBufferIndex];
     ThrowIfFailed(mDevice.GetCmdQueue()->Signal(mFence.Get(), currentFenceValue));
 
     // Update the frame index.
-    mFrameId = mDevice.GetSwapChain()->GetCurrentBackBufferIndex();
+    mBackBufferIndex = mDevice.GetSwapChain()->GetCurrentBackBufferIndex();
 
     // If the next frame is not ready to be rendered yet, wait until it is ready.
     auto fenceVal = mFence->GetCompletedValue();
-    if (fenceVal < mFenceValues[mFrameId])
+    if (fenceVal < mFenceValues[mBackBufferIndex])
     {
-        ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mFrameId], mFenceEvent));
+        ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mBackBufferIndex], mFenceEvent));
         WaitForSingleObjectEx(mFenceEvent, INFINITE, FALSE);
     }
 
     // Set the fence value for the next frame.
-    mFenceValues[mFrameId] = currentFenceValue + 1;
-    mCmdAllocator[mFrameId]->Reset();
+    mFenceValues[mBackBufferIndex] = currentFenceValue + 1;
+    mCmdAllocator[mBackBufferIndex]->Reset();
     mCache.SetResourceLockIds(fenceVal, currentFenceValue);
 }
 // Wait for all GPU operations? Taken from the samples
 void GraphicsDeviceD3D12::WaitForGPU()
 {
     // Schedule a Signal command in the queue.
-    ThrowIfFailed(mDevice.GetCmdQueue()->Signal(mFence.Get(), mFenceValues[mFrameId]));
+    ThrowIfFailed(mDevice.GetCmdQueue()->Signal(mFence.Get(), mFenceValues[mBackBufferIndex]));
 
     // Wait until the fence has been processed.
-    ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mFrameId], mFenceEvent));
+    ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mBackBufferIndex], mFenceEvent));
     WaitForSingleObjectEx(mFenceEvent, INFINITE, FALSE);
 
     // Increment the fence value for the current frame.
-    mFenceValues[mFrameId]++;
+    mFenceValues[mBackBufferIndex]++;
 }

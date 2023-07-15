@@ -71,6 +71,14 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;$(IncludePath)</IncludePath>
+    <LibraryPath>.\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IncludePath>.\externals\volk;.\externals\Vulkan-Headers\include;.\inc;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\Users\weesa\source\repos\Weesals\GameEngine23\lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -103,7 +111,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalIncludeDirectories>.\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
@@ -142,6 +150,9 @@
     <ClInclude Include="src\game\World.h" />
     <ClInclude Include="src\GraphicsDeviceBase.h" />
     <ClInclude Include="src\GraphicsDeviceD3D12.h" />
+    <ClInclude Include="src\GraphicsDeviceMulti.h" />
+    <ClInclude Include="src\GraphicsDeviceVulkan.h" />
+    <ClInclude Include="src\GraphicsUtility.h" />
     <ClInclude Include="src\Input.h" />
     <ClInclude Include="src\Material.h" />
     <ClInclude Include="src\Math.h" />
@@ -150,6 +161,7 @@
     <ClInclude Include="src\Resources.h" />
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="inc\SimpleMath.h" />
+    <ClInclude Include="src\VulkanShader.h" />
     <ClInclude Include="src\WindowBase.h" />
     <ClInclude Include="src\WindowWin32.h" />
   </ItemGroup>
@@ -165,8 +177,10 @@
     <ClCompile Include="src\GraphicsDeviceD3D12.cpp" />
     <ClCompile Include="inc\miniz.c" />
     <ClCompile Include="inc\ofbx.cpp" />
+    <ClCompile Include="src\GraphicsDeviceVulkan.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Resources.cpp" />
+    <ClCompile Include="src\VulkanShader.cpp" />
     <ClCompile Include="src\WindowWin32.cpp" />
   </ItemGroup>
   <ItemGroup>

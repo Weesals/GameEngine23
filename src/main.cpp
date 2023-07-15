@@ -29,7 +29,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         cmdBuffer.Reset();
 
         // Clear screen
-        cmdBuffer.ClearRenderTarget(ClearConfig(Color(1.0, 1.0, 1.0, 1.0), 1.0f));
+        cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.5f, 0.7f, 1.0f, 1.0f), 1.0f));
 
         // Render the scene
         play.Render(cmdBuffer);

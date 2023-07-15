@@ -41,9 +41,7 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
     ThrowIfFailed(mD3DDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCmdQueue)));
 
     // Check the window for how large the backbuffer should be
-    RECT clientRect;
-    GetClientRect(hWnd, &clientRect);
-    mClientSize = std::make_tuple(clientRect.right - clientRect.left, clientRect.bottom - clientRect.top);
+    mClientSize = window.GetClientSize();
 
     // Create the swap chain
     DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};

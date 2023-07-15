@@ -25,6 +25,12 @@
     <Filter Include="Game">
       <UniqueIdentifier>{77cbe199-b486-40fc-9e75-6b85fa58a9a4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Core\Platforms\Vulkan">
+      <UniqueIdentifier>{03de4b8b-26b4-419a-ab4a-a030f59cbd0a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Platforms\Meta">
+      <UniqueIdentifier>{f7e47ec5-0adb-418f-9f9d-dd1dd1cc31ad}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\SimpleMath.h">
@@ -88,6 +94,18 @@
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
     <ClInclude Include="src\game\Camera.h" />
+    <ClInclude Include="src\GraphicsDeviceVulkan.h">
+      <Filter>Core\Platforms\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="src\VulkanShader.h">
+      <Filter>Core\Platforms\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="src\GraphicsUtility.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\GraphicsDeviceMulti.h">
+      <Filter>Core\Platforms\Meta</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -128,6 +146,12 @@
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
     <ClCompile Include="src\game\Camera.cpp" />
+    <ClCompile Include="src\GraphicsDeviceVulkan.cpp">
+      <Filter>Core\Platforms\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="src\VulkanShader.cpp">
+      <Filter>Core\Platforms\Vulkan</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="res\test.fbx">

@@ -3,6 +3,7 @@
 #include "Mesh.h"
 #include "Material.h"
 
+
 // Control what and how a render target is cleared
 struct ClearConfig {
     Color ClearColor;
@@ -22,7 +23,7 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual void Reset() = 0;
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
-    virtual void DrawMesh(std::shared_ptr<Mesh> mesh, std::shared_ptr<Material> material) = 0;
+    virtual void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) = 0;
     virtual void Execute() = 0;
 };
 
@@ -34,7 +35,7 @@ public:
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
     void Reset() { mInterop->Reset(); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
-    void DrawMesh(std::shared_ptr<Mesh> mesh, std::shared_ptr<Material> material) { mInterop->DrawMesh(mesh, material); }
+    void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) { mInterop->DrawMesh(mesh, material); }
     void Execute() { mInterop->Execute(); }
 };
 

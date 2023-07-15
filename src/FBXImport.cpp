@@ -38,6 +38,8 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 
 	// The model that will be returned
 	auto outModel = std::make_shared<Model>();
+	// FBX is in cm; this engine units are meters
+	auto scaleFactor = fbxScene->getGlobalSettings()->UnitScaleFactor / 100.0f;
 
 	int meshCount = fbxScene->getMeshCount();
 	for (int i = 0; i < meshCount; ++i) {
@@ -51,21 +53,21 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		// Grab the mesh transform (TODO: Do not bake into meshes)
 		auto fbxXForm = fbxMesh->getGlobalTransform();
 		Matrix xform;
-		std::transform(fbxXForm.m, fbxXForm.m + 16, (float*)&xform, [fbxXForm](const auto item) { return (float)item; });
-		auto flip = xform.Determinant() > 0;
-		mesh->SetVertexCount(vertCount);
+		std::transform(fbxXForm.m, fbxXForm.m + 16, (float*)&xform, [](const auto item) { return (float)item; });
+		xform *= Matrix::CreateScale(scaleFactor);
 
 		// Copy vertices
+		mesh->SetVertexCount(vertCount);
 		auto vertices = fbxMeshGeo->getVertices();
-		std::transform(vertices, vertices + vertCount, mesh->GetPositions().begin(), [xform](const auto item) {
-			return Vector3::Transform((Vector3((float)item.x, (float)item.y, (float)item.z) / 100), xform);
+		std::transform(vertices, vertices + vertCount, mesh->GetPositions().begin(), [=](const auto item) {
+			return Vector3::Transform((Vector3((float)item.x, (float)item.y, (float)item.z)), xform);
 		});
 
 		// Copy normals
 		auto normals = fbxMeshGeo->getNormals();
 		if (normals != nullptr)
 		{
-			std::transform(normals, normals + vertCount, mesh->GetNormals(true).begin(), [xform](const auto item) {
+			std::transform(normals, normals + vertCount, mesh->GetNormals(true).begin(), [=](const auto item) {
 				auto normal = Vector3::TransformNormal(Vector3((float)item.x, (float)item.y, (float)item.z), xform);
 				normal = normal.Normalize();
 				return normal;
@@ -76,7 +78,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		auto uvs = fbxMeshGeo->getUVs();
 		if (uvs != nullptr)
 		{
-			std::transform(uvs, uvs + vertCount, mesh->GetUVs(true).begin(), [](const auto item) {
+			std::transform(uvs, uvs + vertCount, mesh->GetUVs(true).begin(), [=](const auto item) {
 				return Vector2((float)item.x, (float)item.y);
 			});
 		}
@@ -94,13 +96,17 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		mesh->SetIndexCount(indCount);
 		auto indices = fbxMeshGeo->getFaceIndices();
 		std::transform(indices, indices + indCount, mesh->GetIndices().begin(), [](const auto item) {
+			// Negative indices represent the end of a face in this library
+			// but we requested triangulation, so ignore it
 			int idx = (item < 0) ? -item - 1 : item;
 			return idx;
 		});
 
 		// If the mesh transform flipped face orientation,
 		// flip them back (via index swizzling)
-		if (flip) {
+		auto flip = xform.Determinant() > 0;
+		if (flip)
+		{
 			auto meshInds = mesh->GetIndices();
 			for (int i = 2; i < meshInds.size(); i += 3) std::swap(meshInds[i - 1], meshInds[i]);
 		}

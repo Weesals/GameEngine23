@@ -4,7 +4,6 @@
 
 #include <d3d12.h>
 #include <dxgi1_6.h>
-#include <tuple>
 
 #include "WindowWin32.h"
 #include "D3DGraphicsDevice.h"
@@ -13,8 +12,6 @@
 
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
-
-class D3DInterop;
 
 class D3DResourceCache {
     std::string StrVSEntryPoint = "VSMain";
@@ -63,7 +60,7 @@ public:
 
     D3DMesh* RequireMesh(const Mesh& mesh, D3DGraphicsDevice& d3d12);
     D3DPipelineState* RequirePipelineState(const Material& material, std::span<D3D12_INPUT_ELEMENT_DESC> vertElements, D3DGraphicsDevice& d3d12);
-    D3DConstantBufferCache::D3DConstantBuffer* RequireConstantBuffer(const D3DShader::ConstantBuffer& cb, const Material& material, D3DGraphicsDevice& d3d12);
+    D3DConstantBuffer* RequireConstantBuffer(const D3DShader::ConstantBuffer& cb, const Material& material, D3DGraphicsDevice& d3d12);
 };
 
 // A D3D12 renderer
@@ -71,12 +68,13 @@ class GraphicsDeviceD3D12 :
     public GraphicsDeviceBase
 {
     static const int FrameCount = 2;
+    std::shared_ptr<WindowWin32> mWindow;
 
     D3DGraphicsDevice mDevice;
     D3DResourceCache mCache;
 
     // Current frame being rendered (wraps to the number of back buffers)
-    int mFrameId;
+    int mBackBufferIndex;
     // Fence to wait for frames to render
     HANDLE mFenceEvent;
     ComPtr<ID3D12Fence> mFence;
@@ -91,7 +89,7 @@ class GraphicsDeviceD3D12 :
     ComPtr<ID3D12Resource> mDepthTarget;
 
 public:
-    GraphicsDeviceD3D12(const WindowWin32& window);
+    GraphicsDeviceD3D12(std::shared_ptr<WindowWin32>& window);
     ~GraphicsDeviceD3D12() override;
 
     D3DGraphicsDevice& GetDevice() { return mDevice; }
@@ -103,12 +101,12 @@ public:
     int GetDescriptorHandleSize() const { return mDevice.GetDescriptorHandleSize(); }
     IDXGISwapChain3* GetSwapChain() const { return mDevice.GetSwapChain(); }
 
-    ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mFrameId].Get(); }
-    ID3D12Resource* GetBackBuffer() const { return mRenderTargets[mFrameId].Get(); }
+    ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
+    ID3D12Resource* GetBackBuffer() const { return mRenderTargets[mBackBufferIndex].Get(); }
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 
-    int GetFrameId() const { return mFrameId; }
+    int GetBackBufferIndex() const { return mBackBufferIndex; }
     Vector2 GetClientSize() const { return mDevice.GetClientSize(); }
 
     CommandBuffer CreateCommandBuffer() override;

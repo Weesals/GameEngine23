@@ -17,11 +17,12 @@ WindowWin32::WindowWin32(const std::wstring &name)
     RegisterClassW(&wcex);
 
     // Create a standard overlapped window
-    hWnd = CreateWindowW(szWindowClass, name.c_str(), WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+    hWnd = CreateWindowW(szWindowClass, name.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        nullptr, nullptr, hInstance, nullptr);
 
     // Focus the window
-    ShowWindow(hWnd, SW_SHOWDEFAULT);
+    //ShowWindow(hWnd, SW_SHOWDEFAULT);
     UpdateWindow(hWnd);
 
     // Set a pointer to this object so that messages can be forwarded
@@ -37,6 +38,16 @@ WindowWin32::~WindowWin32()
 void WindowWin32::SetInput(std::shared_ptr<Input> input)
 {
     mInput = input;
+}
+
+std::pair<int, int> WindowWin32::GetClientSize() const
+{
+    RECT clientRect;
+    GetClientRect(GetHWND(), &clientRect);
+    return std::pair<int, int>(
+        (uint32_t)(clientRect.right - clientRect.left),
+        (uint32_t)(clientRect.bottom - clientRect.top)
+    );
 }
 
 int WindowWin32::MessagePump()
@@ -55,7 +66,7 @@ int WindowWin32::MessagePump()
 
 std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
 {
-    if (mMousePointer == nullptr) mMousePointer = mInput->AllocatePointer(-1);
+    if (mMousePointer == nullptr && mInput != nullptr) mMousePointer = mInput->AllocatePointer(-1);
     return mMousePointer;
 }
 
@@ -90,7 +101,7 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     case WM_MOUSEMOVE: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         auto pointer = window->RequireMousePointer();
-        pointer->mPositionCurrent = Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
+        if (pointer) pointer->mPositionCurrent = Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
     } break;
     // Receive key events
     case WM_KEYDOWN: {
@@ -119,6 +130,7 @@ void WindowWin32::_MouseButtonEvent(HWND hWnd, WPARAM wParam, LPARAM lParam, uns
     // Update mouse button state
     auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
     auto pointer = window->RequireMousePointer();
+    if (pointer == nullptr) return;
     if (state) pointer->mCurrentButtonState |= buttonMask;
     else pointer->mCurrentButtonState &= ~buttonMask;
     pointer->mPositionCurrent = Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
