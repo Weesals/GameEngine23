@@ -7,9 +7,13 @@ void LandscapeRenderer::Initialise(std::shared_ptr<Landscape>& landscape, std::s
 {
 	mLandscape = landscape;
 	if (mLandMaterial == nullptr) {
-		mLandMaterial = std::make_shared<Material>(Shader(L"res/landscape.hlsl"), Shader(L"res/landscape.hlsl"));
+		mLandMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/landscape.hlsl"), std::make_shared<Shader>(L"assets/landscape.hlsl"));
 		mLandMaterial->InheritProperties(rootMaterial);
 	}
+	mChangeListener = mLandscape->RegisterOnLandscapeChanged([this](auto& landscape, auto& changed)
+		{
+			mDirtyRegion.CombineWith(changed);
+		});
 }
 
 std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
@@ -35,11 +39,11 @@ std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
 				int v0 = x + (y + 0) * (TileResolution + 1);
 				int v1 = x + (y + 1) * (TileResolution + 1);
 				mTileMesh->GetIndices()[i + 0] = v0;
-				mTileMesh->GetIndices()[i + 1] = v0 + 1;
-				mTileMesh->GetIndices()[i + 2] = v1 + 1;
+				mTileMesh->GetIndices()[i + 1] = v1 + 1;
+				mTileMesh->GetIndices()[i + 2] = v0 + 1;
 				mTileMesh->GetIndices()[i + 3] = v0;
-				mTileMesh->GetIndices()[i + 4] = v1 + 1;
-				mTileMesh->GetIndices()[i + 5] = v1;
+				mTileMesh->GetIndices()[i + 4] = v1;
+				mTileMesh->GetIndices()[i + 5] = v1 + 1;
 			}
 		}
 	}
@@ -54,11 +58,11 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 		mHeightMap = std::make_shared<Texture>();
 		mHeightMap->SetSize(mLandscape->GetSize());
 		mRevision = -1;
+		mDirtyRegion = Landscape::LandscapeChangeEvent::All(mLandscape->GetSize());
 	}
 	// The terrain has changed, need to update the texture
-	if (mRevision != mLandscape->GetRevision())
+	if (mDirtyRegion.GetHasChanges())
 	{
-		mRevision = mLandscape->GetRevision();
 		// Get the heightmap data
 		const auto& heightmap = mLandscape->GetRawHeightMap();
 		auto sizing = mLandscape->GetSizing();
@@ -69,9 +73,10 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 			[](int v, auto item) { return std::max(v, (int)item.Height); });
 		// Get the inner texture data
 		auto& pxHeightData = mHeightMap->GetRawData();
-		for (int y = 0; y < sizing.Size.y; ++y)
+		auto range = mDirtyRegion.Range;
+		for (int y = range.GetMin().y; y < range.GetMax().y; ++y)
 		{
-			for (int x = 0; x < sizing.Size.x; ++x)
+			for (int x = range.GetMin().x; x < range.GetMax().x; ++x)
 			{
 				auto i = sizing.ToIndex(Int2(x, y));
 				auto h11 = heightmap[i];
@@ -99,6 +104,9 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 		// Allow the shader to reconstruct the height range
 		mMetadata.MinHeight = (float)heightMin / Landscape::HeightScale;
 		mMetadata.MaxHeight = (float)heightMax / Landscape::HeightScale;
+		// Mark the data as current
+		mDirtyRegion = Landscape::LandscapeChangeEvent::None();
+		mRevision = mLandscape->GetRevision();
 	}
 
 	// Calculate material parameters
@@ -116,8 +124,6 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 	// A buffer to store tile offsets
 	std::vector<Vector4> offsets;
 	offsets.reserve(256);
-	const std::vector<Vector4>& tm = offsets;
-	std::span<const Vector4> t(tm.begin(), tm.end());
 
 	// Render the generated instances
 	auto flush = [&]() {

@@ -27,6 +27,9 @@ class LandscapeRenderer
 	};
 	Metadata mMetadata;
 
+	Landscape::ChangeDelegate::Reference mChangeListener;
+	Landscape::LandscapeChangeEvent mDirtyRegion;
+
 public:
 	void Initialise(std::shared_ptr<Landscape>& landscape, std::shared_ptr<Material>& rootMaterial);
 

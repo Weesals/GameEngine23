@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 
+#include "Material.h"
 #include "MathTypes.h"
 
 // Store data related to drawing a mesh
@@ -19,6 +20,10 @@ class Mesh
 	// TODO: Indicies should also get packed, so that
 	// they can be 32 or 16 bit
 	std::vector<int> mIndices;
+
+	// Material used to render this mesh
+	// TODO: Some meshes are multi-material
+	std::shared_ptr<Material> mMaterial;
 
 	// Is incremented whenever mesh data is changed
 	// (so that graphics buffers can be updated accordingly)
@@ -76,6 +81,9 @@ public:
 	std::span<const Vector2> GetUVs() const { return mUVData; }
 	std::span<const Color> GetColors() const { return mColors; }
 	std::span<const int> GetIndices() const { return mIndices; }
+
+	const std::shared_ptr<Material>& GetMaterial(bool require = false) { if (mMaterial == nullptr && require) mMaterial = std::make_shared<Material>(); return mMaterial; }
+	void SetMaterial(const std::shared_ptr<Material>& mat) { mMaterial = mat; }
 
 	// Notify graphics and other dependents that the mesh data has changed
 	void MarkChanged() {

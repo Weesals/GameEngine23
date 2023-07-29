@@ -46,8 +46,12 @@ public:
         std::vector<D3DShader::ResourceBinding*> mResourceBindings;
     };
 
+    // If no texture is specified, use this
+    std::shared_ptr<Texture> mDefaultTexture;
+
 private:
     D3DGraphicsDevice& mD3D12;
+
     // Storage for the GPU resources of each application type
     // TODO: Register for destruction of the application type
     // and clean up GPU resources

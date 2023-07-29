@@ -13,12 +13,13 @@ Int2 Texture::GetSize() const
 	return mSize;
 }
 
-void Texture::SetPixels32Bit(std::span<uint32_t> colors)
+void Texture::SetPixels32Bit(std::span<const uint32_t> colors)
 {
 	std::transform(colors.begin(), colors.end(), (uint32_t*)mData.data(), [&](auto pixel)
 		{
 			return pixel;
 		});
+	MarkChanged();
 }
 std::vector<uint8_t>& Texture::GetRawData()
 {

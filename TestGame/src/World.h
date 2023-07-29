@@ -8,39 +8,55 @@
 #include <MathTypes.h>
 #include "Landscape.h"
 #include "LandscapeRenderer.h"
+#include "EntityComponents.h"
+#include "EntitySystems.h"
+#include "Prototypes.h"
 
-// Components for ECS
-struct Transform {
-    Vector3 Position;
-    float Orientation;
-};
-struct MoveTarget {
-    Vector3 Target;
-};
-struct Renderable {
-    int v;
+class WorldEffects
+{
+public:
+    struct HighlightConfig {
+        std::clock_t mBegin;
+        Color mColor;
+        int mCount;
+        int mDuration;
+        static HighlightConfig MakeDefault() { return { .mColor = Color(0.25f, 0.25f, 0.25f, 0.5f), .mCount = 1, .mDuration = 500, }; }
+    };
+
+    void HighlightEntity(flecs::entity e, const HighlightConfig& highlight);
+    Color GetHighlightFor(flecs::entity e, std::clock_t time);
+
+private:
+    std::map<flecs::entity, HighlightConfig> mEntityHighlights;
 };
 
 class World
 {
-    struct Time {
-        float mDeltaTime;
-        float mTime;
-    };
-public:
+    WorldEffects mWorldEffects;
+
     // The landscape
     std::shared_ptr<Landscape> mLandscape;
     std::shared_ptr<LandscapeRenderer> mLandscapeRenderer;
 
     // Entities are stored in an ECS world
     flecs::world mECS;
+    std::shared_ptr<Prototypes> mPrototypes;
+    std::vector<flecs::entity> mPlayerEntities;
 
     // Placeholder assets for rendering the world
     std::shared_ptr<Material> mLitMaterial;
-    std::shared_ptr<Model> mModel;
 
+public:
     // Initialise world entities and other systems
     void Initialise(std::shared_ptr<Material>& rootMaterial);
+
+    flecs::entity GetPlayer(int id) const { return mPlayerEntities[id]; }
+
+    const std::shared_ptr<Landscape>& GetLandscape() const { return mLandscape; }
+    const std::shared_ptr<LandscapeRenderer>& GetLandscapeRenderer() const { return mLandscapeRenderer; }
+    flecs::world& GetECS() { return mECS; }
+    const std::shared_ptr<Prototypes>& GetPrototypes() const { return mPrototypes; }
+    const std::shared_ptr<Material>& GetLitMaterial() const { return mLitMaterial; }
 
     // Update all systems of the world
     void Step(float dt);
@@ -49,7 +65,12 @@ public:
     void Render(CommandBuffer& cmdBuffer);
 
     // Calls the callback for every entity that this ray intersects
-    void RaycastEntities(Ray& ray, const std::function<void(flecs::entity e)>& onentity);
+    void RaycastEntities(Ray& ray, const std::function<void(flecs::entity e, float)>& onentity) const;
+    flecs::entity RaycastEntity(Ray& ray) const;
+
+    // Spawn an enity with the specified properties
+    flecs::entity SpawnEntity(int protoId, flecs::entity owner, const Components::Transform& pos);
+
+    void FlashEntity(flecs::entity e, const WorldEffects::HighlightConfig& config);
 
 };
-

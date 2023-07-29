@@ -7,9 +7,6 @@
     <Filter Include="Libraries">
       <UniqueIdentifier>{5be9e48e-c0ef-4621-91bc-29ccf02de743}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Content">
-      <UniqueIdentifier>{02fba6cc-030f-46b1-95f0-aad7ee6d8806}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Resources">
       <UniqueIdentifier>{b77b0055-ef49-4c7a-a5ff-c051ad730a47}</UniqueIdentifier>
     </Filter>
@@ -28,8 +25,11 @@
     <Filter Include="Core\Platforms\Meta">
       <UniqueIdentifier>{f7e47ec5-0adb-418f-9f9d-dd1dd1cc31ad}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Content\include">
-      <UniqueIdentifier>{eb4b2aa8-1904-44bd-aee0-6e0e6c60bef8}</UniqueIdentifier>
+    <Filter Include="Utilities">
+      <UniqueIdentifier>{80b80bb2-e5ef-4803-afe9-f48ad7332a6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Input">
+      <UniqueIdentifier>{36ba56f5-f339-4941-bb50-e406b08b5587}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -42,41 +42,20 @@
     <ClInclude Include="src\GraphicsDeviceBase.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="src\Input.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="src\MathTypes.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Mesh.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Model.h">
-      <Filter>Core</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Shader.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="src\WindowBase.h">
       <Filter>Core</Filter>
     </ClInclude>
-    <ClInclude Include="src\Material.h">
-      <Filter>Core</Filter>
-    </ClInclude>
     <ClInclude Include="src\WindowWin32.h">
       <Filter>Core\Platforms\Windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\FBXImport.h">
-      <Filter>Resources</Filter>
     </ClInclude>
     <ClInclude Include="src\D3DShader.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
     <ClInclude Include="src\D3DConstantBufferCache.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Resources.h">
-      <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="src\D3DGraphicsDevice.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
@@ -93,9 +72,40 @@
     <ClInclude Include="src\GraphicsDeviceMulti.h">
       <Filter>Core\Platforms\Meta</Filter>
     </ClInclude>
-    <ClInclude Include="src\Texture.h">
-      <Filter>Core</Filter>
+    <ClInclude Include="src\FBXImport.h">
+      <Filter>Utilities</Filter>
     </ClInclude>
+    <ClInclude Include="src\Geometry.h">
+      <Filter>Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Input.h">
+      <Filter>Input</Filter>
+    </ClInclude>
+    <ClInclude Include="src\InputDispatcher.h">
+      <Filter>Input</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Delegate.h">
+      <Filter>Utilities</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Mesh.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Model.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Resources.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Shader.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Texture.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Material.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ResourceLoader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -110,14 +120,8 @@
     <ClCompile Include="src\WindowWin32.cpp">
       <Filter>Core\Platforms\Windows</Filter>
     </ClCompile>
-    <ClCompile Include="src\FBXImport.cpp">
-      <Filter>Resources</Filter>
-    </ClCompile>
     <ClCompile Include="inc\SimpleMath.cpp">
       <Filter>Libraries</Filter>
-    </ClCompile>
-    <ClCompile Include="src\Resources.cpp">
-      <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="src\D3DGraphicsDevice.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
@@ -128,39 +132,35 @@
     <ClCompile Include="src\VulkanShader.cpp">
       <Filter>Core\Platforms\Vulkan</Filter>
     </ClCompile>
-    <ClCompile Include="src\Texture.cpp">
-      <Filter>Core</Filter>
-    </ClCompile>
     <ClCompile Include="src\D3DConstantBufferCache.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
+    <ClCompile Include="src\Core.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\FBXImport.cpp">
+      <Filter>Utilities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\InputDispatcher.cpp">
+      <Filter>Input</Filter>
+    </ClCompile>
+    <ClCompile Include="src\MathTypes.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Resources.cpp">
+      <Filter>Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Texture.cpp">
+      <Filter>Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ResourceLoader.cpp" />
+    <ClCompile Include="src\Material.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="res\test.fbx">
-      <Filter>Content</Filter>
-    </None>
     <None Include="inc\SimpleMath.inl">
       <Filter>Libraries</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="res\skybox.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\lit.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\landscape.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\null.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\include\noise.hlsl">
-      <Filter>Content\include</Filter>
-    </FxCompile>
-    <FxCompile Include="res\include\lighting.hlsl">
-      <Filter>Content\include</Filter>
-    </FxCompile>
   </ItemGroup>
 </Project>

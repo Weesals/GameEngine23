@@ -8,6 +8,14 @@
 #include "Camera.h"
 #include "World.h"
 
+#include <InputDispatcher.h>
+
+#include "SelectionManager.h"
+#include "SelectionRenderer.h"
+
+#include "Canvas.h"
+#include "UIPlay.h"
+
 using steady_clock = std::chrono::steady_clock;
 using time_point = std::chrono::time_point<steady_clock>;
 
@@ -21,6 +29,9 @@ public:
 
 class Play
 {
+public:
+	typedef Delegate<CommandBuffer&> OnRenderDelegate;
+
 private:
 	Camera mCamera;
     float mTime;
@@ -29,24 +40,51 @@ private:
 	std::shared_ptr<GraphicsDeviceBase> mGraphics;
 	std::shared_ptr<Input> mInput;
 
+	std::shared_ptr<Canvas> mCanvas;
+	std::shared_ptr<UIPlay> mPlayUI;
+
 	std::shared_ptr<World> mWorld;
 
 	std::shared_ptr<Material> mRootMaterial;
 	std::shared_ptr<Skybox> mSkybox;
 
+	std::shared_ptr<InputDispatcher> mInputDispatcher;
+
+	std::shared_ptr<SelectionManager> mSelection;
+	std::shared_ptr<SelectionRenderer> mSelectionRenderer;
+
+	std::shared_ptr<Systems::ActionDispatchSystem> mActionDispatch;
+
+	OnRenderDelegate mOnRender;
 public:
 	// Construct the game world and load assets
     void Initialise(Platform& platform);
 
-	std::shared_ptr<World>& GetWorld() { return mWorld; }
-	std::shared_ptr<Material>& GetRootMaterial() { return mRootMaterial; }
-	std::shared_ptr<GraphicsDeviceBase>& GetGraphics() { return mGraphics; }
-	std::shared_ptr<Input>& GetInput() { return mInput; }
+	Camera& GetCamera() { return mCamera; }
+
+	const std::shared_ptr<const GraphicsDeviceBase>& GetGraphics() const { return mGraphics; }
+	const std::shared_ptr<const Input>& GetInput() const { return mInput; }
+	const std::shared_ptr<SelectionManager>& GetSelection() const { return mSelection; }
+
+	const std::shared_ptr<World>& GetWorld() { return mWorld; }
+	const std::shared_ptr<Material>& GetRootMaterial() { return mRootMaterial; }
+	const std::shared_ptr<GraphicsDeviceBase>& GetGraphics() { return mGraphics; }
+	const std::shared_ptr<Input>& GetInput() { return mInput; }
 
 	// Update the game world
 	void Step();
 
 	// Render the game world
     void Render(CommandBuffer& cmdBuffer);
+
+	// Send an action request (move, attack, etc.) to the specified entity
+	void SendActionRequest(flecs::entity entity, const Components::ActionRequest& request);
+
+	// Begin placing a building (or other placeable)
+	void BeginPlacement(int protoId);
+	int GetPlacementProtoId() const;
+
+	// Allow external systems to render objects
+	OnRenderDelegate::Reference RegisterOnRender(const OnRenderDelegate::Function& fn);
 };
 

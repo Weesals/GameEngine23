@@ -1,5 +1,8 @@
 #include "Play.h"
 
+#include "InputInteractions.h"
+
+#include <numbers>
 #include <FBXImport.h>
 
 void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
@@ -14,7 +17,7 @@ void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
     mMesh->SetIndices({ 0, 3, 1, 0, 2, 3, });
 
     // Load the skybox material
-    mMaterial = std::make_shared<Material>(Shader(L"res/skybox.hlsl"), Shader(L"res/skybox.hlsl"));
+    mMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/skybox.hlsl"), std::make_shared<Shader>(L"assets/skybox.hlsl"));
     mMaterial->InheritProperties(rootMaterial);
 }
 
@@ -24,22 +27,53 @@ void Play::Initialise(Platform& platform)
     mGraphics = platform.GetGraphics();
     mInput = platform.GetInput();
 
+    // Set up input interactions
+    mInputDispatcher = std::make_shared<InputDispatcher>();
+    mInputDispatcher->Initialise(mInput);
+    mInputDispatcher->RegisterInteraction(std::make_shared<SelectInteraction>(this), true);
+    mInputDispatcher->RegisterInteraction(std::make_shared<OrderInteraction>(this), true);
+    mInputDispatcher->RegisterInteraction(std::make_shared<CameraInteraction>(this), true);
+    mInputDispatcher->RegisterInteraction(std::make_shared<TerrainPaintInteraction>(this), true);
+    mInputDispatcher->RegisterInteraction(std::make_shared<PlacementInteraction>(this), true);
+    mInputDispatcher->RegisterInteraction(std::make_shared<CanvasInterceptInteraction>(mCanvas), true);
+
     // Create root resources
     mRootMaterial = std::make_shared<Material>();
+
+    auto clientSize = mGraphics->GetClientSize();
+    mCanvas = std::make_shared<Canvas>();
+    mCanvas->SetSize(clientSize);
+    mPlayUI = std::make_shared<UIPlay>(this);
+    mCanvas->AppendChild(mPlayUI);
+
+    // Initialise other things
+    mSelection = std::make_shared<SelectionManager>();
+    mSelectionRenderer = std::make_shared<SelectionRenderer>(mSelection, mRootMaterial);
 
     mSkybox = std::make_shared<Skybox>();
     mSkybox->Initialise(mRootMaterial);
 
     // Compute material parameters
-    auto clientSize = mGraphics->GetClientSize();
-    auto lightVec = Vector3(0.8f, 0.1f, 0.5f).Normalize();
-    mCamera.SetPosition(Vector3(0.0f, 2.0f, -10.0f));
+    auto lightVec = Vector3(0.8f, 0.1f, -0.5f).Normalize();
+    mCamera.SetOrientation(
+        Quaternion::CreateFromAxisAngle(Vector3::Right, 45.0f * (float)std::numbers::pi / 180.0f) *
+        Quaternion::CreateFromAxisAngle(Vector3::Up, 30.0f * (float)std::numbers::pi / 180.0f)
+    );
+    mCamera.SetPosition(Vector3::Transform(Vector3(0.0f, 0.0f, -90.0f), mCamera.GetOrientation()));
+    mCamera.SetFOV(15.0f * (float)std::numbers::pi / 180.0f);
     mCamera.SetAspect(clientSize.x / clientSize.y);
 
     mRootMaterial->SetUniform("Resolution", clientSize);
     mRootMaterial->SetUniform("DayTime", 0.5f);
     mRootMaterial->SetUniform("_WorldSpaceLightDir0", lightVec);
     mRootMaterial->SetUniform("_LightColor0", 3 * Vector3(1.0f, 0.98f, 0.95f));
+    std::vector<Color> playerColors = {
+        Color(1.0f, 0.8f, 0.5f),
+        Color(0.1f, 0.2f, 1.0f),
+        Color(1.0f, 0.2f, 0.1f),
+        Color(0.1f, 1.0f, 0.2f),
+    };
+    mRootMaterial->SetUniform("_PlayerColors", playerColors);
 
     Identifier iMMat = "Model";
     Identifier iVMat = "View";
@@ -80,76 +114,38 @@ void Play::Initialise(Platform& platform)
 
     // Initialise world
     mWorld->Initialise(mRootMaterial);
+
+    mActionDispatch = std::make_shared<Systems::ActionDispatchSystem>(mWorld.get());
+    mActionDispatch->Initialise();
+    mActionDispatch->RegisterAction<Systems::TrainingSystem>();
+    mActionDispatch->RegisterAction<Systems::MovementSystem>();
+    mActionDispatch->RegisterAction<Systems::AttackSystem>();
 }
 
 void Play::Step()
 {
     // Calculate delta time
     auto now = steady_clock::now();
-    float dt = (now - mTimePoint).count() / (float)(1000 * 1000 * 1000);
-    if (dt > 1000) dt = 0.0f;
+    float dt = std::min((now - mTimePoint).count() / (float)(1000 * 1000 * 1000), 1000.0f);
+#if defined(_DEBUG)
+    if (mInput->IsKeyDown('Q')) dt *= 10.0f;
+#endif
     mTimePoint = now;
     mTime += dt;
 
-    // Testing input stuff
-    for (auto& pointer : mInput->GetPointers())
-    {
-        // On right-click, allow dragging to move view
-        if (pointer->IsButtonDown(1))
-        {
-            auto pos = mCamera.GetPosition();
-            auto rot = mCamera.GetOrientation();
-            auto newRot =
-                Quaternion::CreateFromAxisAngle(Vector3::Right, pointer->GetPositionDelta().y * -0.005f)
-                * rot
-                * Quaternion::CreateFromAxisAngle(Vector3::Up, pointer->GetPositionDelta().x * -0.005f);
-            pos = Vector3::Transform(pos, rot.Inverse() * newRot);
-            mCamera.SetPosition(pos);
-            mCamera.SetOrientation(newRot);
-        }
-        // On left-click, move all entities under the cursor to 0,0,0
-        if (pointer->IsButtonPress(0))
-        {
-            Ray ray = mCamera.ViewportToRay(pointer->mPositionCurrent / mGraphics->GetClientSize());
-            mWorld->RaycastEntities(ray, [=](flecs::entity e)
-                {
-                    auto t = e.get_mut<Transform>();
-                    t->Position = Vector3::Zero;
-                });
-        }
-        if (pointer->IsButtonDown(0))
-        {
-            Ray ray = mCamera.ViewportToRay(pointer->mPositionCurrent / mGraphics->GetClientSize());
-            auto hit = ray.ProjectTo(Plane(Vector3::Up, 0.0f));
-            auto& sizing = mWorld->mLandscape->GetSizing();
-            auto& heightMap = mWorld->mLandscape->GetRawHeightMap();
-            auto lpos = sizing.WorldToLandscape(hit);
-            auto range = 2.0f;
-            auto lrange = (int)std::ceil(range * 1024.0f / (float)sizing.Scale1024);
-            Int2 min = Int2::Max({ 0, 0 }, lpos - lrange);
-            Int2 max = Int2::Min(sizing.Size, lpos + lrange + 1);
-            for (int y = min.y; y < max.y; ++y)
-            {
-                for (int x = min.x; x < max.x; ++x)
-                {
-                    float dst = (sizing.LandscapeToWorld(Int2(x, y)) - hit).xz().Length() / range;
-                    if (dst >= 1.0f) continue;
-                    dst = dst * dst * (2.0f - dst * dst);
-                    auto& hcell = heightMap[sizing.ToIndex(Int2(x, y))];
-                    hcell.Height = std::max(hcell.Height, (short)((1.0f - dst) * 1024.0f));
-                }
-            }
-            mWorld->mLandscape->NotifyLandscapeChanged(
-                Landscape::LandscapeChangeEvent(RectInt::FromMinMax(min, max), true)
-            );
-        }
-    }
+    // Allow keyboard camera movement
+    auto camInput = Vector2::Zero;
+    camInput.x = (float)mInput->IsKeyDown('A') - (float)mInput->IsKeyDown('D');
+    camInput.y = (float)mInput->IsKeyDown('W') - (float)mInput->IsKeyDown('S');
+    mCamera.MovePlanar(camInput, dt);
+
+    // Process input
+    mCanvas->Update(mInput);
+    mInputDispatcher->Update(!mCanvas->GetIsPointerOverUI(Vector2::Zero));
 
     // Update uniform parameters
-    auto projMat = mCamera.GetProjectionMatrix();
-    auto viewMat = mCamera.GetViewMatrix();
-    mRootMaterial->SetUniform("Projection", projMat.Transpose());
-    mRootMaterial->SetUniform("View", viewMat.Transpose());
+    mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix().Transpose());
+    mRootMaterial->SetUniform("View", mCamera.GetViewMatrix().Transpose());
     mRootMaterial->SetUniform("Time", mTime);
     mWorld->Step(dt);
 }
@@ -158,6 +154,46 @@ void Play::Render(CommandBuffer& cmdBuffer)
 {
     // Render the world
     mWorld->Render(cmdBuffer);
+    mSelectionRenderer->Render(cmdBuffer);
+    mOnRender.Invoke(cmdBuffer);
     // Render the skybox
     cmdBuffer.DrawMesh(mSkybox->mMesh, mSkybox->mMaterial);
+
+    // Render UI
+    mCanvas->Render(cmdBuffer);
+}
+
+// Send an action request (move, attack, etc.) to the specified entity
+void Play::SendActionRequest(flecs::entity entity, const Components::ActionRequest& request)
+{
+    auto* queue = entity.get_mut<Components::ActionQueue>();
+    if (queue == nullptr) {
+        entity.set(Components::ActionQueue());
+        queue = entity.get_mut<Components::ActionQueue>();
+    }
+    Components::ActionQueue::RequestItem item;
+    *(Components::ActionRequest*)&item = request;
+    item.mRequestId.mRequestId = 0;
+    queue->mRequests.push_back(item);
+    entity.modified<Components::ActionQueue>();
+
+    mActionDispatch->CancelAction(entity, Components::RequestId::MakeAll());
+}
+
+// Begin placing a building (or other placeable)
+void Play::BeginPlacement(int protoId)
+{
+    const auto& placement = mInputDispatcher->FindInteraction<PlacementInteraction>();
+    placement->SetPlacementProtoId(protoId);
+}
+int Play::GetPlacementProtoId() const
+{
+    const auto& placement = mInputDispatcher->FindInteraction<PlacementInteraction>();
+    return placement->GetPlacementProtoId();
+}
+
+// Allow external systems to render objects
+Play::OnRenderDelegate::Reference Play::RegisterOnRender(const OnRenderDelegate::Function& fn)
+{
+    return mOnRender.Add(fn);
 }

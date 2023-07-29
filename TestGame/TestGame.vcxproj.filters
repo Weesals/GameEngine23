@@ -13,17 +13,20 @@
     <Filter Include="Content\include">
       <UniqueIdentifier>{8435593c-ba42-4329-a178-5772941633e3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Game\Input">
+      <UniqueIdentifier>{e14c41cc-5126-4c56-bd41-f088208301c9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Selection">
+      <UniqueIdentifier>{a4d72106-31ee-4458-9666-0d75fbf792bc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Landscape">
+      <UniqueIdentifier>{47cc383a-d6d0-4f9b-9039-5f3e4221f892}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Camera">
+      <UniqueIdentifier>{d68d62d3-d7c9-479a-8ae0-aa9fc624c248}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\Camera.cpp">
-      <Filter>Game</Filter>
-    </ClCompile>
-    <ClCompile Include="src\Landscape.cpp">
-      <Filter>Game</Filter>
-    </ClCompile>
-    <ClCompile Include="src\LandscapeRenderer.cpp">
-      <Filter>Game</Filter>
-    </ClCompile>
     <ClCompile Include="src\Platform.cpp">
       <Filter>Game</Filter>
     </ClCompile>
@@ -37,17 +40,29 @@
     <ClCompile Include="inc\flecs.c">
       <Filter>Libraries</Filter>
     </ClCompile>
+    <ClCompile Include="src\SelectionManager.cpp">
+      <Filter>Game\Selection</Filter>
+    </ClCompile>
+    <ClCompile Include="src\LandscapeRenderer.cpp">
+      <Filter>Game\Landscape</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Landscape.cpp">
+      <Filter>Game\Landscape</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Camera.cpp">
+      <Filter>Game\Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="src\SelectionRenderer.cpp">
+      <Filter>Game\Selection</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Prototypes.cpp" />
+    <ClCompile Include="src\EntityComponents.cpp" />
+    <ClCompile Include="src\InputInteractions.cpp" />
+    <ClCompile Include="src\UIPlay.cpp" />
+    <ClCompile Include="src\Canvas.cpp" />
+    <ClCompile Include="src\EntitySystems.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\Camera.h">
-      <Filter>Game</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Landscape.h">
-      <Filter>Game</Filter>
-    </ClInclude>
-    <ClInclude Include="src\LandscapeRenderer.h">
-      <Filter>Game</Filter>
-    </ClInclude>
     <ClInclude Include="src\Platform.h">
       <Filter>Game</Filter>
     </ClInclude>
@@ -60,30 +75,72 @@
     <ClInclude Include="inc\flecs.h">
       <Filter>Libraries</Filter>
     </ClInclude>
+    <ClInclude Include="src\SelectionManager.h">
+      <Filter>Game\Selection</Filter>
+    </ClInclude>
+    <ClInclude Include="src\LandscapeRenderer.h">
+      <Filter>Game\Landscape</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Landscape.h">
+      <Filter>Game\Landscape</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Camera.h">
+      <Filter>Game\Camera</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SelectionRenderer.h">
+      <Filter>Game\Selection</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Prototypes.h" />
+    <ClInclude Include="src\EntityComponents.h" />
+    <ClInclude Include="src\InputInteractions.h" />
+    <ClInclude Include="src\UIPlay.h" />
+    <ClInclude Include="src\Canvas.h" />
+    <ClInclude Include="src\EntitySystems.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="res\landscape.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\lit.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\null.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\skybox.hlsl">
-      <Filter>Content</Filter>
-    </FxCompile>
-    <FxCompile Include="res\include\noise.hlsl">
+    <FxCompile Include="assets\include\lighting.hlsl">
       <Filter>Content\include</Filter>
     </FxCompile>
-    <FxCompile Include="res\include\lighting.hlsl">
+    <FxCompile Include="assets\lit.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="assets\landscape.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="assets\include\noise.hlsl">
       <Filter>Content\include</Filter>
     </FxCompile>
+    <FxCompile Include="assets\null.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="assets\selection.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="assets\skybox.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="assets\flags.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
+    <FxCompile Include="assets\ui.hlsl" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="res\test.fbx">
+    <Image Include="assets\T_ToonBuildingsAtlasT.png" />
+    <Image Include="assets\T_CharactersAtlas.png" />
+    <Image Include="assets\T_ToonBuildingsAtlas.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="assets\SM_Tree.fbx" />
+    <CopyFileToFolders Include="assets\SM_Character_Worker.fbx" />
+    <CopyFileToFolders Include="assets\SM_Deer.fbx">
       <Filter>Content</Filter>
-    </None>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_Farm.fbx" />
+    <CopyFileToFolders Include="assets\SM_Flag.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_House.fbx" />
+    <CopyFileToFolders Include="assets\SM_Storehouse.fbx" />
+    <CopyFileToFolders Include="assets\SM_TownCentre.fbx" />
   </ItemGroup>
 </Project>

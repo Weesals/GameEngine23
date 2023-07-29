@@ -242,7 +242,7 @@ public:
     }
 
     // Draw a mesh with the specified material
-    void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) override
+    void DrawMesh(const std::shared_ptr<Mesh>& mesh, const std::shared_ptr<Material>& material) override
     {
         auto& resCache = mDevice->GetResourceCache();
         auto vmesh = resCache.RequireVulkanMesh(*mesh, *mDevice);

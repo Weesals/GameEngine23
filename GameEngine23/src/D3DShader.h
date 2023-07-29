@@ -88,10 +88,21 @@ public:
 
         if (FAILED(hr))
         {
-            // Retrieve error messages
-            const char* errorMsg = compilationErrors != nullptr ? (const char*)compilationErrors->GetBufferPointer() : "";
-            OutputDebugStringA(errorMsg);
-            throw std::exception(errorMsg);
+            const char* errorMsg = nullptr;
+            if (hr == ERROR_FILE_NOT_FOUND)
+            {
+                errorMsg = "File was not found!";
+            }
+            else
+            {
+                // Retrieve error messages
+                errorMsg = compilationErrors != nullptr ? (const char*)compilationErrors->GetBufferPointer() : "";
+            }
+            if (errorMsg != nullptr)
+            {
+                OutputDebugStringA(errorMsg);
+                throw std::exception(errorMsg);
+            }
         }
 
         ComPtr<ID3D12ShaderReflection> pShaderReflection = nullptr;

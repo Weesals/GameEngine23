@@ -10,6 +10,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestGame", "TestGame\TestGa
 		{B4D584EC-2464-4735-9639-6253FF3C1B69} = {B4D584EC-2464-4735-9639-6253FF3C1B69}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IMGUI", "IMGUI\IMGUI.vcxproj", "{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -34,6 +36,14 @@ Global
 		{EB14A83F-9735-4AC8-9941-2C568E408E2C}.Release|x64.Build.0 = Release|x64
 		{EB14A83F-9735-4AC8-9941-2C568E408E2C}.Release|x86.ActiveCfg = Release|Win32
 		{EB14A83F-9735-4AC8-9941-2C568E408E2C}.Release|x86.Build.0 = Release|Win32
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Debug|x64.ActiveCfg = Debug|x64
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Debug|x64.Build.0 = Debug|x64
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Debug|x86.ActiveCfg = Debug|Win32
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Debug|x86.Build.0 = Debug|Win32
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Release|x64.ActiveCfg = Release|x64
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Release|x64.Build.0 = Release|x64
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Release|x86.ActiveCfg = Release|Win32
+		{AA71702B-7322-4F9C-B0F4-A03AFDCDD48A}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

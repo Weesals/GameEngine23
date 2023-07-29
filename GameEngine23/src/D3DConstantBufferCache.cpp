@@ -42,17 +42,6 @@ D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(const Material&
                 nullptr,
                 IID_PPV_ARGS(&item.mData.mConstantBuffer)
             );
-            // Cannot get descriptors to work,
-            // it causes device reset when running without the debug layer
-            /*D3D12_CONSTANT_BUFFER_VIEW_DESC constantBufferView;
-            constantBufferView.BufferLocation = item.mData.mConstantBuffer->GetGPUVirtualAddress();
-            constantBufferView.SizeInBytes = allocSize;
-            // Get the descriptor heap handle for the constant buffer view
-            CD3DX12_CPU_DESCRIPTOR_HANDLE cbvHandle(d3d12.GetCBHeap()->GetCPUDescriptorHandleForHeapStart(), mCBOffset);
-            CD3DX12_GPU_DESCRIPTOR_HANDLE gbvHandle(d3d12.GetCBHeap()->GetGPUDescriptorHandleForHeapStart(), mCBOffset);
-            device->CreateConstantBufferView(&constantBufferView, cbvHandle);
-            item.mData.mConstantBufferHandle = gbvHandle;
-            mCBOffset += d3d12.GetDescriptorHandleSize();*/
         },
         [&](auto& item)  // Fill an item with data
         {

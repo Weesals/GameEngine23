@@ -13,6 +13,8 @@ struct Pointer
 	// Store current and previous states to compute deltas
 	Vector2 mPositionCurrent;
 	Vector2 mPositionPrevious;
+	Vector2 mPositionDown;
+	float mTotalDrag;
 	unsigned int mCurrentButtonState;
 	unsigned int mPreviousButtonState;
 
@@ -20,6 +22,7 @@ struct Pointer
 		: mDeviceId(deviceId)
 		, mCurrentButtonState(0)
 		, mPreviousButtonState(0)
+		, mTotalDrag(0.0f)
 	{
 	}
 
@@ -28,19 +31,41 @@ struct Pointer
 		return mPositionCurrent - mPositionPrevious;
 	}
 	// Is button currently down
-	bool IsButtonDown(int id) const
+	bool IsButtonDown(int id = -1) const
 	{
+		if (id == -1) return mCurrentButtonState != 0;
 		return (mCurrentButtonState & (1 << id)) != 0;
 	}
-	// Was button pressed this frame
-	bool IsButtonPress(int id) const
+	// Was the button down last frame (might still be down this frame)
+	bool WasButtonDown(int id = -1) const
 	{
+		if (id == -1) return mPreviousButtonState != 0;
+		return (mPreviousButtonState & (1 << id)) != 0;
+	}
+	// Was button pressed this frame
+	bool IsButtonPress(int id = -1) const
+	{
+		if (id == -1) return (mCurrentButtonState & ~mPreviousButtonState) != 0;
 		return (mCurrentButtonState & ~mPreviousButtonState & (1 << id)) != 0;
 	}
 	// Was button released this frame
-	bool IsButtonRelease(int id) const
+	bool IsButtonRelease(int id = -1) const
 	{
+		if (id == -1) return (~mCurrentButtonState & mPreviousButtonState) != 0;
 		return (~mCurrentButtonState & mPreviousButtonState & (1 << id)) != 0;
+	}
+
+	// Called by the platform bridge code when mouse events are received
+	void ReceiveMoveEvent(const Vector2& position)
+	{
+		mTotalDrag += Vector2::Distance(position, mPositionCurrent);
+		mPositionCurrent = position;
+	}
+	void ReceiveButtonEvent(int buttonMask, bool state)
+	{
+		if (state) mCurrentButtonState |= buttonMask;
+		else mCurrentButtonState &= ~buttonMask;
+		if (state) { mPositionDown = mPositionCurrent; mTotalDrag = 0.0f; }
 	}
 	// Called once per frame to migrate current data into previous
 	void ReceiveTickEvent()

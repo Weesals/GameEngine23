@@ -16,6 +16,12 @@ struct ClearConfig {
 private:
     static const Color GetInvalidColor() { return Color(-1, -1, -1, -1); }
 };
+struct DrawConfig
+{
+    int mIndexBase;
+    int mIndexCount;
+    static DrawConfig MakeDefault() { return { 0, -1, }; }
+};
 
 // Draw commands are forwarded to a subclass of this class
 class CommandBufferInteropBase {
@@ -23,7 +29,7 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual void Reset() = 0;
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
-    virtual void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) = 0;
+    virtual void DrawMesh(const std::shared_ptr<Mesh>& mesh, const std::shared_ptr<Material>& material, const DrawConfig& config) = 0;
     virtual void Execute() = 0;
 };
 
@@ -35,7 +41,15 @@ public:
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
     void Reset() { mInterop->Reset(); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
-    void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) { mInterop->DrawMesh(mesh, material); }
+    void DrawMesh(const std::shared_ptr<Mesh>& mesh, const std::shared_ptr<Material>& material)
+    {
+        DrawMesh(mesh, material, DrawConfig::MakeDefault());
+    }
+    void DrawMesh(const std::shared_ptr<Mesh>& mesh, const std::shared_ptr<Material>& material, const DrawConfig& config)
+    {
+        if (mesh->GetVertexCount() == 0) return;
+        mInterop->DrawMesh(mesh, material, config);
+    }
     void Execute() { mInterop->Execute(); }
 };
 

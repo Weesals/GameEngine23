@@ -101,7 +101,7 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     case WM_MOUSEMOVE: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         auto pointer = window->RequireMousePointer();
-        if (pointer) pointer->mPositionCurrent = Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
+        if (pointer) pointer->ReceiveMoveEvent(Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam)));
     } break;
     // Receive key events
     case WM_KEYDOWN: {
@@ -131,9 +131,8 @@ void WindowWin32::_MouseButtonEvent(HWND hWnd, WPARAM wParam, LPARAM lParam, uns
     auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
     auto pointer = window->RequireMousePointer();
     if (pointer == nullptr) return;
-    if (state) pointer->mCurrentButtonState |= buttonMask;
-    else pointer->mCurrentButtonState &= ~buttonMask;
-    pointer->mPositionCurrent = Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
+    pointer->ReceiveMoveEvent(Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam)));
+    pointer->ReceiveButtonEvent(buttonMask, state);
 
     // Extend input to outside of window
     if (state) SetCapture(hWnd); else ReleaseCapture();

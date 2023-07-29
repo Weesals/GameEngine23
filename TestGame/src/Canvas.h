@@ -1,0 +1,61 @@
+#pragma once
+
+#include "GraphicsDeviceBase.h"
+#include <Input.h>
+#include <Mesh.h>
+#include <Texture.h>
+
+#include <InputDispatcher.h>
+
+class Canvas;
+
+// An item that forms a part of the UI
+class CanvasRenderable
+{
+protected:
+	Canvas* mCanvas;
+	std::vector<std::shared_ptr<CanvasRenderable>> mChildren;
+public:
+	void Initialise(Canvas* canvas);
+	virtual void AppendChild(const std::shared_ptr<CanvasRenderable>& child);
+	virtual void RemoveChild(const std::shared_ptr<CanvasRenderable>& child);
+	virtual void Render(CommandBuffer& cmdBuffer) = 0;
+};
+
+// The root of the UI; coordinates rendering of all its children
+class Canvas : public CanvasRenderable, std::enable_shared_from_this<Canvas>
+{
+	std::shared_ptr<Mesh> mMesh;
+	std::shared_ptr<Material> mMaterial;
+	std::shared_ptr<Texture> mFontTexture;
+
+	Int2 mSize;
+
+public:
+	Canvas();
+	~Canvas();
+
+	void SetSize(Int2 size);
+	Int2 GetSize() const;
+
+	bool GetIsPointerOverUI(Vector2 v) const;
+
+	void AppendChild(const std::shared_ptr<CanvasRenderable>& child) override;
+	void RemoveChild(const std::shared_ptr<CanvasRenderable>& child) override;
+
+	void Update(const std::shared_ptr<Input>& input);
+	void Render(CommandBuffer& cmdBuffer) override;
+
+};
+
+// Intercepts input pointer events and prevents the user
+// from interacting with the game world (via other interactions)
+// when it is over a UI window
+class CanvasInterceptInteraction : public InteractionBase
+{
+	std::shared_ptr<Canvas> mCanvas;
+public:
+	CanvasInterceptInteraction(const std::shared_ptr<Canvas>& canvas);
+	ActivationScore GetActivation(Performance performance) override;
+	void OnUpdate(Performance& performance) override;
+};

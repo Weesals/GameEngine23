@@ -88,7 +88,7 @@ namespace DirectX
         struct Vector2 : public XMFLOAT2
         {
             Vector2() noexcept : XMFLOAT2(0.f, 0.f) {}
-            constexpr explicit Vector2(float ix) noexcept : XMFLOAT2(ix, ix) {}
+            constexpr Vector2(float ix) noexcept : XMFLOAT2(ix, ix) {}
             constexpr Vector2(float ix, float iy) noexcept : XMFLOAT2(ix, iy) {}
             explicit Vector2(_In_reads_(2) const float *pArray) noexcept : XMFLOAT2(pArray) {}
             Vector2(FXMVECTOR V) noexcept { XMStoreFloat2(this, V); }
@@ -100,6 +100,7 @@ namespace DirectX
 
             Vector2(Vector2&&) = default;
             Vector2& operator=(Vector2&&) = default;
+            Vector2& operator= (const XMVECTORF32& F) noexcept { x = F.f[0]; y = F.f[1]; return *this; }
 
             operator XMVECTOR() const noexcept { return XMLoadFloat2(this); }
 
@@ -108,7 +109,6 @@ namespace DirectX
             bool operator != (const Vector2& V) const noexcept;
 
             // Assignment operators
-            Vector2& operator= (const XMVECTORF32& F) noexcept { x = F.f[0]; y = F.f[1]; return *this; }
             Vector2& operator+= (const Vector2& V) noexcept;
             Vector2& operator-= (const Vector2& V) noexcept;
             Vector2& operator*= (const Vector2& V) noexcept;
@@ -125,17 +125,16 @@ namespace DirectX
             float Length() const noexcept;
             float LengthSquared() const noexcept;
 
-            float Dot(const Vector2& V) const noexcept;
-            void Cross(const Vector2& V, Vector2& result) const noexcept;
-            Vector2 Cross(const Vector2& V) const noexcept;
-
-            void Normalize() noexcept;
+            Vector2 Normalize() noexcept;
             void Normalize(Vector2& result) const noexcept;
 
             void Clamp(const Vector2& vmin, const Vector2& vmax) noexcept;
             void Clamp(const Vector2& vmin, const Vector2& vmax, Vector2& result) const noexcept;
 
             // Static functions
+            static float Dot(const Vector2& V1, const Vector2& V2) noexcept;
+            static float Cross(const Vector2& V1, const Vector2& V2) noexcept;
+
             static float Distance(const Vector2& v1, const Vector2& v2) noexcept;
             static float DistanceSquared(const Vector2& v1, const Vector2& v2) noexcept;
 
@@ -180,6 +179,8 @@ namespace DirectX
             static Vector2 TransformNormal(const Vector2& v, const Matrix& m) noexcept;
             static void TransformNormal(_In_reads_(count) const Vector2* varray, size_t count, const Matrix& m, _Out_writes_(count) Vector2* resultArray) noexcept;
 
+            static Vector2 MoveTowards(Vector2 from, Vector2 to, float dst) noexcept;
+
             // Constants
             static const Vector2 Zero;
             static const Vector2 One;
@@ -201,7 +202,7 @@ namespace DirectX
         struct Vector3 : public XMFLOAT3
         {
             Vector3() noexcept : XMFLOAT3(0.f, 0.f, 0.f) {}
-            constexpr explicit Vector3(float ix) noexcept : XMFLOAT3(ix, ix, ix) {}
+            constexpr Vector3(float ix) noexcept : XMFLOAT3(ix, ix, ix) {}
             constexpr Vector3(float ix, float iy, float iz) noexcept : XMFLOAT3(ix, iy, iz) {}
             explicit Vector3(_In_reads_(3) const float *pArray) noexcept : XMFLOAT3(pArray) {}
             Vector3(FXMVECTOR V) noexcept { XMStoreFloat3(this, V); }
@@ -213,15 +214,24 @@ namespace DirectX
 
             Vector3(Vector3&&) = default;
             Vector3& operator=(Vector3&&) = default;
+            Vector3& operator= (const XMVECTORF32& F) noexcept { x = F.f[0]; y = F.f[1]; z = F.f[2]; return *this; }
 
             operator XMVECTOR() const noexcept { return XMLoadFloat3(this); }
+
+            Vector3(Vector2 o, float w) : DirectX::SimpleMath::Vector3(o.x, o.y, w) { }
+            //inline Vector3& operator= (const DirectX::SimpleMath::Vector3& o) noexcept { x = o.x; y = o.y; z = o.z; return *this; }
+            inline const Vector2& xy() const { return *(Vector2*)this; }
+            inline Vector2 yz() const { return Vector2(y, z); }
+            inline Vector2 xz() const { return Vector2(x, z); }
+            inline Vector3 xzy() const { return Vector3(x, z, y); }
+            inline Vector2& xy() { return *(Vector2*)&x; }
+            inline Vector2& yz() { return *(Vector2*)&y; }
 
             // Comparison operators
             bool operator == (const Vector3& V) const noexcept;
             bool operator != (const Vector3& V) const noexcept;
 
             // Assignment operators
-            Vector3& operator= (const XMVECTORF32& F) noexcept { x = F.f[0]; y = F.f[1]; z = F.f[2]; return *this; }
             Vector3& operator+= (const Vector3& V) noexcept;
             Vector3& operator-= (const Vector3& V) noexcept;
             Vector3& operator*= (const Vector3& V) noexcept;
@@ -235,20 +245,15 @@ namespace DirectX
             // Vector operations
             bool InBounds(const Vector3& Bounds) const noexcept;
 
+            Vector3 Normalize() const noexcept;
             float Length() const noexcept;
             float LengthSquared() const noexcept;
 
-            float Dot(const Vector3& V) const noexcept;
-            void Cross(const Vector3& V, Vector3& result) const noexcept;
-            Vector3 Cross(const Vector3& V) const noexcept;
-
-            Vector3 Normalize() noexcept;
-            void Normalize(Vector3& result) const noexcept;
-
-            void Clamp(const Vector3& vmin, const Vector3& vmax) noexcept;
-            void Clamp(const Vector3& vmin, const Vector3& vmax, Vector3& result) const noexcept;
-
             // Static functions
+            static float Dot(const Vector3& V1, const Vector3& V2) noexcept;
+            static Vector3 Cross(const Vector3& V1, Vector3& V2) noexcept;
+            static Vector3 Clamp(const Vector3& V, const Vector3& vmin, const Vector3& vmax) noexcept;
+
             static float Distance(const Vector3& v1, const Vector3& v2) noexcept;
             static float DistanceSquared(const Vector3& v1, const Vector3& v2) noexcept;
 
@@ -293,6 +298,8 @@ namespace DirectX
             static Vector3 TransformNormal(const Vector3& v, const Matrix& m) noexcept;
             static void TransformNormal(_In_reads_(count) const Vector3* varray, size_t count, const Matrix& m, _Out_writes_(count) Vector3* resultArray) noexcept;
 
+            static Vector3 MoveTowards(Vector3 from, Vector3 to, float dst) noexcept;
+
             // Constants
             static const Vector3 Zero;
             static const Vector3 One;
@@ -321,7 +328,7 @@ namespace DirectX
         struct Vector4 : public XMFLOAT4
         {
             Vector4() noexcept : XMFLOAT4(0.f, 0.f, 0.f, 0.f) {}
-            constexpr explicit Vector4(float ix) noexcept : XMFLOAT4(ix, ix, ix, ix) {}
+            constexpr Vector4(float ix) noexcept : XMFLOAT4(ix, ix, ix, ix) {}
             constexpr Vector4(float ix, float iy, float iz, float iw) noexcept : XMFLOAT4(ix, iy, iz, iw) {}
             explicit Vector4(_In_reads_(4) const float *pArray) noexcept : XMFLOAT4(pArray) {}
             Vector4(FXMVECTOR V) noexcept { XMStoreFloat4(this, V); }
@@ -335,6 +342,19 @@ namespace DirectX
             Vector4& operator=(Vector4&&) = default;
 
             operator XMVECTOR() const  noexcept { return XMLoadFloat4(this); }
+
+            Vector4(Vector3 o, float w) : DirectX::SimpleMath::Vector4(o.x, o.y, o.z, w) { }
+            //inline Vector4& operator= (const DirectX::SimpleMath::Vector4& o) noexcept { x = o.x; y = o.y; z = o.z; w = o.w; return *this; }
+            inline const Vector2& xy() const { return *(Vector2*)&x; }
+            inline const Vector2& yz() const { return *(Vector2*)&y; }
+            inline Vector2 xz() const { return Vector2(x, z); }
+            inline const Vector3& xyz() const { return *(Vector3*)this; }
+            inline Vector2& xy() { return *(Vector2*)&x; }
+            inline Vector2& yz() { return *(Vector2*)&y; }
+            inline Vector3& xyz() { return *(Vector3*)&x; }
+            inline Vector4 operator +(float v) const { return Vector4(x + v, y + v, z + v, w + v); }
+            inline Vector4 operator -(float v) const { return Vector4(x - v, y - v, z + v, w + v); }
+
 
             // Comparison operators
             bool operator == (const Vector4& V) const noexcept;
@@ -755,8 +775,7 @@ namespace DirectX
         struct Color : public XMFLOAT4
         {
             Color() noexcept : XMFLOAT4(0, 0, 0, 1.f) {}
-            constexpr Color(float _r, float _g, float _b) noexcept : XMFLOAT4(_r, _g, _b, 1.f) {}
-            constexpr Color(float _r, float _g, float _b, float _a) noexcept : XMFLOAT4(_r, _g, _b, _a) {}
+            constexpr Color(float _r, float _g, float _b, float _a = 1.0f) noexcept : XMFLOAT4(_r, _g, _b, _a) {}
             explicit Color(const Vector3& clr) noexcept : XMFLOAT4(clr.x, clr.y, clr.z, 1.f) {}
             explicit Color(const Vector4& clr) noexcept : XMFLOAT4(clr.x, clr.y, clr.z, clr.w) {}
             explicit Color(_In_reads_(4) const float *pArray) noexcept : XMFLOAT4(pArray) {}
@@ -850,7 +869,7 @@ namespace DirectX
 
         //------------------------------------------------------------------------------
         // Ray
-        class Ray
+        /*class Ray
         {
         public:
             Vector3 position;
@@ -874,7 +893,7 @@ namespace DirectX
             bool Intersects(const BoundingBox& box, _Out_ float& Dist) const noexcept;
             bool Intersects(const Vector3& tri0, const Vector3& tri1, const Vector3& tri2, _Out_ float& Dist) const noexcept;
             bool Intersects(const Plane& plane, _Out_ float& Dist) const noexcept;
-        };
+        };*/
 
         //------------------------------------------------------------------------------
         // Viewport
@@ -1058,7 +1077,7 @@ namespace std
                 || ((C1.x == C2.x) && (C1.y == C2.y) && (C1.z == C2.z) && (C1.w < C2.w)));
         }
     };
-
+    /*
     template<> struct less<DirectX::SimpleMath::Ray>
     {
         bool operator()(const DirectX::SimpleMath::Ray& R1, const DirectX::SimpleMath::Ray& R2) const noexcept
@@ -1074,7 +1093,7 @@ namespace std
             return false;
         }
     };
-
+    */
     template<> struct less<DirectX::SimpleMath::Viewport>
     {
         bool operator()(const DirectX::SimpleMath::Viewport& vp1, const DirectX::SimpleMath::Viewport& vp2) const noexcept

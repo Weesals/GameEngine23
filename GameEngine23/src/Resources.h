@@ -26,9 +26,11 @@ template <> struct std::hash<Identifier>
     std::size_t operator()(const Identifier& k) const { return hash<short>()(k.mId); }
 };
 
+// TODO: Use hat trie instead of map
 class Resources
 {
 
+public:
     struct comp
     {
         template <class _Ty1, class _Ty2>
@@ -42,6 +44,7 @@ class Resources
         }
         using is_transparent = int;
     };
+private:
 
     static std::map<std::string, Identifier, comp> mStringToId;
     static std::map<std::wstring, Identifier, comp> mWStringToId;

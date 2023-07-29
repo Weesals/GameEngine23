@@ -7,3 +7,6 @@
 [submodule "GameEngine23/externals/Vulkan-Headers"]
 	path = GameEngine23/externals/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "TestGame/externals/imgui"]
+	path = IMGUI/externals/imgui
+	url = https://github.com/ocornut/imgui.git

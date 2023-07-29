@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "Mesh.h"
+#include "GraphicsDeviceBase.h"
 
 // A collection of meshes
 // TODO: Should store animation data
@@ -19,6 +20,24 @@ public:
 
 	std::span<std::shared_ptr<Mesh>> GetMeshes() {
 		return mMeshes;
+	}
+
+	void Render(CommandBuffer& cmdBuffer, const std::shared_ptr<Material>& material)
+	{
+		for (auto& mesh : GetMeshes())
+		{
+			auto& meshMat = mesh->GetMaterial();
+			if (meshMat != nullptr)
+			{
+				meshMat->InheritProperties(material);
+				cmdBuffer.DrawMesh(mesh, meshMat);
+				meshMat->RemoveInheritance(material);
+			}
+			else
+			{
+				cmdBuffer.DrawMesh(mesh, material);
+			}
+		}
 	}
 
 };

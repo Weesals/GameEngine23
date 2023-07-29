@@ -19,7 +19,7 @@ public:
 	Int2 GetSize() const;
 
 	// Set texture data in 0xAABBGGRR format
-	void SetPixels32Bit(std::span<uint32_t> colors);
+	void SetPixels32Bit(std::span<const uint32_t> colors);
 	std::vector<uint8_t>& GetRawData();
 	const std::vector<uint8_t>& GetData() const;
 

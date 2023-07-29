@@ -72,11 +72,11 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;$(IncludePath)</IncludePath>
+    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;.\externals\soil\include;.\externals\stb_image\</IncludePath>
     <LibraryPath>.\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;$(IncludePath)</IncludePath>
+    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;.\externals\soil\include;.\externals\stb_image\</IncludePath>
     <LibraryPath>.\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -130,7 +130,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
@@ -148,17 +148,21 @@
     <ClInclude Include="src\D3DConstantBufferCache.h" />
     <ClInclude Include="src\D3DGraphicsDevice.h" />
     <ClInclude Include="src\D3DShader.h" />
+    <ClInclude Include="src\Delegate.h" />
     <ClInclude Include="src\FBXImport.h" />
+    <ClInclude Include="src\Geometry.h" />
     <ClInclude Include="src\GraphicsDeviceBase.h" />
     <ClInclude Include="src\GraphicsDeviceD3D12.h" />
     <ClInclude Include="src\GraphicsDeviceMulti.h" />
     <ClInclude Include="src\GraphicsDeviceVulkan.h" />
     <ClInclude Include="src\GraphicsUtility.h" />
     <ClInclude Include="src\Input.h" />
+    <ClInclude Include="src\InputDispatcher.h" />
     <ClInclude Include="src\Material.h" />
     <ClInclude Include="src\MathTypes.h" />
     <ClInclude Include="src\Mesh.h" />
     <ClInclude Include="src\Model.h" />
+    <ClInclude Include="src\ResourceLoader.h" />
     <ClInclude Include="src\Resources.h" />
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="inc\SimpleMath.h" />
@@ -169,6 +173,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\SimpleMath.cpp" />
+    <ClCompile Include="src\Core.cpp" />
     <ClCompile Include="src\D3DConstantBufferCache.cpp" />
     <ClCompile Include="src\D3DGraphicsDevice.cpp" />
     <ClCompile Include="src\FBXImport.cpp" />
@@ -176,52 +181,17 @@
     <ClCompile Include="inc\miniz.c" />
     <ClCompile Include="inc\ofbx.cpp" />
     <ClCompile Include="src\GraphicsDeviceVulkan.cpp" />
+    <ClCompile Include="src\InputDispatcher.cpp" />
+    <ClCompile Include="src\Material.cpp" />
+    <ClCompile Include="src\MathTypes.cpp" />
+    <ClCompile Include="src\ResourceLoader.cpp" />
     <ClCompile Include="src\Resources.cpp" />
     <ClCompile Include="src\Texture.cpp" />
     <ClCompile Include="src\VulkanShader.cpp" />
     <ClCompile Include="src\WindowWin32.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="res\test.fbx" />
     <None Include="inc\SimpleMath.inl" />
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="res\include\lighting.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </FxCompile>
-    <FxCompile Include="res\include\noise.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </FxCompile>
-    <FxCompile Include="res\landscape.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </FxCompile>
-    <FxCompile Include="res\lit.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </FxCompile>
-    <FxCompile Include="res\null.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </FxCompile>
-    <FxCompile Include="res\skybox.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
-    </FxCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

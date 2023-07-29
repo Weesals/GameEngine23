@@ -8,6 +8,16 @@ Camera::Camera()
 	, mOrientation(Quaternion(0.0f, 1.0f, 0.0f, 0.0f))
 { }
 
+// Move along the horizontal plane, relative to camera orientation
+void Camera::MovePlanar(Vector2 delta, float dt)
+{
+	auto fwd = Vector3::Transform(Vector3::Forward, GetOrientation()).xz().Normalize();
+	auto rgt = Vector2(-fwd.y, fwd.x);
+	auto desiredVel = Vector3(rgt * delta.x + fwd * delta.y, 0.0f).xzy();
+	mMomentum = Vector3::MoveTowards(mMomentum, desiredVel, dt * 10.0f);
+	SetPosition(GetPosition() + mMomentum * (20.0f * dt));
+}
+
 // Regenerate matrix if is invalidated
 const Matrix& Camera::GetProjectionMatrix()
 {
@@ -16,7 +26,7 @@ const Matrix& Camera::GetProjectionMatrix()
 		mProjMatrix = Matrix::CreatePerspectiveFieldOfView(
 			mFOV,
 			mAspect,
-			0.1f, 100.0f
+			0.5f, 300.0f
 		);
 	}
 	return mProjMatrix;

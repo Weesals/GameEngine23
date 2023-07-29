@@ -12,6 +12,8 @@ class Camera
 	Vector3 mPosition;
 	Quaternion mOrientation;
 
+	Vector3 mMomentum;
+
 	// Cached matrices
 	Matrix mProjMatrix;
 	Matrix mViewMatrix;
@@ -23,18 +25,25 @@ class Camera
 public:
 	Camera();
 
+	// Getters/setters
 	void SetFOV(float fov) { mFOV = fov; InvalidateProj(); }
 	void SetAspect(float aspect) { mAspect = aspect; InvalidateProj(); }
 
 	void SetPosition(Vector3 pos) { mPosition = pos; InvalidateView(); }
-	void SetOrientation(Quaternion ori) { mOrientation = ori; InvalidateView(); }
-
 	const Vector3& GetPosition() { return mPosition; }
+
+	void SetOrientation(Quaternion ori) { mOrientation = ori; InvalidateView(); }
 	const Quaternion& GetOrientation() { return mOrientation; }
 
+	// Move along the horizontal plane, relative to camera orientation
+	// Also smooths motion
+	void MovePlanar(Vector2 delta, float dt);
+
+	// Get (and calculate if needed) the camera matrices
 	const Matrix& GetProjectionMatrix();
 	const Matrix& GetViewMatrix();
 
+	// Viewport space is [0, 1]
 	Ray ViewportToRay(Vector2 vpos);
 
 };

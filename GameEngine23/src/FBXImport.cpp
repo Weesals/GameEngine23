@@ -3,6 +3,9 @@
 
 #include "FBXImport.h"
 
+#include "ResourceLoader.h"
+#include "Material.h"
+
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -105,11 +108,29 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 
 		// If the mesh transform flipped face orientation,
 		// flip them back (via index swizzling)
-		auto flip = xform.Determinant() > 0;
+		auto flip = xform.Determinant() < 0;
 		if (flip)
 		{
 			auto meshInds = mesh->GetIndices();
 			for (int i = 2; i < meshInds.size(); i += 3) std::swap(meshInds[i - 1], meshInds[i]);
+		}
+
+		auto TexLoader = [&](const ofbx::Texture* tex)->std::shared_ptr<Texture> {
+			if (tex == nullptr) return nullptr;
+			auto fbxFName = tex->getFileName();
+			std::wstring texPath;
+			std::transform(fbxFName.begin, fbxFName.end, std::back_inserter(texPath), [](auto c) { return (wchar_t)c; });
+			auto& loader = ResourceLoader::GetSingleton();
+			return loader.LoadTexture(texPath);
+		};
+
+		auto fbxMatCount = fbxMesh->getMaterialCount();
+		auto fbxMat = fbxMesh->getMaterial(0);
+		auto texDiffuse = TexLoader(fbxMat->getTexture(ofbx::Texture::TextureType::DIFFUSE));
+		if (texDiffuse != nullptr)
+		{
+			auto material = mesh->GetMaterial(true);
+			material->SetUniform("Texture", texDiffuse);
 		}
 
 		// Notify that this mesh data has changed

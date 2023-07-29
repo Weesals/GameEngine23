@@ -30,6 +30,27 @@ static T* GetOrCreate(std::unordered_map<K, std::unique_ptr<T>>& map, const K ke
 template<typename T>
 static T PostIncrement(T& v, T a) { int t = v; v += a; return t; }
 
+template<typename T>
+static size_t GenericHash(const T& value)
+{
+    size_t hash = 0;
+    int size = sizeof(T);
+    const uint8_t* ptr = (const uint8_t*)&value;
+    auto ApplyHash = [&]<typename Z>()
+    {
+        hash += *(Z*)ptr;
+        hash *= 0x9E3779B97F4A7C15uL;
+        hash ^= hash >> 16;
+        ptr += sizeof(Z);
+        size -= sizeof(Z);
+    };
+    while (size >= sizeof(uint64_t)) ApplyHash.operator()<uint64_t>();
+    if (size >= sizeof(uint32_t)) ApplyHash.operator()<uint32_t>();
+    if (size >= sizeof(uint16_t)) ApplyHash.operator()<uint16_t>();
+    if (size >= sizeof(uint8_t)) ApplyHash.operator()<uint8_t>();
+    return hash;
+}
+
 
 // Stores a cache of items allowing efficient reuse where possible
 // but avoiding overwriting until they have been consumed by the GPU
@@ -67,12 +88,32 @@ public:
     }
 
     // Generate a hash for the specified binary data
-    size_t ComputeHash(const std::vector<uint8_t>& data)
+    /*size_t ComputeHash(const std::vector<uint8_t>& data)
     {
         int wsize = (int)(data.size() / sizeof(size_t));
         return std::accumulate((size_t*)data.data(), (size_t*)data.data() + wsize, data.size(),
             [](size_t i, auto d) { return (i * 0x9E3779B97F4A7C15L + 0x0123456789ABCDEFL) ^ d; });
+    }*/
+    static size_t ComputeHash(const std::vector<uint8_t>& data)
+    {
+        size_t hash = 0;
+        int size = (int)data.size();
+        const uint8_t* ptr = (const uint8_t*)&data.front();
+        auto ApplyHash = [&]<typename Z>()
+        {
+            hash += *(Z*)ptr;
+            hash *= 0x9E3779B97F4A7C15uL;
+            hash ^= hash >> 16;
+            ptr += sizeof(Z);
+            size -= sizeof(Z);
+        };
+        while (size >= sizeof(uint64_t)) ApplyHash.operator()<uint64_t>();
+        if (size >= sizeof(uint32_t)) ApplyHash.operator()<uint32_t>();
+        if (size >= sizeof(uint16_t)) ApplyHash.operator()<uint16_t>();
+        if (size >= sizeof(uint8_t)) ApplyHash.operator()<uint8_t>();
+        return hash;
     }
+
 
     // Find or allocate a constant buffer for the specified material and CB layout
     template<class Allocate, class DataFill, class Found>
@@ -164,6 +205,14 @@ private:
 public:
     PerFrameItemStoreNoHash()
         : mLockFrameId(0), mCurrentFrameId(0) { }
+
+    void InsertItem(const T& data)
+    {
+        Item item;
+        item.mData = data;
+        item.mLastUsedFrame = mCurrentFrameId;
+        mUsageQueue.push_back(item);
+    }
 
     // Find or allocate a constant buffer for the specified material and CB layout
     template<class Allocate, class DataFill>

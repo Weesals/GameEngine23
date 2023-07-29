@@ -1,6 +1,7 @@
 #pragma once
 
 #include <MathTypes.h>
+#include <Delegate.h>
 
 #include <algorithm>
 #include <numeric>
@@ -68,8 +69,8 @@ public:
         {
             worldPos -= Location.xz();
             worldPos *= 1024.f / Scale1024;
-            auto pnt = (Int2)(worldPos + 0.5f);
-            outLerp = (Vector2)worldPos - pnt;
+            auto pnt = (Int2)(worldPos);
+            outLerp = worldPos - (Vector2)pnt;
             return pnt;
         }
     };
@@ -78,6 +79,7 @@ public:
     struct HeightCell
     {
         short Height;
+        float GetHeightF() const { return (float)Height / (float)HeightScale; }
         static HeightCell Default;
     };
     // Data used by the fragment shader to determine shading (ie. texture)
@@ -107,27 +109,21 @@ public:
         bool HeightMapChanged;
         bool ControlMapChanged;
         bool WaterMapChanged;
-        LandscapeChangeEvent(RectInt range, bool heightMap = false, bool controlMap = false, bool waterMap = false)
-            : Range(range), HeightMapChanged(heightMap), ControlMapChanged(controlMap), WaterMapChanged(waterMap) { }
-        bool GetHasChanges() { return HeightMapChanged || ControlMapChanged || WaterMapChanged; }
+        LandscapeChangeEvent();
+        LandscapeChangeEvent(RectInt range, bool heightMap = false, bool controlMap = false, bool waterMap = false);
+        bool GetHasChanges();
 
         // Expand this to include the passed in range/flags
-        void CombineWith(const LandscapeChangeEvent& other)
-        {
-            // If this is the first change, just use it as is.
-            if (!GetHasChanges()) { *this = other; return; }
-            // Otherwise inflate our range and integrate changed flags
-            auto min = Int2::Min(Range.GetMin(), other.Range.GetMin());
-            auto max = Int2::Max(Range.GetMax(), other.Range.GetMax());
-            Range = RectInt(min.x, min.y, max.x - min.x, max.y - min.y);
-            HeightMapChanged |= other.HeightMapChanged;
-            ControlMapChanged |= other.ControlMapChanged;
-        }
+        void CombineWith(const LandscapeChangeEvent& other);
         // Create a changed event that covers everything for the entire terrain
-        static LandscapeChangeEvent All(Int2 size)
-        {
-            return LandscapeChangeEvent(RectInt(0, 0, size.x, size.y), true, true, true);
-        }
+        static LandscapeChangeEvent All(Int2 size);
+        // Create a changed event that includes nothing
+        static LandscapeChangeEvent None();
+    };
+
+    struct LandscapeHit
+    {
+        Vector3 mHitPosition;
     };
 
     // Simplified data access API
@@ -145,27 +141,12 @@ public:
     class HeightMapReadOnly : public DataReader<HeightCell> {
     public:
         using DataReader::DataReader;
-        float GetHeightAtF(Vector2 pos) const
-        {
-            Vector2 l;
-            auto p00 = mSizing.WorldToLandscape(pos, l);
-            p00 = Int2::Min(Int2::Max(p00, 0), mSizing.Size - 2);
-            auto h00 = GetAt(p00);
-            auto h10 = GetAt(p00 + Int2(1, 0));
-            auto h01 = GetAt(p00 + Int2(0, 1));
-            auto h11 = GetAt(p00 + Int2(1, 1));
-            return (float)(
-                h00.Height * (1.0f - l.x) * (1.0f - l.y)
-                + h10.Height * (l.x) * (1.0f - l.y)
-                + h01.Height * (1.0f - l.x) * (l.y)
-                + h11.Height * (l.x) * (l.y)
-            ) / (float)HeightScale;
-        }
+        float GetHeightAtF(Vector2 pos) const;
     };
     class ControlMapReadOnly : public DataReader<ControlCell> { using DataReader::DataReader; };
     class WaterMapReadOnly : public DataReader<WaterCell> { using DataReader::DataReader; };
 
-    typedef std::function<void(const Landscape& landscape, const LandscapeChangeEvent& changed)> ChangeCallback;
+    typedef Delegate<const Landscape&, const LandscapeChangeEvent&> ChangeDelegate;
 
 private:
     SizingData mSizing;
@@ -177,7 +158,8 @@ private:
     int mRevision;
 
     // Listen for changes to the landscape data
-    std::vector<ChangeCallback> mChangeListeners;
+    //std::vector<ChangeCallback> mChangeListeners;
+    ChangeDelegate mChangeListeners;
 
 public:
     Landscape();
@@ -202,11 +184,12 @@ public:
     {
         ++mRevision;
         // TODO: Support listeners which add/remove other listeners or themselves
-        for (auto listener : mChangeListeners) listener(*this, changeEvent);
+        //for (auto listener : mChangeListeners) listener(*this, changeEvent);
+        mChangeListeners.Invoke(*this, changeEvent);
     }
-    void RegisterOnLandscapeChanged(ChangeCallback& callback)
+    ChangeDelegate::Reference RegisterOnLandscapeChanged(const ChangeDelegate::Function& callback)
     {
-        mChangeListeners.push_back(callback);
+        return mChangeListeners.Add(callback);
     }
 
     // Helper accessors
@@ -228,6 +211,8 @@ public:
     std::vector<HeightCell> &GetRawHeightMap() { return mHeightMap; }
     std::vector<ControlCell> &GetRawControlMap() { return mControlMap; }
     std::vector<WaterCell> &GetRawWaterMap() { return mWaterMap; }
+
+    bool Raycast(const Ray& ray, LandscapeHit& hit, float maxDst = std::numeric_limits<float>::max()) const;
 
 };
 

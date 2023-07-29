@@ -24,6 +24,7 @@ inline void ThrowIfFailed(HRESULT hr)
 
 D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12)
     : mD3D12(d3d12)
+    , mCBOffset(0)
 {
 }
 D3DShader* D3DResourceCache::RequireShader(const Shader& shader, const std::string& entrypoint)
@@ -37,7 +38,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
 {
     auto sourceVSId = vs.GetIdentifier();
     auto sourcePSId = ps.GetIdentifier();
-    auto key = hash ^ std::hash<int>()(sourceVSId) ^ std::hash<int>()(sourcePSId);
+    auto key = hash ^ std::hash<int>()(sourceVSId) ^ (0x5123 + std::hash<int>()(sourcePSId));
     return GetOrCreate(pipelineMapping, key);
 }
 
@@ -56,25 +57,40 @@ void D3DResourceCache::UpdateMeshData(D3DMesh* d3dMesh, const Mesh& mesh, ID3D12
 
     // Allocate vertex and index buffers
     auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(vbufferByteSize);
-    ThrowIfFailed(device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &resDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        IID_PPV_ARGS(&d3dMesh->mVertexBuffer)));
-    d3dMesh->mVertexBuffer->SetName(L"VertexBuffer");
-
-    resDesc = CD3DX12_RESOURCE_DESC::Buffer(ibufferByteSize);
-    ThrowIfFailed(device->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &resDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        IID_PPV_ARGS(&d3dMesh->mIndexBuffer)));
-    d3dMesh->mIndexBuffer->SetName(L"IndexBuffer");
+    if (d3dMesh->mVertexBufferView.SizeInBytes != vbufferByteSize || d3dMesh->mVertexBuffer == nullptr)
+    {
+        if (d3dMesh->mVertexBuffer != nullptr)
+        {
+            mUploadBufferCache.InsertItem(d3dMesh->mVertexBuffer);
+            d3dMesh->mVertexBuffer = nullptr;
+        }
+        auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(vbufferByteSize);
+        ThrowIfFailed(device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&d3dMesh->mVertexBuffer)));
+        d3dMesh->mVertexBuffer->SetName(L"VertexBuffer");
+    }
+    if (d3dMesh->mIndexBufferView.SizeInBytes != ibufferByteSize || d3dMesh->mIndexBuffer == nullptr)
+    {
+        if (d3dMesh->mIndexBuffer != nullptr)
+        {
+            mUploadBufferCache.InsertItem(d3dMesh->mIndexBuffer);
+            d3dMesh->mIndexBuffer = nullptr;
+        }
+        auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(ibufferByteSize);
+        ThrowIfFailed(device->CreateCommittedResource(
+            &heapProps,
+            D3D12_HEAP_FLAG_NONE,
+            &resDesc,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            nullptr,
+            IID_PPV_ARGS(&d3dMesh->mIndexBuffer)));
+        d3dMesh->mIndexBuffer->SetName(L"IndexBuffer");
+    }
 
     auto vUploadBuffer = AllocateUploadBuffer(vbufferByteSize);
     // Copy data into buffer
@@ -184,9 +200,11 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
         srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
 
         // Get the CPU handle to the descriptor in the heap
-        D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart();
+        auto descriptorSize = mD3D12.GetDescriptorHandleSize();
+        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), mCBOffset);
         device->CreateShaderResourceView(d3dTex->mTexture.Get(), &srvDesc, srvHandle);
-        d3dTex->mSRVOffset = 0;
+        d3dTex->mSRVOffset = mCBOffset;
+        mCBOffset += descriptorSize;
     }
 
     auto uploadSize = (GetRequiredIntermediateSize(d3dTex->mTexture.Get(), 0, 1) + D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1) & ~(D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1);
@@ -226,11 +244,14 @@ D3DResourceCache::D3DTexture* D3DResourceCache::RequireD3DTexture(const Texture&
 D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const Material& material, std::span<D3D12_INPUT_ELEMENT_DESC> vertElements)
 {
     // Get the relevant shaders
-    auto& sourceVS = material.GetVertexShader();
-    auto& sourcePS = material.GetPixelShader();
+    const auto& sourceVS = *material.GetVertexShader();
+    const auto& sourcePS = *material.GetPixelShader();
+    auto& blendMode = material.GetBlendMode();
+    auto& rasterMode = material.GetRasterMode();
+    auto& depthMode = material.GetDepthMode();
 
     // Find (or create) a pipeline that matches these requirements
-    size_t hash = 0;
+    size_t hash = GenericHash(blendMode) ^ GenericHash(rasterMode) ^ GenericHash(depthMode);
     for (auto& el : vertElements) hash ^= std::hash<void*>()((void*)el.SemanticName);
     auto pipelineState = RequirePipelineState(sourceVS, sourcePS, hash);
     if (pipelineState->mPipelineState == nullptr)
@@ -247,6 +268,24 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
             pShader->CompileFromFile(sourceVS.GetPath(), StrPSEntryPoint, "ps_5_0");
         }
 
+        auto ToD3DBArg = [](BlendMode::BlendArg arg)
+        {
+            D3D12_BLEND mapping[] = {
+                D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
+                D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+                D3D12_BLEND_DEST_COLOR, D3D12_BLEND_INV_DEST_COLOR, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
+            };
+            return mapping[(int)arg];
+        };
+        auto ToD3DBOp = [](BlendMode::BlendOp op)
+        {
+            D3D12_BLEND_OP mapping[] = {
+                D3D12_BLEND_OP_ADD, D3D12_BLEND_OP_SUBTRACT, D3D12_BLEND_OP_REV_SUBTRACT,
+                D3D12_BLEND_OP_MIN, D3D12_BLEND_OP_MAX,
+            };
+            return mapping[(int)op];
+        };
+
         // Create the D3D pipeline
         D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
         psoDesc.InputLayout = { vertElements.data(), (unsigned int)vertElements.size() };
@@ -254,8 +293,18 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
         psoDesc.VS = CD3DX12_SHADER_BYTECODE(vShader->mShader.Get());
         psoDesc.PS = CD3DX12_SHADER_BYTECODE(pShader->mShader.Get());
         psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        psoDesc.RasterizerState.CullMode = (D3D12_CULL_MODE)rasterMode.mCullMode;
         psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
+        psoDesc.BlendState.RenderTarget[0].SrcBlend = ToD3DBArg(blendMode.mSrcColorBlend);
+        psoDesc.BlendState.RenderTarget[0].DestBlend = ToD3DBArg(blendMode.mDestColorBlend);
+        psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = ToD3DBArg(blendMode.mSrcAlphaBlend);
+        psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = ToD3DBArg(blendMode.mDestAlphaBlend);
+        psoDesc.BlendState.RenderTarget[0].BlendOp = ToD3DBOp(blendMode.mBlendColorOp);
+        psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = ToD3DBOp(blendMode.mBlendAlphaOp);
         psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC1(D3D12_DEFAULT);
+        psoDesc.DepthStencilState.DepthFunc = (D3D12_COMPARISON_FUNC)depthMode.mComparison;
+        psoDesc.DepthStencilState.DepthWriteMask = depthMode.mWriteEnable ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = 1;
@@ -263,7 +312,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
         psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState->mPipelineState)));
-        pipelineState->mPipelineState->SetName(material.GetPixelShader().GetPath().c_str());
+        pipelineState->mPipelineState->SetName(material.GetPixelShader()->GetPath().c_str());
 
         // Collect constant buffers required by the shaders
         // TODO: Throw an error if different constant buffers
@@ -355,15 +404,17 @@ public:
     }
 
     // Draw a mesh with the specified material
-    void DrawMesh(std::shared_ptr<Mesh>& mesh, std::shared_ptr<Material>& material) override
+    void DrawMesh(const std::shared_ptr<Mesh>& mesh, const std::shared_ptr<Material>& material, const DrawConfig& config) override
     {
         auto& cache = mDevice->GetResourceCache();
+        // Get an up to date mesh
         auto d3dMesh = cache.RequireD3DMesh(*mesh.get());
         if (d3dMesh->mRevision != mesh->GetRevision())
             cache.UpdateMeshData(d3dMesh, *mesh, mCmdList.Get());
 
         auto pipelineState = cache.RequirePipelineState(*material, d3dMesh->mVertElements);
 
+        // Require and bind a pipeline matching the material config and mesh attributes
         if (mLastPipeline != pipelineState)
         {
             mLastPipeline = pipelineState;
@@ -375,6 +426,7 @@ public:
             mCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
 
+        // Require and bind constant buffers
         for(int i = 0; i < pipelineState->mConstantBuffers.size(); ++i)
         {
             auto cb = pipelineState->mConstantBuffers[i];
@@ -382,29 +434,46 @@ public:
             auto d3dCB = cache.RequireConstantBuffer(*cb, *material);
             if (mLastCBs[i] == d3dCB) continue;
             mLastCBs[i] = d3dCB;
-            // Causes device lost when running without debug layer
-            //mCmdList->SetGraphicsRootDescriptorTable(i, d3dCB->mConstantBufferHandle);
             mCmdList->SetGraphicsRootConstantBufferView(i, d3dCB->mConstantBuffer->GetGPUVirtualAddress());
         }
+        // Require and bind other resources (textures)
         for (int i = 0; i < pipelineState->mResourceBindings.size(); ++i)
         {
             auto rb = pipelineState->mResourceBindings[i];
             if (rb == nullptr) continue;
-            auto& texture = material->GetUniformTexture(rb->mNameId);
-            auto d3dTex = cache.RequireD3DTexture(*texture);
-            if (d3dTex->mRevision != texture->GetRevision())
-                cache.UpdateTextureData(d3dTex, *texture, mCmdList.Get());
-            mCmdList->SetGraphicsRootDescriptorTable(2, mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart());
+            auto* texture = &material->GetUniformTexture(rb->mNameId);
+            if (texture == nullptr || *texture == nullptr || (*texture)->GetSize().x <= 0)
+            {
+                if (cache.mDefaultTexture == nullptr)
+                {
+                    cache.mDefaultTexture = std::make_shared<Texture>();
+                    cache.mDefaultTexture->SetSize(4);
+                    auto data = cache.mDefaultTexture->GetData();
+                    std::fill(data.begin(), data.end(), 0xff808080);
+                    cache.mDefaultTexture->MarkChanged();
+                }
+                texture = &cache.mDefaultTexture;
+            }
+            auto d3dTex = cache.RequireD3DTexture(**texture);
+            if (d3dTex->mRevision != (*texture)->GetRevision())
+                cache.UpdateTextureData(d3dTex, **texture, mCmdList.Get());
+            auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
+            handle.ptr += d3dTex->mSRVOffset;
+            mCmdList->SetGraphicsRootDescriptorTable(2, handle);
             //mCmdList->SetGraphicsRootShaderResourceView(2, d3dTex->mTexture->GetGPUVirtualAddress());
         }
 
+        // Bind the mesh buffers
         if (mLastMesh != d3dMesh) {
             mLastMesh = d3dMesh;
             mCmdList->IASetVertexBuffers(0, 1, &d3dMesh->mVertexBufferView);
             mCmdList->IASetIndexBuffer(&d3dMesh->mIndexBufferView);
         }
 
-        mCmdList->DrawIndexedInstanced(mesh->GetIndexCount(), std::max(1, material->GetInstanceCount()), 0, 0, 0);
+        // Issue the draw calls
+        int indexCount = mesh->GetIndexCount();
+        if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
+        mCmdList->DrawIndexedInstanced(indexCount, std::max(1, material->GetInstanceCount()), config.mIndexBase, 0, 0);
     }
     // Send the commands to the GPU
     // TODO: Should this be automatic?
