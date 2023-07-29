@@ -105,7 +105,9 @@
     <ClInclude Include="src\Material.h">
       <Filter>Resources</Filter>
     </ClInclude>
-    <ClInclude Include="src\ResourceLoader.h" />
+    <ClInclude Include="src\ResourceLoader.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -153,9 +155,11 @@
     <ClCompile Include="src\Texture.cpp">
       <Filter>Resources</Filter>
     </ClCompile>
-    <ClCompile Include="src\ResourceLoader.cpp" />
     <ClCompile Include="src\Material.cpp">
       <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ResourceLoader.cpp">
+      <Filter>Resources</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

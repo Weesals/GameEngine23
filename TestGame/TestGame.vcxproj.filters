@@ -13,9 +13,6 @@
     <Filter Include="Content\include">
       <UniqueIdentifier>{8435593c-ba42-4329-a178-5772941633e3}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Game\Input">
-      <UniqueIdentifier>{e14c41cc-5126-4c56-bd41-f088208301c9}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Game\Selection">
       <UniqueIdentifier>{a4d72106-31ee-4458-9666-0d75fbf792bc}</UniqueIdentifier>
     </Filter>
@@ -24,6 +21,12 @@
     </Filter>
     <Filter Include="Game\Camera">
       <UniqueIdentifier>{d68d62d3-d7c9-479a-8ae0-aa9fc624c248}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\UI">
+      <UniqueIdentifier>{e14c41cc-5126-4c56-bd41-f088208301c9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game\Entities">
+      <UniqueIdentifier>{7656516d-7f6a-45e3-b8c0-02bb248dcb3e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -55,12 +58,24 @@
     <ClCompile Include="src\SelectionRenderer.cpp">
       <Filter>Game\Selection</Filter>
     </ClCompile>
-    <ClCompile Include="src\Prototypes.cpp" />
-    <ClCompile Include="src\EntityComponents.cpp" />
-    <ClCompile Include="src\InputInteractions.cpp" />
-    <ClCompile Include="src\UIPlay.cpp" />
-    <ClCompile Include="src\Canvas.cpp" />
-    <ClCompile Include="src\EntitySystems.cpp" />
+    <ClCompile Include="src\InputInteractions.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Canvas.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EntityComponents.cpp">
+      <Filter>Game\Entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\EntitySystems.cpp">
+      <Filter>Game\Entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Prototypes.cpp">
+      <Filter>Game\Entities</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UIPlay.cpp">
+      <Filter>Game\UI</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Platform.h">
@@ -90,12 +105,24 @@
     <ClInclude Include="src\SelectionRenderer.h">
       <Filter>Game\Selection</Filter>
     </ClInclude>
-    <ClInclude Include="src\Prototypes.h" />
-    <ClInclude Include="src\EntityComponents.h" />
-    <ClInclude Include="src\InputInteractions.h" />
-    <ClInclude Include="src\UIPlay.h" />
-    <ClInclude Include="src\Canvas.h" />
-    <ClInclude Include="src\EntitySystems.h" />
+    <ClInclude Include="src\InputInteractions.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Canvas.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="src\EntityComponents.h">
+      <Filter>Game\Entities</Filter>
+    </ClInclude>
+    <ClInclude Include="src\EntitySystems.h">
+      <Filter>Game\Entities</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Prototypes.h">
+      <Filter>Game\Entities</Filter>
+    </ClInclude>
+    <ClInclude Include="src\UIPlay.h">
+      <Filter>Game\UI</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="assets\include\lighting.hlsl">
@@ -122,25 +149,45 @@
     <FxCompile Include="assets\flags.hlsl">
       <Filter>Content</Filter>
     </FxCompile>
-    <FxCompile Include="assets\ui.hlsl" />
+    <FxCompile Include="assets\ui.hlsl">
+      <Filter>Content</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="assets\T_ToonBuildingsAtlasT.png" />
-    <Image Include="assets\T_CharactersAtlas.png" />
-    <Image Include="assets\T_ToonBuildingsAtlas.png" />
+    <Image Include="assets\T_CharactersAtlas.png">
+      <Filter>Content</Filter>
+    </Image>
+    <Image Include="assets\T_ToonBuildingsAtlas.png">
+      <Filter>Content</Filter>
+    </Image>
+    <Image Include="assets\T_ToonBuildingsAtlasT.png">
+      <Filter>Content</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="assets\SM_Tree.fbx" />
-    <CopyFileToFolders Include="assets\SM_Character_Worker.fbx" />
     <CopyFileToFolders Include="assets\SM_Deer.fbx">
       <Filter>Content</Filter>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="assets\SM_Farm.fbx" />
     <CopyFileToFolders Include="assets\SM_Flag.fbx">
       <Filter>Content</Filter>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="assets\SM_House.fbx" />
-    <CopyFileToFolders Include="assets\SM_Storehouse.fbx" />
-    <CopyFileToFolders Include="assets\SM_TownCentre.fbx" />
+    <CopyFileToFolders Include="assets\SM_Character_Worker.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_Farm.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_House.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_Storehouse.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_TownCentre.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_Tree.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>
