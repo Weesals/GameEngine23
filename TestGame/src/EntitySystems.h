@@ -15,7 +15,8 @@ class World;
 // Components specific to actions; are transitory and only exist
 // while actions are being processed
 // TODO: Perhaps might be more efficient to not mutate entity
-namespace Components::Runtime {
+namespace Components::Runtime
+{
 	struct ActionTrain
 	{
 		RequestId mRequestId;
@@ -32,10 +33,16 @@ namespace Components::Runtime {
 		RequestId mRequestId;
 		flecs::entity mTarget;
 	};
+	struct ActionBuild
+	{
+		RequestId mRequestId;
+		flecs::entity mTarget;
+	};
 }
 
 namespace Systems
 {
+	// All systems should extend this class
 	class SystemBase
 	{
 	protected:
@@ -49,6 +56,8 @@ namespace Systems
 
 	};
 
+	// A system to redirect action requests to specific action systems
+	// and enable action systems to invoke other action systems
 	class ActionDispatchSystem : public SystemBase
 	{
 		std::vector<std::shared_ptr<ActionSystemBase>> mActionSystems;
@@ -74,6 +83,7 @@ namespace Systems
 		}
 	};
 
+	// An action system (move/attack/build) should extend this
 	class ActionSystemBase : public SystemBase
 	{
 	protected:
@@ -88,6 +98,7 @@ namespace Systems
 		void EndAction(flecs::entity e, Components::RequestId requestId);
 	};
 
+	// Train a new unit
 	class TrainingSystem : public ActionSystemBase
 	{
 	public:
@@ -100,6 +111,7 @@ namespace Systems
 		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
 	};
 
+	// Walk a unit across the landscape to a target location
 	class MovementSystem : public ActionSystemBase
 	{
 	public:
@@ -113,10 +125,25 @@ namespace Systems
 		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
 	};
 
+	// Attack the target entity using melee
 	class AttackSystem : public ActionSystemBase
 	{
 	public:
 		static const int ActionId = 3;
+
+		using ActionSystemBase::ActionSystemBase;
+
+		void Initialise() override;
+		float ScoreRequest(flecs::entity entity, const Components::ActionRequest& action) override;
+		void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) override;
+		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
+	};
+
+	// Attack the target entity using melee
+	class BuildSystem : public ActionSystemBase
+	{
+	public:
+		static const int ActionId = 4;
 
 		using ActionSystemBase::ActionSystemBase;
 

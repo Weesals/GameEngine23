@@ -113,7 +113,7 @@ void MovementSystem::Initialise()
 		.each([&](flecs::entity e, const Components::Runtime::ActionMove& ma, const Components::Mobility& mo, Components::Transform& t)
 			{
 				auto delta = ma.mLocation - t.mPosition;
-				auto dst = delta.Length();
+				auto dst = delta.xz().Length();
 				auto move = mo.mSpeed * time.mDeltaTime;
 				if (move >= dst) move = 1.0f; else move /= dst;
 				t.mPosition += delta * move;
@@ -160,11 +160,13 @@ void AttackSystem::Initialise()
 				}
 
 				auto targetT = aa.mTarget.get<Components::Transform>();
-				auto dst2 = (targetT->mPosition - t.mPosition).LengthSquared();
+				auto targetF = aa.mTarget.get<Components::Footprint>();
+				auto interactPos = Components::Footprint::GetInteractLocation(t.mPosition, targetT, targetF);
+				auto dst2 = (interactPos - t.mPosition).LengthSquared();
 				if (dst2 > 1.5f * 1.5f)
 				{
 					Components::ActionQueue::RequestItem request;
-					request.mLocation = Vector3::MoveTowards(targetT->mPosition, t.mPosition, 1.0f);
+					request.mLocation = Vector3::MoveTowards(interactPos, t.mPosition, 1.0f);
 					request.mRequestId = aa.mRequestId;
 					request.mRequestId.mActionId = MovementSystem::ActionId;
 					mDispatchSystem->BeginAction(e, request);
@@ -178,7 +180,12 @@ void AttackSystem::Initialise()
 }
 float AttackSystem::ScoreRequest(flecs::entity entity, const Components::ActionRequest& action)
 {
-	if ((action.mActionTypes & Components::ActionTypes::Attack) != 0 && action.mTarget.is_alive()) return 2.0f;
+	if ((action.mActionTypes & Components::ActionTypes::Attack) != 0 && action.mTarget.is_alive())
+	{
+		auto targetPlayer = action.mTarget.target<Components::Owner>();
+		auto selfPlayer = entity.target<Components::Owner>();
+		if (targetPlayer != selfPlayer) return 2.0f;
+	}
 	return ActionSystemBase::ScoreRequest(entity, action);
 }
 void AttackSystem::BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request)
@@ -191,4 +198,75 @@ void AttackSystem::BeginInvoke(flecs::entity entity, const Components::ActionQue
 void AttackSystem::EndInvoke(flecs::entity entity, Components::RequestId request)
 {
 	entity.remove<Components::Runtime::ActionAttack>();
+}
+
+void BuildSystem::Initialise()
+{
+	const auto& time = *mWorld->GetECS().get<Singleton::Time>();
+	mWorld->GetECS().system<Components::Runtime::ActionBuild, Components::Transform>()
+		.without<Components::Runtime::ActionMove>()
+		.each([&](flecs::entity e, const Components::Runtime::ActionBuild& ab, Components::Transform& t)
+			{
+				// If target is invalid, cancel the action
+				if (!ab.mTarget.is_alive())
+				{
+					EndAction(e, ab.mRequestId);
+					return;
+				}
+
+				// Walk to target location
+				auto targetT = ab.mTarget.get<Components::Transform>();
+				auto targetF = ab.mTarget.get<Components::Footprint>();
+				auto interactPos = Components::Footprint::GetInteractLocation(t.mPosition, targetT, targetF);
+				auto dst2 = (interactPos - t.mPosition).xz().LengthSquared();
+				if (dst2 > 0.5f * 0.5f)
+				{
+					Components::ActionQueue::RequestItem request;
+					request.mLocation = interactPos;
+					request.mRequestId = ab.mRequestId;
+					request.mRequestId.mActionId = MovementSystem::ActionId;
+					mDispatchSystem->BeginAction(e, request);
+					return;
+				}
+
+				auto construction = ab.mTarget.get_mut<Components::Construction>();
+				if (construction != nullptr)
+				{
+					// Perform construction
+					construction->mBuildPoints += time.mSteps;
+					ab.mTarget.modified<Components::Construction>();
+					if (construction->mBuildPoints < 1000) return;
+					// Complete construction
+					auto newPrefab = mWorld->GetPrototypes()->GetPrototypePrefab(construction->mProtoId);
+					auto target = ab.mTarget;
+					auto prefab = target.target(flecs::IsA);
+					target.remove(flecs::IsA, prefab);
+					target.remove<Components::Construction>();
+					target.is_a(newPrefab);
+				}
+
+				EndAction(e, ab.mRequestId);
+				return;
+			}
+	);
+}
+float BuildSystem::ScoreRequest(flecs::entity entity, const Components::ActionRequest& action)
+{
+	if (action.mTarget.is_alive())
+	{
+		auto construction = action.mTarget.get<Components::Construction>();
+		if (construction != nullptr) return 3.0f;
+	}
+	return -1.0f;
+}
+void BuildSystem::BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request)
+{
+	entity.set(Components::Runtime::ActionBuild {
+		.mRequestId = request.mRequestId,
+		.mTarget = request.mTarget,
+	});
+}
+void BuildSystem::EndInvoke(flecs::entity entity, Components::RequestId request)
+{
+	entity.remove<Components::Runtime::ActionBuild>();
 }

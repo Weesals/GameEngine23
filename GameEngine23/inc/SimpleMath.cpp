@@ -141,24 +141,14 @@ void Vector2::Normalize(Vector2& result) const noexcept
     XMStoreFloat2(&result, X);
 }
 
-void Vector2::Clamp(const Vector2& vmin, const Vector2& vmax) noexcept
+Vector2 Vector2::Clamp(const Vector2& V, const Vector2& vmin, const Vector2& vmax) noexcept
 {
     using namespace DirectX;
-    const XMVECTOR v1 = XMLoadFloat2(this);
+    const XMVECTOR v1 = XMLoadFloat2(&V);
     const XMVECTOR v2 = XMLoadFloat2(&vmin);
     const XMVECTOR v3 = XMLoadFloat2(&vmax);
     const XMVECTOR X = XMVectorClamp(v1, v2, v3);
-    XMStoreFloat2(this, X);
-}
-
-void Vector2::Clamp(const Vector2& vmin, const Vector2& vmax, Vector2& result) const noexcept
-{
-    using namespace DirectX;
-    const XMVECTOR v1 = XMLoadFloat2(this);
-    const XMVECTOR v2 = XMLoadFloat2(&vmin);
-    const XMVECTOR v3 = XMLoadFloat2(&vmax);
-    const XMVECTOR X = XMVectorClamp(v1, v2, v3);
-    XMStoreFloat2(&result, X);
+    return X;
 }
 
 //------------------------------------------------------------------------------

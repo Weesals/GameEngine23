@@ -120,6 +120,7 @@ void Play::Initialise(Platform& platform)
     mActionDispatch->RegisterAction<Systems::TrainingSystem>();
     mActionDispatch->RegisterAction<Systems::MovementSystem>();
     mActionDispatch->RegisterAction<Systems::AttackSystem>();
+    mActionDispatch->RegisterAction<Systems::BuildSystem>();
 }
 
 void Play::Step()
@@ -163,6 +164,15 @@ void Play::Render(CommandBuffer& cmdBuffer)
     mCanvas->Render(cmdBuffer);
 }
 
+// Send an action request (move, attack, etc.) to selected entities
+void Play::SendActionRequest(const Components::ActionRequest& request)
+{
+    for (auto entity : mSelection->GetSelection())
+    {
+        if (!entity.is_alive()) continue;
+        SendActionRequest(entity, request);
+    }
+}
 // Send an action request (move, attack, etc.) to the specified entity
 void Play::SendActionRequest(flecs::entity entity, const Components::ActionRequest& request)
 {

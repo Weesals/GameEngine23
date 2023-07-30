@@ -64,6 +64,17 @@ namespace Components
     {
         Vector2 mSize;
         float mHeight;
+        static Vector3 GetInteractLocation(Vector3 from, const Transform* targetT, const Footprint* targetF)
+        {
+            auto interactPos = targetT->mPosition;
+            // Fallback to distance (within 0.5 units)
+            if (targetF == nullptr) return Vector3::MoveTowards(interactPos, from, 0.5f);
+            // Get nearest point in footprint
+            auto xz = Vector2::Clamp(from.xz(), interactPos.xz() - targetF->mSize / 2.0f, interactPos.xz() + targetF->mSize / 2.0f);
+            interactPos.x = xz.x;
+            interactPos.z = xz.y;
+            return interactPos;
+        }
     };
     // How this object reveals the world
     struct LineOfSight
@@ -104,6 +115,13 @@ namespace Components
         bool mRotateOnPlace : 1;
         // Item belongs to Gaia
         bool mDefaultGaia : 1;
+    };
+
+    struct Construction
+    {
+        int mBuildPoints;
+        // What this construction turns into after built
+        int mProtoId;
     };
 
     struct Renderable

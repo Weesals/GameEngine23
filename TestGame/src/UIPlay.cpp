@@ -43,13 +43,10 @@ void UIPlay::Render(CommandBuffer& cmdBuffer)
 				auto protoId = world->GetPrototypes()->GetPrototypeId(item);
 				if (ImGui::Button(item.c_str(), ImVec2(60, 20)))
 				{
-					for (auto& entity : selection->GetSelection())
-					{
-						mPlay->SendActionRequest(entity, Components::ActionRequest{
-							.mActionTypeId = Systems::TrainingSystem::ActionId,
+					mPlay->SendActionRequest(Components::ActionRequest{
+						.mActionTypeId = Systems::TrainingSystem::ActionId,
 							.mActionData = protoId,
-						});
-					}
+					});
 				}
 				auto training = hero.get<Components::Runtime::ActionTrain>();
 				if (training != nullptr && training->mProtoId == protoId)
@@ -65,7 +62,7 @@ void UIPlay::Render(CommandBuffer& cmdBuffer)
 		if (builds != nullptr && ImGui::Begin("Builds", 0, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
 		{
 			ImGui::SetWindowPos(ImVec2(240.0f, size.y - wsize.y - 10.0f), ImGuiCond_Always);
-			ImGui::BeginTable("Builds", 5);
+			ImGui::BeginTable("Builds", 10);
 			auto placeId = mPlay->GetPlacementProtoId();
 			for (auto item : builds->mBuilds)
 			{

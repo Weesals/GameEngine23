@@ -189,5 +189,11 @@
     <CopyFileToFolders Include="assets\SM_Tree.fbx">
       <Filter>Content</Filter>
     </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_Barracks.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="assets\SM_ArcheryRange.fbx">
+      <Filter>Content</Filter>
+    </CopyFileToFolders>
   </ItemGroup>
 </Project>

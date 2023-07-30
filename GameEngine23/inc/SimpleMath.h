@@ -128,12 +128,10 @@ namespace DirectX
             Vector2 Normalize() noexcept;
             void Normalize(Vector2& result) const noexcept;
 
-            void Clamp(const Vector2& vmin, const Vector2& vmax) noexcept;
-            void Clamp(const Vector2& vmin, const Vector2& vmax, Vector2& result) const noexcept;
-
             // Static functions
             static float Dot(const Vector2& V1, const Vector2& V2) noexcept;
             static float Cross(const Vector2& V1, const Vector2& V2) noexcept;
+            static Vector2 Clamp(const Vector2& V, const Vector2& vmin, const Vector2& vmax) noexcept;
 
             static float Distance(const Vector2& v1, const Vector2& v2) noexcept;
             static float DistanceSquared(const Vector2& v1, const Vector2& v2) noexcept;

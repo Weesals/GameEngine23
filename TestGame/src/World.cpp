@@ -178,6 +178,7 @@ flecs::entity World::RaycastEntity(Ray& ray) const
 
 flecs::entity World::SpawnEntity(int protoId, flecs::entity owner, const Components::Transform& tform)
 {
+    if (protoId == -1) return flecs::entity::null();
     return mECS.entity()
         .is_a(mPrototypes->GetPrototypePrefab(protoId))
         .add<Components::Owner>(owner)

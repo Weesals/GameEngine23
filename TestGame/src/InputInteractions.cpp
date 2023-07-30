@@ -62,17 +62,12 @@ bool OrderInteraction::OnBegin(Performance& performance)
 
     auto target = world->RaycastEntity(ray);
     // Order selected entities
-    for (auto entity : selection->GetSelection())
-    {
-        if (!entity.is_alive()) continue;
-        mPlay->SendActionRequest(entity,
-            {
-                .mActionTypeId = -1,
-                .mActionTypes = Components::ActionTypes::All,
-                .mTarget = target,
-                .mLocation = pos,
-            });
-    }
+    mPlay->SendActionRequest({
+            .mActionTypeId = -1,
+            .mActionTypes = Components::ActionTypes::All,
+            .mTarget = target,
+            .mLocation = pos,
+        });
 
     // Flash effect to make ordering more obvious
     // TODO: Only flash when action resolves to attack/gather/interact
@@ -217,7 +212,13 @@ void PlacementInteraction::OnUpdate(Performance& performance)
     // Perform placement with left-click
     if (performance.FrameRelease(0))
     {
-        mPlay->GetWorld()->SpawnEntity(mProtoId, mPlay->GetWorld()->GetPlayer(1), mTransform);
+        auto constructionProtoId = mPlay->GetWorld()->GetPrototypes()->GetPrototypeId("Construction");
+        auto construction = mPlay->GetWorld()->SpawnEntity(constructionProtoId, mPlay->GetWorld()->GetPlayer(1), mTransform);
+        construction.set(Components::Construction{.mProtoId = mProtoId, });
+        mPlay->SendActionRequest(Components::ActionRequest{
+            .mActionTypeId = Systems::BuildSystem::ActionId,
+            .mTarget = construction,
+        });
         performance.SetInteraction(nullptr);
     }
     // Cancel with right-click
