@@ -86,27 +86,8 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
 
     // Create descriptor heaps.
     {
-        // Describe and create a render target view (RTV) descriptor heap.
-        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-        rtvHeapDesc.NumDescriptors = FrameCount;
-        rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mRTVHeap)));
-
-        // Describe and create a depth stencil view (DSV) descriptor heap.
-        // Each frame has its own depth stencils (to write shadows onto) 
-        // and then there is one for the scene itself.
-        D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-        dsvHeapDesc.NumDescriptors = FrameCount;
-        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mDSVHeap)));
-
         // Describe and create a shader resource view (SRV) and constant 
-        // buffer view (CBV) descriptor heap.  Heap layout: null views, 
-        // object diffuse + normal textures views, frame 1's shadow buffer, 
-        // frame 1's 2x constant buffer, frame 2's shadow buffer, frame 2's 
-        // 2x constant buffers, etc...
+        // buffer view (CBV) descriptor heap.
         D3D12_DESCRIPTOR_HEAP_DESC cbvSrvHeapDesc = {};
         cbvSrvHeapDesc.NumDescriptors = 1024;
         cbvSrvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -114,12 +95,25 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&cbvSrvHeapDesc, IID_PPV_ARGS(&mSRVHeap)));
 
         // Describe and create a sampler descriptor heap.
-        // NOTE: Not currently used; no texture support
         D3D12_DESCRIPTOR_HEAP_DESC samplerHeapDesc = {};
-        samplerHeapDesc.NumDescriptors = 2;        // One clamp and one wrap sampler.
+        samplerHeapDesc.NumDescriptors = 64;
         samplerHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
         samplerHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&samplerHeapDesc, IID_PPV_ARGS(&mSamplerHeap)));
+
+        // Describe and create a render target view (RTV) descriptor heap.
+        D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+        rtvHeapDesc.NumDescriptors = 128;
+        rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mRTVHeap)));
+
+        // Describe and create a depth stencil view (DSV) descriptor heap.
+        D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+        dsvHeapDesc.NumDescriptors = 64;
+        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mDSVHeap)));
 
         mDescriptorHandleSize = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     }
@@ -133,15 +127,21 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
 
     // Unsure what to do here.. We should allocate the maximum we need? But not too much?
     // TODO: Investigate more
-    CD3DX12_ROOT_PARAMETER1 rootParameters[3];
+    // TODO: Do what UE does; create a root layouts dynamically
+    CD3DX12_ROOT_PARAMETER1 rootParameters[4] = {};
     rootParameters[0].InitAsConstantBufferView(0);
     rootParameters[1].InitAsConstantBufferView(1);
     CD3DX12_DESCRIPTOR_RANGE1 srvR0(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    CD3DX12_DESCRIPTOR_RANGE1 srvR1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
     rootParameters[2].InitAsDescriptorTable(1, &srvR0);
+    rootParameters[3].InitAsDescriptorTable(1, &srvR1);
     //rootParameters[2].InitAsShaderResourceView(0, 0);
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = { };
-    CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = { CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR) };
+    CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
+        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
+        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
+    };
     rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, _countof(samplerDesc), samplerDesc,
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
         D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -151,7 +151,11 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
 
     ComPtr<ID3DBlob> signature;
     ComPtr<ID3DBlob> error;
-    ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
+    auto hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
+    if (FAILED(hr))
+    {
+        OutputDebugStringA((char*)error->GetBufferPointer());
+    }
     ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 }
 

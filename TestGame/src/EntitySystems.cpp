@@ -5,11 +5,37 @@
 
 using namespace Systems;
 
+bool ActionSystemBase::RequireInteract(flecs::entity source, flecs::entity target, Actions::RequestId requestId)
+{
+	// If target is invalid, cancel the action
+	if (!target.is_alive())
+	{
+		EndAction(source, requestId);
+		return false;
+	}
+
+	// Walk to target location
+	auto sourceT = source.get<Components::Transform>();
+	auto targetT = target.get<Components::Transform>();
+	auto targetF = target.get<Components::Footprint>();
+	auto interactPos = Components::Footprint::GetInteractLocation(sourceT->mPosition, targetT, targetF);
+	auto dst2 = (interactPos - sourceT->mPosition).xz().LengthSquared();
+	if (dst2 > 0.5f * 0.5f)
+	{
+		Components::ActionQueue::RequestItem request;
+		request.mLocation = interactPos;
+		request.mRequestId = requestId;
+		request.mRequestId.mActionId = MovementSystem::ActionId;
+		mDispatchSystem->BeginAction(source, request);
+		return false;
+	}
+	return true;
+}
 void ActionSystemBase::Bind(ActionDispatchSystem* dispatchSystem)
 {
 	mDispatchSystem = dispatchSystem;
 }
-void ActionSystemBase::EndAction(flecs::entity e, Components::RequestId requestId)
+void ActionSystemBase::EndAction(flecs::entity e, Actions::RequestId requestId)
 {
 	mDispatchSystem->EndAction(e, requestId);
 }
@@ -30,7 +56,7 @@ void ActionDispatchSystem::Initialise()
 				aq.mRequests.erase(aq.mRequests.begin() + 0);
 			});
 }
-int ActionDispatchSystem::GetActionForRequest(flecs::entity e, const Components::ActionRequest& request) {
+int ActionDispatchSystem::GetActionForRequest(flecs::entity e, const Actions::ActionRequest& request) {
 	if (request.mActionTypeId != -1) return request.mActionTypeId;
 	auto bestScore = 0.0f;
 	int bestSystem = -1;
@@ -50,7 +76,7 @@ void ActionDispatchSystem::BeginAction(flecs::entity e, const Components::Action
 	mActiveRequests.insert(std::make_pair(e, request.mRequestId));
 	mActionSystems[request.mRequestId.mActionId]->BeginInvoke(e, request);
 }
-void ActionDispatchSystem::EndAction(flecs::entity e, Components::RequestId request)
+void ActionDispatchSystem::EndAction(flecs::entity e, Actions::RequestId request)
 {
 	auto begin = mActiveRequests.lower_bound(e);
 	auto end = mActiveRequests.upper_bound(e);
@@ -62,7 +88,7 @@ void ActionDispatchSystem::EndAction(flecs::entity e, Components::RequestId requ
 		break;
 	}
 }
-void ActionDispatchSystem::CancelAction(flecs::entity e, Components::RequestId request)
+void ActionDispatchSystem::CancelAction(flecs::entity e, Actions::RequestId request)
 {
 	auto begin = mActiveRequests.lower_bound(e);
 	auto end = mActiveRequests.upper_bound(e);
@@ -101,7 +127,7 @@ void TrainingSystem::BeginInvoke(flecs::entity entity, const Components::ActionQ
 		.mTrainPoints = 0,
 	});
 }
-void TrainingSystem::EndInvoke(flecs::entity entity, Components::RequestId request)
+void TrainingSystem::EndInvoke(flecs::entity entity, Actions::RequestId request)
 {
 	entity.remove<Components::Runtime::ActionTrain>();
 }
@@ -129,9 +155,9 @@ void MovementSystem::Initialise()
 				if (move >= 1.0f) EndAction(e, ma.mRequestId);
 			});
 }
-float MovementSystem::ScoreRequest(flecs::entity entity, const Components::ActionRequest& action)
+float MovementSystem::ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action)
 {
-	if ((action.mActionTypes & Components::ActionTypes::Move) != 0) return 1.0f;
+	if ((action.mActionTypes & Actions::ActionTypes::Move) != 0) return 1.0f;
 	return ActionSystemBase::ScoreRequest(entity, action);
 }
 void MovementSystem::BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request)
@@ -141,7 +167,7 @@ void MovementSystem::BeginInvoke(flecs::entity entity, const Components::ActionQ
 		.mLocation = request.mLocation,
 	});
 }
-void MovementSystem::EndInvoke(flecs::entity entity, Components::RequestId request)
+void MovementSystem::EndInvoke(flecs::entity entity, Actions::RequestId request)
 {
 	entity.remove<Components::Runtime::ActionMove>();
 }
@@ -153,34 +179,16 @@ void AttackSystem::Initialise()
 		.without<Components::Runtime::ActionMove>()
 		.each([&](flecs::entity e, const Components::Runtime::ActionAttack& aa, Components::Transform& t)
 			{
-				if (!aa.mTarget.is_alive())
-				{
-					EndAction(e, aa.mRequestId);
-					return;
-				}
+				// Need to be close enough to interact
+				if (!RequireInteract(e, aa.mTarget, aa.mRequestId)) return;
 
-				auto targetT = aa.mTarget.get<Components::Transform>();
-				auto targetF = aa.mTarget.get<Components::Footprint>();
-				auto interactPos = Components::Footprint::GetInteractLocation(t.mPosition, targetT, targetF);
-				auto dst2 = (interactPos - t.mPosition).LengthSquared();
-				if (dst2 > 1.5f * 1.5f)
-				{
-					Components::ActionQueue::RequestItem request;
-					request.mLocation = Vector3::MoveTowards(interactPos, t.mPosition, 1.0f);
-					request.mRequestId = aa.mRequestId;
-					request.mRequestId.mActionId = MovementSystem::ActionId;
-					mDispatchSystem->BeginAction(e, request);
-				}
-				else
-				{
-					aa.mTarget.destruct();
-				}
+				aa.mTarget.destruct();
 			}
 	);
 }
-float AttackSystem::ScoreRequest(flecs::entity entity, const Components::ActionRequest& action)
+float AttackSystem::ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action)
 {
-	if ((action.mActionTypes & Components::ActionTypes::Attack) != 0 && action.mTarget.is_alive())
+	if ((action.mActionTypes & Actions::ActionTypes::Attack) != 0 && action.mTarget.is_alive())
 	{
 		auto targetPlayer = action.mTarget.target<Components::Owner>();
 		auto selfPlayer = entity.target<Components::Owner>();
@@ -195,7 +203,7 @@ void AttackSystem::BeginInvoke(flecs::entity entity, const Components::ActionQue
 		.mTarget = request.mTarget,
 	});
 }
-void AttackSystem::EndInvoke(flecs::entity entity, Components::RequestId request)
+void AttackSystem::EndInvoke(flecs::entity entity, Actions::RequestId request)
 {
 	entity.remove<Components::Runtime::ActionAttack>();
 }
@@ -207,27 +215,8 @@ void BuildSystem::Initialise()
 		.without<Components::Runtime::ActionMove>()
 		.each([&](flecs::entity e, const Components::Runtime::ActionBuild& ab, Components::Transform& t)
 			{
-				// If target is invalid, cancel the action
-				if (!ab.mTarget.is_alive())
-				{
-					EndAction(e, ab.mRequestId);
-					return;
-				}
-
-				// Walk to target location
-				auto targetT = ab.mTarget.get<Components::Transform>();
-				auto targetF = ab.mTarget.get<Components::Footprint>();
-				auto interactPos = Components::Footprint::GetInteractLocation(t.mPosition, targetT, targetF);
-				auto dst2 = (interactPos - t.mPosition).xz().LengthSquared();
-				if (dst2 > 0.5f * 0.5f)
-				{
-					Components::ActionQueue::RequestItem request;
-					request.mLocation = interactPos;
-					request.mRequestId = ab.mRequestId;
-					request.mRequestId.mActionId = MovementSystem::ActionId;
-					mDispatchSystem->BeginAction(e, request);
-					return;
-				}
+				// Need to be close enough to interact
+				if (!RequireInteract(e, ab.mTarget, ab.mRequestId)) return;
 
 				auto construction = ab.mTarget.get_mut<Components::Construction>();
 				if (construction != nullptr)
@@ -237,7 +226,8 @@ void BuildSystem::Initialise()
 					ab.mTarget.modified<Components::Construction>();
 					if (construction->mBuildPoints < 1000) return;
 					// Complete construction
-					auto newPrefab = mWorld->GetPrototypes()->GetPrototypePrefab(construction->mProtoId);
+					auto bundleId = MutatedPrototypes::GetBundleIdFromEntity(ab.mTarget);
+					auto newPrefab = mWorld->GetMutatedProtos()->RequireMutatedPrefab(bundleId, construction->mProtoId);
 					auto target = ab.mTarget;
 					auto prefab = target.target(flecs::IsA);
 					target.remove(flecs::IsA, prefab);
@@ -250,7 +240,7 @@ void BuildSystem::Initialise()
 			}
 	);
 }
-float BuildSystem::ScoreRequest(flecs::entity entity, const Components::ActionRequest& action)
+float BuildSystem::ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action)
 {
 	if (action.mTarget.is_alive())
 	{
@@ -266,7 +256,88 @@ void BuildSystem::BeginInvoke(flecs::entity entity, const Components::ActionQueu
 		.mTarget = request.mTarget,
 	});
 }
-void BuildSystem::EndInvoke(flecs::entity entity, Components::RequestId request)
+void BuildSystem::EndInvoke(flecs::entity entity, Actions::RequestId request)
 {
 	entity.remove<Components::Runtime::ActionBuild>();
+}
+
+void GatherSystem::Initialise()
+{
+	const auto& time = *mWorld->GetECS().get<Singleton::Time>();
+	mWorld->GetECS().system<Components::Runtime::ActionGather, Components::Gathers, Components::Transform>()
+		.without<Components::Runtime::ActionMove>()
+		.each([&](flecs::entity e, Components::Runtime::ActionGather& ag, Components::Gathers& g, Components::Transform& t)
+			{
+				if (g.mHolding.mAmount < 10)
+				{
+					// Need to be close enough to interact
+					if (!RequireInteract(e, ag.mTarget, ag.mRequestId)) return;
+
+					auto stockpile = ag.mTarget.get_mut<Components::Stockpile>();
+					if (stockpile != nullptr && !stockpile->mResources.empty())
+					{
+						auto& res = stockpile->mResources.front();
+						ag.mStrikeSteps += time.mSteps;
+						int stepsPerStrike = 1000;
+						auto ticks = ag.mStrikeSteps / stepsPerStrike;
+						ticks = std::min(std::min(res.mAmount, ticks), 10 - g.mHolding.mAmount);
+						ag.mStrikeSteps -= ticks * stepsPerStrike;
+						res.mAmount -= ticks;
+						if (g.mHolding.mResourceId != res.mResourceId)
+							g.mHolding = ResourceSet(res.mResourceId, 0);
+						g.mHolding.mAmount += ticks;
+						return;
+					}
+				}
+				else
+				{
+					// Try to find the nearest drop target
+					if (!ag.mDropTarget.is_alive())
+					{
+						float nearest2 = std::numeric_limits<float>::max();
+						flecs::entity nearest = flecs::entity::null();
+						mWorld->GetECS().each([&](flecs::entity e, Components::Dropsite d, const Components::Transform& dt)
+							{
+								auto dst2 = Vector3::DistanceSquared(dt.mPosition, t.mPosition);
+								if (dst2 < nearest2)
+								{
+									nearest2 = dst2;
+									nearest = e;
+								}
+							}
+						);
+						ag.mDropTarget = nearest;
+					}
+					// Need to be close enough to interact
+					if (!RequireInteract(e, ag.mDropTarget, ag.mRequestId)) return;
+					auto owner = ag.mDropTarget.target<Components::Owner>();
+					auto* pdata = owner.get_mut<MetaComponents::PlayerData>();
+					pdata->DeliverResource(g.mHolding);
+					g.mHolding = ResourceSet();
+					return;
+				}
+				EndAction(e, ag.mRequestId);
+				return;
+			}
+	);
+}
+float GatherSystem::ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action)
+{
+	if (action.mTarget.is_alive())
+	{
+		auto stockpile = action.mTarget.get<Components::Stockpile>();
+		if (stockpile != nullptr) return 3.0f;
+	}
+	return -1.0f;
+}
+void GatherSystem::BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request)
+{
+	entity.set(Components::Runtime::ActionGather {
+		.mRequestId = request.mRequestId,
+		.mTarget = request.mTarget,
+	});
+}
+void GatherSystem::EndInvoke(flecs::entity entity, Actions::RequestId request)
+{
+	entity.remove<Components::Runtime::ActionGather>();
 }

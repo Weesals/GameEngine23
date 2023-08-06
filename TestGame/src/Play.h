@@ -78,8 +78,8 @@ public:
     void Render(CommandBuffer& cmdBuffer);
 
 	// Send an action request (move, attack, etc.) to the specified entity
-	void SendActionRequest(const Components::ActionRequest& request);
-	void SendActionRequest(flecs::entity entity, const Components::ActionRequest& request);
+	void SendActionRequest(const Actions::ActionRequest& request);
+	void SendActionRequest(flecs::entity entity, const Actions::ActionRequest& request);
 
 	// Begin placing a building (or other placeable)
 	void BeginPlacement(int protoId);

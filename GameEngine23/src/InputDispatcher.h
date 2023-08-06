@@ -115,7 +115,7 @@ public:
 
     void Initialise(const std::shared_ptr<Input>& input);
     void RegisterInteraction(const std::shared_ptr<InteractionBase>& interaction, bool enable);
-    void Update(bool allowInput);
+    void Update(bool allowInput = true);
 
     template<class T> const std::shared_ptr<T> FindInteraction() const
     {

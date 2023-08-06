@@ -41,6 +41,7 @@ class World
     // Entities are stored in an ECS world
     flecs::world mECS;
     std::shared_ptr<Prototypes> mPrototypes;
+    std::shared_ptr<MutatedPrototypes> mMutatedProtos;
     std::vector<flecs::entity> mPlayerEntities;
 
     // Placeholder assets for rendering the world
@@ -56,6 +57,7 @@ public:
     const std::shared_ptr<LandscapeRenderer>& GetLandscapeRenderer() const { return mLandscapeRenderer; }
     flecs::world& GetECS() { return mECS; }
     const std::shared_ptr<Prototypes>& GetPrototypes() const { return mPrototypes; }
+    const std::shared_ptr<MutatedPrototypes>& GetMutatedProtos() const { return mMutatedProtos; }
     const std::shared_ptr<Material>& GetLitMaterial() const { return mLitMaterial; }
 
     // Update all systems of the world

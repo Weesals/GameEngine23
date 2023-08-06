@@ -46,6 +46,8 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
 
     mPrototypes = std::make_shared<Prototypes>();
     mPrototypes->Load(mECS);
+    mMutatedProtos = std::make_shared<MutatedPrototypes>();
+    mMutatedProtos->Load(&mECS, mPrototypes);
 
     auto playerBase = mECS.entity("Player Base")
         .set(MetaComponents::PlayerData("Unknown Player", 0));
@@ -56,13 +58,15 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
         auto player = mECS.entity(name.c_str())
             .is_a(playerBase)
             .set(MetaComponents::PlayerData(name, i));
+        auto bundle = mMutatedProtos->CrateStateBundle(name);
+        player.set(MutatedPrototypes::UsesBundle{.mBundleId = bundle});
         mPlayerEntities.push_back(player);
     }
 
     // Randomly assign a move target to entities
     mECS.system<Components::Transform>()
         .with<Components::Mobility>()
-        .with<Components::Wanderer>()
+        .with<Components::Wanders>()
         .without<Components::Runtime::ActionMove>()
         .each([&](flecs::entity e, const Components::Transform& t) {
         // Choose a target at random times
@@ -179,8 +183,9 @@ flecs::entity World::RaycastEntity(Ray& ray) const
 flecs::entity World::SpawnEntity(int protoId, flecs::entity owner, const Components::Transform& tform)
 {
     if (protoId == -1) return flecs::entity::null();
+    auto bundleId = MutatedPrototypes::GetBundleIdFromEntity(owner);
     return mECS.entity()
-        .is_a(mPrototypes->GetPrototypePrefab(protoId))
+        .is_a(mMutatedProtos->RequireMutatedPrefab(bundleId, protoId))
         .add<Components::Owner>(owner)
         .set(tform);
 }

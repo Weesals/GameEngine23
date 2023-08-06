@@ -9,6 +9,7 @@
 #include <ResourceLoader.h>
 #include "EntityComponents.h"
 
+// Store named entity "prototypes" which an entity can be an instance of
 class Prototypes
 {
 	std::vector<flecs::entity> mPrototypes;
@@ -31,3 +32,35 @@ public:
 
 };
 
+class MutatedPrototypes
+{
+	struct Bundle
+	{
+		std::string mName;
+		std::vector<int> mMutations;
+		std::map<int, flecs::entity> mProtoCaches;
+	};
+	struct Mutation
+	{
+		std::string mName;
+		std::function<bool(flecs::entity)> mIsRelevant;
+		std::function<void(flecs::entity)> mApply;
+	};
+	flecs::world* mECS;
+	std::shared_ptr<Prototypes> mPrototypes;
+	std::vector<Bundle> mBundles;
+	std::vector<Mutation> mMutations;
+
+public:
+	struct UsesBundle { int mBundleId; };
+
+	void Load(flecs::world* ecs, const std::shared_ptr<Prototypes>& prototypes);
+	int CrateStateBundle(const std::string_view& name);
+	int GetStateBundleId(const std::string_view& name);
+	int FindMutationId(const std::string_view& name) const;
+	bool ApplyMutation(int bundleId, int mutationId);
+	bool GetHasMutation(int bundleId, int mutationId) const;
+	flecs::entity RequireMutatedPrefab(int stateBundle, int protoId);
+
+	static int GetBundleIdFromEntity(flecs::entity);
+};

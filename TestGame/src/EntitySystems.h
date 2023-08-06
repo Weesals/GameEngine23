@@ -19,24 +19,31 @@ namespace Components::Runtime
 {
 	struct ActionTrain
 	{
-		RequestId mRequestId;
+		Actions::RequestId mRequestId;
 		int mProtoId;
 		int mTrainPoints;
 	};
 	struct ActionMove
 	{
-		RequestId mRequestId;
+		Actions::RequestId mRequestId;
 		Vector3 mLocation;
 	};
 	struct ActionAttack
 	{
-		RequestId mRequestId;
+		Actions::RequestId mRequestId;
 		flecs::entity mTarget;
 	};
 	struct ActionBuild
 	{
-		RequestId mRequestId;
+		Actions::RequestId mRequestId;
 		flecs::entity mTarget;
+	};
+	struct ActionGather
+	{
+		Actions::RequestId mRequestId;
+		flecs::entity mTarget;
+		flecs::entity mDropTarget;
+		int mStrikeSteps;
 	};
 }
 
@@ -61,16 +68,16 @@ namespace Systems
 	class ActionDispatchSystem : public SystemBase
 	{
 		std::vector<std::shared_ptr<ActionSystemBase>> mActionSystems;
-		std::multimap<flecs::entity, Components::RequestId> mActiveRequests;
+		std::multimap<flecs::entity, Actions::RequestId> mActiveRequests;
 	public:
 		using SystemBase::SystemBase;
 		void Initialise() override;
-		int GetActionForRequest(flecs::entity e, const Components::ActionRequest& request);
+		int GetActionForRequest(flecs::entity e, const Actions::ActionRequest& request);
 
 		void BeginAction(flecs::entity e, const Components::ActionQueue::RequestItem& request);
-		void EndAction(flecs::entity e, Components::RequestId request);
+		void EndAction(flecs::entity e, Actions::RequestId request);
 
-		void CancelAction(flecs::entity e, Components::RequestId request);
+		void CancelAction(flecs::entity e, Actions::RequestId request);
 
 		template<class T>
 		void RegisterAction()
@@ -88,14 +95,15 @@ namespace Systems
 	{
 	protected:
 		ActionDispatchSystem* mDispatchSystem;
+		bool RequireInteract(flecs::entity src, flecs::entity target, Actions::RequestId requestId);
 	public:
 		using SystemBase::SystemBase;
 
 		void Bind(ActionDispatchSystem* dispatchSystem);
-		virtual float ScoreRequest(flecs::entity entity, const Components::ActionRequest& action) { return -1.0f; }
+		virtual float ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action) { return -1.0f; }
 		virtual void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) { }
-		virtual void EndInvoke(flecs::entity entity, Components::RequestId request) { }
-		void EndAction(flecs::entity e, Components::RequestId requestId);
+		virtual void EndInvoke(flecs::entity entity, Actions::RequestId request) { }
+		void EndAction(flecs::entity e, Actions::RequestId requestId);
 	};
 
 	// Train a new unit
@@ -108,7 +116,7 @@ namespace Systems
 		
 		void Initialise() override;
 		void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) override;
-		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
+		void EndInvoke(flecs::entity entity, Actions::RequestId request) override;
 	};
 
 	// Walk a unit across the landscape to a target location
@@ -120,9 +128,9 @@ namespace Systems
 		using ActionSystemBase::ActionSystemBase;
 
 		void Initialise() override;
-		float ScoreRequest(flecs::entity entity, const Components::ActionRequest& action) override;
+		float ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action) override;
 		void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) override;
-		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
+		void EndInvoke(flecs::entity entity, Actions::RequestId request) override;
 	};
 
 	// Attack the target entity using melee
@@ -134,12 +142,13 @@ namespace Systems
 		using ActionSystemBase::ActionSystemBase;
 
 		void Initialise() override;
-		float ScoreRequest(flecs::entity entity, const Components::ActionRequest& action) override;
+		float ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action) override;
 		void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) override;
-		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
+		void EndInvoke(flecs::entity entity, Actions::RequestId request) override;
 	};
 
-	// Attack the target entity using melee
+	// Construct or repair a building
+	// (target must have Construction component)
 	class BuildSystem : public ActionSystemBase
 	{
 	public:
@@ -148,9 +157,24 @@ namespace Systems
 		using ActionSystemBase::ActionSystemBase;
 
 		void Initialise() override;
-		float ScoreRequest(flecs::entity entity, const Components::ActionRequest& action) override;
+		float ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action) override;
 		void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) override;
-		void EndInvoke(flecs::entity entity, Components::RequestId request) override;
+		void EndInvoke(flecs::entity entity, Actions::RequestId request) override;
+	};
+
+	// Gather from a resource stockpile
+	// (target must have Stockpile component)
+	class GatherSystem : public ActionSystemBase
+	{
+	public:
+		static const int ActionId = 5;
+
+		using ActionSystemBase::ActionSystemBase;
+
+		void Initialise() override;
+		float ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action) override;
+		void BeginInvoke(flecs::entity entity, const Components::ActionQueue::RequestItem& request) override;
+		void EndInvoke(flecs::entity entity, Actions::RequestId request) override;
 	};
 
 }

@@ -1,4 +1,5 @@
 #include "LandscapeRenderer.h"
+#include <ResourceLoader.h>
 
 #include <algorithm>
 #include <numeric>
@@ -9,6 +10,8 @@ void LandscapeRenderer::Initialise(std::shared_ptr<Landscape>& landscape, std::s
 	if (mLandMaterial == nullptr) {
 		mLandMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/landscape.hlsl"), std::make_shared<Shader>(L"assets/landscape.hlsl"));
 		mLandMaterial->InheritProperties(rootMaterial);
+		auto tex = ResourceLoader::GetSingleton().LoadTexture(L"assets/T_Grass_BaseColor.png");
+		mLandMaterial->SetUniform("GrassTexture", tex);
 	}
 	mChangeListener = mLandscape->RegisterOnLandscapeChanged([this](auto& landscape, auto& changed)
 		{

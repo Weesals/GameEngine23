@@ -19,6 +19,7 @@ cbuffer ConstantBuffer : register(b1)
 
 Texture2D<float4> HeightMap : register(t0);
 SamplerState g_sampler : register(s0);
+Texture2D<float4> GrassTexture : register(t1);
 
 #include "include/lighting.hlsl"
 #include "include/noise.hlsl"
@@ -33,9 +34,9 @@ struct VSInput
 struct PSInput
 {
     float4 position : SV_POSITION;
-    float3 viewPos : TEXCOORD1;
     float3 normal : NORMAL;
     float3 localPos : TEXCOORD0;
+    float3 viewPos : TEXCOORD1;
 };
 
 PSInput VSMain(VSInput input)
@@ -75,6 +76,12 @@ PSInput VSMain(VSInput input)
     return result;
 }
 
+float2 PermuteUV(float2 uv, float rnd)
+{
+    rnd *= 3.14 * 2.0;
+    return uv.xy * cos(rnd) + uv.yx * sin(rnd) * float2(1, -1);
+}
+
 float4 PSMain(PSInput input) : SV_TARGET
 {    
     float3 viewDir = normalize(input.viewPos);
@@ -85,6 +92,34 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 Specular = 0.06;
     float Roughness = 0.7;
     float Metallic = 0.0;
+    
+    
+    {
+        float2 p = input.localPos.xz / 12.0;
+        float2 i = floor(p + dot(p, 1.0) * SF2);
+        float2 L = i - dot(i, 1.0) * SG2;
+    
+        float2 d = p - L;
+        float2 o = (d.x > d.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
+        float2 p0 = L;
+        float2 p1 = L + o - SG2;
+        float2 p2 = L + 1.0 - 2.0 * SG2;
+
+        float2 RndVec = float2(10.15, 23.78);
+        float3 rnd = float3(dot(i, RndVec), dot(i + o, RndVec), dot(i + 1, RndVec));
+        rnd = frac(sin(rnd) * 100);
+        Albedo = 0;
+        float3 w = float3(dot(p - p0, p - p0), dot(p - p1, p - p1), dot(p - p2, p - p2));
+        w = max(0.5 - w, 0.0);
+        w = pow(w, 4.0);
+        w /= dot(w, 1);
+        [unroll]
+        for (int j = 0; j < 3; ++j)
+        {
+            Albedo += w[j] *
+                GrassTexture.Sample(g_sampler, PermuteUV(input.localPos.xz * 0.05, rnd[j])).rgb;
+        }
+    }
     
     // The light
     float3 o = ComputeLight(

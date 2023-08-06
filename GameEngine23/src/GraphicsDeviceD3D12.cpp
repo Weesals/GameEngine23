@@ -459,7 +459,7 @@ public:
                 cache.UpdateTextureData(d3dTex, **texture, mCmdList.Get());
             auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
             handle.ptr += d3dTex->mSRVOffset;
-            mCmdList->SetGraphicsRootDescriptorTable(2, handle);
+            mCmdList->SetGraphicsRootDescriptorTable(2 + rb->mBindPoint, handle);
             //mCmdList->SetGraphicsRootShaderResourceView(2, d3dTex->mTexture->GetGPUVirtualAddress());
         }
 

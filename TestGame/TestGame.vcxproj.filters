@@ -163,6 +163,9 @@
     <Image Include="assets\T_ToonBuildingsAtlasT.png">
       <Filter>Content</Filter>
     </Image>
+    <Image Include="assets\T_Grass_BaseColor.png">
+      <Filter>Content</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\SM_Deer.fbx">

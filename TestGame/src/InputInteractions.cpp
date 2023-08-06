@@ -64,7 +64,7 @@ bool OrderInteraction::OnBegin(Performance& performance)
     // Order selected entities
     mPlay->SendActionRequest({
             .mActionTypeId = -1,
-            .mActionTypes = Components::ActionTypes::All,
+            .mActionTypes = Actions::ActionTypes::All,
             .mTarget = target,
             .mLocation = pos,
         });
@@ -215,7 +215,7 @@ void PlacementInteraction::OnUpdate(Performance& performance)
         auto constructionProtoId = mPlay->GetWorld()->GetPrototypes()->GetPrototypeId("Construction");
         auto construction = mPlay->GetWorld()->SpawnEntity(constructionProtoId, mPlay->GetWorld()->GetPlayer(1), mTransform);
         construction.set(Components::Construction{.mProtoId = mProtoId, });
-        mPlay->SendActionRequest(Components::ActionRequest{
+        mPlay->SendActionRequest(Actions::ActionRequest{
             .mActionTypeId = Systems::BuildSystem::ActionId,
             .mTarget = construction,
         });

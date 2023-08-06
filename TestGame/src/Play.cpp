@@ -66,7 +66,7 @@ void Play::Initialise(Platform& platform)
     mRootMaterial->SetUniform("Resolution", clientSize);
     mRootMaterial->SetUniform("DayTime", 0.5f);
     mRootMaterial->SetUniform("_WorldSpaceLightDir0", lightVec);
-    mRootMaterial->SetUniform("_LightColor0", 3 * Vector3(1.0f, 0.98f, 0.95f));
+    mRootMaterial->SetUniform("_LightColor0", 4 * Vector3(1.0f, 0.98f, 0.95f));
     std::vector<Color> playerColors = {
         Color(1.0f, 0.8f, 0.5f),
         Color(0.1f, 0.2f, 1.0f),
@@ -115,12 +115,14 @@ void Play::Initialise(Platform& platform)
     // Initialise world
     mWorld->Initialise(mRootMaterial);
 
+    // Setup user interactions
     mActionDispatch = std::make_shared<Systems::ActionDispatchSystem>(mWorld.get());
     mActionDispatch->Initialise();
     mActionDispatch->RegisterAction<Systems::TrainingSystem>();
     mActionDispatch->RegisterAction<Systems::MovementSystem>();
     mActionDispatch->RegisterAction<Systems::AttackSystem>();
     mActionDispatch->RegisterAction<Systems::BuildSystem>();
+    mActionDispatch->RegisterAction<Systems::GatherSystem>();
 }
 
 void Play::Step()
@@ -142,7 +144,7 @@ void Play::Step()
 
     // Process input
     mCanvas->Update(mInput);
-    mInputDispatcher->Update(!mCanvas->GetIsPointerOverUI(Vector2::Zero));
+    mInputDispatcher->Update();
 
     // Update uniform parameters
     mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix().Transpose());
@@ -165,7 +167,7 @@ void Play::Render(CommandBuffer& cmdBuffer)
 }
 
 // Send an action request (move, attack, etc.) to selected entities
-void Play::SendActionRequest(const Components::ActionRequest& request)
+void Play::SendActionRequest(const Actions::ActionRequest& request)
 {
     for (auto entity : mSelection->GetSelection())
     {
@@ -174,7 +176,7 @@ void Play::SendActionRequest(const Components::ActionRequest& request)
     }
 }
 // Send an action request (move, attack, etc.) to the specified entity
-void Play::SendActionRequest(flecs::entity entity, const Components::ActionRequest& request)
+void Play::SendActionRequest(flecs::entity entity, const Actions::ActionRequest& request)
 {
     auto* queue = entity.get_mut<Components::ActionQueue>();
     if (queue == nullptr) {
@@ -182,12 +184,12 @@ void Play::SendActionRequest(flecs::entity entity, const Components::ActionReque
         queue = entity.get_mut<Components::ActionQueue>();
     }
     Components::ActionQueue::RequestItem item;
-    *(Components::ActionRequest*)&item = request;
+    *(Actions::ActionRequest*)&item = request;
     item.mRequestId.mRequestId = 0;
     queue->mRequests.push_back(item);
     entity.modified<Components::ActionQueue>();
 
-    mActionDispatch->CancelAction(entity, Components::RequestId::MakeAll());
+    mActionDispatch->CancelAction(entity, Actions::RequestId::MakeAll());
 }
 
 // Begin placing a building (or other placeable)
