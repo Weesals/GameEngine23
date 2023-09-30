@@ -50,7 +50,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		auto fbxMesh = fbxScene->getMesh(i);
 		auto fbxMeshGeo = fbxMesh->getGeometry();
 
-		auto mesh = std::make_shared<Mesh>();
+		auto mesh = std::make_shared<Mesh>(fbxMesh->name);
 		auto vertCount = fbxMeshGeo->getVertexCount();
 		auto indCount = fbxMeshGeo->getIndexCount();
 
@@ -135,10 +135,12 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 
 		// Notify that this mesh data has changed
 		mesh->MarkChanged();
+		mesh->CalculateBoundingBox();
 
 		// Add to the model to be returned
 		outModel->AppendMesh(mesh);
 	}
+	fbxScene->destroy();
 
 	return outModel;
 }

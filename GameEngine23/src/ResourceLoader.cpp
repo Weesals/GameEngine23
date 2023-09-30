@@ -47,3 +47,8 @@ const std::shared_ptr<Texture>& ResourceLoader::LoadTexture(const std::wstring_v
 	}
 	return i->second;
 }
+void ResourceLoader::Unload()
+{
+	mLoadedMeshes.clear();
+	mLoadedTextures.clear();
+}

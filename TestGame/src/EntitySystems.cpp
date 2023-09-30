@@ -108,7 +108,7 @@ void TrainingSystem::TrainingSystem::Initialise()
 	mWorld->GetECS().system<Components::Runtime::ActionTrain>()
 		.each([&](flecs::entity e, Components::Runtime::ActionTrain& ta)
 			{
-				ta.mTrainPoints += time.mSteps;
+				ta.mTrainPoints += time.mDeltaSteps;
 				if (ta.mTrainPoints >= 5000)
 				{
 					const auto* tform = e.get<Components::Transform>();
@@ -140,6 +140,7 @@ void MovementSystem::Initialise()
 			{
 				auto delta = ma.mLocation - t.mPosition;
 				auto dst = delta.xz().Length();
+				if (dst <= 0.0f) return;
 				auto move = mo.mSpeed * time.mDeltaTime;
 				if (move >= dst) move = 1.0f; else move /= dst;
 				t.mPosition += delta * move;
@@ -153,6 +154,7 @@ void MovementSystem::Initialise()
 					t.mOrientation += (deltaOri < 0 ? -1 : 1) * std::min(std::abs(deltaOri), turn);
 				}
 				if (move >= 1.0f) EndAction(e, ma.mRequestId);
+				mWorld->NotifyMovedEntity(e);
 			});
 }
 float MovementSystem::ScoreRequest(flecs::entity entity, const Actions::ActionRequest& action)
@@ -222,7 +224,7 @@ void BuildSystem::Initialise()
 				if (construction != nullptr)
 				{
 					// Perform construction
-					construction->mBuildPoints += time.mSteps;
+					construction->mBuildPoints += time.mDeltaSteps;
 					ab.mTarget.modified<Components::Construction>();
 					if (construction->mBuildPoints < 1000) return;
 					// Complete construction
@@ -277,7 +279,7 @@ void GatherSystem::Initialise()
 					if (stockpile != nullptr && !stockpile->mResources.empty())
 					{
 						auto& res = stockpile->mResources.front();
-						ag.mStrikeSteps += time.mSteps;
+						ag.mStrikeSteps += time.mDeltaSteps;
 						int stepsPerStrike = 1000;
 						auto ticks = ag.mStrikeSteps / stepsPerStrike;
 						ticks = std::min(std::min(res.mAmount, ticks), 10 - g.mHolding.mAmount);

@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <numeric>
 
-void LandscapeRenderer::Initialise(std::shared_ptr<Landscape>& landscape, std::shared_ptr<Material>& rootMaterial)
+void LandscapeRenderer::Initialise(const std::shared_ptr<Landscape>& landscape, const std::shared_ptr<Material>& rootMaterial)
 {
 	mLandscape = landscape;
 	if (mLandMaterial == nullptr) {
-		mLandMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/landscape.hlsl"), std::make_shared<Shader>(L"assets/landscape.hlsl"));
+		mLandMaterial = std::make_shared<Material>(L"assets/landscape.hlsl");
 		mLandMaterial->InheritProperties(rootMaterial);
 		auto tex = ResourceLoader::GetSingleton().LoadTexture(L"assets/T_Grass_BaseColor.png");
 		mLandMaterial->SetUniform("GrassTexture", tex);
@@ -22,7 +22,7 @@ void LandscapeRenderer::Initialise(std::shared_ptr<Landscape>& landscape, std::s
 std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
 {
 	if (mTileMesh == nullptr) {
-		mTileMesh = std::make_shared<Mesh>();
+		mTileMesh = std::make_shared<Mesh>("LandscapeTile");
 		mTileMesh->SetVertexCount((TileResolution + 1) * (TileResolution + 1));
 		mTileMesh->SetIndexCount(TileResolution * TileResolution * 6);
 		for (int y = 0; y < TileResolution + 1; ++y)
@@ -116,7 +116,7 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 	auto scale = mLandscape->GetScale();
 	auto xform = Matrix::CreateScale(scale, 1.0f, scale) *
 		Matrix::CreateTranslation(mLandscape->GetSizing().Location);
-	mLandMaterial->SetUniform("Model", xform.Transpose());
+	mLandMaterial->SetUniform("Model", xform);
 	mLandMaterial->SetUniform("HeightMap", mHeightMap);
 	mLandMaterial->SetUniform("HeightRange", Vector4(mMetadata.MinHeight, mMetadata.MaxHeight, 0.0f, 0.0f));
 
@@ -132,7 +132,7 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 	auto flush = [&]() {
 		mLandMaterial->SetInstanceCount((int)offsets.size());
 		mLandMaterial->SetInstancedUniform("Offsets", offsets);
-		cmdBuffer.DrawMesh(tileMesh, mLandMaterial);
+		cmdBuffer.DrawMesh(tileMesh.get(), mLandMaterial.get());
 		offsets.clear();
 	};
 	for (int y = 0; y < tileCount.y; ++y)

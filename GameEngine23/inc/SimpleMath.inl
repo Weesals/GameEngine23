@@ -1014,6 +1014,11 @@ inline void Vector4::Transform(const Vector4* varray, size_t count, const Matrix
     XMVector4TransformStream(resultArray, sizeof(XMFLOAT4), varray, sizeof(XMFLOAT4), count, M);
 }
 
+inline Vector4 Vector4::Abs(const Vector4& v) noexcept
+{
+    return Vector4(std::abs(v.x), std::abs(v.y), std::abs(v.z), std::abs(v.w));
+}
+
 
 /****************************************************************************
  *

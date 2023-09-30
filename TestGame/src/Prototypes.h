@@ -13,10 +13,10 @@
 class Prototypes
 {
 	std::vector<flecs::entity> mPrototypes;
-	std::map<std::string, int, Resources::comp> mProtoByName;
+	std::map<std::string, int, Identifier::comp> mProtoByName;
 
 	std::vector<std::shared_ptr<Model>> mEntityModels;
-	std::map<std::wstring, int, Resources::comp> mModelsByName;
+	std::map<std::wstring, int, Identifier::comp> mModelsByName;
 
 	void AppendEntity(flecs::entity entity);
 public:

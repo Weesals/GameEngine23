@@ -2,29 +2,34 @@
 
 #include <d3dx12.h>
 
-D3DConstantBufferCache::D3DConstantBufferCache()
-    : mCBOffset(0) { }
+D3DConstantBufferCache::D3DConstantBufferCache() { }
 
 // Find or allocate a constant buffer for the specified material and CB layout
 D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(const Material& material
-    , const D3DShader::ConstantBuffer& cBuffer
+    , const ShaderBase::ConstantBuffer& cBuffer
     , D3DGraphicsDevice& d3d12)
 {
-    // CB should be padded to multiples of 256
-    auto allocSize = (cBuffer.mSize + 255) & ~255;
-    data.resize(cBuffer.mSize);
+    tData.resize(cBuffer.mSize);
 
     // Copy data into the constant buffer
     // TODO: Generate a hash WITHOUT copying data?
     //  => Might be more expensive to evaluate props twice
-    std::memset(data.data(), 0, sizeof(data[0]) * data.size());
+    std::memset(tData.data(), 0, sizeof(tData[0]) * tData.size());
     for (auto& var : cBuffer.mValues)
     {
         auto varData = material.GetUniformBinaryData(var.mNameId);
-        std::memcpy(data.data() + var.mOffset, varData.data(), varData.size());
+        std::memcpy(tData.data() + var.mOffset, varData.data(), varData.size());
     }
+    return RequireConstantBuffer(tData, d3d12);
+}
 
-    auto dataHash = ComputeHash(data);
+// Find or allocate a constant buffer for the specified material and CB layout
+D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(std::span<const uint8_t> tData
+    , D3DGraphicsDevice & d3d12)
+{
+    // CB should be padded to multiples of 256
+    auto allocSize = (int)(tData.size() + 255) & ~255;
+    auto dataHash = GenericHash(tData.data(), tData.size());
 
     auto& resultItem = RequireItem(dataHash, allocSize,
         [&](auto& item) // Allocate a new item
@@ -34,7 +39,7 @@ D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(const Material&
             // We got a fresh item, need to create the relevant buffers
             CD3DX12_HEAP_PROPERTIES heapProperties(D3D12_HEAP_TYPE_UPLOAD);
             CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(allocSize);
-            device->CreateCommittedResource(
+            auto hr = device->CreateCommittedResource(
                 &heapProperties,
                 D3D12_HEAP_FLAG_NONE,
                 &resourceDesc,
@@ -42,6 +47,10 @@ D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(const Material&
                 nullptr,
                 IID_PPV_ARGS(&item.mData.mConstantBuffer)
             );
+            if (FAILED(hr))
+            {
+                throw "[D3D] Failed to create constant buffer";
+            }
         },
         [&](auto& item)  // Fill an item with data
         {
@@ -49,7 +58,7 @@ D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(const Material&
             assert(item.mData.mConstantBuffer != nullptr);
             UINT8* cbDataBegin;
             if (SUCCEEDED(item.mData.mConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&cbDataBegin)))) {
-                std::memcpy(cbDataBegin, data.data(), cBuffer.mSize);
+                std::memcpy(cbDataBegin, tData.data(), tData.size());
                 item.mData.mConstantBuffer->Unmap(0, nullptr);
             }
         },

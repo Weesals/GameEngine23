@@ -53,6 +53,7 @@ namespace Singleton
     struct Time {
         float mDeltaTime;
         float mTime;
+        int mDeltaSteps;
         int mSteps;
     };
 }
@@ -202,6 +203,7 @@ namespace Components
     {
         // What mesh to use for rendering
         int mModelId;
+        std::vector<int> mInstanceIds;
     };
 
 

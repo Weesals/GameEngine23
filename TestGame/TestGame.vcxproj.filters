@@ -152,6 +152,7 @@
     <FxCompile Include="assets\ui.hlsl">
       <Filter>Content</Filter>
     </FxCompile>
+    <FxCompile Include="assets\retained.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\T_CharactersAtlas.png">

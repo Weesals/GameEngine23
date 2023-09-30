@@ -10,40 +10,121 @@
 #include "D3DGraphicsDevice.h"
 #include "D3DShader.h"
 #include "D3DConstantBufferCache.h"
+#include "GraphicsBuffer.h"
 
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
 
 class D3DResourceCache {
-    std::string StrVSEntryPoint = "VSMain";
-    std::string StrPSEntryPoint = "PSMain";
-
 public:
+    inline static std::string StrVSProfile = "vs_5_0";
+    inline static std::string StrPSProfile = "ps_5_0";
+
+    struct D3DBuffer
+    {
+        ComPtr<ID3D12Resource> mBuffer;
+    };
+    struct D3DVBView
+    {
+        D3DBuffer* mBuffer;
+        std::vector<D3D12_INPUT_ELEMENT_DESC> mLayout;
+        D3D12_VERTEX_BUFFER_VIEW mBufferView;
+        int mRevision;
+    };
+    struct D3DIBView
+    {
+        D3DBuffer* mBuffer;
+        D3D12_INDEX_BUFFER_VIEW mBufferView;
+        int mRevision;
+    };
+    template<class View>
+    struct D3DBufferWithView
+    {
+        ComPtr<ID3D12Resource> mBuffer;
+        View mView;
+        bool IsValidForSize(int size) { return (int)mView.SizeInBytes >= size && mBuffer != nullptr; }
+    };
     // The GPU data for a mesh
     struct D3DMesh
     {
         std::vector<D3D12_INPUT_ELEMENT_DESC> mVertElements;
         int mRevision;
-        ComPtr<ID3D12Resource> mVertexBuffer;
-        D3D12_VERTEX_BUFFER_VIEW mVertexBufferView;
-        ComPtr<ID3D12Resource> mIndexBuffer;
-        D3D12_INDEX_BUFFER_VIEW mIndexBufferView;
+        D3DBufferWithView<D3D12_VERTEX_BUFFER_VIEW> mVertexBuffer;
+        D3DBufferWithView<D3D12_INDEX_BUFFER_VIEW> mIndexBuffer;
     };
     struct D3DTexture
     {
-        ComPtr<ID3D12Resource> mTexture;
+        ComPtr<ID3D12Resource> mBuffer;
         int mSRVOffset;
         int mRevision;
+    };
+    struct ResourceBindingCache
+    {
+        int mRefCount;
+        RangeInt mSlots;
+    };
+    struct ResourceSets
+    {
+        SparseArray<void*> mBindingSlots;
+        SparseArray<ResourceBindingCache> mBindingCache;
+        int Require(std::vector<void*>& bindings)
+        {
+            int bindingId = -1;
+            for (auto it = mBindingCache.begin(); it != mBindingCache.end(); ++it)
+            {
+                if (it->mSlots.length != bindings.size()) continue;
+                if (std::equal(bindings.begin(), bindings.end(), &mBindingSlots[it->mSlots.start])) continue;
+                bindingId = it.GetIndex();
+                break;
+            }
+            if (bindingId == -1)
+            {
+                bindingId = mBindingCache.Add(
+                    D3DResourceCache::ResourceBindingCache{
+                        .mRefCount = 0,
+                        .mSlots = mBindingSlots.AddRange(bindings),
+                    }
+                );
+            }
+            return bindingId;
+        }
+        void Remove(int id)
+        {
+            mBindingSlots.Return(mBindingCache[id].mSlots);
+            mBindingCache.Return(id);
+        }
+    };
+    // Each PSO must fit within one of these
+    // TODO: Make them more broad and select the smallest appropriate one
+    struct D3DRootSignature
+    {
+        ComPtr<ID3D12RootSignature> mRootSignature;
+        int mNumConstantBuffers;
+        int mNumResources;
+        int GetNumBindings() const { return mNumConstantBuffers + mNumResources; }
     };
     // The GPU data for a set of shaders, rendering state, and vertex attributes
     struct D3DPipelineState
     {
+        D3DRootSignature* mRootSignature;
         ComPtr<ID3D12PipelineState> mPipelineState;
         // NOTE: Is unsafe if D3DShader is unloaded;
         // Should not be possible but may change in the future
         // TODO: Address this
-        std::vector<D3DShader::ConstantBuffer*> mConstantBuffers;
-        std::vector<D3DShader::ResourceBinding*> mResourceBindings;
+        std::vector<const ShaderBase::ConstantBuffer*> mConstantBuffers;
+        std::vector<const ShaderBase::ResourceBinding*> mResourceBindings;
+        std::vector<D3D12_INPUT_ELEMENT_DESC> mInputElements;
+
+        size_t mHash;
+        ResourceSets mCBBindings;
+        ResourceSets mRSBindings;
+        std::unique_ptr<PipelineLayout> mLayout;
+    };
+    struct D3DBinding {
+        ComPtr<ID3D12Resource> mBuffer;
+        int mSize = -1;
+        int mRevision = 0;
+        BufferLayout::Usage mUsage;
     };
 
     // If no texture is specified, use this
@@ -55,30 +136,42 @@ private:
     // Storage for the GPU resources of each application type
     // TODO: Register for destruction of the application type
     // and clean up GPU resources
+    D3DRootSignature mRootSignature;
     std::unordered_map<const Mesh*, std::unique_ptr<D3DMesh>> meshMapping;
     std::unordered_map<const Texture*, std::unique_ptr<D3DTexture>> textureMapping;
     std::unordered_map<ShaderKey, std::unique_ptr<D3DShader>> shaderMapping;
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
+    std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     D3DConstantBufferCache mConstantBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mUploadBufferCache;
     int mCBOffset;
 
-    D3DShader* RequireShader(const Shader& shader, const std::string& entrypoint);
-    D3DPipelineState* RequirePipelineState(const Shader& vs, const Shader& ps, size_t hash);
     int GenerateElementDesc(const Mesh& mesh, std::vector<D3D12_INPUT_ELEMENT_DESC>& vertDesc);
     void CopyVertexData(const Mesh& mesh, void* buffer, int stride);
-    ID3D12Resource* AllocateUploadBuffer(int size);
 public:
     D3DResourceCache(D3DGraphicsDevice& d3d12);
     void SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId);
+    ID3D12Resource* AllocateUploadBuffer(int size);
+    void CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size);
+
+    void ComputeElementLayout(std::span<const BufferLayout*> bindings,
+        std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
+    void ComputeElementData(std::span<const BufferLayout*> bindings,
+        ID3D12GraphicsCommandList* cmdList,
+        std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,
+        D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
     D3DMesh* RequireD3DMesh(const Mesh& mesh);
     D3DTexture* RequireD3DTexture(const Texture& mesh);
-    D3DPipelineState* RequirePipelineState(const Material& material, std::span<D3D12_INPUT_ELEMENT_DESC> vertElements);
-    D3DConstantBuffer* RequireConstantBuffer(const D3DShader::ConstantBuffer& cb, const Material& material);
+    D3DShader* RequireShader(const Shader& shader, const std::string& profile);
+    D3DPipelineState* GetOrCreatePipelineState(const Shader& vs, const Shader& ps, size_t hash);
+    D3DPipelineState* RequirePipelineState(const Material& material, std::span<const BufferLayout*> bindings);
+    D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
+    D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);
 
     void UpdateMeshData(D3DMesh* d3dMesh, const Mesh& mesh, ID3D12GraphicsCommandList* cmdList);
     void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList);
+    void UpdateBufferData(D3DTexture* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList);
 };
 
 // A D3D12 renderer
@@ -110,13 +203,15 @@ public:
     GraphicsDeviceD3D12(std::shared_ptr<WindowWin32>& window);
     ~GraphicsDeviceD3D12() override;
 
+    void CheckDeviceState() const;
+
     D3DGraphicsDevice& GetDevice() { return mDevice; }
     ID3D12Device* GetD3DDevice() const { return mDevice.GetD3DDevice(); }
-    ID3D12RootSignature* GetRootSignature() const { return mDevice.GetRootSignature(); }
     ID3D12DescriptorHeap* GetRTVHeap() const { return mDevice.GetRTVHeap(); }
     ID3D12DescriptorHeap* GetDSVHeap() const { return mDevice.GetDSVHeap(); }
     ID3D12DescriptorHeap* GetSRVHeap() const { return mDevice.GetSRVHeap(); }
-    int GetDescriptorHandleSize() const { return mDevice.GetDescriptorHandleSize(); }
+    int GetDescriptorHandleSizeRTV() const { return mDevice.GetDescriptorHandleSizeRTV(); }
+    int GetDescriptorHandleSizeSRV() const { return mDevice.GetDescriptorHandleSizeSRV(); }
     IDXGISwapChain3* GetSwapChain() const { return mDevice.GetSwapChain(); }
 
     ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
@@ -128,6 +223,8 @@ public:
     Vector2 GetClientSize() const { return mDevice.GetClientSize(); }
 
     CommandBuffer CreateCommandBuffer() override;
+    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) override;
+    ShaderBase::ShaderReflection* RequireReflection(Shader& shader) override;
     void Present() override;
     void WaitForFrame();
     void WaitForGPU();

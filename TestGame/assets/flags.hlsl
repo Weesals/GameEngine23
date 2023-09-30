@@ -49,9 +49,9 @@ PSInput VSMain(VSInput input)
     worldPos.xyz += InstanceData[input.instanceId].xyz;
 
     result.uv = input.uv;
-    result.position = mul(float4(worldPos, 1.0), ModelViewProjection);
-    result.viewPos = mul(float4(worldPos, 1.0), ModelView);
-    result.normal = mul(float4(worldNrm, 0.0), ModelView);
+    result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
+    result.viewPos = mul(ModelView, float4(worldPos, 1.0));
+    result.normal = mul(ModelView, float4(worldNrm, 0.0));
     
 #if defined(VULKAN)
     result.position.y = -result.position.y;

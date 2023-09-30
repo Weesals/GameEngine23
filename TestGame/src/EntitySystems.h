@@ -3,6 +3,7 @@
 #include "EntityComponents.h"
 #include <flecs.h>
 #include <map>
+#include <set>
 
 namespace Systems
 {

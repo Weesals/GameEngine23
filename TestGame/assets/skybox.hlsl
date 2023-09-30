@@ -188,7 +188,7 @@ float4 PSMain(PSInput input) : SV_TARGET
     vpos.y = -vpos.y;
         
     float4 clipSpacePosition = float4(vpos, 1.0f, 1.0f);
-    float4 viewSpacePosition = mul(clipSpacePosition, InvModelViewProjection);
+    float4 viewSpacePosition = mul(InvModelViewProjection, clipSpacePosition);
     viewSpacePosition.xyz /= viewSpacePosition.w;
     float3 directionVector = normalize(viewSpacePosition.xyz);
     //return float4(frac(directionVector * 5), 0.0f);

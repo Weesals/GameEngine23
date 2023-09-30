@@ -196,7 +196,7 @@ bool PlacementInteraction::OnBegin(Performance& performance)
             auto prefab = world->GetPrototypes()->GetPrototypePrefab(mProtoId);
             auto model = world->GetPrototypes()->GetModel(prefab.get<Components::Renderable>()->mModelId);
             const auto& mat = world->GetLitMaterial();
-            mat->SetUniform("Model", mTransform.GetMatrix().Transpose());
+            mat->SetUniform("Model", mTransform.GetMatrix());
             mat->SetUniform("Highlight", Color(0.5f, 0.5f, 0.5f, 0.5f));
             model->Render(cmdBuffer, mat);
         });

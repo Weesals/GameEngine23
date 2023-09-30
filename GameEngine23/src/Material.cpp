@@ -1,11 +1,27 @@
 #include  "Material.h"
 
+#include "MaterialEvaluator.h"
+
 const TypeCache::TypeInfo* TypeCache::Get(const std::type_info* type)
 {
 	auto& instance = Instance<>::instance;
 	auto i = instance.mTypeCaches.find(*type);
 	if (i != instance.mTypeCaches.end()) return i->second;
 	return nullptr;
+}
+
+ParameterSet::~ParameterSet()
+{
+	for (auto item : mItems)
+	{
+		// TODO: Should items be addref/deref?
+		/*if (item.second.mType == &TypeCache::Require<std::shared_ptr<Texture>>())
+		{
+			auto data = std::span<const uint8_t>(mData.data() + item.second.mByteOffset, item.second.mType->mSize);
+			std::shared_ptr<Texture>& ptr = *(std::shared_ptr<Texture>*)&data;
+			ptr.~shared_ptr();
+		}*/
+	}
 }
 
 // Set the data for a value in this property set
@@ -40,6 +56,10 @@ std::span<const uint8_t> ParameterSet::GetValueData(Identifier name) const
 	auto size = i->second.mType->mSize * i->second.mCount;
 	return std::span<const uint8_t>(mData.data() + i->second.mByteOffset, size);
 }
+const uint8_t* ParameterSet::GetDataRaw() const
+{
+	return mData.data();
+}
 
 // Resize the binary data allocated to an item, and
 // move the ByteOffset of other relevant other types
@@ -52,6 +72,17 @@ void ParameterSet::ResizeData(int at, int newSize, int oldSize)
 	{
 		if (item.second.mByteOffset > at) item.second.mByteOffset += delta;
 	}
+}
+
+
+void* MaterialEvaluatorContext::GetAndIterateParameter(Identifier name)
+{
+	auto parId = mCache.GetParameters()[mIterator++];
+	return &mOutput[mCache.GetValues()[parId].mOutputOffset];
+}
+
+std::span<const uint8_t> MaterialCollectorContext::GetUniformSource(Identifier name, MaterialCollectorContext& context) const {
+	return mCollector.GetUniformSource(mMaterial, name, context);
 }
 
 
@@ -110,19 +141,19 @@ int Material::GetInstanceCount(bool inherit) const {
 std::span<const uint8_t> Material::GetUniformBinaryData(Identifier name) const
 {
 	// TODO: An efficient way to cache computed values
-	return IntlGetUniformBinaryData(name, this);
+	ParameterContext context(this);
+	return GetUniformBinaryData(name, context);
 }
-std::span<const uint8_t> Material::IntlGetUniformBinaryData(Identifier name, const Material* context) const
+std::span<const uint8_t> Material::GetUniformBinaryData(Identifier name, ParameterContext& context) const
 {
-	for (auto& par : mComputedParameters)
+	auto par = FindComputed(name);
+	if (par != nullptr)
 	{
-		if (par->GetName() != name) continue;
-		ParameterContext pcontext(context);
 		// CONST CAST! Required so that the returned data can stored
 		// (until an external cache exists that it can write to)
 		auto owner = const_cast<Material*>(this);
 		// TODO: Cache result in top-most dependency
-		return par->WriteValue(name, owner, pcontext);
+		return par->WriteValue(name, owner, context);
 	}
 
 	// Check if the value has been set explicitly
@@ -132,15 +163,17 @@ std::span<const uint8_t> Material::IntlGetUniformBinaryData(Identifier name, con
 	// Check if it exists in inherited material properties
 	for (auto& mat : mInheritParameters)
 	{
-		data = mat->IntlGetUniformBinaryData(name, context != nullptr ? context : this);
+		data = mat->GetUniformBinaryData(name, context);
 		if (!data.empty()) return data;
 	}
 	return data;
 }
 
-const std::shared_ptr<Texture>& Material::GetUniformTexture(Identifier name) const
+const std::shared_ptr<Texture>* Material::GetUniformTexture(Identifier name) const
 {
-	return *(std::shared_ptr<Texture>*)mParameters.GetValueData(name).data();
+	auto data = mParameters.GetValueData(name);
+	if (data.empty()) return nullptr;
+	return (std::shared_ptr<Texture>*)data.data();
 }
 
 // Add a parent material that this material will inherit
@@ -167,3 +200,11 @@ int Material::ComputeHeirarchicalRevisionHash() const
 	}
 	return hash;
 }
+
+Material MakeNullMaterial() {
+	Material mat;
+	mat.SetUniform("NullMat", Matrix::Identity);
+	mat.SetUniform("NullVec", Vector4::Zero);
+	return mat;
+}
+Material Material::NullInstance = MakeNullMaterial();

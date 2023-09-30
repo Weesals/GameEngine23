@@ -36,9 +36,6 @@
     <ClInclude Include="inc\SimpleMath.h">
       <Filter>Libraries</Filter>
     </ClInclude>
-    <ClInclude Include="src\GraphicsDeviceD3D12.h">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClInclude>
     <ClInclude Include="src\GraphicsDeviceBase.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -50,15 +47,6 @@
     </ClInclude>
     <ClInclude Include="src\WindowWin32.h">
       <Filter>Core\Platforms\Windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\D3DShader.h">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClInclude>
-    <ClInclude Include="src\D3DConstantBufferCache.h">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClInclude>
-    <ClInclude Include="src\D3DGraphicsDevice.h">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
     <ClInclude Include="src\GraphicsDeviceVulkan.h">
       <Filter>Core\Platforms\Vulkan</Filter>
@@ -108,6 +96,22 @@
     <ClInclude Include="src\ResourceLoader.h">
       <Filter>Resources</Filter>
     </ClInclude>
+    <ClInclude Include="src\GraphicsBuffer.h" />
+    <ClInclude Include="src\RetainedRenderer.h" />
+    <ClInclude Include="src\D3DGraphicsDevice.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="src\D3DShader.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="src\GraphicsDeviceD3D12.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="src\D3DConstantBufferCache.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
+    <ClInclude Include="src\MaterialEvaluator.h" />
+    <ClInclude Include="src\Containers.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -116,26 +120,17 @@
     <ClCompile Include="inc\ofbx.cpp">
       <Filter>Libraries</Filter>
     </ClCompile>
-    <ClCompile Include="src\GraphicsDeviceD3D12.cpp">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClCompile>
     <ClCompile Include="src\WindowWin32.cpp">
       <Filter>Core\Platforms\Windows</Filter>
     </ClCompile>
     <ClCompile Include="inc\SimpleMath.cpp">
       <Filter>Libraries</Filter>
     </ClCompile>
-    <ClCompile Include="src\D3DGraphicsDevice.cpp">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
-    </ClCompile>
     <ClCompile Include="src\GraphicsDeviceVulkan.cpp">
       <Filter>Core\Platforms\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="src\VulkanShader.cpp">
       <Filter>Core\Platforms\Vulkan</Filter>
-    </ClCompile>
-    <ClCompile Include="src\D3DConstantBufferCache.cpp">
-      <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
     <ClCompile Include="src\Core.cpp">
       <Filter>Core</Filter>
@@ -160,6 +155,17 @@
     </ClCompile>
     <ClCompile Include="src\ResourceLoader.cpp">
       <Filter>Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="src\RetainedRenderer.cpp" />
+    <ClCompile Include="src\GraphicsBuffer.cpp" />
+    <ClCompile Include="src\D3DGraphicsDevice.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GraphicsDeviceD3D12.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="src\D3DConstantBufferCache.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

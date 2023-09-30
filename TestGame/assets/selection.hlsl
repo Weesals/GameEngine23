@@ -55,8 +55,8 @@ PSInput VSMain(VSInput input)
     result.data = InstanceData2[input.instanceId];
 
     result.uv = float4(input.uv, data.w, 0.0);
-    result.position = mul(float4(worldPos, 1.0), ModelViewProjection);
-    result.viewPos = mul(float4(worldPos, 1.0), ModelView);
+    result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
+    result.viewPos = mul(ModelView, float4(worldPos, 1.0));
     
 #if defined(VULKAN)
     result.position.y = -result.position.y;
@@ -73,6 +73,6 @@ float4 PSMain(PSInput input) : SV_TARGET
     float dst = distance(uv, 0.0);
     float a = 1.0 - abs(dst - 0.4) / 0.1;
     float4 r = float4(1, 1, 1, saturate(a / max(fwidth(a), 0.001)));
-    r *= _PlayerColors[input.data.w];
+    r *= _PlayerColors[input.data.w + 0.5];
     return r;
 }

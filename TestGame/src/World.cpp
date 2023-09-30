@@ -6,30 +6,55 @@
 #include <FBXImport.h>
 #include <Geometry.h>
 
+#include "MaterialEvaluator.h"
+#include <chrono>
+using steady_clock = std::chrono::steady_clock;
+using time_point = std::chrono::time_point<steady_clock>;
+
+// Must match StructuredBuffer in shader
+struct RetainedData {
+    Matrix mWorld;
+    Matrix mUnused;
+    Color mHighlight;
+    Color mUnused2;
+};
+
 void WorldEffects::HighlightEntity(flecs::entity e, const HighlightConfig& highlight)
 {
     assert(highlight.mBegin != 0); // Highlight should have a time assigned
     mEntityHighlights[e] = highlight;
 }
-Color WorldEffects::GetHighlightFor(flecs::entity e, std::clock_t time)
+Color WorldEffects::GetHighlightFor(flecs::entity e, int time)
 {
     auto item = mEntityHighlights.find(e);
     if (item != mEntityHighlights.end())
     {
         const auto& highlight = item->second;
-        time -= highlight.mBegin;
-        if (time > highlight.mDuration) mEntityHighlights.erase(item);
-        else
-        {
-            int tick = time * (highlight.mCount * 2) / highlight.mDuration;
-            if ((tick & 0x01) == 0) return highlight.mColor;
-        }
+        int tick = ComputeResult(highlight, time);
+        if (tick == -2) mEntityHighlights.erase(item);
+        else if ((tick & 0x01) == 0) return highlight.mColor;
     }
     return Color(0.0f, 0.0f, 0.0f, 0.0f);
 }
-
-void World::Initialise(std::shared_ptr<Material>& rootMaterial)
+int WorldEffects::ComputeResult(const HighlightConfig& highlight, int time)
 {
+    time -= highlight.mBegin;
+    return time < 0 ? -1
+        : time > highlight.mDuration ? -2
+        : time >= 0 ? time * (highlight.mCount * 2) / highlight.mDuration
+        : -1;
+}
+void WorldEffects::GetModified(std::set<flecs::entity>& entities, int oldTime, int newTime)
+{
+    for (auto& item : mEntityHighlights)
+        if (ComputeResult(item.second, oldTime) != ComputeResult(item.second, newTime))
+            entities.insert(item.first);
+}
+
+void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std::shared_ptr<RetainedRenderer>& scene)
+{
+    mScene = scene;
+
     mLandscape = std::make_shared<Landscape>();
     mLandscape->SetSize(256);
     mLandscape->SetScale(512);
@@ -37,8 +62,10 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
     mLandscapeRenderer = std::make_shared<LandscapeRenderer>();
     mLandscapeRenderer->Initialise(mLandscape, rootMaterial);
 
-    mLitMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/lit.hlsl"), std::make_shared<Shader>(L"assets/lit.hlsl"));
+    mLitMaterial = std::make_shared<Material>(L"assets/retained.hlsl");
     mLitMaterial->InheritProperties(rootMaterial);
+    mLitMaterial->SetUniform("Model", Matrix::Identity);
+    mLitMaterial->SetUniform("Highlight", Vector4::Zero);
 
     mECS.add<Singleton::Time>();
     auto& time = *mECS.get_mut<Singleton::Time>();
@@ -69,6 +96,7 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
         .with<Components::Wanders>()
         .without<Components::Runtime::ActionMove>()
         .each([&](flecs::entity e, const Components::Transform& t) {
+        return;
         // Choose a target at random times
         if ((float)rand() / RAND_MAX < time.mDeltaTime / 4.0f) {
             e.set(Components::Runtime::ActionMove {
@@ -81,10 +109,20 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
         }
     });
 
-    // Placeholder so I remember how to register for entity events
-    mECS.observer<Components::Renderable>().event(flecs::OnAdd).each([](flecs::iter& it, size_t i, Components::Renderable& r) {
+    // Add/remove entities from Scene
+    mECS.observer<Components::Renderable>()
+        .event(flecs::OnAdd)
+        .each([this](flecs::iter& it, size_t i, Components::Renderable& r) {
         if (it.event() == flecs::OnAdd) {
-            int a = 0;
+            mMovedEntities.insert(it.entity(i));
+        }
+    });
+    mECS.observer<Components::Renderable>()
+        .event(flecs::OnRemove)
+        .each([this](flecs::iter& it, size_t i, Components::Renderable& r) {
+        if (it.event() == flecs::OnRemove) {
+            for (auto& instId : r.mInstanceIds)
+                mScene->RemoveInstance(instId);
         }
     });
 
@@ -107,7 +145,7 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
             }
         }
     };
-    SpawnInGroups(deerProtoId, GetPlayer(0), 10, 4, 50.0f, 5.0f);
+    SpawnInGroups(deerProtoId, GetPlayer(0), 50, 4, 50.0f, 5.0f);
     SpawnInGroups(treeProtoId, GetPlayer(0), 10, 4, 50.0f, 6.0f);
     SpawnEntity(mPrototypes->GetPrototypeId("Town Centre"), GetPlayer(1),
         Components::Transform{ Vector3::Zero, (float)std::numbers::pi });
@@ -115,29 +153,43 @@ void World::Initialise(std::shared_ptr<Material>& rootMaterial)
 void World::Step(float dt)
 {
     auto& time = *mECS.get_mut<Singleton::Time>();
+    int otime = time.mSteps;
     time.mDeltaTime = dt;
     time.mTime += dt;
-    time.mSteps = (int)(dt * 1000);
+    time.mDeltaSteps = (int)(dt * 1000);
+    time.mSteps += time.mDeltaSteps;
     mECS.progress();
+    mWorldEffects.GetModified(mMovedEntities, otime, time.mSteps);
 }
 
 void World::Render(CommandBuffer& cmdBuffer)
 {
+    auto& time = *mECS.get_mut<Singleton::Time>();
+    for (auto it = mMovedEntities.begin(); it != mMovedEntities.end(); ++it) {
+        auto e = *it;
+        auto& r = *e.get_mut<Components::Renderable>();
+        const auto& t = *e.get<Components::Transform>();
+        auto& material = mLitMaterial;
+        auto& model = mPrototypes->GetModel(r.mModelId);
+        int i = 0;
+        for (auto& mesh : model->GetMeshes()) {
+            auto& meshMat = mesh->GetMaterial();
+            RetainedData data;
+            data.mWorld = t.GetMatrix();
+            data.mHighlight = mWorldEffects.GetHighlightFor(e, time.mSteps);
+            if (i >= r.mInstanceIds.size()) {
+                if (meshMat != nullptr) meshMat->InheritProperties(material);
+                Material* useMat = meshMat.get();
+                if (useMat == nullptr) useMat = material.get();
+                r.mInstanceIds.push_back(mScene->AppendInstance(mesh.get(), useMat, sizeof(data)));
+                if (meshMat != nullptr) meshMat->RemoveInheritance(material);
+            }
+            mScene->UpdateInstanceData(r.mInstanceIds[i], data);
+            ++i;
+        }
+    }
+    mMovedEntities.clear();
     mLandscapeRenderer->Render(cmdBuffer);
-    Identifier iMMat = "Model";
-    auto time = std::clock();
-    // Render each entity with Renderable and Transform components
-    mECS.each([&](flecs::entity e, const Components::Transform& t, const Components::Renderable& r) {
-        // Set the world transform
-        auto pos = t.mPosition;
-        auto mat = t.GetMatrix();
-        mLitMaterial->SetUniform(iMMat, mat.Transpose());
-        auto highlight = mWorldEffects.GetHighlightFor(e, time);
-        mLitMaterial->SetUniform("Highlight", highlight);
-        // Draw each of the meshes
-        auto model = mPrototypes->GetModel(r.mModelId);
-        model->Render(cmdBuffer, mLitMaterial);
-    });
 }
 
 void World::RaycastEntities(Ray& ray, const std::function<void(flecs::entity e, float)>& onentity) const
@@ -193,6 +245,13 @@ flecs::entity World::SpawnEntity(int protoId, flecs::entity owner, const Compone
 void World::FlashEntity(flecs::entity e, const WorldEffects::HighlightConfig& config)
 {
     WorldEffects::HighlightConfig tconfig = config;
-    tconfig.mBegin = std::clock();
+    auto& time = *mECS.get_mut<Singleton::Time>();
+    tconfig.mBegin = time.mSteps;
     mWorldEffects.HighlightEntity(e, tconfig);
+    mMovedEntities.insert(e);
+}
+
+void World::NotifyMovedEntity(flecs::entity e)
+{
+    mMovedEntities.insert(e);
 }

@@ -30,8 +30,8 @@ void CanvasRenderable::Render(CommandBuffer& cmdBuffer)
 Canvas::Canvas()
 {
 	// ImGui buffers are pushed into this mesh for rendering
-	mMesh = std::make_shared<Mesh>();
-	mMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/ui.hlsl"), std::make_shared<Shader>(L"assets/ui.hlsl"));
+	mMesh = std::make_shared<Mesh>("Canvas");
+	mMaterial = std::make_shared<Material>(L"assets/ui.hlsl");
 
 	// Initialise the ImGui system
 	IMGUI_CHECKVERSION();
@@ -69,6 +69,11 @@ Int2 Canvas::GetSize() const
 	return mSize;
 }
 
+Canvas::OnInput::Reference Canvas::RegisterInputIntercept(const Canvas::OnInput::Function& callback)
+{
+	return mOnInput.Add(callback);
+}
+
 // Check if the specified point is over any active windows
 bool Canvas::GetIsPointerOverUI(Vector2 v) const
 {
@@ -101,6 +106,7 @@ void Canvas::Update(const std::shared_ptr<Input>& input)
 		io.AddMousePosEvent(pointer->mPositionCurrent.x, pointer->mPositionCurrent.y);
 		io.AddMouseButtonEvent(0, pointer->IsButtonDown(0));
 	}
+	mOnInput.Invoke(input);
 }
 void Canvas::Render(CommandBuffer& cmdBuffer)
 {
@@ -161,7 +167,7 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 			mMaterial->SetBlendMode(BlendMode::AlphaBlend());
 			mMaterial->SetRasterMode(RasterMode::MakeDefault().SetCull(RasterMode::CullModes::None));
 			mMaterial->SetDepthMode(DepthMode::MakeOff());
-			cmdBuffer.DrawMesh(mMesh, mMaterial, drawConfig);
+			cmdBuffer.DrawMesh(mMesh.get(), mMaterial.get(), drawConfig);
 		}
 		iCount += cmdList->IdxBuffer.Size;
 	}

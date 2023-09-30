@@ -19,16 +19,6 @@ struct Identifier
     bool operator ==(const Identifier& o) const { return mId == o.mId; }
     bool operator !=(const Identifier& o) const { return mId != o.mId; }
     operator int() const { return mId; }
-};
-
-template <> struct std::hash<Identifier>
-{
-    std::size_t operator()(const Identifier& k) const { return hash<short>()(k.mId); }
-};
-
-// TODO: Use hat trie instead of map
-class Resources
-{
 
 public:
     struct comp
@@ -46,26 +36,36 @@ public:
     };
 private:
 
-    static std::map<std::string, Identifier, comp> mStringToId;
-    static std::map<std::wstring, Identifier, comp> mWStringToId;
+    // TODO: Use hat trie instead of map
+    static std::map<std::string, Identifier, comp> gStringToId;
+    static std::map<std::wstring, Identifier, comp> gWStringToId;
 
 public:
     // Get a persistent id for the any string
     // (to more efficiently track via resource paths or other attributes)
     static Identifier RequireStringId(const std::string_view& name)
     {
-        auto i = mStringToId.find(name);
-        if (i == mStringToId.end())
-            i = mStringToId.insert({ std::string(name), (int)mStringToId.size() }).first;
+        auto i = gStringToId.find(name);
+        if (i == gStringToId.end())
+            i = gStringToId.insert({ std::string(name), (int)gStringToId.size() }).first;
         return i->second;
     }
     static Identifier RequireStringId(const std::wstring_view& name)
     {
-        auto i = mWStringToId.find(name);
-        if (i == mWStringToId.end())
-            i = mWStringToId.insert({ std::wstring(name), (int)mWStringToId.size() }).first;
+        auto i = gWStringToId.find(name);
+        if (i == gWStringToId.end())
+            i = gWStringToId.insert({ std::wstring(name), (int)gWStringToId.size() }).first;
         return i->second;
+    }
+    static void Purge()
+    {
+        gStringToId.clear();
+        gWStringToId.clear();
     }
 
 };
 
+template <> struct std::hash<Identifier>
+{
+    std::size_t operator()(const Identifier& k) const { return hash<short>()(k.mId); }
+};

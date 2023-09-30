@@ -59,7 +59,7 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
     }
 
     // Create the device
-    ThrowIfFailed(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mD3DDevice)));
+    ThrowIfFailed(D3D12CreateDevice(adapters[0].Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mD3DDevice)));
 
     // Create the command queue
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -115,48 +115,9 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
         dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mDSVHeap)));
 
-        mDescriptorHandleSize = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        mDescriptorHandleSizeRTV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        mDescriptorHandleSizeSRV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     }
-
-    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-
-    // This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned will not be greater than this.
-    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    if (FAILED(mD3DDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
-        featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-
-    // Unsure what to do here.. We should allocate the maximum we need? But not too much?
-    // TODO: Investigate more
-    // TODO: Do what UE does; create a root layouts dynamically
-    CD3DX12_ROOT_PARAMETER1 rootParameters[4] = {};
-    rootParameters[0].InitAsConstantBufferView(0);
-    rootParameters[1].InitAsConstantBufferView(1);
-    CD3DX12_DESCRIPTOR_RANGE1 srvR0(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    CD3DX12_DESCRIPTOR_RANGE1 srvR1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-    rootParameters[2].InitAsDescriptorTable(1, &srvR0);
-    rootParameters[3].InitAsDescriptorTable(1, &srvR1);
-    //rootParameters[2].InitAsShaderResourceView(0, 0);
-
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = { };
-    CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
-        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
-        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
-    };
-    rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, _countof(samplerDesc), samplerDesc,
-        D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-        D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
-    );
-
-    ComPtr<ID3DBlob> signature;
-    ComPtr<ID3DBlob> error;
-    auto hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
-    if (FAILED(hr))
-    {
-        OutputDebugStringA((char*)error->GetBufferPointer());
-    }
-    ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mRootSignature)));
 }
 
 D3DGraphicsDevice::~D3DGraphicsDevice()

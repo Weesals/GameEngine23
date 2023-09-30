@@ -7,12 +7,12 @@ SelectionRenderer::SelectionRenderer(std::shared_ptr<SelectionManager>& manager,
 	: mManager(manager)
 {
 	//mManager->CreateEntityListener(std::bind(&OnEntityRegistered, this, std::placeholders::_1), true);
-	mMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/selection.hlsl"), std::make_shared<Shader>(L"assets/selection.hlsl"));
+	mMaterial = std::make_shared<Material>(L"assets/selection.hlsl");
 	mMaterial->InheritProperties(rootMaterial);
 	mMaterial->SetBlendMode(BlendMode::AlphaBlend());
 	auto& loader = ResourceLoader::GetSingleton();
 	mFlagMesh = loader.LoadModel(L"assets/SM_Flag.fbx");
-	mFlagMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/flags.hlsl"), std::make_shared<Shader>(L"assets/flags.hlsl"));
+	mFlagMaterial = std::make_shared<Material>(L"assets/flags.hlsl");
 	mFlagMaterial->InheritProperties(rootMaterial);
 }
 
@@ -25,7 +25,7 @@ void SelectionRenderer::Render(CommandBuffer& cmdBuffer)
 	// Generate a XZ quad of 2x2 size centred at 0,0 (with uvs and normals)
 	if (mMesh == nullptr)
 	{
-		mMesh = std::make_shared<Mesh>();
+		mMesh = std::make_shared<Mesh>("Selection");
 		mMesh->SetVertexCount(4);
 		auto p = { Vector3(-1, 0, -1), Vector3(+1, 0, -1), Vector3(-1, 0, +1), Vector3(+1, 0, +1), };
 		std::copy(p.begin(), p.end(), mMesh->GetPositions().begin());
@@ -46,7 +46,7 @@ void SelectionRenderer::Render(CommandBuffer& cmdBuffer)
 		mMaterial->SetInstanceCount((int)instanceData.size());
 		mMaterial->SetInstancedUniform("InstanceData", instanceData);
 		mMaterial->SetInstancedUniform("InstanceData2", instanceData2);
-		cmdBuffer.DrawMesh(mMesh, mMaterial);
+		cmdBuffer.DrawMesh(mMesh.get(), mMaterial.get());
 		instanceData.clear();
 		instanceData2.clear();
 	};

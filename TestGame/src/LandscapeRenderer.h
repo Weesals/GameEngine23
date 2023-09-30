@@ -31,7 +31,7 @@ class LandscapeRenderer
 	Landscape::LandscapeChangeEvent mDirtyRegion;
 
 public:
-	void Initialise(std::shared_ptr<Landscape>& landscape, std::shared_ptr<Material>& rootMaterial);
+	void Initialise(const std::shared_ptr<Landscape>& landscape, const std::shared_ptr<Material>& rootMaterial);
 
 	std::shared_ptr<Mesh>& RequireTileMesh();
 

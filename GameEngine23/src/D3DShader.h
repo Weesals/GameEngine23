@@ -6,6 +6,7 @@
 #include <wrl/client.h>
 
 #include "Resources.h"
+#include "GraphicsDeviceBase.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -36,39 +37,11 @@ template <> struct std::hash<ShaderKey>
 };
 
 // Represents the D3D12 instance of a shader
-class D3DShader {
+class D3DShader : ShaderBase {
 public:
-    // Reflected uniforms that can be set by the application
-    struct UniformValue {
-        std::string mName;
-        Identifier mNameId;
-        int mOffset;
-        int mSize;
-    };
-    struct ConstantBuffer {
-        std::string mName;
-        Identifier mNameId;
-        int mSize;
-        int mBindPoint;
-        std::vector<UniformValue> mValues;
-
-        int GetValueIndex(const std::string& name) const {
-            for (size_t i = 0; i < mValues.size(); i++)
-            {
-                if (mValues[i].mName == name) return (int)i;
-            }
-            return -1;
-        }
-    };
-    struct ResourceBinding {
-        std::string mName;
-        Identifier mNameId;
-        int mBindPoint;
-    };
 
     ComPtr<ID3DBlob> mShader;
-    std::vector<ConstantBuffer> mConstantBuffers;
-    std::vector<ResourceBinding> mResourceBindings;
+    ShaderReflection mReflection;
 
     // Compile shader and reflect uniform values / buffers
     void CompileFromFile(const std::wstring& path, const std::string& entry, const std::string& profile)
@@ -88,16 +61,11 @@ public:
 
         if (FAILED(hr))
         {
-            const char* errorMsg = nullptr;
-            if (hr == ERROR_FILE_NOT_FOUND)
-            {
-                errorMsg = "File was not found!";
-            }
-            else
-            {
-                // Retrieve error messages
-                errorMsg = compilationErrors != nullptr ? (const char*)compilationErrors->GetBufferPointer() : "";
-            }
+            // Retrieve error messages
+            const char* errorMsg =
+                hr == ERROR_FILE_NOT_FOUND ? "File was not found!" :
+                compilationErrors != nullptr ? (const char*)compilationErrors->GetBufferPointer() :
+                "";
             if (errorMsg != nullptr)
             {
                 OutputDebugStringA(errorMsg);
@@ -129,7 +97,7 @@ public:
             // The data we have extracted for this constant buffer
             ConstantBuffer cbuffer;
             cbuffer.mName = bufferDesc.Name;
-            cbuffer.mNameId = Resources::RequireStringId(cbuffer.mName);
+            cbuffer.mNameId = Identifier::RequireStringId(cbuffer.mName);
             cbuffer.mSize = bufferDesc.Size;
             cbuffer.mBindPoint = bindDesc.BindPoint;
 
@@ -144,13 +112,13 @@ public:
                 // The values for this uniform
                 UniformValue value = {
                     variableDesc.Name,
-                    Resources::RequireStringId(variableDesc.Name),
+                    Identifier::RequireStringId(variableDesc.Name),
                     (int)variableDesc.StartOffset,
                     (int)variableDesc.Size,
                 };
                 cbuffer.mValues.push_back(value);
             }
-            mConstantBuffers.push_back(cbuffer);
+            mReflection.mConstantBuffers.push_back(cbuffer);
         }
 
         // Get all bound resources
@@ -158,12 +126,40 @@ public:
         {
             D3D12_SHADER_INPUT_BIND_DESC resourceDesc;
             pShaderReflection->GetResourceBindingDesc(i, &resourceDesc);
-            if (resourceDesc.Type != D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE) continue;
-            ResourceBinding rbinding;
-            rbinding.mName = resourceDesc.Name;
-            rbinding.mNameId = Resources::RequireStringId(rbinding.mName);
-            rbinding.mBindPoint = resourceDesc.BindPoint;
-            mResourceBindings.push_back(rbinding);
+            if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE)
+            {
+                ResourceBinding rbinding;
+                rbinding.mNameId = Identifier::RequireStringId(rbinding.mName = resourceDesc.Name);
+                rbinding.mBindPoint = resourceDesc.BindPoint;
+                rbinding.mType = ResourceTypes::R_Texture;
+                mReflection.mResourceBindings.push_back(rbinding);
+            }
+            if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED)
+            {
+                ResourceBinding bbinding;
+                bbinding.mNameId = Identifier::RequireStringId(bbinding.mName = resourceDesc.Name);
+                bbinding.mBindPoint = resourceDesc.BindPoint;
+                bbinding.mStride = resourceDesc.NumSamples;
+                bbinding.mType = ResourceTypes::R_SBuffer;
+                mReflection.mResourceBindings.push_back(bbinding);
+            }
+        }
+        for (UINT i = 0; i < shaderDesc.InputParameters; ++i)
+        {
+            D3D12_SIGNATURE_PARAMETER_DESC inputDesc;
+            pShaderReflection->GetInputParameterDesc(i, &inputDesc);
+            ShaderBase::InputParameter parameter;
+            parameter.mNameId = Identifier::RequireStringId(parameter.mName = "");
+            parameter.mSemanticId = Identifier::RequireStringId(parameter.mSemantic = inputDesc.SemanticName);
+            parameter.mSemanticIndex = inputDesc.SemanticIndex;
+            parameter.mRegister = inputDesc.Register;
+            parameter.mMask = inputDesc.Mask;
+            parameter.mType =
+                inputDesc.ComponentType == D3D_REGISTER_COMPONENT_UINT32 ? ParameterTypes::P_UInt :
+                inputDesc.ComponentType == D3D_REGISTER_COMPONENT_SINT32 ? ParameterTypes::P_SInt :
+                inputDesc.ComponentType == D3D_REGISTER_COMPONENT_FLOAT32 ? ParameterTypes::P_Float :
+                ParameterTypes::P_Unknown;
+            mReflection.mInputParameters.push_back(parameter);
         }
     }
 };

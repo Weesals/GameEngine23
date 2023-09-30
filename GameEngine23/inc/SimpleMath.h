@@ -102,6 +102,9 @@ namespace DirectX
             Vector2& operator=(Vector2&&) = default;
             Vector2& operator= (const XMVECTORF32& F) noexcept { x = F.f[0]; y = F.f[1]; return *this; }
 
+            float& operator[](int index) { return (&x)[index]; }
+            const float& operator[](int index) const { return (&x)[index]; }
+
             operator XMVECTOR() const noexcept { return XMLoadFloat2(this); }
 
             // Comparison operators
@@ -214,6 +217,9 @@ namespace DirectX
             Vector3& operator=(Vector3&&) = default;
             Vector3& operator= (const XMVECTORF32& F) noexcept { x = F.f[0]; y = F.f[1]; z = F.f[2]; return *this; }
 
+            float& operator[](int index) { return (&x)[index]; }
+            const float& operator[](int index) const { return (&x)[index]; }
+
             operator XMVECTOR() const noexcept { return XMLoadFloat3(this); }
 
             Vector3(Vector2 o, float w) : DirectX::SimpleMath::Vector3(o.x, o.y, w) { }
@@ -298,6 +304,8 @@ namespace DirectX
 
             static Vector3 MoveTowards(Vector3 from, Vector3 to, float dst) noexcept;
 
+            static Vector3 Abs(const Vector3& v) noexcept;
+
             // Constants
             static const Vector3 Zero;
             static const Vector3 One;
@@ -338,6 +346,9 @@ namespace DirectX
 
             Vector4(Vector4&&) = default;
             Vector4& operator=(Vector4&&) = default;
+
+            float& operator[](int index) { return (&x)[index]; }
+            const float& operator[](int index) const { return (&x)[index]; }
 
             operator XMVECTOR() const  noexcept { return XMLoadFloat4(this); }
 
@@ -429,6 +440,8 @@ namespace DirectX
             static void Transform(const Vector4& v, const Matrix& m, Vector4& result) noexcept;
             static Vector4 Transform(const Vector4& v, const Matrix& m) noexcept;
             static void Transform(_In_reads_(count) const Vector4* varray, size_t count, const Matrix& m, _Out_writes_(count) Vector4* resultArray) noexcept;
+
+            static Vector4 Abs(const Vector4& v1) noexcept;
 
             // Constants
             static const Vector4 Zero;

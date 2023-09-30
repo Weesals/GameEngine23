@@ -39,7 +39,7 @@ class GraphicsDeviceMulti : public GraphicsDeviceBase
             // Forward to all devices
             std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.ClearRenderTarget(clear); });
         }
-        void DrawMesh(const std::shared_ptr<Mesh>& mesh, const std::shared_ptr<Material>& material, const DrawConfig& config) override
+        void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config) override
         {
             // Forward to all devices
             std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.DrawMesh(mesh, material); });

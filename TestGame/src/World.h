@@ -4,6 +4,7 @@
 #include <flecs.h>
 
 #include <GraphicsDeviceBase.h>
+#include <RetainedRenderer.h>
 #include <Model.h>
 #include <MathTypes.h>
 #include "Landscape.h"
@@ -24,7 +25,9 @@ public:
     };
 
     void HighlightEntity(flecs::entity e, const HighlightConfig& highlight);
-    Color GetHighlightFor(flecs::entity e, std::clock_t time);
+    Color GetHighlightFor(flecs::entity e, int time);
+    int ComputeResult(const HighlightConfig& config, int time);
+    void GetModified(std::set<flecs::entity>& entities, int oldTime, int newTime);
 
 private:
     std::map<flecs::entity, HighlightConfig> mEntityHighlights;
@@ -46,10 +49,13 @@ class World
 
     // Placeholder assets for rendering the world
     std::shared_ptr<Material> mLitMaterial;
+    std::shared_ptr<RetainedRenderer> mScene;
+
+    std::set<flecs::entity> mMovedEntities;
 
 public:
     // Initialise world entities and other systems
-    void Initialise(std::shared_ptr<Material>& rootMaterial);
+    void Initialise(const std::shared_ptr<Material>& rootMaterial, const std::shared_ptr<RetainedRenderer>& scene);
 
     flecs::entity GetPlayer(int id) const { return mPlayerEntities[id]; }
 
@@ -74,5 +80,7 @@ public:
     flecs::entity SpawnEntity(int protoId, flecs::entity owner, const Components::Transform& pos);
 
     void FlashEntity(flecs::entity e, const WorldEffects::HighlightConfig& config);
+
+    void NotifyMovedEntity(flecs::entity e);
 
 };

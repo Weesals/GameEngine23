@@ -9,6 +9,7 @@
 #include "World.h"
 
 #include <InputDispatcher.h>
+#include <RetainedRenderer.h>
 
 #include "SelectionManager.h"
 #include "SelectionRenderer.h"
@@ -43,6 +44,7 @@ private:
 	std::shared_ptr<Canvas> mCanvas;
 	std::shared_ptr<UIPlay> mPlayUI;
 
+	std::shared_ptr<RetainedRenderer> mScene;
 	std::shared_ptr<World> mWorld;
 
 	std::shared_ptr<Material> mRootMaterial;

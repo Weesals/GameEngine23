@@ -52,6 +52,24 @@ struct RectInt
 	inline Int2 GetMax() const { return Int2(x + width, y + height); }
 	static RectInt FromMinMax(Int2 min, Int2 max) { return RectInt(min.x, min.y, max.x - min.x, max.y - min.y); }
 };
+struct RangeInt
+{
+	int start, length;
+	int end() { return start + length; }
+	RangeInt() : start(0), length(0) { }
+	RangeInt(int start, int length) : start(start), length(length) { }
+	static RangeInt FromBeginEnd(int begin, int end) { return RangeInt(begin, end - begin); }
+};
+
+struct BoundingBox {
+	Vector3 mMin, mMax;
+	Vector3 Centre() const { return (mMin + mMax) / 2.0f; }
+	Vector3 Extents() const { return (mMax - mMin) / 2.0f; }
+	BoundingBox() : BoundingBox(Vector3::Zero, Vector3::Zero) { }
+	BoundingBox(Vector3 min, Vector3 max)
+		: mMin(min), mMax(max) { }
+	static BoundingBox FromMinMax(Vector3 min, Vector3 max) { BoundingBox(min, max); }
+};
 
 struct Ray
 {
@@ -75,4 +93,37 @@ struct Ray
 	}
 	Vector3 GetPoint(float d) const { return Origin + Direction * d; }
 	Ray Normalize() const { return Ray(Origin, Direction.Normalize()); }
+};
+
+struct Frustum4
+{
+	Vector4 mPlaneXs, mPlaneYs, mPlaneZs, mPlaneDs;
+	Vector3 Left() const;
+	Vector3 Right() const;
+	Vector3 Down() const;
+	Vector3 Up() const;
+	Frustum4(Matrix vp);
+	float GetVisibility(Vector3 pos) const;
+	float GetVisibility(Vector3 pos, Vector3 ext) const;
+	bool GetIsVisible(Vector3 pos) const;
+	bool GetIsVisible(Vector3 pos, Vector3 ext) const;
+protected:
+	Vector4 GetProjectedDistances(Vector3 pos) const;
+	static Vector4 dot4(Vector4 xs, Vector4 ys, Vector4 zs, Vector4 mx, Vector4 my, Vector4 mz);
+	static float cmin(Vector2 v);
+	static float cmin(Vector4 v);
+};
+struct Frustum : public Frustum4
+{
+	Vector4 mNearPlane;
+	Vector4 mFarPlane;
+	Vector3 Backward() const;
+	Vector3 Forward() const;
+	Frustum(Matrix vp);
+	float GetVisibility(Vector3 pos) const;
+	float GetVisibility(Vector3 pos, Vector3 ext) const;
+	bool GetIsVisible(Vector3 pos) const;
+	bool GetIsVisible(Vector3 pos, Vector3 ext) const;
+protected:
+	Vector2 GetProjectedDistancesNearFar(Vector3 pos) const;
 };

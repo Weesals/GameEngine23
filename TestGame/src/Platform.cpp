@@ -17,7 +17,6 @@ void Platform::Initialize()
 {
     // Create the window
     auto window = std::make_shared<WindowWin32>(L"RTS Demo");
-
     // Initiaise graphics
 #if defined(VULKAN)
     auto device = std::make_shared<GraphicsDeviceVulkan>(window);

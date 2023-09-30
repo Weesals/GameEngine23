@@ -59,6 +59,7 @@ class ParameterSet
 	std::vector<uint8_t> mData;
 
 public:
+	~ParameterSet();
 	// Set the data for a value in this property set
 	template<class T>
 	std::span<const uint8_t> SetValue(Identifier name, const T* data, int count)
@@ -72,6 +73,7 @@ public:
 	std::span<const uint8_t> SetValue(Identifier name, const void* data, int count, const TypeCache::TypeInfo& typeInfo);
 	// Get the binary data for a value in this set
 	std::span<const uint8_t> GetValueData(Identifier name) const;
+	const uint8_t* GetDataRaw() const;
 private:
 	// Resize the binary data allocated to an item, and
 	// move the ByteOffset of other relevant other types
@@ -108,25 +110,56 @@ struct DepthMode
 	static DepthMode MakeOff() { return DepthMode(Comparisons::Always, false);}
 };
 
+class Material;
+class MaterialEvaluator;
+class MaterialCollector;
+
+class MaterialEvaluatorContext {
+	const MaterialEvaluator& mCache;
+	std::span<uint8_t>& mOutput;
+	void* GetAndIterateParameter(Identifier name);
+public:
+	int mIterator;
+	MaterialEvaluatorContext(const MaterialEvaluator& cache, int iterator, std::span<uint8_t>& output)
+		: mCache(cache), mIterator(iterator), mOutput(output) { }
+	MaterialEvaluatorContext(const MaterialEvaluatorContext& other) = delete;
+	template<typename T>
+	const T& GetUniform(Identifier name) {
+		return *(T*)GetAndIterateParameter(name);
+	}
+};
+class MaterialCollectorContext {
+	const Material* mMaterial;
+	MaterialCollector& mCollector;
+public:
+	MaterialCollectorContext(const Material* mat, MaterialCollector& collector)
+		: mMaterial(mat), mCollector(collector) { }
+	template<class T>
+	const T& GetUniform(Identifier name) {
+		return *(T*)GetUniformSource(name, *this).data();
+	}
+	std::span<const uint8_t> GetUniformSource(Identifier name, MaterialCollectorContext& context) const;
+};
+
+
 // Stores a binding of shaders and uniform parameter values
 class Material
 {
-public:
+	friend class MaterialEvaluator;
+	friend class MaterialCollector;
+protected:
 	// Used to compute computed parameters
 	class ParameterContext
 	{
 		const Material* mMaterial;
-		int mMinDepth;
 	public:
-		ParameterContext(const Material* mat) : mMaterial(mat), mMinDepth(0){ }
-		int GetMinDepth() const { return mMinDepth; }
+		ParameterContext(const Material* mat) : mMaterial(mat) { }
 		template<class T>
-		T& GetUniform(Identifier name) {
-			return *(T*)mMaterial->GetUniformBinaryData(name).data();
+		const T& GetUniform(Identifier name) {
+			return *(T*)mMaterial->GetUniformBinaryData(name, *this).data();
 		}
 	};
 
-private:
 	// A parameter that is calculated based on other parameters
 	class ComputedParameterBase
 	{
@@ -136,27 +169,43 @@ private:
 	public:
 		virtual ~ComputedParameterBase() { }
 		Identifier GetName() const { return mName; }
+		virtual int GetDataSize() const = 0;
 		virtual std::span<const uint8_t> WriteValue(Identifier name, Material* dest, ParameterContext& context) const = 0;
+		virtual void SourceValue(std::span<uint8_t> outData, MaterialCollectorContext& context) const = 0;
+		virtual void EvaluateValue(std::span<uint8_t> outData, MaterialEvaluatorContext& context) const = 0;
 	};
 	// The typed version of the above class
-	template<class T>
+	template<class T, class C>
 	class ComputedParameter : public ComputedParameterBase
 	{
-		std::function<T(ParameterContext&)> mComputer;
+		C mFunction;
 	public:
-		ComputedParameter(Identifier name, const std::function<T(ParameterContext&)>& computer)
-			: ComputedParameterBase(name), mComputer(computer) { }
-		void OverwriteComputer(std::function<T(ParameterContext&)> computer) { mComputer = computer; }
+		ComputedParameter(Identifier name, const C& fn) : ComputedParameterBase(name), mFunction(fn) { }
+		int GetDataSize() const override
+		{
+			return sizeof(T);
+		}
 		std::span<const uint8_t> WriteValue(Identifier name, Material* dest, ParameterContext& context) const override
 		{
-			auto value = mComputer(context);
+			auto value = mFunction(context);
 			return dest->SetUniformNoNotify(name, value);
 		}
+		void SourceValue(std::span<uint8_t> outData, MaterialCollectorContext& context) const override
+		{
+			assert(outData.size() >= sizeof(T));
+			*(T*)outData.data() = mFunction(context);
+		}
+		void EvaluateValue(std::span<uint8_t> outData, MaterialEvaluatorContext& context) const override
+		{
+			assert(outData.size() >= sizeof(T));
+			*(T*)outData.data() = mFunction(context);
+		}
 	};
-	struct ComputeCacheItem {
-		Identifier mIdentifier;
-		int mRevisionHash;
-	};
+
+public:	// TODO: Remove
+	typedef std::vector<std::pair<Identifier, std::unique_ptr<ComputedParameterBase>>> ComputedParameterCollection;
+
+private:
 
 	// Shaders bound
 	std::shared_ptr<Shader> mVertexShader;
@@ -174,11 +223,11 @@ private:
 	// so why not the instance count itself?
 	int mInstanceCount;
 
-	// Parameters (and eventually shaders?) are inherited from parent materials
+	// Parameters are inherited from parent materials
 	std::vector<std::shared_ptr<Material>> mInheritParameters;
 
 	// These parameters can automatically compute themselves
-	std::vector<ComputedParameterBase*> mComputedParameters;
+	ComputedParameterCollection mComputedParameters;
 
 	// Incremented whenever data within this material changes
 	int mRevision;
@@ -222,6 +271,9 @@ private:
 public:
 
 	Material() : Material(nullptr, nullptr) { }
+	Material(const std::wstring& shaderPath)
+		: Material(std::make_shared<Shader>(shaderPath, "VSMain"), std::make_shared<Shader>(shaderPath, "PSMain"))
+	{ }
 	Material(const std::shared_ptr<Shader>& vertexShader, const std::shared_ptr<Shader>& pixelShader)
 		: mVertexShader(vertexShader), mPixelShader(pixelShader), mInstanceCount(0), mRevision(0)
 	{ }
@@ -275,21 +327,30 @@ public:
 	// should still be the child material, not the parent.
 	// TODO: Results should be cached in some way, probably based on a hash of
 	// mRevision of all materials involved
-	template<class T>
-	void SetComputedUniform(Identifier name, const std::function<T(ParameterContext)>& lambda)
+	template<typename T, typename C>
+	void SetComputedUniform(Identifier name, const C& lambda)
 	{
-		auto i = std::find_if(mComputedParameters.begin(), mComputedParameters.end(), [=](auto item) { return item->GetName() == name; });
-		if (i != mComputedParameters.end())
-			dynamic_cast<ComputedParameter<T>*>(*i)->OverwriteComputer(lambda);
-		else
-			mComputedParameters.push_back(new ComputedParameter<T>(name, lambda));
+		auto insert = std::partition_point(mComputedParameters.begin(), mComputedParameters.end(),
+			[=](const auto& kv) { return kv.first < name; });
+		if (insert == mComputedParameters.end() || insert->first != name)
+			insert = mComputedParameters.emplace(insert, std::make_pair(name, std::unique_ptr<ComputedParameterBase>()));
+		insert->second = std::make_unique<ComputedParameter<T, C>>(name, lambda);
+		//mComputedParameters.insert_or_assign(name, std::make_unique<ComputedParameter<T, C>>(name, lambda));
 	}
+
+	ComputedParameterBase* FindComputed(Identifier name) const {
+		auto item = std::partition_point(mComputedParameters.begin(), mComputedParameters.end(),
+			[=](const auto& kv) { return kv.first < name; });
+		if (item != mComputedParameters.end() && item->first == name) return item->second.get();
+		return nullptr;
+	}
+
 
 	// Get the binary data for a specific parameter
 	std::span<const uint8_t> GetUniformBinaryData(Identifier name) const;
-	std::span<const uint8_t> IntlGetUniformBinaryData(Identifier name, const Material* context) const;
+	std::span<const uint8_t> GetUniformBinaryData(Identifier name, ParameterContext& context) const;
 
-	const std::shared_ptr<Texture>& GetUniformTexture(Identifier name) const;
+	const std::shared_ptr<Texture>* GetUniformTexture(Identifier name) const;
 
 	// Add a parent material that this material will inherit
 	// properties from
@@ -301,5 +362,5 @@ public:
 	// Use to determine if a value cache is still current
 	int ComputeHeirarchicalRevisionHash() const;
 
+	static Material NullInstance;
 };
-

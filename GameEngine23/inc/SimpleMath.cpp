@@ -884,6 +884,10 @@ Vector3 Vector3::MoveTowards(Vector3 from, Vector3 to, float dst) noexcept
     auto deltaL = delta.Length();
     return from + delta * (dst >= deltaL ? 1.0f : dst / deltaL);
 }
+Vector3 Vector3::Abs(const Vector3& v) noexcept
+{
+    return Vector3(std::abs(v.x), std::abs(v.y), std::abs(v.z));
+}
 
 
 /****************************************************************************

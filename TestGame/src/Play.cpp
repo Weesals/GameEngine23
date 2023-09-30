@@ -8,7 +8,7 @@
 void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
 {
     // Generate a skybox mesh
-    mMesh = std::make_shared<Mesh>();
+    mMesh = std::make_shared<Mesh>("Skybox");
     mMesh->SetVertexCount(4);
     auto positions = mMesh->GetPositions();
     for (int i = 0; i < positions.size(); ++i)
@@ -17,7 +17,7 @@ void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
     mMesh->SetIndices({ 0, 3, 1, 0, 2, 3, });
 
     // Load the skybox material
-    mMaterial = std::make_shared<Material>(std::make_shared<Shader>(L"assets/skybox.hlsl"), std::make_shared<Shader>(L"assets/skybox.hlsl"));
+    mMaterial = std::make_shared<Material>(L"assets/skybox.hlsl");
     mMaterial->InheritProperties(rootMaterial);
 }
 
@@ -82,38 +82,41 @@ void Play::Initialise(Platform& platform)
     Identifier iMVPMat = "ModelViewProjection";
     Identifier iLightDir = "_WorldSpaceLightDir0";
     mRootMaterial->SetUniform("Model", Matrix::Identity);
-    mRootMaterial->SetComputedUniform<Matrix>("ModelView", [=](auto context) {
+    mRootMaterial->SetUniform("View", mCamera.GetViewMatrix());
+    mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix());
+    mRootMaterial->SetComputedUniform<Matrix>("ModelView", [=](auto& context) {
         auto m = context.GetUniform<Matrix>(iMMat);
         auto v = context.GetUniform<Matrix>(iVMat);
-        return (v * m);
+        return (m * v);
     });
-    mRootMaterial->SetComputedUniform<Matrix>("ViewProjection", [=](auto context) {
+    mRootMaterial->SetComputedUniform<Matrix>("ViewProjection", [=](auto& context) {
         auto v = context.GetUniform<Matrix>(iVMat);
         auto p = context.GetUniform<Matrix>(iPMat);
-        return (p * v);
+        return (v * p);
     });
-    mRootMaterial->SetComputedUniform<Matrix>("ModelViewProjection", [=](auto context) {
+    mRootMaterial->SetComputedUniform<Matrix>("ModelViewProjection", [=](auto& context) {
         auto mv = context.GetUniform<Matrix>(iMVMat);
         auto p = context.GetUniform<Matrix>(iPMat);
-        return (p * mv);
+        return (mv * p);
     });
-    mRootMaterial->SetComputedUniform<Matrix>("InvModelViewProjection", [=](auto context) {
+    mRootMaterial->SetComputedUniform<Matrix>("InvModelViewProjection", [=](auto& context) {
         auto mvp = context.GetUniform<Matrix>(iMVPMat);
         return mvp.Invert();
     });
-    mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceLightDir0", [=](auto context) {
+    mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceLightDir0", [=](auto& context) {
         auto lightDir = context.GetUniform<Vector3>(iLightDir);
-        auto view = context.GetUniform<Matrix>(iVMat).Transpose();
+        auto view = context.GetUniform<Matrix>(iVMat);
         return Vector3::TransformNormal(lightDir, view);
     });
-    mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceUpVector", [=](auto context) {
-        return context.GetUniform<Matrix>(iVMat).Transpose().Up();
+    mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceUpVector", [=](auto& context) {
+        return context.GetUniform<Matrix>(iVMat).Up();
     });
 
+    mScene = std::make_shared<RetainedRenderer>(platform.GetGraphics());
     mWorld = std::make_shared<World>();
 
     // Initialise world
-    mWorld->Initialise(mRootMaterial);
+    mWorld->Initialise(mRootMaterial, mScene);
 
     // Setup user interactions
     mActionDispatch = std::make_shared<Systems::ActionDispatchSystem>(mWorld.get());
@@ -129,7 +132,7 @@ void Play::Step()
 {
     // Calculate delta time
     auto now = steady_clock::now();
-    float dt = std::min((now - mTimePoint).count() / (float)(1000 * 1000 * 1000), 1000.0f);
+    float dt = std::min((now - mTimePoint).count() / (float)(1000 * 1000 * 1000), 1.0f);
 #if defined(_DEBUG)
     if (mInput->IsKeyDown('Q')) dt *= 10.0f;
 #endif
@@ -147,9 +150,9 @@ void Play::Step()
     mInputDispatcher->Update();
 
     // Update uniform parameters
-    mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix().Transpose());
-    mRootMaterial->SetUniform("View", mCamera.GetViewMatrix().Transpose());
     mRootMaterial->SetUniform("Time", mTime);
+    mRootMaterial->SetUniform("View", mCamera.GetViewMatrix());
+    mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix());
     mWorld->Step(dt);
 }
 
@@ -157,10 +160,16 @@ void Play::Render(CommandBuffer& cmdBuffer)
 {
     // Render the world
     mWorld->Render(cmdBuffer);
+
+    // Draw retained meshes
+    RetainedRenderer::DrawList drawList;
+    mScene->CreateDrawList(drawList, mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix());
+    mScene->RenderDrawList(cmdBuffer, drawList);
+
     mSelectionRenderer->Render(cmdBuffer);
     mOnRender.Invoke(cmdBuffer);
     // Render the skybox
-    cmdBuffer.DrawMesh(mSkybox->mMesh, mSkybox->mMaterial);
+    cmdBuffer.DrawMesh(mSkybox->mMesh.get(), mSkybox->mMaterial.get());
 
     // Render UI
     mCanvas->Render(cmdBuffer);

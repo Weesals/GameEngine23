@@ -30,12 +30,12 @@ public:
 			if (meshMat != nullptr)
 			{
 				meshMat->InheritProperties(material);
-				cmdBuffer.DrawMesh(mesh, meshMat);
+				cmdBuffer.DrawMesh(mesh.get(), meshMat.get());
 				meshMat->RemoveInheritance(material);
 			}
 			else
 			{
-				cmdBuffer.DrawMesh(mesh, material);
+				cmdBuffer.DrawMesh(mesh.get(), material.get());
 			}
 		}
 	}

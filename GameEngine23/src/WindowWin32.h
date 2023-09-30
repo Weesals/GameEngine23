@@ -7,6 +7,7 @@
 #include "Input.h"
 
 #define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
 // A Windows window (using old desktop win32 APIs)
