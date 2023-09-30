@@ -44,18 +44,18 @@ public:
         View mView;
         bool IsValidForSize(int size) { return (int)mView.SizeInBytes >= size && mBuffer != nullptr; }
     };
+    struct D3DBufferWithSRV : public D3DBuffer
+    {
+        int mSRVOffset;
+        int mRevision;
+    };
     // The GPU data for a mesh
     struct D3DMesh
     {
+        std::vector<const BufferLayout*> mBindingLayout;
         std::vector<D3D12_INPUT_ELEMENT_DESC> mVertElements;
-        int mRevision;
-        D3DBufferWithView<D3D12_VERTEX_BUFFER_VIEW> mVertexBuffer;
-        D3DBufferWithView<D3D12_INDEX_BUFFER_VIEW> mIndexBuffer;
-    };
-    struct D3DTexture
-    {
-        ComPtr<ID3D12Resource> mBuffer;
-        int mSRVOffset;
+        std::vector<D3D12_VERTEX_BUFFER_VIEW> mVertexViews;
+        D3D12_INDEX_BUFFER_VIEW mIndexView;
         int mRevision;
     };
     struct ResourceBindingCache
@@ -138,7 +138,7 @@ private:
     // and clean up GPU resources
     D3DRootSignature mRootSignature;
     std::unordered_map<const Mesh*, std::unique_ptr<D3DMesh>> meshMapping;
-    std::unordered_map<const Texture*, std::unique_ptr<D3DTexture>> textureMapping;
+    std::unordered_map<const Texture*, std::unique_ptr<D3DBufferWithSRV>> textureMapping;
     std::unordered_map<ShaderKey, std::unique_ptr<D3DShader>> shaderMapping;
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
@@ -146,13 +146,12 @@ private:
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mUploadBufferCache;
     int mCBOffset;
 
-    int GenerateElementDesc(const Mesh& mesh, std::vector<D3D12_INPUT_ELEMENT_DESC>& vertDesc);
-    void CopyVertexData(const Mesh& mesh, void* buffer, int stride);
 public:
     D3DResourceCache(D3DGraphicsDevice& d3d12);
     void SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId);
     ID3D12Resource* AllocateUploadBuffer(int size);
     void CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size);
+    void CopyBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges);
 
     void ComputeElementLayout(std::span<const BufferLayout*> bindings,
         std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
@@ -162,16 +161,16 @@ public:
         D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
     D3DMesh* RequireD3DMesh(const Mesh& mesh);
-    D3DTexture* RequireD3DTexture(const Texture& mesh);
+    D3DBufferWithSRV* RequireD3DBuffer(const Texture& mesh);
     D3DShader* RequireShader(const Shader& shader, const std::string& profile);
     D3DPipelineState* GetOrCreatePipelineState(const Shader& vs, const Shader& ps, size_t hash);
     D3DPipelineState* RequirePipelineState(const Material& material, std::span<const BufferLayout*> bindings);
     D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
     D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);
 
-    void UpdateMeshData(D3DMesh* d3dMesh, const Mesh& mesh, ID3D12GraphicsCommandList* cmdList);
-    void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList);
-    void UpdateBufferData(D3DTexture* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList);
+    void UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList);
+    void RequireD3DBuffer(D3DBufferWithSRV* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList);
+    void UpdateBufferData(D3DBufferWithSRV* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList);
 };
 
 // A D3D12 renderer

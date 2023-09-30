@@ -24,6 +24,37 @@ inline void ThrowIfFailed(HRESULT hr)
         throw std::exception();
     }
 }
+void D3DResourceCache::CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size) {
+    auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+    // Buffer already valid
+    // Register buffer to be destroyed in the future
+    if (buffer != nullptr)
+    {
+        mUploadBufferCache.InsertItem(buffer);
+        buffer = nullptr;
+    }
+    auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
+    ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommittedResource(
+        &heapProps,
+        D3D12_HEAP_FLAG_NONE,
+        &resDesc,
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        nullptr,
+        IID_PPV_ARGS(&buffer)));
+    buffer->SetName(L"MeshBuffer");
+};
+template<class F2>
+void WriteBuffer(ID3D12GraphicsCommandList* cmdList, D3DResourceCache& cache, ID3D12Resource* buffer, int size, const F2& fillBuffer,
+    int dstOffset = 0) {
+    // Map and fill the buffer data (via temporary upload buffer)
+    ID3D12Resource* uploadBuffer = cache.AllocateUploadBuffer(size);
+    uint8_t* mappedData;
+    CD3DX12_RANGE readRange(0, 0);
+    ThrowIfFailed(uploadBuffer->Map(0, &readRange, (void**)&mappedData));
+    fillBuffer(mappedData);
+    uploadBuffer->Unmap(0, nullptr);
+    cmdList->CopyBufferRegion(buffer, dstOffset, uploadBuffer, 0, size);
+};
 
 D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12)
     : mD3D12(d3d12)
@@ -91,104 +122,38 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::GetOrCreatePipelineState(c
     return GetOrCreate(pipelineMapping, key);
 }
 
-void D3DResourceCache::CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size) {
-    auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-    // Buffer already valid
-    // Register buffer to be destroyed in the future
-    if (buffer != nullptr)
-    {
-        mUploadBufferCache.InsertItem(buffer);
-        buffer = nullptr;
-    }
-    auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
-    ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommittedResource(
-        &heapProps,
-        D3D12_HEAP_FLAG_NONE,
-        &resDesc,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        nullptr,
-        IID_PPV_ARGS(&buffer)));
-    buffer->SetName(L"MeshBuffer");
-};
-template<class F2>
-void WriteBuffer(ID3D12GraphicsCommandList* cmdList, D3DResourceCache& cache, ID3D12Resource* buffer, int size, const F2& fillBuffer,
-    int dstOffset = 0) {
+void D3DResourceCache::CopyBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges)
+{
+    auto d3dBuf = RequireD3DBuffer(*(Texture*)buffer);
+    RequireD3DBuffer(d3dBuf, *buffer, cmdList);
+
+    int totalCount = std::accumulate(ranges.begin(), ranges.end(), 0, [](int counter, RangeInt range) { return counter + range.length; });
+    int stride = buffer->GetStride();
+
     // Map and fill the buffer data (via temporary upload buffer)
-    ID3D12Resource* uploadBuffer = cache.AllocateUploadBuffer(size);
+    ID3D12Resource* uploadBuffer = AllocateUploadBuffer(totalCount * stride);
     UINT8* mappedData;
     CD3DX12_RANGE readRange(0, 0);
     ThrowIfFailed(uploadBuffer->Map(0, &readRange, (void**)&mappedData));
-    fillBuffer(mappedData);
+    int it = 0;
+    for (auto& range : ranges) {
+        std::memcpy(mappedData + it, buffer->GetRawData() + range.start * stride, range.length * stride);
+        it += range.length * stride;
+    }
     uploadBuffer->Unmap(0, nullptr);
-    cmdList->CopyBufferRegion(buffer, dstOffset, uploadBuffer, 0, size);
-};
-
-
-// Generate the GPU resources required for rendering a mesh
-void D3DResourceCache::UpdateMeshData(D3DMesh* d3dMesh, const Mesh& mesh, ID3D12GraphicsCommandList* cmdList)
-{
-    auto device = mD3D12.GetD3DDevice();
-
-    // Get vertex attributes
-    d3dMesh->mVertElements.clear();
-    int vertexStride = GenerateElementDesc(mesh, d3dMesh->mVertElements);
-
-    int vbufferByteSize = vertexStride * mesh.GetVertexCount();
-    if (!d3dMesh->mVertexBuffer.IsValidForSize(vbufferByteSize)) {
-        CreateBuffer(d3dMesh->mVertexBuffer.mBuffer, vbufferByteSize);
-        d3dMesh->mVertexBuffer.mView = { d3dMesh->mVertexBuffer.mBuffer->GetGPUVirtualAddress(), (UINT)vbufferByteSize, (UINT)vertexStride };
+    it = 0;
+    for (auto& range : ranges) {
+        cmdList->CopyBufferRegion(d3dBuf->mBuffer.Get(), range.start * stride,
+            uploadBuffer, it, range.length * stride);
+        it += range.length * stride;
     }
-    WriteBuffer(cmdList, *this, d3dMesh->mVertexBuffer.mBuffer.Get(), vbufferByteSize,
-        [&](auto* data) {
-            CopyVertexData(mesh, data, vertexStride);
-        });
-    int ibufferByteSize = sizeof(int) * mesh.GetIndexCount();
-    if (!d3dMesh->mIndexBuffer.IsValidForSize(ibufferByteSize)) {
-        CreateBuffer(d3dMesh->mIndexBuffer.mBuffer, ibufferByteSize);
-        d3dMesh->mIndexBuffer.mView = { d3dMesh->mIndexBuffer.mBuffer->GetGPUVirtualAddress(), (UINT)ibufferByteSize, DXGI_FORMAT_R32_UINT };
-    }
-    WriteBuffer(cmdList, *this, d3dMesh->mIndexBuffer.mBuffer.Get(), ibufferByteSize,
-        [&](auto* data) {
-            auto inds = mesh.GetIndices();
-            std::transform(inds.begin(), inds.end(), (int*)data, [](auto i) { return i; });
-        });
-
     auto endWrite = {
-        CD3DX12_RESOURCE_BARRIER::Transition(d3dMesh->mVertexBuffer.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON),
-        CD3DX12_RESOURCE_BARRIER::Transition(d3dMesh->mIndexBuffer.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON),
+        CD3DX12_RESOURCE_BARRIER::Transition(d3dBuf->mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON),
     };
     cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());
+    d3dBuf->mRevision = buffer->GetRevision();
+}
 
-    // Track that the mesh is nwo up to date
-    d3dMesh->mRevision = mesh.GetRevision();
-}
-// Generate a descriptor of the required vertex attributes for this mesh
-int D3DResourceCache::GenerateElementDesc(const Mesh& mesh, std::vector<D3D12_INPUT_ELEMENT_DESC>& vertDesc)
-{
-    uint32_t offset = 0;
-    if (!mesh.GetPositions().empty())
-        vertDesc.push_back({ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, PostIncrement(offset, 12u), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
-    if (!mesh.GetNormals().empty())
-        vertDesc.push_back({ "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, PostIncrement(offset, 12u), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
-    if (!mesh.GetUVs().empty())
-        vertDesc.push_back({ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,    0, PostIncrement(offset, 8u),  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
-    if (!mesh.GetColors().empty())
-        vertDesc.push_back({ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, PostIncrement(offset, 16u), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 });
-    return offset;
-}
-// Copy mesh data so that it matches a generated descriptor
-void D3DResourceCache::CopyVertexData(const Mesh& mesh, void* buffer, int stride)
-{
-    int offset = 0;
-    auto positions = mesh.GetPositions();
-    if (!positions.empty()) CopyElements(buffer, positions, PostIncrement(offset, 12), stride);
-    auto normals = mesh.GetNormals();
-    if (!normals.empty()) CopyElements(buffer, normals, PostIncrement(offset, 12), stride);
-    auto uvs = mesh.GetUVs();
-    if (!uvs.empty()) CopyElements(buffer, uvs, PostIncrement(offset, 8), stride);
-    auto colors = mesh.GetColors();
-    if (!colors.empty()) CopyElements(buffer, colors, PostIncrement(offset, 16), stride);
-}
 // Retrieve a buffer capable of upload/copy that will be vaild until
 // the frame completes rendering
 ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(int uploadSize)
@@ -212,7 +177,7 @@ ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(int uploadSize)
     );
     return uploadBufferItem.mData.Get();
 }
-void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList)
+void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList)
 {
     auto device = mD3D12.GetD3DDevice();
     auto size = tex.GetSize();
@@ -266,10 +231,8 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
 
     d3dTex->mRevision = tex.GetRevision();
 }
-void D3DResourceCache::UpdateBufferData(D3DTexture* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList)
+void D3DResourceCache::RequireD3DBuffer(D3DBufferWithSRV* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList)
 {
-    auto device = mD3D12.GetD3DDevice();
-
     int stride = buffer.GetStride() * 10;
     int count = buffer.GetSize() / stride;
     int size = stride * count;
@@ -277,19 +240,7 @@ void D3DResourceCache::UpdateBufferData(D3DTexture* d3dBuf, const GraphicsBuffer
     // Get d3d cache instance
     if (d3dBuf->mBuffer == nullptr)
     {
-        // Create the texture resource
-        auto texHeapType = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
-        bufferDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-        ThrowIfFailed(device->CreateCommittedResource(
-            &texHeapType,
-            D3D12_HEAP_FLAG_NONE,
-            &bufferDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            nullptr,
-            IID_PPV_ARGS(&d3dBuf->mBuffer)
-        ));
-        d3dBuf->mBuffer->SetName(L"UserBuffer");
+        CreateBuffer(d3dBuf->mBuffer, size);
 
         // Create a shader resource view (SRV) for the texture
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -303,20 +254,24 @@ void D3DResourceCache::UpdateBufferData(D3DTexture* d3dBuf, const GraphicsBuffer
         // Get the CPU handle to the descriptor in the heap
         auto descriptorSize = mD3D12.GetDescriptorHandleSizeSRV();
         CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), mCBOffset);
+        auto device = mD3D12.GetD3DDevice();
         device->CreateShaderResourceView(d3dBuf->mBuffer.Get(), &srvDesc, srvHandle);
         d3dBuf->mSRVOffset = mCBOffset;
         mCBOffset += descriptorSize;
     }
+}
+void D3DResourceCache::UpdateBufferData(D3DBufferWithSRV* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList)
+{
+    int stride = buffer.GetStride() * 10;
+    int count = buffer.GetSize() / stride;
+    int size = stride * count;
+    RequireD3DBuffer(d3dBuf, buffer, cmdList);
 
-    int isize = (int)GetRequiredIntermediateSize(d3dBuf->mBuffer.Get(), 0, 1);
+    //int isize = (int)GetRequiredIntermediateSize(d3dBuf->mBuffer.Get(), 0, 1);
 
-    auto uploadBuffer = AllocateUploadBuffer(size);
-    UINT8* mappedData;
-    CD3DX12_RANGE readRange(0, 0);
-    ThrowIfFailed(uploadBuffer->Map(0, &readRange, (void**)&mappedData));
-    std::memcpy(mappedData, buffer.GetRawData(), size);
-    uploadBuffer->Unmap(0, nullptr);
-    cmdList->CopyBufferRegion(d3dBuf->mBuffer.Get(), 0, uploadBuffer, 0, size);
+    WriteBuffer(cmdList, *this, d3dBuf->mBuffer.Get(), size, [&](auto* mappedData) {
+        std::memcpy(mappedData, buffer.GetRawData(), size);
+    });
 
     // Put the texture back in normal mode
     auto endWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dBuf->mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
@@ -443,7 +398,7 @@ D3DResourceCache::D3DMesh* D3DResourceCache::RequireD3DMesh(const Mesh& mesh)
     return GetOrCreate(meshMapping, &mesh);
 }
 // Allocate or retrieve a container for GPU buffers for this item
-D3DResourceCache::D3DTexture* D3DResourceCache::RequireD3DTexture(const Texture& tex)
+D3DResourceCache::D3DBufferWithSRV* D3DResourceCache::RequireD3DBuffer(const Texture& tex)
 {
     return GetOrCreate(textureMapping, &tex);
 }
@@ -474,7 +429,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
 
         auto ToD3DBArg = [](BlendMode::BlendArg arg)
         {
-            D3D12_BLEND mapping[] = {
+            static D3D12_BLEND mapping[] = {
                 D3D12_BLEND_ZERO, D3D12_BLEND_ONE,
                 D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
                 D3D12_BLEND_DEST_COLOR, D3D12_BLEND_INV_DEST_COLOR, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
@@ -483,7 +438,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
         };
         auto ToD3DBOp = [](BlendMode::BlendOp op)
         {
-            D3D12_BLEND_OP mapping[] = {
+            static D3D12_BLEND_OP mapping[] = {
                 D3D12_BLEND_OP_ADD, D3D12_BLEND_OP_SUBTRACT, D3D12_BLEND_OP_REV_SUBTRACT,
                 D3D12_BLEND_OP_MIN, D3D12_BLEND_OP_MAX,
             };
@@ -614,7 +569,7 @@ public:
                 clear.ClearDepth, clear.ClearStencil, 0, nullptr);
         }
     }
-    D3DResourceCache::D3DTexture* RequireD3DTexture(Texture* texture)
+    D3DResourceCache::D3DBufferWithSRV* RequireD3DBuffer(Texture* texture)
     {
         auto& cache = mDevice->GetResourceCache();
         if (texture == nullptr || texture->GetSize().x <= 0)
@@ -629,33 +584,28 @@ public:
             }
             texture = cache.mDefaultTexture.get();
         }
-        auto d3dTex = cache.RequireD3DTexture(*texture);
+        auto d3dTex = cache.RequireD3DBuffer(*texture);
         if (d3dTex->mRevision != texture->GetRevision())
             cache.UpdateTextureData(d3dTex, *texture, mCmdList.Get());
         return d3dTex;
     }
-    D3DResourceCache::D3DTexture* RequireD3DBuffer(GraphicsBufferBase* buffer)
+    D3DResourceCache::D3DBufferWithSRV* RequireD3DBuffer(GraphicsBufferBase* buffer)
     {
         auto& cache = mDevice->GetResourceCache();
-        auto d3dBuf = cache.RequireD3DTexture(*(Texture*)buffer);
+        auto d3dBuf = cache.RequireD3DBuffer(*(Texture*)buffer);
         if (d3dBuf->mRevision != buffer->GetRevision()) {
             cache.UpdateBufferData(d3dBuf, *buffer, mCmdList.Get());
         }
         return d3dBuf;
     }
 
-    void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* state, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) override
+    void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) override
     {
-        mDevice->CheckDeviceState();
-
         auto& cache = mDevice->GetResourceCache();
-        auto pipelineState = (D3DResourceCache::D3DPipelineState*)state->mPipelineHash;
-
-        std::vector<D3D12_VERTEX_BUFFER_VIEW> inputViews;
-        D3D12_INDEX_BUFFER_VIEW indexView;
-        int indexCount = -1;
-        cache.ComputeElementData(bindings, mCmdList.Get(), inputViews, indexView, indexCount);
-
+        cache.CopyBufferData(mCmdList.Get(), buffer, ranges);
+    }
+    void BindPipelineState(D3DResourceCache::D3DPipelineState* pipelineState)
+    {
         // Require and bind a pipeline matching the material config and mesh attributes
         if (mLastPipeline != pipelineState)
         {
@@ -673,6 +623,20 @@ public:
 
             mCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         }
+    }
+    void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* state, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) override
+    {
+        mDevice->CheckDeviceState();
+
+        auto& cache = mDevice->GetResourceCache();
+        auto pipelineState = (D3DResourceCache::D3DPipelineState*)state->mPipelineHash;
+
+        std::vector<D3D12_VERTEX_BUFFER_VIEW> inputViews;
+        D3D12_INDEX_BUFFER_VIEW indexView;
+        int indexCount = -1;
+        cache.ComputeElementData(bindings, mCmdList.Get(), inputViews, indexView, indexCount);
+
+        BindPipelineState(pipelineState);
 
         // Require and bind constant buffers
         for (int i = 0; i < pipelineState->mConstantBuffers.size(); ++i)
@@ -690,7 +654,7 @@ public:
             auto rb = pipelineState->mResourceBindings[i];
             if (rb == nullptr) continue;
             if (rb->mType == ShaderBase::ResourceTypes::R_Texture) {
-                auto d3dTex = RequireD3DTexture((Texture*)resources[2 + i]);
+                auto d3dTex = RequireD3DBuffer((Texture*)resources[2 + i]);
                 auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
                 handle.ptr += d3dTex->mSRVOffset;
                 mCmdList->SetGraphicsRootDescriptorTable(2 + rb->mBindPoint, handle);
@@ -720,29 +684,21 @@ public:
 
         // Get an up to date mesh
         auto d3dMesh = cache.RequireD3DMesh(*mesh);
-        if (d3dMesh->mRevision != mesh->GetRevision())
-            cache.UpdateMeshData(d3dMesh, *mesh, mCmdList.Get());
-        std::vector<BufferLayout*> bindings;
-        mesh->CreateMeshLayout(bindings);
-        auto pipelineState = cache.RequirePipelineState(*material, +bindings);
-
-        // Require and bind a pipeline matching the material config and mesh attributes
-        if (mLastPipeline != pipelineState)
-        {
-            if (mLastRootSig != pipelineState->mRootSignature->mRootSignature.Get())
-            {
-                mLastRootSig = pipelineState->mRootSignature->mRootSignature.Get();
-                mCmdList->SetGraphicsRootSignature(mLastRootSig);
-            }
-
-            mLastPipeline = pipelineState;
-            mCmdList->SetPipelineState(pipelineState->mPipelineState.Get());
-
-            auto srvHeap = mDevice->GetSRVHeap();
-            mCmdList->SetDescriptorHeaps(1, &srvHeap);
-
-            mCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        if (d3dMesh->mRevision != mesh->GetRevision()) {
+            d3dMesh->mBindingLayout.clear();
+            d3dMesh->mVertElements.clear();
+            d3dMesh->mVertexViews.clear();
+            mesh->CreateMeshLayout(d3dMesh->mBindingLayout);
+            cache.ComputeElementLayout(d3dMesh->mBindingLayout, d3dMesh->mVertElements);
+            int indexCount;
+            cache.ComputeElementData(d3dMesh->mBindingLayout, mCmdList.Get(),
+                d3dMesh->mVertexViews, d3dMesh->mIndexView, indexCount);
+            d3dMesh->mRevision = mesh->GetRevision();
         }
+
+        auto pipelineState = cache.RequirePipelineState(*material, +d3dMesh->mBindingLayout);
+
+        BindPipelineState(pipelineState);
 
         // Require and bind constant buffers
         for(int i = 0; i < pipelineState->mConstantBuffers.size(); ++i)
@@ -760,7 +716,7 @@ public:
             auto rb = pipelineState->mResourceBindings[i];
             if (rb == nullptr) continue;
             auto* texture = material->GetUniformTexture(rb->mNameId);
-            auto d3dTex = RequireD3DTexture(texture == nullptr ? nullptr : texture->get());
+            auto d3dTex = RequireD3DBuffer(texture == nullptr ? nullptr : texture->get());
             auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
             handle.ptr += d3dTex->mSRVOffset;
             mCmdList->SetGraphicsRootDescriptorTable(2 + rb->mBindPoint, handle);
@@ -769,8 +725,8 @@ public:
         // Bind the mesh buffers
         if (mLastMesh != d3dMesh) {
             mLastMesh = d3dMesh;
-            mCmdList->IASetVertexBuffers(0, 1, &d3dMesh->mVertexBuffer.mView);
-            mCmdList->IASetIndexBuffer(&d3dMesh->mIndexBuffer.mView);
+            mCmdList->IASetVertexBuffers(0, (int)d3dMesh->mVertexViews.size(), d3dMesh->mVertexViews.data());
+            mCmdList->IASetIndexBuffer(&d3dMesh->mIndexView);
         }
 
         int indexCount = mesh->GetIndexCount();

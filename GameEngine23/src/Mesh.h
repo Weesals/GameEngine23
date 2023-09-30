@@ -184,7 +184,7 @@ public:
 	std::span<const Color> GetColors() const { return mColors; }
 	std::span<const int> GetIndices() const { return mIndices; }
 
-	void CreateMeshLayout(std::vector<BufferLayout*>& bindings) const {
+	void CreateMeshLayout(std::vector<const BufferLayout*>& bindings) const {
 		if (mIndexBinds.mBuffer.mRevision != mRevision) {
 			new(&mIndexBinds) BufferLayout((size_t)this + 1, 0, BufferLayout::Usage::Index, GetIndexCount());
 			mIndexBinds.mBuffer.mRevision = mRevision;

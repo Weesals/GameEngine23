@@ -3,6 +3,7 @@
 #include "Mesh.h"
 #include "Material.h"
 #include "GraphicsUtility.h"
+#include "GraphicsBuffer.h"
 
 class ShaderBase
 {
@@ -115,6 +116,7 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual void Reset() = 0;
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
+    virtual void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) { }
     virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) { }
     virtual void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config) = 0;
     virtual void Execute() = 0;
@@ -130,6 +132,10 @@ public:
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
     void Reset() { mInterop->Reset(); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
+    void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges)
+    {
+        mInterop->CopyBufferData(buffer, ranges);
+    }
     void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1)
     {
         mInterop->DrawMesh(bindings, pso, resources, config, instanceCount);

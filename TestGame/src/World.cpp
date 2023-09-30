@@ -96,7 +96,6 @@ void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std:
         .with<Components::Wanders>()
         .without<Components::Runtime::ActionMove>()
         .each([&](flecs::entity e, const Components::Transform& t) {
-        return;
         // Choose a target at random times
         if ((float)rand() / RAND_MAX < time.mDeltaTime / 4.0f) {
             e.set(Components::Runtime::ActionMove {

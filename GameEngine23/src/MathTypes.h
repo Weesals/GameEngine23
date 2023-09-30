@@ -56,6 +56,7 @@ struct RangeInt
 {
 	int start, length;
 	int end() { return start + length; }
+	void end(int end) { length = end - start; }
 	RangeInt() : start(0), length(0) { }
 	RangeInt(int start, int length) : start(start), length(length) { }
 	static RangeInt FromBeginEnd(int begin, int end) { return RangeInt(begin, end - begin); }

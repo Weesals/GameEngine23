@@ -23,7 +23,7 @@ protected:
 	{
 		const Mesh* mMesh;
 		const PipelineLayout* mPipelineLayout;
-		std::vector<BufferLayout*> mBufferLayout;
+		std::vector<const BufferLayout*> mBufferLayout;
 		std::vector<int> mRetainedCBs;
 		std::vector<int> mInstances;
 		int mRetainedResourcesId;
@@ -66,6 +66,7 @@ protected:
 	GraphicsBuffer<Vector4> mGPUBuffer;
 	// Track which regions of the buffer are free
 	SparseIndices mFreeGPUBuffer;
+	GraphicsBufferDelta mGPUDelta;
 
 	// Used to generate MaterialEvaluators
 	// (to extract named parameters from material stacks efficiently)

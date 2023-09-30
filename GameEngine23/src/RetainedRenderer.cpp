@@ -91,7 +91,7 @@ int RetainedRenderer::CalculateBatchId(const Mesh* mesh, const Material* materia
 	size_t batchHash = 0;
 
 	// Find vertex bindings
-	std::vector<BufferLayout*> bindings;
+	std::vector<const BufferLayout*> bindings;
 	mesh->CreateMeshLayout(bindings);
 	bindings.push_back(&mInstanceBufferLayout);
 	auto pso = mGraphics->RequirePipeline(+bindings, material);
@@ -139,6 +139,7 @@ bool RetainedRenderer::UpdateInstanceData(int instanceId, std::span<const uint8_
 	if (std::memcmp(data.data(), tdata.data(), tdata.size()) == 0) return false;
 	std::memcpy(data.data(), tdata.data(), tdata.size());
 	mGPUBuffer.MarkChanged(instance.mData);
+	mGPUDelta.AppendRegion(instance.mData);
 	return true;
 }
 // Remove a mesh instance
@@ -211,6 +212,12 @@ void RetainedRenderer::CreateDrawList(RetainedRenderer::DrawList& drawList, Matr
 	}
 }
 void RetainedRenderer::RenderDrawList(CommandBuffer& cmdBuffer, DrawList& drawList) {
+	// Update only the changed regions
+	auto regions = mGPUDelta.GetRegions();
+	if (!regions.empty()) {
+		cmdBuffer.CopyBufferData(&mGPUBuffer, regions);
+		mGPUDelta.Clear();
+	}
 	// Setup the instance buffer 
 	mInstanceBufferLayout.mElements[0].mData = drawList.mInstancesBuffer.data();
 	mInstanceBufferLayout.mBuffer.mSize = mInstanceBufferLayout.mElements[0].mItemSize * (int)drawList.mInstancesBuffer.size();
