@@ -113,6 +113,7 @@ void Play::Initialise(Platform& platform)
     });
 
     mScene = std::make_shared<RetainedRenderer>(platform.GetGraphics());
+    mRenderQueue = std::make_shared<RenderQueue>();
     mWorld = std::make_shared<World>();
 
     // Initialise world
@@ -162,9 +163,13 @@ void Play::Render(CommandBuffer& cmdBuffer)
     mWorld->Render(cmdBuffer);
 
     // Draw retained meshes
-    RetainedRenderer::DrawList drawList;
-    mScene->CreateDrawList(drawList, mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix());
-    mScene->RenderDrawList(cmdBuffer, drawList);
+    //RetainedRenderer::DrawList drawList;
+    //mScene->CreateDrawList(drawList, mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix());
+    //mScene->RenderDrawList(cmdBuffer, drawList);
+    mRenderQueue->Clear();
+    mScene->SubmitGPUMemory(cmdBuffer);
+    mScene->SubmitToRenderQueue(*mRenderQueue, mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix());
+    mRenderQueue->Flush(cmdBuffer);
 
     mSelectionRenderer->Render(cmdBuffer);
     mOnRender.Invoke(cmdBuffer);

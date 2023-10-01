@@ -130,6 +130,7 @@ public:
     CommandBuffer(CommandBuffer& other) = delete;
     CommandBuffer(CommandBuffer&& other) = default;
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
+    CommandBuffer& operator = (CommandBuffer&& other) = default;
     void Reset() { mInterop->Reset(); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
     void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges)

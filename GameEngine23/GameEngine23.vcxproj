@@ -145,6 +145,7 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\RenderQueue.h" />
     <ClInclude Include="src\Containers.h" />
     <ClInclude Include="src\D3DConstantBufferCache.h" />
     <ClInclude Include="src\D3DGraphicsDevice.h" />
@@ -165,6 +166,7 @@
     <ClInclude Include="src\MathTypes.h" />
     <ClInclude Include="src\Mesh.h" />
     <ClInclude Include="src\Model.h" />
+    <ClInclude Include="src\NativePlatform.h" />
     <ClInclude Include="src\ResourceLoader.h" />
     <ClInclude Include="src\Resources.h" />
     <ClInclude Include="src\RetainedRenderer.h" />
@@ -177,6 +179,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\SimpleMath.cpp" />
+    <ClCompile Include="src\RenderQueue.cpp" />
     <ClCompile Include="src\Core.cpp" />
     <ClCompile Include="src\D3DConstantBufferCache.cpp" />
     <ClCompile Include="src\D3DGraphicsDevice.cpp" />
@@ -189,6 +192,7 @@
     <ClCompile Include="src\InputDispatcher.cpp" />
     <ClCompile Include="src\Material.cpp" />
     <ClCompile Include="src\MathTypes.cpp" />
+    <ClCompile Include="src\NativePlatform.cpp" />
     <ClCompile Include="src\ResourceLoader.cpp" />
     <ClCompile Include="src\Resources.cpp" />
     <ClCompile Include="src\RetainedRenderer.cpp" />

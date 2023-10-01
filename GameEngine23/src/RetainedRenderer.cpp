@@ -14,9 +14,8 @@ int RetainedRenderer::AllocateInstance(int batchId, int instanceDataSize) {
 	// Round up to the next Vector4
 	int instanceDataCount = (instanceDataSize + sizeof(Vector4) - 1) / sizeof(Vector4);
 	// Allocate an instance in the batch
-	int id = mInstances.Allocate();
+	int id = mInstances.Add(Instance{ .mBatchId = batchId, });
 	auto& instance = mInstances[id];
-	instance.mBatchId = batchId;
 	mBatches[batchId].mInstances.push_back(id);
 	// Allocate the required amount of data
 	for (int t = 0; t < 10; ++t) {
@@ -36,8 +35,8 @@ int RetainedRenderer::RequireRetainedCB(const ShaderBase::ConstantBuffer* consta
 	MaterialCollectorContext context(material, mMaterialCollector);
 	for (int v = 0; v < values.size(); ++v)
 		mMaterialCollector.GetUniformSource(material, values[v].mNameId, context);
-
 	auto hash = GenericHash({ mMaterialCollector.GenerateSourceHash(), constantBuffer->GenerateHash() });
+
 	// Check if we have a setup for this cb set and source set
 	auto cb = mCBBySourceHash.find(hash);
 	if (cb != mCBBySourceHash.end()) return cb->second;
@@ -96,6 +95,7 @@ int RetainedRenderer::CalculateBatchId(const Mesh* mesh, const Material* materia
 	bindings.push_back(&mInstanceBufferLayout);
 	auto pso = mGraphics->RequirePipeline(+bindings, material);
 	batchHash = AppendHash(pso, batchHash);
+	batchHash = AppendHash(mesh, batchHash);
 
 	// Find relevant constant buffer sources
 	std::vector<int> retainedCBs(pso->mConstantBuffers.size());
@@ -151,14 +151,14 @@ void RetainedRenderer::RemoveInstance(int instanceId) {
 	mInstances.Return(instanceId);
 }
 
-void RetainedRenderer::CreateDrawList(RetainedRenderer::DrawList& drawList, Matrix vp) {
-	// Clear previous data
-	drawList.mCBData.clear();
-	drawList.mResourceData.clear();
-	drawList.mInstancesBuffer.clear();
-	drawList.mDraws.clear();
-	drawList.mCBData.reserve(2048);
-
+// Update only the changed regions
+void RetainedRenderer::SubmitGPUMemory(CommandBuffer& cmdBuffer) {
+	auto regions = mGPUDelta.GetRegions();
+	if (regions.empty()) return;
+	cmdBuffer.CopyBufferData(&mGPUBuffer, regions);
+	mGPUDelta.Clear();
+}
+void RetainedRenderer::SubmitToRenderQueue(RenderQueue& drawList, Matrix vp) {
 	// Generate draw commands from batches
 	Identifier gInstanceDataId = "instanceData";
 	Frustum frustum(vp);
@@ -173,9 +173,8 @@ void RetainedRenderer::CreateDrawList(RetainedRenderer::DrawList& drawList, Matr
 		auto bboxExt = bbox.Extents();
 		for (auto& instance : batch.mInstances) {
 			auto& matrix = *(Matrix*)(mGPUBuffer.GetValues(mInstances[instance].mData).data());
-			if (frustum.GetIsVisible(Vector3::Transform(bboxCtr, matrix), bboxExt)) {
-				drawList.mInstancesBuffer.push_back(instance);
-			}
+			if (!frustum.GetIsVisible(Vector3::Transform(bboxCtr, matrix), bboxExt)) continue;
+			drawList.mInstancesBuffer.push_back(instance);
 		}
 		// If no instances were created, quit
 		if (drawList.mInstancesBuffer.size() == instBegin) continue;
@@ -185,7 +184,7 @@ void RetainedRenderer::CreateDrawList(RetainedRenderer::DrawList& drawList, Matr
 			void* resource = nullptr;
 			if (cbid >= 0) {
 				auto& cb = mRetainedCBuffers[cbid];
-				resource = cb.mMaterialEval.EvaluateAppend(drawList.mCBData, cb.mFinalSize).data();
+				resource = cb.mMaterialEval.EvaluateAppend(drawList.mFrameData, cb.mFinalSize).data();
 			}
 			drawList.mResourceData.push_back(resource);
 		}
@@ -203,38 +202,16 @@ void RetainedRenderer::CreateDrawList(RetainedRenderer::DrawList& drawList, Matr
 			}
 		}
 
+		// Need to force this to use queues instance buffer
+		// (so that the range can be adjusted by RenderQueue)
+		// TODO: A more generic approach
+		batch.mBufferLayout.back() = &drawList.mInstanceBufferLayout;
 		// Add the draw command
-		drawList.mDraws.push_back({
-			.mBatch = &batch,
-			.mResourceRange = RangeInt::FromBeginEnd((int)resBegin, (int)drawList.mResourceData.size()),
-			.mInstanceRange = RangeInt::FromBeginEnd((int)instBegin, (int)drawList.mInstancesBuffer.size())
-		});
-	}
-}
-void RetainedRenderer::RenderDrawList(CommandBuffer& cmdBuffer, DrawList& drawList) {
-	// Update only the changed regions
-	auto regions = mGPUDelta.GetRegions();
-	if (!regions.empty()) {
-		cmdBuffer.CopyBufferData(&mGPUBuffer, regions);
-		mGPUDelta.Clear();
-	}
-	// Setup the instance buffer 
-	mInstanceBufferLayout.mElements[0].mData = drawList.mInstancesBuffer.data();
-	mInstanceBufferLayout.mBuffer.mSize = mInstanceBufferLayout.mElements[0].mItemSize * (int)drawList.mInstancesBuffer.size();
-	mInstanceBufferLayout.mBuffer.mRevision++;
-	// Submit daw calls
-	for (auto& draw : drawList.mDraws) {
-		auto& batch = *draw.mBatch;
-		// The subregion of this draw calls instances
-		mInstanceBufferLayout.mOffset = draw.mInstanceRange.start;
-		mInstanceBufferLayout.mCount = draw.mInstanceRange.length;
-
-		// Submit
-		DrawConfig config = DrawConfig::MakeDefault();
-		cmdBuffer.DrawMesh(+batch.mBufferLayout, batch.mPipelineLayout,
-			std::span<void*>(drawList.mResourceData.begin() + draw.mResourceRange.start, draw.mResourceRange.length),
-			config,
-			(int)draw.mInstanceRange.length
+		drawList.AppendMesh(
+			batch.mPipelineLayout,
+			batch.mBufferLayout.data(),
+			RangeInt::FromBeginEnd((int)resBegin, (int)drawList.mResourceData.size()),
+			RangeInt::FromBeginEnd((int)instBegin, (int)drawList.mInstancesBuffer.size())
 		);
 	}
 }

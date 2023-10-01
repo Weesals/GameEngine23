@@ -8,6 +8,7 @@
 #include "Mesh.h"
 #include "Material.h"
 #include "MaterialEvaluator.h"
+#include "RenderQueue.h"
 
 // Collects rendered objects into batches and caches per-instance material parameters
 // into a large buffer.
@@ -39,13 +40,6 @@ public:
 		const Batch* mBatch;
 		RangeInt mResourceRange;
 		RangeInt mInstanceRange;
-	};
-	struct DrawList
-	{
-		std::vector<uint8_t> mCBData;
-		std::vector<void*> mResourceData;
-		std::vector<uint32_t> mInstancesBuffer;
-		std::vector<DrawBatch> mDraws;
 	};
 
 protected:
@@ -103,9 +97,9 @@ public:
 	// Remove an instance from rendering
 	void RemoveInstance(int instanceId);
 
+	// Push updated instance data to GPU
+	void SubmitGPUMemory(CommandBuffer& cmdBuffer);
 	// Generate a drawlist for rendering currently visible objects
-	void CreateDrawList(DrawList& drawList, Matrix vp);
-	// Render the generated drawlist
-	void RenderDrawList(CommandBuffer& cmdBuffer, DrawList& drawList);
+	void SubmitToRenderQueue(RenderQueue& drawList, Matrix vp);
 
 };

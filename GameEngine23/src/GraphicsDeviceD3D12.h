@@ -17,8 +17,8 @@ using Microsoft::WRL::ComPtr;
 
 class D3DResourceCache {
 public:
-    inline static std::string StrVSProfile = "vs_5_0";
-    inline static std::string StrPSProfile = "ps_5_0";
+    inline static const char* StrVSProfile = "vs_5_0";
+    inline static const char* StrPSProfile = "ps_5_0";
 
     struct D3DBuffer
     {
@@ -199,7 +199,7 @@ class GraphicsDeviceD3D12 :
     ComPtr<ID3D12Resource> mDepthTarget;
 
 public:
-    GraphicsDeviceD3D12(std::shared_ptr<WindowWin32>& window);
+    GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window);
     ~GraphicsDeviceD3D12() override;
 
     void CheckDeviceState() const;

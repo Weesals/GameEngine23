@@ -414,7 +414,10 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const
 
     // Find (or create) a pipeline that matches these requirements
     size_t hash = GenericHash({ GenericHash(blendMode), GenericHash(rasterMode), GenericHash(depthMode) });
-    for (auto* el : bindings) hash = AppendHash(el, hash);
+    for (auto* binding : bindings) {
+        //hash = AppendHash(el, hash);
+        // TODO: Append binding layout hash
+    }
     auto pipelineState = GetOrCreatePipelineState(sourceVS, sourcePS, hash);
     if (pipelineState->mPipelineState == nullptr)
     {
@@ -747,7 +750,7 @@ public:
 
 };
 
-GraphicsDeviceD3D12::GraphicsDeviceD3D12(std::shared_ptr<WindowWin32>& window)
+GraphicsDeviceD3D12::GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window)
     : mWindow(window)
     , mDevice(*window)
     , mCache(mDevice)
@@ -829,6 +832,7 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(std::span<const Buffe
         pipelineState->mLayout->mPipelineHash = (size_t)pipelineState;
         pipelineState->mLayout->mConstantBuffers = pipelineState->mConstantBuffers;
         pipelineState->mLayout->mResources = pipelineState->mResourceBindings;
+        for (auto& b : bindings) pipelineState->mLayout->mBindings.push_back(b);
     }
     return pipelineState->mLayout.get();
 }

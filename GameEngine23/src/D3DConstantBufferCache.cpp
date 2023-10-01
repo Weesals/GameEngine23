@@ -2,8 +2,6 @@
 
 #include <d3dx12.h>
 
-D3DConstantBufferCache::D3DConstantBufferCache() { }
-
 // Find or allocate a constant buffer for the specified material and CB layout
 D3DConstantBuffer* D3DConstantBufferCache::RequireConstantBuffer(const Material& material
     , const ShaderBase::ConstantBuffer& cBuffer

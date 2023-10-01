@@ -39,8 +39,8 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
             debugController->EnableDebugLayer();
         }
     }
-#endif
     dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+#endif
     ComPtr<IDXGIFactory4> d3dFactory;
     ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&d3dFactory)));
 

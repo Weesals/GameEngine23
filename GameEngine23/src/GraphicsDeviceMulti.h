@@ -52,7 +52,7 @@ class GraphicsDeviceMulti : public GraphicsDeviceBase
     };
 public:
     GraphicsDeviceMulti(std::vector<std::shared_ptr<GraphicsDeviceBase>> devices)
-        : mDevices(devices) { }
+        : mDevices(std::move(devices)) { }
 
     // Just get the first devices size
     Vector2 GetClientSize() const override
@@ -64,6 +64,16 @@ public:
     CommandBuffer CreateCommandBuffer() override
     {
         return CommandBuffer(new ForkedCommandBuffer(this));
+    }
+
+    // Calculate which PSO this draw call would land in
+    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) override {
+        return nullptr;
+    }
+
+    // Get shader reflection data for the specified shader
+    ShaderBase::ShaderReflection* RequireReflection(Shader& shader) override {
+        return nullptr;
     }
 
     // Flip the back bufer for each device

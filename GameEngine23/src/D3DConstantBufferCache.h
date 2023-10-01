@@ -26,7 +26,7 @@ class D3DConstantBufferCache : public PerFrameItemStore<D3DConstantBuffer>
     std::vector<uint8_t> tData;
 
 public:
-    D3DConstantBufferCache();
+    D3DConstantBufferCache() { }
 
     // Find or allocate a constant buffer for the specified material and CB layout
     D3DConstantBuffer* RequireConstantBuffer(const Material& material

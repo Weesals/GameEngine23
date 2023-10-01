@@ -45,6 +45,7 @@ private:
 	std::shared_ptr<UIPlay> mPlayUI;
 
 	std::shared_ptr<RetainedRenderer> mScene;
+	std::shared_ptr<RenderQueue> mRenderQueue;
 	std::shared_ptr<World> mWorld;
 
 	std::shared_ptr<Material> mRootMaterial;

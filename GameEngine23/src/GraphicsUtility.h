@@ -8,6 +8,8 @@
 #include <span>
 #include <vector>
 
+#include "MathTypes.h"
+
 
 // memcpy but with a stride
 template<class T>

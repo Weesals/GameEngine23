@@ -200,8 +200,7 @@ public:
 			if (!mColors.empty()) mVertexBinds.mElements.push_back(BufferLayout::Element{ "COLOR", BufferFormat::FORMAT_R32G32B32A32_FLOAT, sizeof(Color), sizeof(Color), (uint8_t*)mColors.data(), });
 			mVertexBinds.CalculateImplicitSize();
 		}
-		bindings.push_back(&mIndexBinds);
-		bindings.push_back(&mVertexBinds);
+		bindings.insert(bindings.end(), { &mIndexBinds, &mVertexBinds });
 	}
 
 	const std::shared_ptr<Material>& GetMaterial(bool require = false) { if (mMaterial == nullptr && require) mMaterial = std::make_shared<Material>(); return mMaterial; }

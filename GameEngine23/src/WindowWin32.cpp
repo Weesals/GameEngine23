@@ -1,6 +1,7 @@
 #include "WindowWin32.h"
 
 #include <windowsx.h>
+#include "GraphicsDeviceD3D12.h"
 
 WCHAR szWindowClass[] = L"RTSWINDOW";
 

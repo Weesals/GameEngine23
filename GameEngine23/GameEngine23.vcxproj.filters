@@ -31,6 +31,9 @@
     <Filter Include="Input">
       <UniqueIdentifier>{36ba56f5-f339-4941-bb50-e406b08b5587}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Rendering">
+      <UniqueIdentifier>{c493b85c-369e-41dc-94f4-7b3e4dd5a83e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\SimpleMath.h">
@@ -96,8 +99,6 @@
     <ClInclude Include="src\ResourceLoader.h">
       <Filter>Resources</Filter>
     </ClInclude>
-    <ClInclude Include="src\GraphicsBuffer.h" />
-    <ClInclude Include="src\RetainedRenderer.h" />
     <ClInclude Include="src\D3DGraphicsDevice.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
@@ -110,8 +111,22 @@
     <ClInclude Include="src\D3DConstantBufferCache.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
-    <ClInclude Include="src\MaterialEvaluator.h" />
-    <ClInclude Include="src\Containers.h" />
+    <ClInclude Include="src\GraphicsBuffer.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Containers.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\MaterialEvaluator.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\NativePlatform.h">
+      <Filter>Core\Platforms</Filter>
+    </ClInclude>
+    <ClInclude Include="src\RetainedRenderer.h">
+      <Filter>Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="src\RenderQueue.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -156,8 +171,6 @@
     <ClCompile Include="src\ResourceLoader.cpp">
       <Filter>Resources</Filter>
     </ClCompile>
-    <ClCompile Include="src\RetainedRenderer.cpp" />
-    <ClCompile Include="src\GraphicsBuffer.cpp" />
     <ClCompile Include="src\D3DGraphicsDevice.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
@@ -167,6 +180,16 @@
     <ClCompile Include="src\D3DConstantBufferCache.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
+    <ClCompile Include="src\GraphicsBuffer.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\NativePlatform.cpp">
+      <Filter>Core\Platforms</Filter>
+    </ClCompile>
+    <ClCompile Include="src\RetainedRenderer.cpp">
+      <Filter>Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="src\RenderQueue.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="inc\SimpleMath.inl">
