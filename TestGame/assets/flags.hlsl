@@ -12,7 +12,7 @@ cbuffer ConstantBuffer : register(b1)
 {
     matrix ModelView;
     matrix ModelViewProjection;
-    float4 InstanceData[256];
+    //float4 InstanceData[256];
     float Time;
 };
 
@@ -24,10 +24,12 @@ SamplerState g_sampler : register(s0);
 
 struct VSInput
 {
-    uint instanceId : SV_InstanceID;
+    //uint instanceId : SV_InstanceID;
     float4 position : POSITION;
     float3 normal : NORMAL;
     float2 uv : TEXCOORD0;
+    float4 posSize : INST_POSSIZE;
+    float4 playerId : INST_PLAYERID;
 };
 
 struct PSInput
@@ -46,7 +48,7 @@ PSInput VSMain(VSInput input)
     float3 worldPos = input.position.xyz;
     float3 worldNrm = input.normal.xyz;
     // Each instance has its own offset
-    worldPos.xyz += InstanceData[input.instanceId].xyz;
+    worldPos.xyz += input.posSize.xyz; //InstanceData[input.instanceId].xyz;
 
     result.uv = input.uv;
     result.position = mul(ModelViewProjection, float4(worldPos, 1.0));

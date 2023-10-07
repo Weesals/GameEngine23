@@ -1,15 +1,20 @@
 #pragma once
+#include <cassert>
 
 template<class T, int Size = 7>
 struct InplaceVector {
 	T mValues[Size];
 	uint8_t mSize = 0;
+	InplaceVector() { }
+	InplaceVector(T value) { for (int i = 0; i < Size; ++i) mValues[i] = value; }
 	uint8_t size() const { return mSize; }
 	bool empty() const { return mSize == 0; }
 	T* begin() { return mValues; }
 	T* end() { return mValues + mSize; }
 	void push_back(uint8_t v) { assert(mSize < Size); mValues[mSize++] = v; }
 	T& pop_back() { return mValues[--mSize]; }
+	T& operator[](int i) { return mValues[i]; }
+	const T& operator[](int i) const { return mValues[i]; }
 };
 template<class T, int StaticSize = 8>
 class HybridVector {

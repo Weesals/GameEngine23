@@ -41,7 +41,8 @@ void RenderQueue::Flush(CommandBuffer& cmdBuffer)
 		// Submit
 		DrawConfig config = DrawConfig::MakeDefault();
 		auto* pipeline = draw.mPipelineLayout;
-		cmdBuffer.DrawMesh(std::span<const BufferLayout*>(draw.mBufferLayouts, pipeline->mBindings.size()),
+		cmdBuffer.DrawMesh(
+			std::span<const BufferLayout*>(draw.mBufferLayouts, pipeline->mBindings.size()),
 			pipeline,
 			std::span<void*>(mResourceData.begin() + draw.mResourceRange.start, draw.mResourceRange.length),
 			config,

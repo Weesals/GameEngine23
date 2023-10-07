@@ -1,20 +1,22 @@
 #include "Play.h"
 
-#include "InputInteractions.h"
-
 #include <numbers>
 #include <FBXImport.h>
+
+#include "InputInteractions.h"
+#include "UIGraphicsDebug.h"
+#include "UIPlay.h"
 
 void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
 {
     // Generate a skybox mesh
     mMesh = std::make_shared<Mesh>("Skybox");
     mMesh->SetVertexCount(4);
-    auto positions = mMesh->GetPositions();
+    auto positions = mMesh->GetPositionsV();
     for (int i = 0; i < positions.size(); ++i)
         positions[i] = Vector3((i % 2) * 2.0f - 1.0f, (i / 2) * 2.0f - 1.0f, 0.0f);
 
-    mMesh->SetIndices({ 0, 3, 1, 0, 2, 3, });
+    mMesh->SetIndices(std::span<const int>({ 0, 3, 1, 0, 2, 3, }));
 
     // Load the skybox material
     mMaterial = std::make_shared<Material>(L"assets/skybox.hlsl");
@@ -45,6 +47,7 @@ void Play::Initialise(Platform& platform)
     mCanvas->SetSize(clientSize);
     mPlayUI = std::make_shared<UIPlay>(this);
     mCanvas->AppendChild(mPlayUI);
+    mCanvas->AppendChild(std::make_shared<UIGraphicsDebug>(mGraphics));
 
     // Initialise other things
     mSelection = std::make_shared<SelectionManager>();
@@ -159,16 +162,17 @@ void Play::Step()
 
 void Play::Render(CommandBuffer& cmdBuffer)
 {
+    Matrix vp = mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix();
     // Render the world
-    mWorld->Render(cmdBuffer);
+    mWorld->Render(cmdBuffer, vp);
 
     // Draw retained meshes
     //RetainedRenderer::DrawList drawList;
-    //mScene->CreateDrawList(drawList, mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix());
+    //mScene->CreateDrawList(drawList, vp);
     //mScene->RenderDrawList(cmdBuffer, drawList);
     mRenderQueue->Clear();
     mScene->SubmitGPUMemory(cmdBuffer);
-    mScene->SubmitToRenderQueue(*mRenderQueue, mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix());
+    mScene->SubmitToRenderQueue(cmdBuffer, *mRenderQueue, vp);
     mRenderQueue->Flush(cmdBuffer);
 
     mSelectionRenderer->Render(cmdBuffer);

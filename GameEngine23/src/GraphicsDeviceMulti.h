@@ -16,10 +16,12 @@ class GraphicsDeviceMulti : public GraphicsDeviceBase
     // A command buffer that forwards calls to all of the bound devices
     class ForkedCommandBuffer : public CommandBufferInteropBase
     {
+        GraphicsDeviceMulti* mGraphicsDevice;
         // The command buffers for all relevant devices
         std::vector<CommandBuffer> mCmdBuffers;
     public:
         ForkedCommandBuffer(GraphicsDeviceMulti* graphics)
+            : mGraphicsDevice(graphics)
         {
             // Create a new command buffer for each device
             std::transform(graphics->mDevices.begin(), graphics->mDevices.end(),
@@ -29,6 +31,7 @@ class GraphicsDeviceMulti : public GraphicsDeviceBase
                 }
             );
         }
+        GraphicsDeviceBase* GetGraphics() const { return mGraphicsDevice; }
         void Reset() override
         {
             // Forward to all devices
@@ -39,10 +42,10 @@ class GraphicsDeviceMulti : public GraphicsDeviceBase
             // Forward to all devices
             std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.ClearRenderTarget(clear); });
         }
-        void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config) override
+        void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) override
         {
             // Forward to all devices
-            std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.DrawMesh(mesh, material); });
+            std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.DrawMesh(bindings, pso, resources, config, instanceCount); });
         }
         void Execute() override
         {
@@ -68,11 +71,6 @@ public:
 
     // Calculate which PSO this draw call would land in
     const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) override {
-        return nullptr;
-    }
-
-    // Get shader reflection data for the specified shader
-    ShaderBase::ShaderReflection* RequireReflection(Shader& shader) override {
         return nullptr;
     }
 

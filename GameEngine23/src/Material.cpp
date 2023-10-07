@@ -1,6 +1,7 @@
 #include  "Material.h"
 
 #include "MaterialEvaluator.h"
+#include "GraphicsDeviceBase.h"
 
 const TypeCache::TypeInfo* TypeCache::Get(const std::type_info* type)
 {
@@ -199,6 +200,26 @@ int Material::ComputeHeirarchicalRevisionHash() const
 		hash = 0xdeece66d * hash + item->ComputeHeirarchicalRevisionHash();
 	}
 	return hash;
+}
+
+void Material::ResolveResources(CommandBuffer& cmdBuffer, std::vector<void*>& resources, const PipelineLayout* pipeline) const
+{
+	// Get constant buffer data for this batch
+	for (auto* cb : pipeline->mConstantBuffers) {
+		uint8_t tmpData[512];
+		for (auto& val : cb->mValues) {
+			auto data = GetUniformBinaryData(val.mNameId);
+			std::memcpy(tmpData + val.mOffset, data.data(), data.size());
+		}
+		resources.push_back(cmdBuffer.RequireConstantBuffer(std::span<uint8_t>(tmpData, cb->mSize)));
+	}
+	// Get other resource data for this batch
+	{
+		for (auto* rb : pipeline->mResources) {
+			auto* data = GetUniformTexture(rb->mNameId);
+			resources.push_back(data == nullptr ? nullptr : data->get());
+		}
+	}
 }
 
 Material MakeNullMaterial() {

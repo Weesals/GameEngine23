@@ -63,7 +63,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		// Copy vertices
 		mesh->SetVertexCount(vertCount);
 		auto vertices = fbxMeshGeo->getVertices();
-		std::transform(vertices, vertices + vertCount, mesh->GetPositions().begin(), [=](const auto item) {
+		std::transform(vertices, vertices + vertCount, mesh->GetPositionsV().begin(), [=](const auto item) {
 			return Vector3::Transform((Vector3((float)item.x, (float)item.y, (float)item.z)), xform);
 		});
 
@@ -71,7 +71,8 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		auto normals = fbxMeshGeo->getNormals();
 		if (normals != nullptr)
 		{
-			std::transform(normals, normals + vertCount, mesh->GetNormals(true).begin(), [=](const auto item) {
+			mesh->RequireVertexNormals(BufferFormat::FORMAT_R8G8B8A8_SNORM);
+			std::transform(normals, normals + vertCount, mesh->GetNormalsV(true).begin(), [=](const auto item) {
 				auto normal = Vector3::TransformNormal(Vector3((float)item.x, (float)item.y, (float)item.z), xform);
 				normal = normal.Normalize();
 				return normal;
@@ -82,7 +83,8 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		auto uvs = fbxMeshGeo->getUVs();
 		if (uvs != nullptr)
 		{
-			std::transform(uvs, uvs + vertCount, mesh->GetUVs(true).begin(), [=](const auto item) {
+			mesh->RequireVertexTexCoords(0, BufferFormat::FORMAT_R8G8_UNORM);
+			std::transform(uvs, uvs + vertCount, mesh->GetTexCoordsV(0, true).begin(), [=](const auto item) {
 				return Vector2((float)item.x, (float)item.y);
 			});
 		}
@@ -91,15 +93,16 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		auto colors = fbxMeshGeo->getColors();
 		if (colors != nullptr)
 		{
-			std::transform(colors, colors + vertCount, mesh->GetColors(true).begin(), [](const auto item) {
-				return Color((float)item.x, (float)item.y, (float)item.z, (float)item.w);
+			std::transform(colors, colors + vertCount, mesh->GetColorsV(true).begin(), [](const auto item) {
+				return ColorB4((float)item.x / 255.0f, (float)item.y / 255.0f, (float)item.z / 255.0f, (float)item.w / 255.0f);
 			});
 		}
 
 		// Copy indices
+		mesh->SetIndexFormat(false);
 		mesh->SetIndexCount(indCount);
 		auto indices = fbxMeshGeo->getFaceIndices();
-		std::transform(indices, indices + indCount, mesh->GetIndices().begin(), [](const auto item) {
+		std::transform(indices, indices + indCount, mesh->GetIndicesV().begin(), [](const auto item) {
 			// Negative indices represent the end of a face in this library
 			// but we requested triangulation, so ignore it
 			int idx = (item < 0) ? -item - 1 : item;
@@ -111,8 +114,14 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		auto flip = xform.Determinant() < 0;
 		if (flip)
 		{
-			auto meshInds = mesh->GetIndices();
-			for (int i = 2; i < meshInds.size(); i += 3) std::swap(meshInds[i - 1], meshInds[i]);
+			auto meshInds = mesh->GetIndicesV();
+			for (int i = 2; i < meshInds.size(); i += 3)
+			{
+				int t = meshInds[i - 1];
+				meshInds[i - 1] = (int)meshInds[i];
+				meshInds[i] = t;
+				//std::swap(meshInds[i - 1], meshInds[i]);
+			}
 		}
 
 		auto TexLoader = [&](const ofbx::Texture* tex)->std::shared_ptr<Texture> {

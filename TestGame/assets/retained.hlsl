@@ -10,9 +10,6 @@ cbuffer WorldCB : register(b0)
     float4x4 View;
     float4x4 ViewProjection;
 }
-cbuffer ConstantBuffer : register(b1)
-{
-};
 
 #include "include/lighting.hlsl"
 

@@ -15,7 +15,7 @@
 #include "SelectionRenderer.h"
 
 #include "Canvas.h"
-#include "UIPlay.h"
+class UIPlay;
 
 using steady_clock = std::chrono::steady_clock;
 using time_point = std::chrono::time_point<steady_clock>;

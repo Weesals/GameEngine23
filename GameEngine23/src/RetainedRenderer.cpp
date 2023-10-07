@@ -158,7 +158,7 @@ void RetainedRenderer::SubmitGPUMemory(CommandBuffer& cmdBuffer) {
 	cmdBuffer.CopyBufferData(&mGPUBuffer, regions);
 	mGPUDelta.Clear();
 }
-void RetainedRenderer::SubmitToRenderQueue(RenderQueue& drawList, Matrix vp) {
+void RetainedRenderer::SubmitToRenderQueue(CommandBuffer& cmdBuffer, RenderQueue& drawList, Matrix vp) {
 	// Generate draw commands from batches
 	Identifier gInstanceDataId = "instanceData";
 	Frustum frustum(vp);
@@ -184,7 +184,9 @@ void RetainedRenderer::SubmitToRenderQueue(RenderQueue& drawList, Matrix vp) {
 			void* resource = nullptr;
 			if (cbid >= 0) {
 				auto& cb = mRetainedCBuffers[cbid];
-				resource = cb.mMaterialEval.EvaluateAppend(drawList.mFrameData, cb.mFinalSize).data();
+				auto cbData = cb.mMaterialEval.EvaluateAppend(drawList.mFrameData, cb.mFinalSize);
+				resource = cmdBuffer.RequireConstantBuffer(cbData);
+				//resource = cbData.data();
 			}
 			drawList.mResourceData.push_back(resource);
 		}

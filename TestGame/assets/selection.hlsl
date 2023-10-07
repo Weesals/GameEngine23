@@ -13,8 +13,8 @@ cbuffer ConstantBuffer : register(b1)
 {
     matrix ModelView;
     matrix ModelViewProjection;
-    float4 InstanceData2[256];
-    float4 InstanceData[256];
+    //float4 InstanceData2[256];
+    //float4 InstanceData[256];
     float Time;
 };
 
@@ -23,15 +23,16 @@ cbuffer ConstantBuffer : register(b1)
 
 struct VSInput
 {
-    uint instanceId : SV_InstanceID;
+    //uint instanceId : SV_InstanceID;
     float4 position : POSITION;
     float3 normal : NORMAL;
     float2 uv : TEXCOORD0;
+    float4 posSize : INST_POSSIZE;
+    float4 playerId : INST_PLAYERID;
 };
 
 struct PSInput
 {
-    uint instanceId : SV_InstanceID;
     float4 position : SV_POSITION;
     float3 viewPos : TEXCOORD1;
     float4 data : TEXCOORD2;
@@ -42,17 +43,16 @@ PSInput VSMain(VSInput input)
 {
     const float Scale = 15;
     PSInput result;
-    result.instanceId = input.instanceId;
 
     float3 worldPos = input.position.xyz;
     float3 worldNrm = input.normal.xyz;
     // Each instance has its own offset
-    float4 data = InstanceData[input.instanceId];
+    float4 data = input.posSize; //InstanceData[input.instanceId];
     worldPos.xyz *= data.w / 2.0;
     worldPos.xyz += data.xyz;
     worldPos.y += 0.1;
     
-    result.data = InstanceData2[input.instanceId];
+    result.data = input.playerId; //InstanceData2[input.instanceId];
 
     result.uv = float4(input.uv, data.w, 0.0);
     result.position = mul(ModelViewProjection, float4(worldPos, 1.0));

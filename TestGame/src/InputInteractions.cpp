@@ -150,6 +150,8 @@ void TerrainPaintInteraction::OnUpdate(Performance& performance)
     // Get brush range in cell space
     Int2 min = Int2::Max({ 0, 0 }, sizing.WorldToLandscape(hit - Range));
     Int2 max = Int2::Min(sizing.Size, sizing.WorldToLandscape(hit + Range) + 1);
+    Int2 changeMin = sizing.Size;
+    Int2 changeMax = Int2(0);
     for (int y = min.y; y < max.y; ++y)
     {
         for (int x = min.x; x < max.x; ++x)
@@ -161,13 +163,20 @@ void TerrainPaintInteraction::OnUpdate(Performance& performance)
             dst = dst * dst * (2.0f - dst * dst);
             // Perform mutation
             auto& hcell = heightMap[sizing.ToIndex(Int2(x, y))];
-            hcell.Height = std::max(hcell.Height, (short)((1.0f - dst) * 1024.0f));
+            auto newHeight = std::max(hcell.Height, (short)((1.0f - dst) * 1024.0f));
+            if (hcell.Height == newHeight) continue;
+            hcell.Height = newHeight;
+            changeMin = Int2::Min(changeMin, Int2(x, y));
+            changeMax = Int2::Max(changeMax, Int2(x, y));
         }
     }
-    // Allow the renderer (and other systems) to process updated terrain data
-    world->GetLandscape()->NotifyLandscapeChanged(
-        Landscape::LandscapeChangeEvent(RectInt::FromMinMax(min, max), true)
-    );
+    if (changeMax.x >= changeMin.x)
+    {
+        // Allow the renderer (and other systems) to process updated terrain data
+        world->GetLandscape()->NotifyLandscapeChanged(
+            Landscape::LandscapeChangeEvent(RectInt::FromMinMax(changeMin, changeMax + Int2(1)), true)
+        );
+    }
 
     // Cancel interaction on mouse up
     if (!performance.IsDown(1)) performance.SetInteraction(nullptr);

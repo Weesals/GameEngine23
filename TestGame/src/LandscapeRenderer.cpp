@@ -4,6 +4,11 @@
 #include <algorithm>
 #include <numeric>
 
+LandscapeRenderer::LandscapeRenderer()
+{
+	mInstanceOffsets.reserve(256);
+}
+
 void LandscapeRenderer::Initialise(const std::shared_ptr<Landscape>& landscape, const std::shared_ptr<Material>& rootMaterial)
 {
 	mLandscape = landscape;
@@ -17,6 +22,8 @@ void LandscapeRenderer::Initialise(const std::shared_ptr<Landscape>& landscape, 
 		{
 			mDirtyRegion.CombineWith(changed);
 		});
+	mLandscapeDraw = MeshDrawInstanced(RequireTileMesh().get(), mLandMaterial.get());
+	mLandscapeDraw.AddInstanceElement("INSTANCE", BufferFormat::FORMAT_R16G16_UINT, sizeof(OffsetIV2));
 }
 
 std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
@@ -25,15 +32,17 @@ std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
 		mTileMesh = std::make_shared<Mesh>("LandscapeTile");
 		mTileMesh->SetVertexCount((TileResolution + 1) * (TileResolution + 1));
 		mTileMesh->SetIndexCount(TileResolution * TileResolution * 6);
+		mTileMesh->RequireVertexNormals(BufferFormat::FORMAT_R8G8B8A8_UNORM);
 		for (int y = 0; y < TileResolution + 1; ++y)
 		{
 			for (int x = 0; x < TileResolution + 1; ++x)
 			{
 				int v = x + y * (TileResolution + 1);
-				mTileMesh->GetPositions()[v] = Vector3((float)x, 0, (float)y);
-				mTileMesh->GetNormals(true)[v] = Vector3(0.0f, 1.0f, 0.0f);
+				mTileMesh->GetPositionsV()[v] = Vector3((float)x, 0, (float)y);
+				mTileMesh->GetNormalsV(true)[v] = Vector3(0.0f, 1.0f, 0.0f);
 			}
 		}
+		auto indices = mTileMesh->GetIndicesV();
 		for (int y = 0; y < TileResolution; ++y)
 		{
 			for (int x = 0; x < TileResolution; ++x)
@@ -41,19 +50,19 @@ std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
 				int i = (x + y * TileResolution) * 6;
 				int v0 = x + (y + 0) * (TileResolution + 1);
 				int v1 = x + (y + 1) * (TileResolution + 1);
-				mTileMesh->GetIndices()[i + 0] = v0;
-				mTileMesh->GetIndices()[i + 1] = v1 + 1;
-				mTileMesh->GetIndices()[i + 2] = v0 + 1;
-				mTileMesh->GetIndices()[i + 3] = v0;
-				mTileMesh->GetIndices()[i + 4] = v1;
-				mTileMesh->GetIndices()[i + 5] = v1 + 1;
+				indices[i + 0] = v0;
+				indices[i + 1] = v1 + 1;
+				indices[i + 2] = v0 + 1;
+				indices[i + 3] = v0;
+				indices[i + 4] = v1;
+				indices[i + 5] = v1 + 1;
 			}
 		}
 	}
 	return mTileMesh;
 }
 
-void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
+void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
 {
 	// Pack heightmap data into a texture
 	if (mHeightMap == nullptr)
@@ -120,31 +129,40 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer)
 	mLandMaterial->SetUniform("HeightMap", mHeightMap);
 	mLandMaterial->SetUniform("HeightRange", Vector4(mMetadata.MinHeight, mMetadata.MaxHeight, 0.0f, 0.0f));
 
-	// The mesh for each chunk
-	auto tileMesh = RequireTileMesh();
 	// How many tile instances we need to render
 	Int2 tileCount = (mLandscape->GetSize() + TileResolution - 1) / TileResolution;
-	// A buffer to store tile offsets
-	std::vector<Vector4> offsets;
-	offsets.reserve(256);
 
+	Frustum frustum(vp);
+
+	mInstanceOffsets.reserve(tileCount.y * tileCount.x);
+	int i = -1;
+	int minChanged = std::numeric_limits<int>::max();
+	int maxChanged = std::numeric_limits<int>::min();
 	// Render the generated instances
-	auto flush = [&]() {
-		mLandMaterial->SetInstanceCount((int)offsets.size());
-		mLandMaterial->SetInstancedUniform("Offsets", offsets);
-		cmdBuffer.DrawMesh(tileMesh.get(), mLandMaterial.get());
-		offsets.clear();
-	};
 	for (int y = 0; y < tileCount.y; ++y)
 	{
 		for (int x = 0; x < tileCount.x; ++x)
 		{
-			offsets.push_back(Vector4((float)(x * TileResolution), (float)(y * TileResolution), 0.0f, 0.0f));
+			auto value = OffsetIV2((uint16_t)(y * TileResolution), (uint16_t)(x * TileResolution));
+			auto ctr = Vector3::Transform(Vector3((x + 0.5f) * TileResolution, 1.0f, (y + 0.5f) * TileResolution), xform);
+			auto ext = Vector3(TileResolution / 2.0f, 2.0f, TileResolution / 2.0f);
+			if (!frustum.GetIsVisible(ctr, ext)) continue;
 
-			// Can only draw in batches of 256 instances
-			// (as thats what the shader defines)
-			if (offsets.size() >= 256) flush();
+			++i;
+			if (i >= mInstanceOffsets.size()) mInstanceOffsets.push_back({ });
+			else if (mInstanceOffsets[i] == value) continue;
+			mInstanceOffsets[i] = value;
+			minChanged = std::min(minChanged, i);
+			maxChanged = std::max(maxChanged, i);
 		}
 	}
-	if (!offsets.empty()) flush();
+	++i;
+	if ((int)mInstanceOffsets.size() > i) {
+		mInstanceOffsets.erase(mInstanceOffsets.begin() + i, mInstanceOffsets.end());
+		minChanged = std::min(minChanged, i);
+		maxChanged = std::max(maxChanged, i);
+	}
+	mLandscapeDraw.SetInstanceData(mInstanceOffsets.data(), (int)mInstanceOffsets.size(), 0, minChanged <= maxChanged);
+	mLandscapeDraw.Draw(cmdBuffer, DrawConfig::MakeDefault());
+
 }

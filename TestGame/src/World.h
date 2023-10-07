@@ -70,7 +70,7 @@ public:
     void Step(float dt);
 
     // Render the game world
-    void Render(CommandBuffer& cmdBuffer);
+    void Render(CommandBuffer& cmdBuffer, const Matrix& vp);
 
     // Calls the callback for every entity that this ray intersects
     void RaycastEntities(Ray& ray, const std::function<void(flecs::entity e, float)>& onentity) const;

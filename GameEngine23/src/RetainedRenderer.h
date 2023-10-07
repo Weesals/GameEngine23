@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <span>
+#include <map>
 #include "GraphicsBuffer.h"
 #include "GraphicsUtility.h"
 #include "GraphicsDeviceBase.h"
@@ -100,6 +101,6 @@ public:
 	// Push updated instance data to GPU
 	void SubmitGPUMemory(CommandBuffer& cmdBuffer);
 	// Generate a drawlist for rendering currently visible objects
-	void SubmitToRenderQueue(RenderQueue& drawList, Matrix vp);
+	void SubmitToRenderQueue(CommandBuffer& cmdBuffer, RenderQueue& drawList, Matrix vp);
 
 };

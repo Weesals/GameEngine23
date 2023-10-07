@@ -120,10 +120,13 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 	mMesh->SetVertexCount(drawData->TotalVtxCount);
 	mMesh->SetIndexCount(drawData->TotalIdxCount);
 	int vCount = 0, iCount = 0;
-	auto positions = mMesh->GetPositions();
-	auto uvs = mMesh->GetUVs(true);
-	auto colors = mMesh->GetColors(true);
-	auto inds = mMesh->GetIndices();
+	auto inds = mMesh->GetIndicesV();
+	mMesh->RequireVertexPositions(BufferFormat::FORMAT_R32G32_FLOAT);
+	mMesh->RequireVertexTexCoords(0, BufferFormat::FORMAT_R16G16_UNORM);
+	mMesh->RequireVertexColors(BufferFormat::FORMAT_R8G8B8A8_UNORM);
+	auto positions = mMesh->GetPositionsV().Reinterpret<Vector2>();
+	auto uvs = mMesh->GetTexCoordsV(0, true);
+	auto colors = mMesh->GetColorsV(true);
 	for (int n = 0; n < drawData->CmdListsCount; n++)
 	{
 		const auto& cmdList = drawData->CmdLists[n];
@@ -131,14 +134,10 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 		for (int i = 0; i < cmdList->VtxBuffer.Size; ++i)
 		{
 			auto& v = cmdList->VtxBuffer.Data[i];
-			positions[vCount + i] = Vector3(v.pos.x, v.pos.y, 0.0f);
+			positions[vCount + i] = Vector2(v.pos.x, v.pos.y);
 			uvs[vCount + i] = Vector2(v.uv.x, v.uv.y);
-			colors[vCount + i] = Color(
-				(float)(uint8_t)(v.col >> 16) / 255.0f,
-				(float)(uint8_t)(v.col >> 8) / 255.0f,
-				(float)(uint8_t)(v.col >> 0) / 255.0f,
-				(float)(uint8_t)(v.col >> 24) / 255.0f
-			);
+			auto c = ColorB4::FromARGB(v.col);
+			colors[vCount + i] = c;
 		}
 		// Copy indices
 		for (int i = 0; i < cmdList->IdxBuffer.Size; ++i)
@@ -148,13 +147,21 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 		// Swap to D3D expected winding
 		for (int i = iCount + 2; i < iCount + cmdList->IdxBuffer.Size; i += 3)
 		{
-			std::swap(inds[i - 1], inds[i]);
+			int t = inds[i - 1];
+			inds[i - 1] = (int)inds[i];
+			inds[i] = t;
+			//auto l = inds[i - 1];
+			//auto r = inds[i];
+			//std::swap(l, r);
+			//std::swap(inds[i - 1], inds[i]);
 		}
 		vCount += cmdList->VtxBuffer.Size;
 		iCount += cmdList->IdxBuffer.Size;
 	}
+	mMesh->MarkChanged();
 	vCount = 0;
 	iCount = 0;
+	mDrawCount = 0;
 	for (int n = 0; n < drawData->CmdListsCount; n++)
 	{
 		const auto& cmdList = drawData->CmdLists[n];
@@ -168,6 +175,7 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 			mMaterial->SetRasterMode(RasterMode::MakeDefault().SetCull(RasterMode::CullModes::None));
 			mMaterial->SetDepthMode(DepthMode::MakeOff());
 			cmdBuffer.DrawMesh(mMesh.get(), mMaterial.get(), drawConfig);
+			++mDrawCount;
 		}
 		iCount += cmdList->IdxBuffer.Size;
 	}

@@ -1,6 +1,7 @@
 #include "InputDispatcher.h"
 
 #include <algorithm>
+#include <cmath>
 
 bool Performance::SetInteraction(const std::shared_ptr<InteractionBase>& interaction, bool cancel)
 {

@@ -5,6 +5,8 @@
 #include "GraphicsUtility.h"
 #include "GraphicsBuffer.h"
 
+class GraphicsDeviceBase;
+
 class ShaderBase
 {
 public:
@@ -14,6 +16,7 @@ public:
         Identifier mNameId;
         int mOffset;
         int mSize;
+        bool operator ==(const UniformValue& other) const = default;
     };
     struct ConstantBuffer {
         std::string mName;
@@ -34,6 +37,7 @@ public:
             for (auto& value : mValues) hash = AppendHash(((int)value.mNameId << 16) | value.mOffset, hash);
             return hash;
         }
+        bool operator ==(const ConstantBuffer& other) const = default;
     };
     enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, };
     struct ResourceBinding {
@@ -42,6 +46,7 @@ public:
         int mBindPoint;
         int mStride;
         ResourceTypes mType;
+        bool operator ==(const ResourceBinding& other) const = default;
     };
     enum ParameterTypes : uint8_t { P_Unknown, P_UInt, P_SInt, P_Float, };
     struct InputParameter {
@@ -114,11 +119,12 @@ class CommandBufferInteropBase
 {
 public:
     virtual ~CommandBufferInteropBase() { }
+    virtual GraphicsDeviceBase* GetGraphics() const = 0;
     virtual void Reset() = 0;
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
+    virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
     virtual void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) { }
     virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) { }
-    virtual void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config) = 0;
     virtual void Execute() = 0;
 };
 
@@ -131,32 +137,51 @@ public:
     CommandBuffer(CommandBuffer&& other) = default;
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
     CommandBuffer& operator = (CommandBuffer&& other) = default;
+    GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
     void Reset() { mInterop->Reset(); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
+    void* RequireConstantBuffer(std::span<const uint8_t> data)
+    {
+        return mInterop->RequireConstantBuffer(data);
+    }
     void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges)
     {
         mInterop->CopyBufferData(buffer, ranges);
     }
-    void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1)
+    void DrawMesh(
+        std::span<const BufferLayout*> bindings,
+        const PipelineLayout* pso, std::span<void*> resources,
+        const DrawConfig& config, int instanceCount = 1)
     {
         mInterop->DrawMesh(bindings, pso, resources, config, instanceCount);
     }
+    void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config);
     void DrawMesh(const Mesh* mesh, const Material* material)
     {
+        if (mesh->GetVertexCount() == 0) return;
         DrawMesh(mesh, material, DrawConfig::MakeDefault());
     }
-    void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config)
-    {
-        if (mesh->GetVertexCount() == 0) return;
-        mInterop->DrawMesh(mesh, material, config);
-    }
     void Execute() { mInterop->Execute(); }
+};
+
+struct RenderStatistics {
+    int mBufferCreates;
+    int mBufferWrites;
+    size_t mBufferBandwidth;
+    int mDrawCount;
+    int mInstanceCount;
+    void BufferWrite(size_t size) {
+        mBufferWrites++;
+        mBufferBandwidth += size;
+    }
 };
 
 // Base class for a graphics device
 class GraphicsDeviceBase
 {
 public:
+    RenderStatistics mStatistics;
+
     virtual ~GraphicsDeviceBase() { }
 
     // Get the resolution of the client area
@@ -168,11 +193,37 @@ public:
     // Calculate which PSO this draw call would land in
     virtual const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) = 0;
 
-    // Get shader reflection data for the specified shader
-    virtual ShaderBase::ShaderReflection* RequireReflection(Shader& shader) = 0;
-
     // Rendering is complete; flip the backbuffer
     virtual void Present() = 0;
 
 };
 
+class MeshDraw
+{
+protected:
+    std::vector<const BufferLayout*> mBufferLayout;
+    const PipelineLayout* mPipeline;
+    std::vector<void*> mResources;
+public:
+    const Mesh* mMesh;
+    const Material* mMaterial;
+    MeshDraw();
+    MeshDraw(Mesh* mesh, Material* material);
+    ~MeshDraw();
+    void InvalidateMesh();
+    void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
+};
+
+class MeshDrawInstanced : public MeshDraw
+{
+protected:
+    BufferLayout mInstanceBuffer;
+public:
+    MeshDrawInstanced();
+    MeshDrawInstanced(Mesh* mesh, Material* material);
+    ~MeshDrawInstanced();
+    void InvalidateMesh();
+    int AddInstanceElement(const std::string_view& name = "INSTANCE", BufferFormat fmt = FORMAT_R32_UINT, int stride = sizeof(uint32_t));
+    void SetInstanceData(void* data, int count, int elementId = 0, bool markDirty = true);
+    void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
+};

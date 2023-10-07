@@ -1,5 +1,7 @@
 #include "Texture.h"
 
+#include <algorithm>
+
 Texture::Texture()
 	: mRevision(0) { }
 

@@ -14,6 +14,7 @@ typedef DirectX::SimpleMath::Vector4 Vector4;
 typedef DirectX::SimpleMath::Matrix Matrix;
 typedef DirectX::SimpleMath::Quaternion Quaternion;
 typedef DirectX::SimpleMath::Color Color;
+typedef DirectX::SimpleMath::ColorB4 ColorB4;
 
 struct Int2
 {
@@ -31,15 +32,38 @@ struct Int2
 	inline Int2 operator *(const int o) const { return Int2(x * o, y * o); }
 	inline Int2 operator /(const int o) const { return Int2(x / o, y / o); }
 
-	template<auto Fn>
-	static Int2 Apply(Int2 v1, Int2 v2) { return Int2(Fn(v1.x, v2.x), Fn(v1.y, v2.y)); }
-
 	static Int2 Min(Int2 v1, Int2 v2) { return Int2(std::min(v1.x, v2.x), std::min(v1.y, v2.y)); }
 	static Int2 Max(Int2 v1, Int2 v2) { return Int2(std::max(v1.x, v2.x), std::max(v1.y, v2.y)); }
 	static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return Int2(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y)); }
 
 	inline Int2 operator =(Vector2 v) { return Int2((int)v.x, (int)v.y); }
 	inline operator Vector2() const { return Vector2((float)x, (float)y); }
+};
+struct Int4
+{
+	int x, y, z, w;
+	Int4() : Int4(0, 0, 0, 0) { }
+	Int4(int v) : Int4(v, v, v, v) { }
+	Int4(int x, int y, int z, int w) : x(x), y(y), z(z), w(w) { }
+	Int4(const Vector4 o) : x((int)o.x), y((int)o.y), z((int)o.z), w((int)o.w) { }
+	inline Int4 operator +(const Int4 o) const { return Int4(x + o.x, y + o.y, z + o.z, w + o.w); }
+	inline Int4 operator -(const Int4 o) const { return Int4(x - o.x, y - o.y, z - o.z, w - o.w); }
+	inline Int4 operator *(const Int4 o) const { return Int4(x * o.x, y * o.y, z * o.z, w * o.w); }
+	inline Int4 operator /(const Int4 o) const { return Int4(x / o.x, y / o.y, z / o.z, w / o.w); }
+	inline Int4 operator +(const int o) const { return Int4(x + o, y + o, z + o, w + o); }
+	inline Int4 operator -(const int o) const { return Int4(x - o, y - o, z - o, w - o); }
+	inline Int4 operator *(const int o) const { return Int4(x * o, y * o, z * o, w * o); }
+	inline Int4 operator /(const int o) const { return Int4(x / o, y / o, z / o, w / o); }
+
+	template<auto Fn>
+	static Int4 Apply(Int4 v1, Int4 v2) { return Int4(Fn(v1.x, v2.x), Fn(v1.y, v2.y)); }
+
+	static Int4 Min(Int4 v1, Int4 v2) { return Int4(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z), std::min(v1.w, v2.w)); }
+	static Int4 Max(Int4 v1, Int4 v2) { return Int4(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z), std::max(v1.w, v2.w)); }
+	static Int4 Clamp(Int4 v, Int4 min, Int4 max) { return Int4(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y), std::min(std::max(v.z, min.z), max.z), std::min(std::max(v.w, min.w), max.w)); }
+
+	inline Int4 operator =(Vector4 v) { return Int4((int)v.x, (int)v.y, (int)v.z, (int)v.w); }
+	inline operator Vector4() const { return Vector4((float)x, (float)y, (float)z, (float)w); }
 };
 
 struct RectInt

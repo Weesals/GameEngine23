@@ -147,7 +147,7 @@
   <ItemGroup>
     <ClInclude Include="src\RenderQueue.h" />
     <ClInclude Include="src\Containers.h" />
-    <ClInclude Include="src\D3DConstantBufferCache.h" />
+    <ClInclude Include="src\D3DResourceCache.h" />
     <ClInclude Include="src\D3DGraphicsDevice.h" />
     <ClInclude Include="src\D3DShader.h" />
     <ClInclude Include="src\Delegate.h" />
@@ -179,9 +179,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\SimpleMath.cpp" />
+    <ClCompile Include="src\GraphicsDeviceBase.cpp" />
     <ClCompile Include="src\RenderQueue.cpp" />
     <ClCompile Include="src\Core.cpp" />
-    <ClCompile Include="src\D3DConstantBufferCache.cpp" />
+    <ClCompile Include="src\D3DResourceCache.cpp" />
     <ClCompile Include="src\D3DGraphicsDevice.cpp" />
     <ClCompile Include="src\FBXImport.cpp" />
     <ClCompile Include="src\GraphicsBuffer.cpp" />
@@ -202,6 +203,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="inc\SimpleMath.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="debug\GameEngine23.natvis" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

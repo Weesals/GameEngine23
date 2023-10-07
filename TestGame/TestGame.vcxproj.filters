@@ -123,6 +123,7 @@
     <ClInclude Include="src\UIPlay.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
+    <ClInclude Include="src\UIGraphicsDebug.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="assets\include\lighting.hlsl">

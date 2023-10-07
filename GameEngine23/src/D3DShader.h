@@ -96,8 +96,7 @@ public:
 
             // The data we have extracted for this constant buffer
             ConstantBuffer cbuffer;
-            cbuffer.mName = bufferDesc.Name;
-            cbuffer.mNameId = Identifier::RequireStringId(cbuffer.mName);
+            cbuffer.mNameId = Identifier::RequireStringId(cbuffer.mName = bufferDesc.Name);
             cbuffer.mSize = bufferDesc.Size;
             cbuffer.mBindPoint = bindDesc.BindPoint;
 

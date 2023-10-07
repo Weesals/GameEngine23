@@ -3,6 +3,7 @@
 #include "Material.h"
 #include "Containers.h"
 #include "GraphicsUtility.h"
+#include <cassert>
 
 // Extracts material parameters from precalculated offsets
 // Must be generated from a MaterialCollector

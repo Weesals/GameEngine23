@@ -8,6 +8,7 @@
 
 class LandscapeRenderer
 {
+	typedef std::tuple<uint16_t, uint16_t> OffsetIV2;
 	static const int TileResolution = 8;
 
 	// The mesh that is instanced across the surface
@@ -15,6 +16,9 @@ class LandscapeRenderer
 	std::shared_ptr<Texture> mHeightMap;
 	std::shared_ptr<Texture> mControlMap;
 	std::shared_ptr<Material> mLandMaterial;
+
+	std::vector<OffsetIV2> mInstanceOffsets;
+	MeshDrawInstanced mLandscapeDraw;
 
 	std::shared_ptr<Landscape> mLandscape;
 
@@ -31,11 +35,13 @@ class LandscapeRenderer
 	Landscape::LandscapeChangeEvent mDirtyRegion;
 
 public:
+	LandscapeRenderer();
+
 	void Initialise(const std::shared_ptr<Landscape>& landscape, const std::shared_ptr<Material>& rootMaterial);
 
 	std::shared_ptr<Mesh>& RequireTileMesh();
 
-	void Render(CommandBuffer& cmdBuffer);
+	void Render(CommandBuffer& cmdBuffer, const Matrix& vp);
 
 };
 

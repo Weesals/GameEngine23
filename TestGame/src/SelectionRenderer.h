@@ -14,6 +14,11 @@ class SelectionRenderer
 	std::shared_ptr<Model> mFlagMesh;
 	std::shared_ptr<Material> mFlagMaterial;
 
+	MeshDrawInstanced mSelectionRenderer;
+	MeshDrawInstanced mFlagRenderer;
+	size_t mSelectionRendererHash;
+	size_t mFlagRendererHash;
+
 public:
 	SelectionRenderer(std::shared_ptr<SelectionManager>& manager, std::shared_ptr<Material> rootMaterial);
 

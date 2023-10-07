@@ -8,6 +8,10 @@
 #include <typeinfo>
 #include <span>
 #include <memory>
+#include <cassert>
+
+struct PipelineLayout;
+class CommandBuffer;
 
 // Utility class for determining the size of types dynamically
 class TypeCache
@@ -361,6 +365,8 @@ public:
 	// or any inherited material
 	// Use to determine if a value cache is still current
 	int ComputeHeirarchicalRevisionHash() const;
+
+	void ResolveResources(CommandBuffer& cmdBuffer, std::vector<void*>& resources, const PipelineLayout* pipeline) const;
 
 	static Material NullInstance;
 };

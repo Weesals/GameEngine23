@@ -12,7 +12,7 @@ cbuffer ConstantBuffer : register(b1)
 {
     matrix ModelView;
     matrix ModelViewProjection;
-    float2 Offsets[256];
+    //float2 Offsets[256];
     float Time;
     float4 HeightRange;
 };
@@ -29,6 +29,7 @@ struct VSInput
     uint instanceId : SV_InstanceID;
     float4 position : POSITION;
     float3 normal : NORMAL;
+    uint2 offset : INSTANCE;
 };
 
 struct PSInput
@@ -47,7 +48,8 @@ PSInput VSMain(VSInput input)
     float3 worldPos = input.position.xyz;
     float3 worldNrm = input.normal.xyz;
     // Each instance has its own offset
-    worldPos.xz += Offsets[input.instanceId];
+    //worldPos.xz += Offsets[input.instanceId];
+    worldPos.xz += input.offset;
 
 #if defined(VULKAN)
     // Textures are not currently supported in Vulkan

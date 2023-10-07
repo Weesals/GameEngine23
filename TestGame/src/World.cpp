@@ -161,7 +161,7 @@ void World::Step(float dt)
     mWorldEffects.GetModified(mMovedEntities, otime, time.mSteps);
 }
 
-void World::Render(CommandBuffer& cmdBuffer)
+void World::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
 {
     auto& time = *mECS.get_mut<Singleton::Time>();
     for (auto it = mMovedEntities.begin(); it != mMovedEntities.end(); ++it) {
@@ -188,7 +188,7 @@ void World::Render(CommandBuffer& cmdBuffer)
         }
     }
     mMovedEntities.clear();
-    mLandscapeRenderer->Render(cmdBuffer);
+    mLandscapeRenderer->Render(cmdBuffer, vp);
 }
 
 void World::RaycastEntities(Ray& ray, const std::function<void(flecs::entity e, float)>& onentity) const

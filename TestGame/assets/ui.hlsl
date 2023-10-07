@@ -8,7 +8,7 @@ cbuffer ConstantBuffer : register(b0)
 
 struct VSInput
 {
-    float4 position : POSITION;
+    float2 position : POSITION;
     float2 uv : TEXCOORD0;
     float4 color : COLOR0;
 };
@@ -27,7 +27,7 @@ PSInput VSMain(VSInput input)
 {
     PSInput result;
     
-    result.position = mul(Projection, float4(input.position.xyz, 1.0));
+    result.position = mul(Projection, float4(input.position.xy, 0.0, 1.0));
     result.position.z = 0.5;
     result.uv = input.uv;
     result.color = input.color;

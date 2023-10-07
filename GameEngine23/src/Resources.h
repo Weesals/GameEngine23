@@ -2,7 +2,6 @@
 
 #include <string>
 #include <string_view>
-#include <map>
 #include <unordered_map>
 
 struct Identifier
@@ -19,6 +18,11 @@ struct Identifier
     bool operator ==(const Identifier& o) const { return mId == o.mId; }
     bool operator !=(const Identifier& o) const { return mId != o.mId; }
     operator int() const { return mId; }
+    const std::string& GetName() {
+        static const std::string empty;
+        for (auto& kv : gStringToId) if (kv.second == *this) return kv.first;
+        return empty;
+    }
 
 public:
     struct comp
@@ -36,9 +40,27 @@ public:
     };
 private:
 
+    struct string_hash {
+        using is_transparent = void;
+        [[nodiscard]] size_t operator()(const char* txt) const {
+            return std::hash<std::string_view>{}(txt);
+        }
+        [[nodiscard]] size_t operator()(std::string_view txt) const {
+            return std::hash<std::string_view>{}(txt);
+        }
+        [[nodiscard]] size_t operator()(const std::string& txt) const {
+            return std::hash<std::string>{}(txt);
+        }
+        [[nodiscard]] size_t operator()(std::wstring_view txt) const {
+            return std::hash<std::wstring_view>{}(txt);
+        }
+        [[nodiscard]] size_t operator()(const std::wstring& txt) const {
+            return std::hash<std::wstring>{}(txt);
+        }
+    };
     // TODO: Use hat trie instead of map
-    static std::map<std::string, Identifier, comp> gStringToId;
-    static std::map<std::wstring, Identifier, comp> gWStringToId;
+    static std::unordered_map<std::string, Identifier, string_hash, std::equal_to<>> gStringToId;
+    static std::unordered_map<std::wstring, Identifier, string_hash, std::equal_to<>> gWStringToId;
 
 public:
     // Get a persistent id for the any string

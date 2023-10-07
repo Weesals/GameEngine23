@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <algorithm>
+#include <vector>
 #include <span>
 
 #include "MathTypes.h"

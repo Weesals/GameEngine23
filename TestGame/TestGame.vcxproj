@@ -166,6 +166,7 @@
     <ClInclude Include="src\Play.h" />
     <ClInclude Include="src\SelectionManager.h" />
     <ClInclude Include="src\SelectionRenderer.h" />
+    <ClInclude Include="src\UIGraphicsDebug.h" />
     <ClInclude Include="src\UIPlay.h" />
     <ClInclude Include="src\World.h" />
   </ItemGroup>

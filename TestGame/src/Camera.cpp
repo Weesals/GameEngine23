@@ -53,5 +53,5 @@ Ray Camera::ViewportToRay(Vector2 vpos)
 	auto dest = Vector4::Transform(pos4, viewProj);
 	origin /= origin.w;
 	dest /= dest.w;
-	return Ray((Vector3)origin, (Vector3)(dest - origin));
+	return Ray(origin.xyz(), (dest - origin).xyz());
 }

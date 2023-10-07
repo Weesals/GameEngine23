@@ -36,6 +36,7 @@ private:
 
 	Int2 mSize;
 	OnInput mOnInput;
+	int mDrawCount;
 
 public:
 
@@ -44,6 +45,7 @@ public:
 
 	void SetSize(Int2 size);
 	Int2 GetSize() const;
+	int GetDrawCount() { return mDrawCount; }
 
 	OnInput::Reference RegisterInputIntercept(const OnInput::Function& callback);
 	bool GetIsPointerOverUI(Vector2 v) const;

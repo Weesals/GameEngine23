@@ -108,7 +108,7 @@
     <ClInclude Include="src\GraphicsDeviceD3D12.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
-    <ClInclude Include="src\D3DConstantBufferCache.h">
+    <ClInclude Include="src\D3DResourceCache.h">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClInclude>
     <ClInclude Include="src\GraphicsBuffer.h">
@@ -177,7 +177,7 @@
     <ClCompile Include="src\GraphicsDeviceD3D12.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
-    <ClCompile Include="src\D3DConstantBufferCache.cpp">
+    <ClCompile Include="src\D3DResourceCache.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
     <ClCompile Include="src\GraphicsBuffer.cpp">
@@ -190,10 +190,14 @@
       <Filter>Rendering</Filter>
     </ClCompile>
     <ClCompile Include="src\RenderQueue.cpp" />
+    <ClCompile Include="src\GraphicsDeviceBase.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="inc\SimpleMath.inl">
       <Filter>Libraries</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="debug\GameEngine23.natvis" />
   </ItemGroup>
 </Project>
