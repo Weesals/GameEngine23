@@ -5,6 +5,7 @@
 #include "GraphicsUtility.h"
 #include "GraphicsBuffer.h"
 #include "Containers.h"
+#include "RenderTarget2D.h"
 
 class GraphicsDeviceBase;
 
@@ -88,6 +89,7 @@ struct DrawConfig
 
 struct PipelineLayout
 {
+    IdentifierWithName mRenderPass;
     size_t mRootHash;       // Persistent
     size_t mPipelineHash;   // Persistent
     std::vector<const ShaderBase::ConstantBuffer*> mConstantBuffers;
@@ -95,6 +97,8 @@ struct PipelineLayout
     std::vector<const BufferLayout*> mBindings;
     bool operator == (const PipelineLayout& o) const { return mPipelineHash == o.mPipelineHash; }
     bool operator < (const PipelineLayout& o) const { return mPipelineHash < o.mPipelineHash; }
+    bool IsValid() const { return mPipelineHash != 0; }
+    int GetResourceCount() const { return (int)(mConstantBuffers.size() + mResources.size()); }
 };
 
 struct PipelineState
@@ -122,10 +126,11 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual GraphicsDeviceBase* GetGraphics() const = 0;
     virtual void Reset() = 0;
+    virtual void SetRenderTarget(const RenderTarget2D* target) { }
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
     virtual void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) { }
-    virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) { }
+    virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void Execute() = 0;
 };
 
@@ -134,6 +139,7 @@ class CommandBuffer {
 protected:
     std::unique_ptr<CommandBufferInteropBase> mInterop;
     ExpandableMemoryArena mArena;
+    std::vector<const BufferLayout*> tBindingLayout;
 public:
     CommandBuffer(CommandBuffer& other) = delete;
     CommandBuffer(CommandBuffer&& other) = default;
@@ -141,10 +147,21 @@ public:
     CommandBuffer& operator = (CommandBuffer&& other) = default;
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
     void Reset() { mInterop->Reset(); mArena.Clear(); }
+    void SetRenderTarget(const RenderTarget2D* target) { mInterop->SetRenderTarget(target); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
     int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
     void* RequireFrameData(int size) { return mArena.Require(size); }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
+    template<class T> std::span<T> RequireFrameData(std::span<T> data) {
+        auto outData = std::span<T>((T*)RequireFrameData((int)(data.size() * sizeof(T))), data.size());
+        for (int i = 0; i < outData.size(); ++i) outData[i] = data[i];
+        return outData;
+    }
+    template<class R, class T, class Fn> std::span<R> RequireFrameData(std::span<T> data, Fn fn) {
+        auto outData = RequireFrameData<R>((int)data.size());
+        std::transform(data.begin(), data.end(), outData.data(), fn);
+        return outData;
+    }
     void* RequireConstantBuffer(std::span<const uint8_t> data)
     {
         return mInterop->RequireConstantBuffer(data);
@@ -155,16 +172,16 @@ public:
     }
     void DrawMesh(
         std::span<const BufferLayout*> bindings,
-        const PipelineLayout* pso, std::span<void*> resources,
-        const DrawConfig& config, int instanceCount = 1)
+        const PipelineLayout* pso, std::span<const void*> resources,
+        const DrawConfig& config, int instanceCount = 1, const char* name = nullptr)
     {
-        mInterop->DrawMesh(bindings, pso, resources, config, instanceCount);
+        mInterop->DrawMesh(bindings, pso, resources, config, instanceCount, name);
     }
-    void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config);
-    void DrawMesh(const Mesh* mesh, const Material* material)
+    void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config, const char* name = nullptr);
+    void DrawMesh(const Mesh* mesh, const Material* material, const char* name = nullptr)
     {
         if (mesh->GetVertexCount() == 0) return;
-        DrawMesh(mesh, material, DrawConfig::MakeDefault());
+        DrawMesh(mesh, material, DrawConfig::MakeDefault(), name);
     }
     void Execute() { mInterop->Execute(); }
 };
@@ -196,7 +213,8 @@ public:
     virtual CommandBuffer CreateCommandBuffer() = 0;
 
     // Calculate which PSO this draw call would land in
-    virtual const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) = 0;
+    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials);
+    virtual const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass) = 0;
 
     // Rendering is complete; flip the backbuffer
     virtual void Present() = 0;

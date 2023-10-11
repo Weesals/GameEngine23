@@ -5,83 +5,113 @@
 
 #include "GraphicsUtility.h"
 #include "GraphicsDeviceBase.h"
+#include "RenderTarget2D.h"
+#include "RetainedRenderer.h"
 
 class RenderQueue
 {
 public:
 	struct DrawBatch
 	{
+		const char* mName;
 		const PipelineLayout* mPipelineLayout;
 		const BufferLayout** mBufferLayouts;
-		RangeInt mResourceRange;
+		const void** mResources;
 		RangeInt mInstanceRange;
 	};
 
 	// Data which is erased each frame
 	std::vector<uint8_t> mFrameData;
-	std::vector<void*> mResourceData;
 	std::vector<uint32_t> mInstancesBuffer;
 	std::vector<DrawBatch> mDraws;
 
 	// Passes the typed instance buffer to a CommandList
-	BufferLayout mInstanceBufferLayout;
+	BufferLayoutPersistent mInstanceBufferLayout;
 
 	RenderQueue();
 
 	void Clear();
-	RangeInt RequireMaterialResources(CommandBuffer& cmdBuffer,
+	std::span<const void*> RequireMaterialResources(CommandBuffer& cmdBuffer,
 		const PipelineLayout* pipeline, const Material* material);
-	void AppendMesh(const PipelineLayout* pipeline, const BufferLayout** buffers,
-		RangeInt resources, RangeInt instances);
-	void AppendMesh(CommandBuffer& cmdBuffer, const Mesh* mesh, const Material* material);
+	void AppendMesh(const char* name,
+		const PipelineLayout* pipeline, const BufferLayout** buffers,
+		const void** resources, RangeInt instances);
+	void AppendMesh(const char* name,
+		CommandBuffer& cmdBuffer, const Mesh* mesh, const Material* material);
 
 	void Flush(CommandBuffer& cmdBuffer);
 
+};
+
+struct RenderPass
+{
+	std::string mName;
+	RenderQueue mRenderQueue;
+	Matrix mView;
+	Matrix mProjection;
+	Frustum mFrustum;
+	std::shared_ptr<RenderTarget2D> mRenderTarget;
+	std::shared_ptr<Material> mOverrideMaterial;
+	std::shared_ptr<RetainedRenderer> mRetainedRenderer;
+	RenderPass(std::string_view name, const std::shared_ptr<GraphicsDeviceBase>& graphics);
+	void UpdateViewProj(const Matrix& view, const Matrix& proj);
+	const IdentifierWithName& GetRenderPassOverride() const {
+		return mOverrideMaterial != nullptr ? mOverrideMaterial->GetRenderPassOverride() : IdentifierWithName::None;
+	}
+};
+class RenderPassList {
+	std::shared_ptr<RetainedScene> mScene;
+	SparseArray<int> mPassIds;
+	std::vector<RangeInt> mPassIdsBySceneId;
+public:
+	std::vector<RenderPass*> mPasses;
+	RenderPassList(const std::shared_ptr<RetainedScene>& scene)
+		: mScene(scene) { }
+	std::vector<RenderPass*>::iterator begin() { return mPasses.begin(); }
+	std::vector<RenderPass*>::iterator end() { return mPasses.end(); }
+	int AddInstance(const Mesh* mesh, const Material* material, int dataSize);
+	template<class T>
+	bool UpdateInstanceData(int sceneId, const T& tdata) {
+		return mScene->UpdateInstanceData(sceneId, tdata);
+	}
+	void RemoveInstance(int sceneId);
 };
 
 class MeshDraw
 {
 protected:
 	std::vector<const BufferLayout*> mBufferLayout;
-	const PipelineLayout* mPipeline;
-	std::vector<void*> mResources;
+	std::vector<const void*> mResources;
+	struct RenderPassCache {
+		Identifier mRenderPass;
+		const PipelineLayout* mPipeline;
+	};
+	std::vector<RenderPassCache> mPassCache;
 public:
 	const Mesh* mMesh;
 	const Material* mMaterial;
 	MeshDraw();
 	MeshDraw(Mesh* mesh, Material* material);
 	~MeshDraw();
-	void InvalidateMesh();
+	virtual void InvalidateMesh();
+	const RenderPassCache* GetPassCache(CommandBuffer& cmdBuffer, const IdentifierWithName& renderPass);
 	void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
 };
 
 class MeshDrawInstanced : public MeshDraw
 {
 protected:
-	BufferLayout mInstanceBuffer;
+	BufferLayoutPersistent mInstanceBuffer;
 public:
 	MeshDrawInstanced();
 	MeshDrawInstanced(Mesh* mesh, Material* material);
 	~MeshDrawInstanced();
-	void InvalidateMesh();
-	int AddInstanceElement(const std::string_view& name = "INSTANCE", BufferFormat fmt = FORMAT_R32_UINT, int stride = sizeof(uint32_t));
+	virtual void InvalidateMesh() override;
+	int GetInstanceCount();
+	int AddInstanceElement(const char* name = "INSTANCE", BufferFormat fmt = FORMAT_R32_UINT, int stride = sizeof(uint32_t));
 	void SetInstanceData(void* data, int count, int elementId = 0, bool markDirty = true);
 	void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
 	void Draw(CommandBuffer& cmdBuffer, RenderQueue* queue, const DrawConfig& config);
+	void Draw(CommandBuffer& cmdBuffer, RenderPass& pass, const DrawConfig& config);
 };
 
-struct RenderPass
-{
-	RenderQueue* mRenderQueue;
-	Matrix mView;
-	Matrix mProjection;
-	Frustum mFrustum;
-	RenderPass(RenderQueue* queue, Matrix view, Matrix proj);
-};
-struct RenderPassList
-{
-	std::span<RenderPass> mPasses;
-	RenderPassList(std::span<RenderPass> passes) : mPasses(passes) { }
-	std::span<RenderPass>::iterator begin() { return mPasses.begin(); }
-	std::span<RenderPass>::iterator end() { return mPasses.end(); }
-};

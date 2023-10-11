@@ -139,7 +139,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		if (texDiffuse != nullptr)
 		{
 			auto material = mesh->GetMaterial(true);
-			material->SetUniform("Texture", texDiffuse);
+			material->SetUniformTexture("Texture", texDiffuse);
 		}
 
 		// Notify that this mesh data has changed

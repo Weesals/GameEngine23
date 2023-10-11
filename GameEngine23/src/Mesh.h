@@ -201,13 +201,13 @@ struct BufferFormatType {
 struct BufferLayout {
 	enum Usage : uint8_t { Vertex, Index, Instance, Uniform, };
 	struct Element {
-		std::string mBindName;
+		const char* mBindName;
 		uint16_t mItemSize = 0;		// Size of each item
 		uint16_t mBufferStride = 0;	// Separation between items in this buffer (>= mItemSize)
 		BufferFormat mFormat = FORMAT_UNKNOWN;
 		void* mData = nullptr;
 		Element() { }
-		Element(const std::string_view& name, BufferFormat format, int stride, int size, void* data)
+		Element(const char* name, BufferFormat format, int stride, int size, void* data)
 			: mBindName(name), mFormat(format), mBufferStride(stride), mItemSize(size), mData(data)
 		{ }
 	};
@@ -219,19 +219,54 @@ struct BufferLayout {
 			: mIdentifier(identifier), mSize(size), mRevision(revision) { }
 	};
 	Buffer mBuffer;
-	std::vector<Element> mElements;
+	Element* mElements;
+	uint16_t mElementCount;
 	Usage mUsage = Usage::Vertex;
 	int mOffset = 0;	// Offset in count when binding a view to this buffer
 	int mCount = 0;		// How many elements to make current
 	BufferLayout() : mBuffer(0, 0) { }
 	BufferLayout(size_t identifier, int size, Usage usage, int count)
 		: mBuffer(identifier, size), mUsage(usage), mCount(count) { }
+	std::span<Element> GetElements() { return std::span<Element>(mElements, mElementCount); }
+	std::span<const Element> GetElements() const { return std::span<const Element>((const Element*)mElements, mElementCount); }
+	bool IsValid() { return mElementCount != 0; }
 	void CalculateImplicitSize(int minSize = 0, bool roundTo256 = false) {
 		mBuffer.mSize = 0;
-		for (auto& el : mElements) mBuffer.mSize += el.mItemSize;
+		for (auto& el : GetElements()) mBuffer.mSize += el.mItemSize;
 		mBuffer.mSize *= mCount;
 		mBuffer.mSize = std::max(mBuffer.mSize, minSize);
 		if (roundTo256) mBuffer.mSize = (mBuffer.mSize + 255) & (~255);
+	}
+};
+struct BufferLayoutPersistent : public BufferLayout {
+private:
+	std::vector<Element> mElementsStore;
+public:
+	BufferLayoutPersistent() : BufferLayout() { mElementsStore.reserve(2); }
+	BufferLayoutPersistent(size_t identifier, int size, Usage usage, int count, int reserve = 4)
+		: BufferLayout(identifier, size, usage, count)
+	{
+		mElementsStore.reserve(reserve);
+	}
+	BufferLayoutPersistent(const BufferLayoutPersistent& other) { *this = other; }
+	BufferLayoutPersistent(BufferLayoutPersistent&& other) { *this = std::move(other); }
+	BufferLayoutPersistent& operator =(const BufferLayoutPersistent& other) {
+		*(BufferLayout*)this = *(BufferLayout*)&other;
+		mElementsStore = other.mElementsStore;
+		mElements = mElementsStore.data();
+		return *this;
+	}
+	BufferLayoutPersistent& operator =(BufferLayoutPersistent&& other) {
+		*(BufferLayout*)this = *(BufferLayout*)&other;
+		mElementsStore = std::move(other.mElementsStore);
+		mElements = mElementsStore.data();
+		return *this;
+	}
+	int AppendElement(Element element) {
+		mElementsStore.push_back(element);
+		mElements = mElementsStore.data();
+		mElementCount = (int)mElementsStore.size();
+		return mElementCount - 1;
 	}
 };
 template<class T>
@@ -619,17 +654,16 @@ class Mesh
 	int8_t mVertexNormalId;
 	int8_t mVertexColorId;
 	std::array<int8_t, 8> mVertexTexCoordId;
-	mutable BufferLayout mVertexBinds;
-	mutable BufferLayout mIndexBinds;
+	mutable BufferLayoutPersistent mVertexBinds;
+	mutable BufferLayoutPersistent mIndexBinds;
 
 	std::string mName;
 
-	int CreateVertexBind(int8_t& id, const std::string_view name, BufferFormat fmt) {
+	int CreateVertexBind(int8_t& id, const char* name, BufferFormat fmt) {
 		assert(id == -1);
-		id = (int8_t)mVertexBinds.mElements.size();
 		auto type = BufferFormatType::GetType(fmt);
 		auto bsize = type.GetByteSize();
-		mVertexBinds.mElements.push_back(BufferLayout::Element(name, fmt, bsize, bsize, nullptr));
+		id = mVertexBinds.AppendElement(BufferLayout::Element(name, fmt, bsize, bsize, nullptr));
 		mVertexBinds.mBuffer.mSize = -1;
 		RequireVertexAlloc(id);
 		return id;
@@ -649,7 +683,7 @@ class Mesh
 		el.mData = newData;
 	}
 
-	void RequireVertexElementFormat(int8_t& elId, BufferFormat fmt, const std::string_view name) {
+	void RequireVertexElementFormat(int8_t& elId, BufferFormat fmt, const char* name) {
 		if (elId == -1) { CreateVertexBind(elId, name, fmt); return; }
 		auto& el = mVertexBinds.mElements[elId];
 		if (el.mFormat == fmt) return;
@@ -662,18 +696,19 @@ class Mesh
 public:
 	Mesh(const std::string& name)
 		: mRevision(0), mName(name),
-		mVertexBinds(BufferLayout((size_t)this, 0, BufferLayout::Usage::Vertex, 0)),
-		mIndexBinds(BufferLayout((size_t)this + 1, 0, BufferLayout::Usage::Index, 0)),
+		mVertexBinds(BufferLayoutPersistent((size_t)this, 0, BufferLayout::Usage::Vertex, 0, 4)),
+		mIndexBinds(BufferLayoutPersistent((size_t)this + 1, 0, BufferLayout::Usage::Index, 0, 1)),
 		mVertexPositionId(0),
 		mVertexNormalId(-1),
 		mVertexColorId(-1)
 		//mVertexTexCoordId(-1)
 	{
 		for (auto i = mVertexTexCoordId.begin(); i != mVertexTexCoordId.end(); ++i) *i = -1;
-		mVertexBinds.mElements.reserve(4);
-		mVertexBinds.mElements.push_back(BufferLayout::Element{ "POSITION", BufferFormat::FORMAT_R32G32B32_FLOAT, sizeof(Vector3), sizeof(Vector3), nullptr, });
-		mIndexBinds.mElements.push_back(BufferLayout::Element{ "INDEX", BufferFormat::FORMAT_R32_UINT, sizeof(int), sizeof(int), nullptr, });
+		mVertexPositionId = mVertexBinds.AppendElement(BufferLayout::Element{ "POSITION", BufferFormat::FORMAT_R32G32B32_FLOAT, sizeof(Vector3), sizeof(Vector3), nullptr, });
+		mIndexBinds.AppendElement(BufferLayout::Element{ "INDEX", BufferFormat::FORMAT_R32_UINT, sizeof(int), sizeof(int), nullptr, });
 	}
+
+	const std::string& GetName() const { return mName; }
 
 	void Reset()
 	{
@@ -719,7 +754,8 @@ public:
 
 	void SetVertexCount(int count)
 	{
-		for (auto& binding : mVertexBinds.mElements)
+		if (mVertexBinds.mCount == count) return;
+		for (auto& binding : mVertexBinds.GetElements())
 			Realloc(binding, count);
 		mVertexBinds.mCount = count;
 		mVertexBinds.mBuffer.mRevision++;
@@ -728,7 +764,8 @@ public:
 	}
 	void SetIndexCount(int count)
 	{
-		for (auto& binding : mIndexBinds.mElements)
+		if (mIndexBinds.mCount == count) return;
+		for (auto& binding : mIndexBinds.GetElements())
 			Realloc(binding, count);
 		mIndexBinds.mCount = count;
 		mIndexBinds.mBuffer.mRevision++;
@@ -743,22 +780,22 @@ public:
 	}
 
 	TypedBufferView<Vector3> GetPositionsV() {
-		return TypedBufferView<Vector3>(&mVertexBinds.mElements[mVertexPositionId], mVertexBinds.mCount);
+		return TypedBufferView<Vector3>(&mVertexBinds.GetElements()[mVertexPositionId], mVertexBinds.mCount);
 	}
 	TypedBufferView<Vector3> GetNormalsV(bool require = false) {
 		if (mVertexNormalId == -1) { if (require) RequireVertexNormals(); else return { }; }
-		return TypedBufferView<Vector3>(&mVertexBinds.mElements[mVertexNormalId], mVertexBinds.mCount);
+		return TypedBufferView<Vector3>(&mVertexBinds.GetElements()[mVertexNormalId], mVertexBinds.mCount);
 	}
 	TypedBufferView<Vector2> GetTexCoordsV(int channel = 0, bool require = false) {
 		if (mVertexTexCoordId[channel] == -1) { if (require) RequireVertexTexCoords(channel); else return { }; }
-		return TypedBufferView<Vector2>(&mVertexBinds.mElements[mVertexTexCoordId[channel]], mVertexBinds.mCount);
+		return TypedBufferView<Vector2>(&mVertexBinds.GetElements()[mVertexTexCoordId[channel]], mVertexBinds.mCount);
 	}
 	TypedBufferView<ColorB4> GetColorsV(bool require = false) {
 		if (mVertexColorId == -1) { if (require) RequireVertexColors(); else return { }; }
-		return TypedBufferView<ColorB4>(&mVertexBinds.mElements[mVertexColorId], mVertexBinds.mCount);
+		return TypedBufferView<ColorB4>(&mVertexBinds.GetElements()[mVertexColorId], mVertexBinds.mCount);
 	}
 	TypedBufferView<int> GetIndicesV(bool require = false) {
-		return TypedBufferView<int>(&mIndexBinds.mElements[0], mIndexBinds.mCount);
+		return TypedBufferView<int>(&mIndexBinds.GetElements()[0], mIndexBinds.mCount);
 	}
 
 	void CreateMeshLayout(std::vector<const BufferLayout*>& bindings) const {

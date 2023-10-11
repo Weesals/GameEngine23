@@ -42,7 +42,7 @@ class GraphicsDeviceMulti : public GraphicsDeviceBase
             // Forward to all devices
             std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.ClearRenderTarget(clear); });
         }
-        void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<void*> resources, const DrawConfig& config, int instanceCount = 1) override
+        void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) override
         {
             // Forward to all devices
             std::for_each(mCmdBuffers.begin(), mCmdBuffers.end(), [&](auto& cmd) { cmd.DrawMesh(bindings, pso, resources, config, instanceCount); });
@@ -70,7 +70,7 @@ public:
     }
 
     // Calculate which PSO this draw call would land in
-    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) override {
+    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass) override {
         return nullptr;
     }
 

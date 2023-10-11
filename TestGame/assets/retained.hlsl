@@ -9,6 +9,7 @@ cbuffer WorldCB : register(b0)
     float3 _ViewSpaceUpVector;
     float4x4 View;
     float4x4 ViewProjection;
+    float4x4 ShadowViewProjection;
 }
 
 #include "include/lighting.hlsl"
@@ -31,8 +32,9 @@ struct PSInput
     float3 normal : NORMAL;
 };
 
-Texture2D<float4> Texture : register(t0);
 SamplerState g_sampler : register(s0);
+Texture2D<float4> Texture : register(t0);
+Texture2D<float4> ShadowMap : register(t1);
 
 struct InstanceData
 {
@@ -53,8 +55,8 @@ PSInput VSMain(VSInput input)
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
     float3 worldNrm = mul(instance.Model, float4(input.normal.xyz, 0.0)).xyz;
     result.position = mul(ViewProjection, float4(worldPos, 1.0));
-    result.viewPos = mul(View, float4(worldPos, 1.0));
-    result.normal = mul(View, float4(worldNrm, 0.0));
+    result.viewPos = mul(View, float4(worldPos, 1.0)).xyz;
+    result.normal = mul(View, float4(worldNrm, 0.0)).xyz;
     result.uv = input.uv;
     
     /*result.position = lerp(
@@ -103,4 +105,15 @@ float4 PSMain(PSInput input) : SV_TARGET
     o.rgb += instance.Highlight.rgb;
 
     return float4(o, 1);
+}
+
+PSInput ShadowCast_VSMain(VSInput input)
+{
+    return VSMain(input);
+}
+
+float4 ShadowCast_PSMain(PSInput input) : SV_TARGET
+{
+    float d = input.position.z;
+    return float4(d.xxx, 1);
 }

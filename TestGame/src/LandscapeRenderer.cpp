@@ -15,7 +15,7 @@ void LandscapeRenderer::Initialise(const std::shared_ptr<Landscape>& landscape, 
 		mLandMaterial = std::make_shared<Material>(L"assets/landscape.hlsl");
 		mLandMaterial->InheritProperties(rootMaterial);
 		auto tex = ResourceLoader::GetSingleton().LoadTexture(L"assets/T_Grass_BaseColor.png");
-		mLandMaterial->SetUniform("GrassTexture", tex);
+		mLandMaterial->SetUniformTexture("GrassTexture", tex);
 	}
 	mChangeListener = mLandscape->RegisterOnLandscapeChanged([this](auto& landscape, auto& changed)
 		{
@@ -61,12 +61,12 @@ std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
 	return mTileMesh;
 }
 
-void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, RenderQueue* queue, const Frustum& frustum)
+void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, RenderPass& pass)
 {
 	auto scale = mLandscape->GetScale();
 	auto xform = Matrix::CreateScale(scale, 1.0f, scale) *
 		Matrix::CreateTranslation(mLandscape->GetSizing().Location);
-	auto localFrustum = frustum.TransformToLocal(xform);
+	auto localFrustum = pass.mFrustum.TransformToLocal(xform);
 
 	// Pack heightmap data into a texture
 	if (mHeightMap == nullptr)
@@ -126,7 +126,7 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, RenderQueue* queue, con
 
 		// Calculate material parameters
 		mLandMaterial->SetUniform("Model", xform);
-		mLandMaterial->SetUniform("HeightMap", mHeightMap);
+		mLandMaterial->SetUniformTexture("HeightMap", mHeightMap);
 		mLandMaterial->SetUniform("HeightRange", Vector4(mMetadata.MinHeight, mMetadata.MaxHeight, 0.0f, 0.0f));
 	}
 
@@ -163,7 +163,7 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, RenderQueue* queue, con
 
 	auto drawHash = GenericHash(instanceOffsets.data(), i);
 	mLandscapeDraw.SetInstanceData(instanceOffsets.data(), i, 0, drawHash != mLandscapeDrawHash);
-	mLandscapeDraw.Draw(cmdBuffer, queue, DrawConfig::MakeDefault());
+	mLandscapeDraw.Draw(cmdBuffer, pass, DrawConfig::MakeDefault());
 	mLandscapeDrawHash = drawHash;
 
 }

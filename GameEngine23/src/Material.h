@@ -13,6 +13,7 @@
 
 struct PipelineLayout;
 class CommandBuffer;
+class RenderTarget2D;
 
 // Utility class for determining the size of types dynamically
 class TypeCache
@@ -70,7 +71,7 @@ public:
 	std::span<const uint8_t> SetValue(Identifier name, const T* data, int count)
 	{
 		static_assert(std::is_same<int, T>::value || std::is_same<float, T>::value
-			|| std::is_same<std::shared_ptr<Texture>, T>::value,
+			|| std::is_same<std::shared_ptr<TextureBase>, T>::value,
 			"Types must be int or float based");
 
 		return SetValue(name, data, count, TypeCache::Require<T>());
@@ -134,14 +135,16 @@ public:
 	}
 };
 class MaterialCollectorContext {
-	const Material* mMaterial;
+	std::span<const Material*> mMaterials;
 	MaterialCollector& mCollector;
 public:
-	MaterialCollectorContext(const Material* mat, MaterialCollector& collector)
-		: mMaterial(mat), mCollector(collector) { }
+	MaterialCollectorContext(std::span<const Material*> materials, MaterialCollector& collector)
+		: mMaterials(materials), mCollector(collector) { }
 	template<class T>
 	const T& GetUniform(Identifier name) {
-		return *(T*)GetUniformSource(name, *this).data();
+		auto data = GetUniformSource(name, *this);
+		//if (data.empty()) return T();
+		return *(T*)data.data();
 	}
 	std::span<const uint8_t> GetUniformSource(Identifier name, MaterialCollectorContext& context) const;
 };
@@ -156,12 +159,20 @@ protected:
 	// Used to compute computed parameters
 	class ParameterContext
 	{
-		const Material* mMaterial;
+		std::span<const Material*> mMaterials;
 	public:
-		ParameterContext(const Material* mat) : mMaterial(mat) { }
+		ParameterContext(std::span<const Material*> materials) : mMaterials(materials) { }
+		std::span<const uint8_t> GetUniform(Identifier name) {
+			std::span<const uint8_t> data;
+			for (auto* mat : mMaterials) {
+				data = mat->GetUniformBinaryData(name, *this);
+				if (!data.empty()) return data;
+			}
+			return data;
+		}
 		template<class T>
 		const T& GetUniform(Identifier name) {
-			return *(T*)mMaterial->GetUniformBinaryData(name, *this).data();
+			return *(T*)GetUniform(name).data();
 		}
 	};
 
@@ -215,6 +226,7 @@ private:
 	// Shaders bound
 	std::shared_ptr<Shader> mVertexShader;
 	std::shared_ptr<Shader> mPixelShader;
+	IdentifierWithName mRenderPassOverride;
 
 	// How to blend/raster/clip
 	BlendMode mBlendMode;
@@ -286,6 +298,8 @@ public:
 	// Set shaders bound to this material
 	void SetVertexShader(const std::shared_ptr<Shader>& shader);
 	void SetPixelShader(const std::shared_ptr<Shader>& shader);
+	void SetRenderPassOverride(const IdentifierWithName& pass);
+	const IdentifierWithName& GetRenderPassOverride() const;
 
 	// Get shaders bound to this material
 	const std::shared_ptr<Shader>& GetVertexShader(bool inherit = true) const;
@@ -314,8 +328,8 @@ public:
 		MarkChanged();
 		return r;
 	}
-	std::span<const uint8_t> SetUniform(Identifier name, const std::shared_ptr<Texture>& tex) {
-		auto r = mParameters.SetValue<std::shared_ptr<Texture>>(name, &tex, 1);
+	std::span<const uint8_t> SetUniformTexture(Identifier name, const std::shared_ptr<TextureBase>& tex) {
+		auto r = mParameters.SetValue<std::shared_ptr<TextureBase>>(name, &tex, 1);
 		MarkChanged();
 		return r;
 	}
@@ -355,7 +369,7 @@ public:
 	std::span<const uint8_t> GetUniformBinaryData(Identifier name) const;
 	std::span<const uint8_t> GetUniformBinaryData(Identifier name, ParameterContext& context) const;
 
-	const std::shared_ptr<Texture>* GetUniformTexture(Identifier name) const;
+	const std::shared_ptr<TextureBase>* GetUniformTexture(Identifier name) const;
 
 	// Add a parent material that this material will inherit
 	// properties from
@@ -367,7 +381,7 @@ public:
 	// Use to determine if a value cache is still current
 	int ComputeHeirarchicalRevisionHash() const;
 
-	void ResolveResources(CommandBuffer& cmdBuffer, std::vector<void*>& resources, const PipelineLayout* pipeline) const;
+	void ResolveResources(CommandBuffer& cmdBuffer, std::vector<const void*>& resources, const PipelineLayout* pipeline) const;
 
 	static Material NullInstance;
 };

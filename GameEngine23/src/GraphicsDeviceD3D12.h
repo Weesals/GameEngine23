@@ -36,10 +36,7 @@ class GraphicsDeviceD3D12 :
 
     // Each frame needs its own allocator
     ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
-    // And render target
-    ComPtr<ID3D12Resource> mRenderTargets[FrameCount];
-    // And they can share a depth target
-    ComPtr<ID3D12Resource> mDepthTarget;
+    D3DResourceCache::D3DRT mFrameBuffers[FrameCount];
 
 public:
     GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window);
@@ -53,11 +50,12 @@ public:
     ID3D12DescriptorHeap* GetDSVHeap() const { return mDevice.GetDSVHeap(); }
     ID3D12DescriptorHeap* GetSRVHeap() const { return mDevice.GetSRVHeap(); }
     int GetDescriptorHandleSizeRTV() const { return mDevice.GetDescriptorHandleSizeRTV(); }
+    int GetDescriptorHandleSizeDSV() const { return mDevice.GetDescriptorHandleSizeDSV(); }
     int GetDescriptorHandleSizeSRV() const { return mDevice.GetDescriptorHandleSizeSRV(); }
     IDXGISwapChain3* GetSwapChain() const { return mDevice.GetSwapChain(); }
 
     ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
-    ID3D12Resource* GetBackBuffer() const { return mRenderTargets[mBackBufferIndex].Get(); }
+    const D3DResourceCache::D3DRT& GetBackBuffer() const { return mFrameBuffers[mBackBufferIndex]; }
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 
@@ -65,7 +63,7 @@ public:
     Vector2 GetClientSize() const { return mDevice.GetClientSize(); }
 
     CommandBuffer CreateCommandBuffer() override;
-    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, const Material* material) override;
+    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass) override;
     void Present() override;
     void WaitForFrame();
     void WaitForGPU();

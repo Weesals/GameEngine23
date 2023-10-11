@@ -51,9 +51,9 @@ void WorldEffects::GetModified(std::set<flecs::entity>& entities, int oldTime, i
             entities.insert(item.first);
 }
 
-void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std::shared_ptr<RetainedRenderer>& scene)
+void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std::shared_ptr<RenderPassList>& passList)
 {
-    mScene = scene;
+    mPassList = passList;
 
     mLandscape = std::make_shared<Landscape>();
     mLandscape->SetSize(256);
@@ -120,8 +120,9 @@ void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std:
         .event(flecs::OnRemove)
         .each([this](flecs::iter& it, size_t i, Components::Renderable& r) {
         if (it.event() == flecs::OnRemove) {
-            for (auto& instId : r.mInstanceIds)
-                mScene->RemoveInstance(instId);
+            for (auto& instId : r.mInstanceIds) {
+                mPassList->RemoveInstance(instId);
+            }
         }
     });
 
@@ -179,17 +180,22 @@ void World::Render(CommandBuffer& cmdBuffer, RenderPassList passes)
             if (i >= r.mInstanceIds.size()) {
                 Material* useMat = material.get();
                 if (meshMat != nullptr) (useMat = meshMat.get())->InheritProperties(material);
-                r.mInstanceIds.push_back(mScene->AppendInstance(mesh.get(), useMat, sizeof(data)));
+                //auto sceneId = mScene->GetScene()->AllocateInstance(sizeof(data));
+                int sceneId = mPassList->AddInstance(mesh.get(), useMat, sizeof(data));
+                //r.mInstanceIds.push_back(mScene->AppendInstance(mesh.get(), useMat, sceneId));
                 if (meshMat != nullptr) meshMat->RemoveInheritance(material);
+                r.mInstanceIds.push_back(sceneId);
             }
-            mScene->UpdateInstanceData(r.mInstanceIds[i], data);
+            //auto& instance = mScene->GetInstance(r.mInstanceIds[i]);
+            //mScene->GetScene()->UpdateInstanceData(instance.mSceneId, data);
+            mPassList->UpdateInstanceData(r.mInstanceIds[i], data);
             ++i;
         }
     }
     mMovedEntities.clear();
     for (auto& pass : passes.mPasses)
     {
-        mLandscapeRenderer->Render(cmdBuffer, pass.mRenderQueue, pass.mFrustum);
+        mLandscapeRenderer->Render(cmdBuffer, *pass);
     }
 }
 

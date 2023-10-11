@@ -7,9 +7,11 @@ cbuffer WorldCB : register(b0)
     float3 _LightColor0;
     float3 _ViewSpaceLightDir0;
     float3 _ViewSpaceUpVector;
+    float4x4 ShadowIVViewProjection;
 }
 cbuffer ConstantBuffer : register(b1)
 {
+    matrix Model;
     matrix ModelView;
     matrix ModelViewProjection;
     //float2 Offsets[256];
@@ -17,9 +19,10 @@ cbuffer ConstantBuffer : register(b1)
     float4 HeightRange;
 };
 
-Texture2D<float4> HeightMap : register(t0);
 SamplerState g_sampler : register(s0);
+Texture2D<float4> HeightMap : register(t0);
 Texture2D<float4> GrassTexture : register(t1);
+Texture2D<float4> ShadowMap : register(t2);
 
 #include "include/lighting.hlsl"
 #include "include/noise.hlsl"
@@ -95,7 +98,13 @@ float4 PSMain(PSInput input) : SV_TARGET
     float Roughness = 0.7;
     float Metallic = 0.0;
     
-    
+    float4 shadowVPos = mul(ShadowIVViewProjection, float4(input.viewPos, 1.0));
+    shadowVPos.xyz /= shadowVPos.w;
+    shadowVPos.y *= -1.0;
+    float4 shadowSample = ShadowMap.Sample(g_sampler, 0.5 + shadowVPos.xy * 0.5);
+    float shadow = step(shadowVPos.z, shadowSample.r + 0.002);
+
+
     {
         float2 p = input.localPos.xz / 12.0;
         float2 i = floor(p + dot(p, 1.0) * SF2);
@@ -129,7 +138,7 @@ float4 PSMain(PSInput input) : SV_TARGET
         Specular,
         input.normal,
         Roughness,
-        _LightColor0,
+        _LightColor0 * shadow,
         _ViewSpaceLightDir0,
         -viewDir,
         Metallic
@@ -137,6 +146,16 @@ float4 PSMain(PSInput input) : SV_TARGET
     
     // Indirect
     o += ComputeIndiret(Albedo, Specular, input.normal, Roughness, Metallic, -viewDir);
-
+    
     return float4(o, 1);
+}
+
+PSInput ShadowCast_VSMain(VSInput input)
+{
+    return VSMain(input);
+}
+float4 ShadowCast_PSMain(PSInput input) : SV_TARGET
+{
+    float d = input.position.z;
+    return float4(d.xxx, 1);
 }

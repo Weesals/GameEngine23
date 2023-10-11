@@ -5,3 +5,5 @@ std::unordered_map<std::wstring, Identifier, Identifier::string_hash, std::equal
 
 Identifier::Identifier(const std::string_view& name) : mId(Identifier::RequireStringId(name)) { }
 Identifier::Identifier(const std::wstring_view& name) : mId(Identifier::RequireStringId(name)) { }
+
+const IdentifierWithName IdentifierWithName::None;

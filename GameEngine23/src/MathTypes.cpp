@@ -130,10 +130,10 @@ bool Frustum::GetIsVisible(Vector3 pos)  const {
 bool Frustum::GetIsVisible(Vector3 pos, Vector3 ext)  const {
 	return GetVisibility(pos, ext) > 0;
 }
-Frustum Frustum::TransformToLocal(Matrix tform) const {
+Frustum Frustum::TransformToLocal(const Matrix& tform) const {
 	return Frustum(tform * CalculateViewProj());
 }
-Vector2 Frustum::GetProjectedDistancesNearFar(Vector3 pos)  const {
+Vector2 Frustum::GetProjectedDistancesNearFar(Vector3 pos) const {
 	return Vector2(
 		Vector3::Dot(mNearPlane.xyz(), pos) + mNearPlane.w,
 		Vector3::Dot(mFarPlane.xyz(), pos) + mFarPlane.w

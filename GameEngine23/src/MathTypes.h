@@ -153,7 +153,7 @@ struct Frustum : public Frustum4
 	bool GetIsVisible(Vector3 pos) const;
 	bool GetIsVisible(Vector3 pos, Vector3 ext) const;
 
-	Frustum TransformToLocal(Matrix tform) const;
+	Frustum TransformToLocal(const Matrix& tform) const;
 protected:
 	Vector2 GetProjectedDistancesNearFar(Vector3 pos) const;
 };

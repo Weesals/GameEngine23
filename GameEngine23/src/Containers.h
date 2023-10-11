@@ -69,8 +69,9 @@ struct ExpandableMemoryArena {
         {
             mData = malloc(capacity);
         }
+        Page(Page&& o) : mData(o.mData) { o.mData = nullptr; }
         ~Page() {
-            free(mData);
+            if (mData != nullptr) free(mData);
         }
         void* AttemptConsume(int size) {
             if (mConsumed + size > mSize) return nullptr;
@@ -91,6 +92,8 @@ struct ExpandableMemoryArena {
     }
     void* Require(int size) {
         if (size <= 0) return nullptr;
+        const int DataAlignment = 8;
+        size = (size + DataAlignment - 1) & ~(DataAlignment - 1);
         while (mActivePage < (int)mPages.size()) {
             void* data = mPages[mActivePage].AttemptConsume(size);
             if (data != nullptr) return data;

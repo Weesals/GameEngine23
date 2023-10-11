@@ -83,13 +83,22 @@ void* MaterialEvaluatorContext::GetAndIterateParameter(Identifier name)
 }
 
 std::span<const uint8_t> MaterialCollectorContext::GetUniformSource(Identifier name, MaterialCollectorContext& context) const {
-	return mCollector.GetUniformSource(mMaterial, name, context);
+	std::span<const uint8_t> data;
+	for (auto* mat : mMaterials) {
+		data = mCollector.GetUniformSource(mat, name, context);
+		if (!data.empty()) return data;
+	}
+	return mCollector.GetUniformSourceNull(name, context);
 }
 
 
 // Set shaders bound to this material
 void Material::SetVertexShader(const std::shared_ptr<Shader>& shader) { mVertexShader = shader; }
 void Material::SetPixelShader(const std::shared_ptr<Shader>& shader) { mPixelShader = shader; }
+void Material::SetRenderPassOverride(const IdentifierWithName& pass) { mRenderPassOverride = pass; }
+const IdentifierWithName& Material::GetRenderPassOverride() const {
+	return mRenderPassOverride;
+}
 
 // Get shaders bound to this material
 const std::shared_ptr<Shader>& Material::GetVertexShader(bool inherit) const
@@ -142,7 +151,8 @@ int Material::GetInstanceCount(bool inherit) const {
 std::span<const uint8_t> Material::GetUniformBinaryData(Identifier name) const
 {
 	// TODO: An efficient way to cache computed values
-	ParameterContext context(this);
+	const Material* self = this;
+	ParameterContext context(std::span<const Material*>(&self, 1));
 	return GetUniformBinaryData(name, context);
 }
 std::span<const uint8_t> Material::GetUniformBinaryData(Identifier name, ParameterContext& context) const
@@ -170,11 +180,11 @@ std::span<const uint8_t> Material::GetUniformBinaryData(Identifier name, Paramet
 	return data;
 }
 
-const std::shared_ptr<Texture>* Material::GetUniformTexture(Identifier name) const
+const std::shared_ptr<TextureBase>* Material::GetUniformTexture(Identifier name) const
 {
 	auto data = mParameters.GetValueData(name);
 	if (data.empty()) return nullptr;
-	return (std::shared_ptr<Texture>*)data.data();
+	return (std::shared_ptr<TextureBase>*)data.data();
 }
 
 // Add a parent material that this material will inherit
@@ -202,7 +212,7 @@ int Material::ComputeHeirarchicalRevisionHash() const
 	return hash;
 }
 
-void Material::ResolveResources(CommandBuffer& cmdBuffer, std::vector<void*>& resources, const PipelineLayout* pipeline) const
+void Material::ResolveResources(CommandBuffer& cmdBuffer, std::vector<const void*>& resources, const PipelineLayout* pipeline) const
 {
 	// Get constant buffer data for this batch
 	for (auto* cb : pipeline->mConstantBuffers) {

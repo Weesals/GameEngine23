@@ -66,6 +66,8 @@ void Play::Initialise(Platform& platform)
     mCamera.SetFOV(15.0f * (float)std::numbers::pi / 180.0f);
     mCamera.SetAspect(clientSize.x / clientSize.y);
 
+    mSunLight = std::make_shared<DirectionalLight>();
+
     mRootMaterial->SetUniform("Resolution", clientSize);
     mRootMaterial->SetUniform("DayTime", 0.5f);
     mRootMaterial->SetUniform("_WorldSpaceLightDir0", lightVec);
@@ -115,12 +117,28 @@ void Play::Initialise(Platform& platform)
         return context.GetUniform<Matrix>(iVMat).Up();
     });
 
-    mScene = std::make_shared<RetainedRenderer>(platform.GetGraphics());
-    mRenderQueue = std::make_shared<RenderQueue>();
-    mWorld = std::make_shared<World>();
+    mScene = std::make_shared<RetainedScene>();
+    mBasePass = std::make_shared<RenderPass>("Base", platform.GetGraphics());
+    mShadowPass = std::make_shared<RenderPass>("Shadow", platform.GetGraphics());
+    mBasePass->mRetainedRenderer->SetScene(mScene);
+    mBasePass->mOverrideMaterial = std::make_shared<Material>();
+    mShadowPass->mRetainedRenderer->SetScene(mScene);
+    mShadowPass->mRenderTarget = mSunLight->GetShadowBuffer();
+    mShadowPass->mOverrideMaterial = mSunLight->GetRenderPassMaterialOverride();
+    mRenderPasses = std::make_shared<RenderPassList>(mScene);
+    mRenderPasses->mPasses.push_back(mShadowPass.get());
+    mRenderPasses->mPasses.push_back(mBasePass.get());
+    mBasePass->mOverrideMaterial->SetUniformTexture("ShadowMap", mShadowPass->mRenderTarget);
+    mBasePass->mOverrideMaterial->SetComputedUniform<Matrix>("ShadowViewProjection", [=](auto& context) {
+        return mShadowPass->mView * mShadowPass->mProjection;
+    });
+    mBasePass->mOverrideMaterial->SetComputedUniform<Matrix>("ShadowIVViewProjection", [=](auto& context) {
+        return mBasePass->mView.Invert() * mShadowPass->mView * mShadowPass->mProjection;
+    });
 
     // Initialise world
-    mWorld->Initialise(mRootMaterial, mScene);
+    mWorld = std::make_shared<World>();
+    mWorld->Initialise(mRootMaterial, mRenderPasses);
 
     // Setup user interactions
     mActionDispatch = std::make_shared<Systems::ActionDispatchSystem>(mWorld.get());
@@ -158,36 +176,46 @@ void Play::Step()
     mRootMaterial->SetUniform("View", mCamera.GetViewMatrix());
     mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix());
     mWorld->Step(dt);
+
+    auto timer = steady_clock::now() - now;
+    auto gfxDbg = mCanvas->FindChild<UIGraphicsDebug>();
+    gfxDbg->AppendStepTimer(timer);
 }
 
 void Play::Render(CommandBuffer& cmdBuffer)
 {
+    auto now = steady_clock::now();
     Matrix view = mCamera.GetViewMatrix();
     Matrix proj = mCamera.GetProjectionMatrix();
     Matrix vp = view * proj;
-    mRenderQueue->Clear();
-
-    // Generate render passes
-    auto passes = std::array<RenderPass, 1>{
-        RenderPass(mRenderQueue.get(), view, proj)
-    };
-    RenderPassList passList(passes);
+    mBasePass->mRenderQueue.Clear();
+    mBasePass->UpdateViewProj(view, proj);
+    mShadowPass->mRenderQueue.Clear();
+    mShadowPass->UpdateViewProj(
+        Matrix::CreateLookAt(Vector3(20, 50, -100), Vector3(0, -5, 0), Vector3::Up),
+        Matrix::CreatePerspectiveFieldOfView(45 * 3.14f / 180.0f, 1.0f, 40.0f, 150.0f)
+    );
+    mShadowPass->mOverrideMaterial->SetUniform("View", mShadowPass->mView);
+    mShadowPass->mOverrideMaterial->SetUniform("Projection", mShadowPass->mProjection);
 
     // Render the world
-    mWorld->Render(cmdBuffer, passList);
-    mSelectionRenderer->Render(cmdBuffer, passList);
+    mWorld->Render(cmdBuffer, *mRenderPasses);
+    mSelectionRenderer->Render(cmdBuffer, *mRenderPasses);
 
     // Draw the skybox
-    mRenderQueue->AppendMesh(cmdBuffer, mSkybox->mMesh.get(), mSkybox->mMaterial.get());
+    mBasePass->mRenderQueue.AppendMesh("Skybox", cmdBuffer, mSkybox->mMesh.get(), mSkybox->mMaterial.get());
 
     // Draw retained meshes
     mScene->SubmitGPUMemory(cmdBuffer);
-    mScene->SubmitToRenderQueue(cmdBuffer, *mRenderQueue, vp);
 
     // Render the render passes
-    for (auto& pass : passList.mPasses)
+    for (auto* pass : mRenderPasses->mPasses)
     {
-        pass.mRenderQueue->Flush(cmdBuffer);
+        pass->mRetainedRenderer->SubmitToRenderQueue(cmdBuffer, pass->mRenderQueue, pass->mFrustum);
+        cmdBuffer.SetRenderTarget(pass->mRenderTarget.get());
+        cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
+
+        pass->mRenderQueue.Flush(cmdBuffer);
     }
 
     mOnRender.Invoke(cmdBuffer);
@@ -195,6 +223,10 @@ void Play::Render(CommandBuffer& cmdBuffer)
 
     // Render UI
     mCanvas->Render(cmdBuffer);
+
+    auto timer = steady_clock::now() - now;
+    auto gfxDbg = mCanvas->FindChild<UIGraphicsDebug>();
+    gfxDbg->AppendRenderTimer(timer);
 }
 
 // Send an action request (move, attack, etc.) to selected entities

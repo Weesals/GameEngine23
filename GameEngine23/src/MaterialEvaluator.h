@@ -3,6 +3,7 @@
 #include "Material.h"
 #include "Containers.h"
 #include "GraphicsUtility.h"
+#include "GraphicsDeviceBase.h"
 #include <cassert>
 
 // Extracts material parameters from precalculated offsets
@@ -63,6 +64,40 @@ public:
 		data.resize(begin + finalSize);
 		return std::span<uint8_t>(data.begin() + begin, finalSize);
 	}
+	static void ResolveConstantBuffer(ShaderBase::ConstantBuffer* cb, std::span<const Material*> materialStack, uint8_t* buffer) {
+		for (auto& val : cb->mValues) {
+			for (auto* mat : materialStack) {
+				Material::ParameterContext context(materialStack);
+				auto data = context.GetUniform(val.mNameId);
+				std::memcpy(buffer + val.mOffset, data.data(), data.size());
+			}
+		}
+	}
+	static std::span<const void*> ResolveResources(CommandBuffer& cmdBuffer, const PipelineLayout* pipeline, std::span<const Material*> materialStack) {
+		auto resources = cmdBuffer.RequireFrameData<const void*>(pipeline->GetResourceCount());
+		ResolveResources(cmdBuffer, pipeline, materialStack, resources);
+		return resources;
+	}
+	static void ResolveResources(CommandBuffer& cmdBuffer, const PipelineLayout* pipeline, std::span<const Material*> materialStack, std::span<const void*> outResources) {
+		int r = 0;
+		Material::ParameterContext context(materialStack);
+		// Get constant buffer data for this batch
+		for (auto* cb : pipeline->mConstantBuffers) {
+			uint8_t tmpData[512];
+			for (auto& val : cb->mValues) {
+				auto data = context.GetUniform(val.mNameId);
+				std::memcpy(tmpData + val.mOffset, data.data(), data.size());
+			}
+			outResources[r++] = cmdBuffer.RequireConstantBuffer(std::span<uint8_t>(tmpData, cb->mSize));
+		}
+		// Get other resource data for this batch
+		{
+			for (auto* rb : pipeline->mResources) {
+				auto data = context.GetUniform(rb->mNameId);
+				outResources[r++] = data.empty() ? nullptr : ((std::shared_ptr<void*>*)data.data())->get();
+			}
+		}
+	}
 };
 
 // Calculates material parameter offsets and source materials within the material stack
@@ -101,6 +136,12 @@ public:
 			return std::span<const uint8_t>(srcData, value.mDataSize);
 		}
 		return GetUniformSourceIntl(material, name, context);
+	}
+	std::span<const uint8_t> GetUniformSourceNull(Identifier name, MaterialCollectorContext& context) {
+		auto material = &Material::NullInstance;
+		auto valueData = material->mParameters.GetValueData("NullVec");
+		ObserveValue(material, name, valueData);
+		return valueData;
 	}
 
 	// Ensure all values come before computed
@@ -214,7 +255,6 @@ private:
 			data = GetUniformSourceIntl(mat.get(), name, context);
 			if (!data.empty()) return data;
 		}
-		data = GetUniformSourceIntl(&Material::NullInstance, "NullVec", context);
 		return data;
 	}
 	int RequireSource(const Material* material) {
@@ -227,6 +267,9 @@ private:
 	void ObserveValue(const Material* material, Identifier name) {
 		//if (mValues.capacity() < 8) mValues.reserve(8);
 		auto valueData = material->mParameters.GetValueData(name);
+		ObserveValue(material, name, valueData);
+	}
+	void ObserveValue(const Material* material, Identifier name, std::span<const uint8_t> valueData) {
 		Value v;
 		v.mOutputOffset = InvalidOffset;
 		v.mValueOffset = (uint16_t)(valueData.data() - material->mParameters.GetDataRaw());

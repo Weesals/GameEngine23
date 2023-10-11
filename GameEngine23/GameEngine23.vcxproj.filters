@@ -127,6 +127,8 @@
       <Filter>Rendering</Filter>
     </ClInclude>
     <ClInclude Include="src\RenderQueue.h" />
+    <ClInclude Include="src\RenderTarget2D.h" />
+    <ClInclude Include="src\Lighting.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -191,6 +193,8 @@
     </ClCompile>
     <ClCompile Include="src\RenderQueue.cpp" />
     <ClCompile Include="src\GraphicsDeviceBase.cpp" />
+    <ClCompile Include="src\RenderTarget2D.cpp" />
+    <ClCompile Include="src\Lighting.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="inc\SimpleMath.inl">

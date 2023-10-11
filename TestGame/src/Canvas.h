@@ -21,6 +21,16 @@ public:
 	virtual void AppendChild(const std::shared_ptr<CanvasRenderable>& child);
 	virtual void RemoveChild(const std::shared_ptr<CanvasRenderable>& child);
 	virtual void Render(CommandBuffer& cmdBuffer) = 0;
+
+	template<class T>
+	const std::shared_ptr<T>& FindChild() {
+		static std::shared_ptr<T> null;
+		for (auto& child : mChildren) {
+			auto typed = std::dynamic_pointer_cast<T>(child);
+			if (typed != nullptr) return typed;
+		}
+		return null;
+	}
 };
 
 // The root of the UI; coordinates rendering of all its children

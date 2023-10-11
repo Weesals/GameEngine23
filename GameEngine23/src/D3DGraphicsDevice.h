@@ -26,6 +26,7 @@ class D3DGraphicsDevice
 
     int mDescriptorHandleSizeRTV;
     int mDescriptorHandleSizeSRV;
+    int mDescriptorHandleSizeDSV;
     // Size of the client rect of the window
     std::pair<int, int> mClientSize;
 
@@ -38,6 +39,7 @@ public:
     ID3D12DescriptorHeap* GetDSVHeap() const { return mDSVHeap.Get(); }
     ID3D12DescriptorHeap* GetSRVHeap() const { return mSRVHeap.Get(); }
     int GetDescriptorHandleSizeRTV() const { return mDescriptorHandleSizeRTV; }
+    int GetDescriptorHandleSizeDSV() const { return mDescriptorHandleSizeDSV; }
     int GetDescriptorHandleSizeSRV() const { return mDescriptorHandleSizeSRV; }
     IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
     ID3D12CommandQueue* GetCmdQueue() const { return mCmdQueue.Get(); }

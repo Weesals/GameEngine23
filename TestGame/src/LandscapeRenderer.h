@@ -42,7 +42,7 @@ public:
 
 	std::shared_ptr<Mesh>& RequireTileMesh();
 
-	void Render(CommandBuffer& cmdBuffer, RenderQueue* queue, const Frustum& frustum);
+	void Render(CommandBuffer& cmdBuffer, RenderPass& pass);
 
 };
 

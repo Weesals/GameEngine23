@@ -10,6 +10,7 @@
 
 #include <InputDispatcher.h>
 #include <RetainedRenderer.h>
+#include <Lighting.h>
 
 #include "SelectionManager.h"
 #include "SelectionRenderer.h"
@@ -44,12 +45,16 @@ private:
 	std::shared_ptr<Canvas> mCanvas;
 	std::shared_ptr<UIPlay> mPlayUI;
 
-	std::shared_ptr<RetainedRenderer> mScene;
-	std::shared_ptr<RenderQueue> mRenderQueue;
+	std::shared_ptr<RetainedScene> mScene;
+	std::shared_ptr<RenderPassList> mRenderPasses;
+
+	std::shared_ptr<RenderPass> mBasePass;
+	std::shared_ptr<RenderPass> mShadowPass;
 	std::shared_ptr<World> mWorld;
 
 	std::shared_ptr<Material> mRootMaterial;
 	std::shared_ptr<Skybox> mSkybox;
+	std::shared_ptr<DirectionalLight> mSunLight;
 
 	std::shared_ptr<InputDispatcher> mInputDispatcher;
 
@@ -68,6 +73,8 @@ public:
 	const std::shared_ptr<const GraphicsDeviceBase>& GetGraphics() const { return mGraphics; }
 	const std::shared_ptr<const Input>& GetInput() const { return mInput; }
 	const std::shared_ptr<SelectionManager>& GetSelection() const { return mSelection; }
+
+	const std::shared_ptr<RenderPass>& GetShadowPass() const { return mShadowPass; }
 
 	const std::shared_ptr<World>& GetWorld() { return mWorld; }
 	const std::shared_ptr<Material>& GetRootMaterial() { return mRootMaterial; }

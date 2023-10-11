@@ -37,7 +37,7 @@ float Landscape::HeightMapReadOnly::GetHeightAtF(Vector2 pos) const
 {
 	Vector2 l;
 	auto p00 = mSizing.WorldToLandscape(pos, l);
-	p00 = Int2::Min(Int2::Max(p00, 0), mSizing.Size - 2);
+	p00 = Int2::Clamp(p00, 0, mSizing.Size - 2);
 	auto h00 = GetAt(p00);
 	auto h10 = GetAt(p00 + Int2(1, 0));
 	auto h01 = GetAt(p00 + Int2(0, 1));

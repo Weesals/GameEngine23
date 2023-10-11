@@ -39,6 +39,7 @@ void UIPlay::Render(CommandBuffer& cmdBuffer)
 			ImGui::Text("%d = %d", res.mResourceId, res.mAmount);
 		}
 		ImGui::EndTable();
+		ImGui::Image((ImTextureID)&mPlay->GetShadowPass()->mRenderTarget, ImVec2(200, 200));
 	}
 	ImGui::End();
 

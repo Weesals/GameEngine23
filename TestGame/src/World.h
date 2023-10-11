@@ -51,13 +51,13 @@ class World
 
     // Placeholder assets for rendering the world
     std::shared_ptr<Material> mLitMaterial;
-    std::shared_ptr<RetainedRenderer> mScene;
+    std::shared_ptr<RenderPassList> mPassList;
 
     std::set<flecs::entity> mMovedEntities;
 
 public:
     // Initialise world entities and other systems
-    void Initialise(const std::shared_ptr<Material>& rootMaterial, const std::shared_ptr<RetainedRenderer>& scene);
+    void Initialise(const std::shared_ptr<Material>& rootMaterial, const std::shared_ptr<RenderPassList>& passList);
 
     flecs::entity GetPlayer(int id) const { return mPlayerEntities[id]; }
 

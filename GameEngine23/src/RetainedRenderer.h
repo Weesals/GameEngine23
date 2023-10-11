@@ -9,18 +9,54 @@
 #include "Mesh.h"
 #include "Material.h"
 #include "MaterialEvaluator.h"
-#include "RenderQueue.h"
 
+class RenderQueue;
+
+class RetainedScene {
+	struct Instance {
+		RangeInt mData;
+	};
+	// All instances that currently exist
+	SparseArray<Instance> mInstances;
+
+	// Used to store per-instance data
+	GraphicsBuffer<Vector4> mGPUBuffer;
+	// Track which regions of the buffer are free
+	SparseIndices mFreeGPUBuffer;
+	GraphicsBufferDelta mGPUDelta;
+public:
+	RetainedScene();
+
+	const GraphicsBuffer<Vector4>& GetGPUBuffer() { return mGPUBuffer; }
+	std::span<const Vector4> GetInstanceData(int instanceId) const;
+
+	// Allocate an instance in that batch
+	int AllocateInstance(int instanceDataSize);
+
+	// Update the user data of an instance
+	// (MUST begin with World matrix)
+	template<class T>
+	bool UpdateInstanceData(int instanceId, const T& tdata) {
+		auto& instance = mInstances[instanceId];
+		assert(instance.mData.length * sizeof(Vector4) >= sizeof(T));
+		return UpdateInstanceData(instanceId, std::span<const uint8_t>((const uint8_t*)&tdata, sizeof(T)));
+	}
+	bool UpdateInstanceData(int instanceId, std::span<const uint8_t> data);
+	// Remove an instance from rendering
+	void RemoveInstance(int instanceId);
+
+	// Push updated instance data to GPU
+	void SubmitGPUMemory(CommandBuffer& cmdBuffer);
+};
 
 // Collects rendered objects into batches and caches per-instance material parameters
 // into a large buffer.
 class RetainedRenderer
 {
 protected:
-	struct Instance
-	{
+	struct Instance {
 		int mBatchId;
-		RangeInt mData;
+		int mSceneId;
 	};
 	struct Batch
 	{
@@ -56,13 +92,9 @@ protected:
 	// All instances that currently exist
 	SparseArray<Instance> mInstances;
 	// Passes the typed instance buffer to a CommandList
-	BufferLayout mInstanceBufferLayout;
-
-	// Used to store per-instance data
-	GraphicsBuffer<Vector4> mGPUBuffer;
-	// Track which regions of the buffer are free
-	SparseIndices mFreeGPUBuffer;
-	GraphicsBufferDelta mGPUDelta;
+	BufferLayoutPersistent mInstanceBufferLayout;
+	// Stores per-instance data
+	std::shared_ptr<RetainedScene> mGPUScene;
 
 	// Used to generate MaterialEvaluators
 	// (to extract named parameters from material stacks efficiently)
@@ -73,35 +105,29 @@ protected:
 
 	// Determine the source materials required to fill out this CBs parameters
 	// and cache a MaterialEvaluator to extract them
-	int RequireRetainedCB(const ShaderBase::ConstantBuffer* constantBuffer, const Material* material);
+	int RequireRetainedCB(const ShaderBase::ConstantBuffer* constantBuffer, std::span<const Material*> materials);
 	// Same as above, but for other bound resources (textures, etc.)
-	int RequireRetainedResources(std::span<const ShaderBase::ResourceBinding* const> resources, const Material* material);
+	int RequireRetainedResources(std::span<const ShaderBase::ResourceBinding* const> resources, std::span<const Material*> materials);
 
 	// Find out which batch an instance should be added to
-	int CalculateBatchId(const Mesh* mesh, const Material* material);
+	int CalculateBatchId(const Mesh* mesh, std::span<const Material*> materials);
 	// Allocate an instance in that batch
 	int AllocateInstance(int batchId, int instanceDataSize);
 
 public:
 	RetainedRenderer(const std::shared_ptr<GraphicsDeviceBase>& graphics);
 
+	void SetScene(const std::shared_ptr<RetainedScene>&scene) { mGPUScene = scene; }
+	const std::shared_ptr<RetainedScene>& GetScene() { return mGPUScene; }
+
+	const Instance& GetInstance(int instanceId) const { return mInstances[instanceId]; }
+
 	// Add an instance to be drawn each frame
-	int AppendInstance(const Mesh* mesh, const Material* material, int instanceDataSize);
-	// Update the user data of an instance
-	// (MUST begin with World matrix)
-	template<class T>
-	bool UpdateInstanceData(int instanceId, const T& tdata) {
-		auto& instance = mInstances[instanceId];
-		assert(instance.mData.length * sizeof(Vector4) >= sizeof(T));
-		return UpdateInstanceData(instanceId, std::span<const uint8_t>((const uint8_t*)&tdata, sizeof(T)));
-	}
-	bool UpdateInstanceData(int instanceId, std::span<const uint8_t> data);
+	int AppendInstance(const Mesh* mesh, std::span<const Material*> materials, int sceneId);
 	// Remove an instance from rendering
 	void RemoveInstance(int instanceId);
 
-	// Push updated instance data to GPU
-	void SubmitGPUMemory(CommandBuffer& cmdBuffer);
 	// Generate a drawlist for rendering currently visible objects
-	void SubmitToRenderQueue(CommandBuffer& cmdBuffer, RenderQueue& drawList, Matrix vp);
+	void SubmitToRenderQueue(CommandBuffer& cmdBuffer, RenderQueue& drawList, const Frustum& frustum);
 
 };

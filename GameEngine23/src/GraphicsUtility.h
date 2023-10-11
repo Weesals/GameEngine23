@@ -22,13 +22,21 @@ static void CopyElements(void* dest, std::span<T> source, int offset, int stride
 }
 // Find an item in a map, or create a new one using default constructor
 template<class K, class T>
-static T* GetOrCreate(std::unordered_map<K, std::unique_ptr<T>>& map, const K key)
+static T* GetOrCreate(std::unordered_map<K, std::unique_ptr<T>>& map, const K key, bool& wasCreated)
 {
+    wasCreated = false;
     auto i = map.find(key);
     if (i != map.end()) return i->second.get();
     auto newItem = new T();
     map.insert(std::make_pair(key, newItem));
+    wasCreated = true;
     return newItem;
+}
+template<class K, class T>
+static T* GetOrCreate(std::unordered_map<K, std::unique_ptr<T>>& map, const K key)
+{
+    bool wasCreated;
+    return GetOrCreate(map, key, wasCreated);
 }
 // Increment a number by an amount and return the original number
 template<typename T>

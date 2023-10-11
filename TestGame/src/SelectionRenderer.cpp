@@ -81,7 +81,7 @@ void SelectionRenderer::Render(CommandBuffer& cmdBuffer, RenderPassList& passLis
 		mSelectionRenderer.SetInstanceData(instanceData.data(), i, 0, mSelectionRendererHash != hash);
 		mSelectionRenderer.SetInstanceData(instanceData2.data(), i, 1, mSelectionRendererHash != hash);
 		for (auto& pass : passList)
-			mSelectionRenderer.Draw(cmdBuffer, pass.mRenderQueue, DrawConfig::MakeDefault());
+			mSelectionRenderer.Draw(cmdBuffer, *pass, DrawConfig::MakeDefault());
 		mSelectionRendererHash = hash;
 	}
 	
@@ -111,7 +111,7 @@ void SelectionRenderer::Render(CommandBuffer& cmdBuffer, RenderPassList& passLis
 		mFlagRenderer.SetInstanceData(instanceData.data(), i, 0, mFlagRendererHash != hash);
 		mFlagRenderer.SetInstanceData(instanceData2.data(), i, 1, mFlagRendererHash != hash);
 		for (auto& pass : passList)
-			mFlagRenderer.Draw(cmdBuffer, pass.mRenderQueue, DrawConfig::MakeDefault());
+			mFlagRenderer.Draw(cmdBuffer, *pass, DrawConfig::MakeDefault());
 		mFlagRendererHash = hash;
 	}
 }

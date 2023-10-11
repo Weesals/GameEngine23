@@ -24,9 +24,6 @@ int main()
         // Begin rendering
         cmdBuffer.Reset();
 
-        // Clear screen
-        cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.5f, 0.7f, 1.0f, 1.0f), 1.0f));
-
         // Render the scene
         play.Render(cmdBuffer);
 

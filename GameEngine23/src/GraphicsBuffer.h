@@ -48,13 +48,14 @@ public:
 	{
 	}
 
-	void SetValue(int index, T& data)
-	{
+	void SetValue(int index, T& data) {
 		((T*)mData.data())[index] = data;
 		++mRevision;
 	}
-	std::span<T> GetValues(RangeInt range)
-	{
+	std::span<T> GetValues(RangeInt range) {
+		return std::span<T>((T*)mData.data() + range.start, range.length);
+	}
+	std::span<const T> GetValues(RangeInt range) const {
 		return std::span<T>((T*)mData.data() + range.start, range.length);
 	}
 

@@ -47,20 +47,21 @@ public:
     void CompileFromFile(const std::wstring& path, const std::string& entry, const std::string& profile)
     {
         ComPtr<ID3D10Blob> compilationErrors = nullptr;
-        auto hr = D3DCompileFromFile(
-            path.c_str(),
-            nullptr,
-            D3D_COMPILE_STANDARD_FILE_INCLUDE,
-            entry.c_str(),
-            profile.c_str(),
-            0,
-            0,
-            &mShader,
-            &compilationErrors
-        );
+        while (true) {
+            auto hr = D3DCompileFromFile(
+                path.c_str(),
+                nullptr,
+                D3D_COMPILE_STANDARD_FILE_INCLUDE,
+                entry.c_str(),
+                profile.c_str(),
+                0,
+                0,
+                &mShader,
+                &compilationErrors
+            );
 
-        if (FAILED(hr))
-        {
+            if (!FAILED(hr)) break;
+
             // Retrieve error messages
             const char* errorMsg =
                 hr == ERROR_FILE_NOT_FOUND ? "File was not found!" :

@@ -5,7 +5,13 @@
 
 #include "MathTypes.h"
 
-class Texture
+class TextureBase
+{
+public:
+	virtual ~TextureBase() { }
+};
+
+class Texture : public TextureBase
 {
 
 	Int2 mSize;

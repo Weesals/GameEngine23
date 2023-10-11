@@ -36,13 +36,13 @@ public:
         D3DBuffer* mBuffer;
         std::vector<D3D12_INPUT_ELEMENT_DESC> mLayout;
         D3D12_VERTEX_BUFFER_VIEW mBufferView;
-        int mRevision;
+        int mRevision = 0;
     };
     struct D3DIBView
     {
         D3DBuffer* mBuffer;
         D3D12_INDEX_BUFFER_VIEW mBufferView;
-        int mRevision;
+        int mRevision = 0;
     };
     template<class View>
     struct D3DBufferWithView
@@ -51,10 +51,17 @@ public:
         View mView;
         bool IsValidForSize(int size) { return (int)mView.SizeInBytes >= size && mBuffer != nullptr; }
     };
-    struct D3DBufferWithSRV : public D3DBuffer
-    {
+    struct D3DBufferWithSRV : public D3DBuffer {
         int mSRVOffset;
-        int mRevision;
+        int mRevision = 0;
+    };
+    struct D3DBufferWithSRVAndRTV : public D3DBufferWithSRV {
+        int mRTVOffset;
+        int mWidth, mHeight;
+    };
+    struct D3DRT {
+        D3DBufferWithSRVAndRTV mFrameBuffer;
+        D3DBufferWithSRVAndRTV mDepthBuffer;
     };
     // The GPU data for a mesh
     struct D3DMesh
@@ -63,7 +70,7 @@ public:
         std::vector<D3D12_INPUT_ELEMENT_DESC> mVertElements;
         std::vector<D3D12_VERTEX_BUFFER_VIEW> mVertexViews;
         D3D12_INDEX_BUFFER_VIEW mIndexView;
-        int mRevision;
+        int mRevision = 0;
     };
     struct ResourceBindingCache
     {
@@ -137,6 +144,9 @@ public:
 
     // If no texture is specified, use this
     std::shared_ptr<Texture> mDefaultTexture;
+    int mRTOffset;
+    int mDSOffset;
+    int mCBOffset;
 
 private:
     D3DGraphicsDevice& mD3D12;
@@ -146,6 +156,7 @@ private:
     // and clean up GPU resources
     D3DRootSignature mRootSignature;
     std::unordered_map<const Mesh*, std::unique_ptr<D3DMesh>> meshMapping;
+    std::unordered_map<const RenderTarget2D*, std::unique_ptr<D3DRT>> rtMapping;
     std::unordered_map<const Texture*, std::unique_ptr<D3DBufferWithSRV>> textureMapping;
     std::unordered_map<ShaderKey, std::unique_ptr<D3DShader>> shaderMapping;
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
@@ -153,7 +164,6 @@ private:
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
-    int mCBOffset;
     std::vector<uint8_t> mTempData;
 
 public:
@@ -172,11 +182,12 @@ public:
         std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,
         D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
+    D3DRT* RequireD3DRT(const RenderTarget2D* rt);
     D3DMesh* RequireD3DMesh(const Mesh& mesh);
     D3DBufferWithSRV* RequireD3DBuffer(const Texture& mesh);
-    D3DShader* RequireShader(const Shader& shader, const std::string& profile);
+    D3DShader* RequireShader(const Shader& shader, const std::string& profile, const IdentifierWithName& renderPass);
     D3DPipelineState* GetOrCreatePipelineState(const Shader& vs, const Shader& ps, size_t hash);
-    D3DPipelineState* RequirePipelineState(const Material& material, std::span<const BufferLayout*> bindings);
+    D3DPipelineState* RequirePipelineState(std::span<const Material*> materials, std::span<const BufferLayout*> bindings, const IdentifierWithName& renderPass);
     D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
     D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);
 

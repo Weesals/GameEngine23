@@ -46,8 +46,8 @@ Canvas::Canvas()
 	mFontTexture = std::make_shared<Texture>();
 	mFontTexture->SetSize(Int2(tex_w, tex_h));
 	mFontTexture->SetPixels32Bit(std::span<const uint32_t>((const uint32_t*)px, (const uint32_t*)px + tex_w * tex_h));
-	io.Fonts->SetTexID((ImTextureID)"Font");
-	mMaterial->SetUniform("Texture", mFontTexture);
+	io.Fonts->SetTexID((ImTextureID)&mFontTexture);
+	mMaterial->SetUniformTexture("Texture", mFontTexture);
 	// The Canvas is a CanvasRenderable, so it also needs a reference
 	// to the canvas (itself)
 	Initialise(this);
@@ -174,6 +174,9 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 			mMaterial->SetBlendMode(BlendMode::AlphaBlend());
 			mMaterial->SetRasterMode(RasterMode::MakeDefault().SetCull(RasterMode::CullModes::None));
 			mMaterial->SetDepthMode(DepthMode::MakeOff());
+			auto texture = (std::shared_ptr<Texture>*)cmdBuf.GetTexID();
+			if (texture != nullptr) mMaterial->SetUniformTexture("Texture", *texture);
+			else mMaterial->SetUniformTexture("Texture", nullptr);
 			cmdBuffer.DrawMesh(mMesh.get(), mMaterial.get(), drawConfig);
 			++mDrawCount;
 		}

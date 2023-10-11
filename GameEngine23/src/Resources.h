@@ -18,11 +18,12 @@ struct Identifier
     bool operator ==(const Identifier& o) const { return mId == o.mId; }
     bool operator !=(const Identifier& o) const { return mId != o.mId; }
     operator int() const { return mId; }
-    const std::string& GetName() {
+    const std::string& GetName() const {
         static const std::string empty;
         for (auto& kv : gStringToId) if (kv.second == *this) return kv.first;
         return empty;
     }
+    bool IsValid() const { return mId != -1; }
 
 public:
     struct comp
@@ -85,6 +86,17 @@ public:
         gWStringToId.clear();
     }
 
+};
+
+struct IdentifierWithName : Identifier
+{
+    std::string mName;
+    IdentifierWithName() : Identifier() { }
+    IdentifierWithName(const std::string_view& name) : Identifier(name), mName(name) { }
+    IdentifierWithName(const char* name) : IdentifierWithName(std::string_view(name)) { }
+    operator const std::string& () const { return mName; }
+    const std::string& GetName() const { return mName; }
+    static const IdentifierWithName None;
 };
 
 template <> struct std::hash<Identifier>
