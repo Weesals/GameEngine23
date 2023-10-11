@@ -11,6 +11,7 @@
 #include "MaterialEvaluator.h"
 #include "RenderQueue.h"
 
+
 // Collects rendered objects into batches and caches per-instance material parameters
 // into a large buffer.
 class RetainedRenderer

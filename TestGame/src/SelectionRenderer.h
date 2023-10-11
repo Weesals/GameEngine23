@@ -3,6 +3,7 @@
 #include "SelectionManager.h"
 #include "GraphicsDeviceBase.h"
 #include <FBXImport.h>
+#include <RenderQueue.h>
 
 #include <memory>
 
@@ -24,7 +25,7 @@ public:
 
 	void OnEntityRegistered(flecs::entity entity);
 
-	void Render(CommandBuffer& cmdBuffer);
+	void Render(CommandBuffer& cmdBuffer, RenderPassList& passList);
 
 };
 

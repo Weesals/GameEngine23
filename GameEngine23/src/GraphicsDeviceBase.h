@@ -4,6 +4,7 @@
 #include "Material.h"
 #include "GraphicsUtility.h"
 #include "GraphicsBuffer.h"
+#include "Containers.h"
 
 class GraphicsDeviceBase;
 
@@ -132,14 +133,18 @@ public:
 class CommandBuffer {
 protected:
     std::unique_ptr<CommandBufferInteropBase> mInterop;
+    ExpandableMemoryArena mArena;
 public:
     CommandBuffer(CommandBuffer& other) = delete;
     CommandBuffer(CommandBuffer&& other) = default;
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
     CommandBuffer& operator = (CommandBuffer&& other) = default;
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
-    void Reset() { mInterop->Reset(); }
+    void Reset() { mInterop->Reset(); mArena.Clear(); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
+    int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
+    void* RequireFrameData(int size) { return mArena.Require(size); }
+    template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
     void* RequireConstantBuffer(std::span<const uint8_t> data)
     {
         return mInterop->RequireConstantBuffer(data);
@@ -198,32 +203,3 @@ public:
 
 };
 
-class MeshDraw
-{
-protected:
-    std::vector<const BufferLayout*> mBufferLayout;
-    const PipelineLayout* mPipeline;
-    std::vector<void*> mResources;
-public:
-    const Mesh* mMesh;
-    const Material* mMaterial;
-    MeshDraw();
-    MeshDraw(Mesh* mesh, Material* material);
-    ~MeshDraw();
-    void InvalidateMesh();
-    void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
-};
-
-class MeshDrawInstanced : public MeshDraw
-{
-protected:
-    BufferLayout mInstanceBuffer;
-public:
-    MeshDrawInstanced();
-    MeshDrawInstanced(Mesh* mesh, Material* material);
-    ~MeshDrawInstanced();
-    void InvalidateMesh();
-    int AddInstanceElement(const std::string_view& name = "INSTANCE", BufferFormat fmt = FORMAT_R32_UINT, int stride = sizeof(uint32_t));
-    void SetInstanceData(void* data, int count, int elementId = 0, bool markDirty = true);
-    void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
-};

@@ -4,6 +4,7 @@
 #include <Texture.h>
 #include <Material.h>
 #include <GraphicsDeviceBase.h>
+#include <RenderQueue.h>
 #include "Landscape.h"
 
 class LandscapeRenderer
@@ -17,8 +18,8 @@ class LandscapeRenderer
 	std::shared_ptr<Texture> mControlMap;
 	std::shared_ptr<Material> mLandMaterial;
 
-	std::vector<OffsetIV2> mInstanceOffsets;
 	MeshDrawInstanced mLandscapeDraw;
+	size_t mLandscapeDrawHash;
 
 	std::shared_ptr<Landscape> mLandscape;
 
@@ -41,7 +42,7 @@ public:
 
 	std::shared_ptr<Mesh>& RequireTileMesh();
 
-	void Render(CommandBuffer& cmdBuffer, const Matrix& vp);
+	void Render(CommandBuffer& cmdBuffer, RenderQueue* queue, const Frustum& frustum);
 
 };
 

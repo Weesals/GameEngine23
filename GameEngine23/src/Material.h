@@ -9,6 +9,7 @@
 #include <span>
 #include <memory>
 #include <cassert>
+#include <algorithm>
 
 struct PipelineLayout;
 class CommandBuffer;

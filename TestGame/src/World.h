@@ -7,11 +7,13 @@
 #include <RetainedRenderer.h>
 #include <Model.h>
 #include <MathTypes.h>
+
 #include "Landscape.h"
 #include "LandscapeRenderer.h"
 #include "EntityComponents.h"
 #include "EntitySystems.h"
 #include "Prototypes.h"
+
 
 class WorldEffects
 {
@@ -70,7 +72,7 @@ public:
     void Step(float dt);
 
     // Render the game world
-    void Render(CommandBuffer& cmdBuffer, const Matrix& vp);
+    void Render(CommandBuffer& cmdBuffer, RenderPassList passes);
 
     // Calls the callback for every entity that this ray intersects
     void RaycastEntities(Ray& ray, const std::function<void(flecs::entity e, float)>& onentity) const;

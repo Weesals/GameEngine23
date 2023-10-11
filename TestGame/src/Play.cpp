@@ -162,23 +162,36 @@ void Play::Step()
 
 void Play::Render(CommandBuffer& cmdBuffer)
 {
-    Matrix vp = mCamera.GetViewMatrix() * mCamera.GetProjectionMatrix();
+    Matrix view = mCamera.GetViewMatrix();
+    Matrix proj = mCamera.GetProjectionMatrix();
+    Matrix vp = view * proj;
+    mRenderQueue->Clear();
+
+    // Generate render passes
+    auto passes = std::array<RenderPass, 1>{
+        RenderPass(mRenderQueue.get(), view, proj)
+    };
+    RenderPassList passList(passes);
+
     // Render the world
-    mWorld->Render(cmdBuffer, vp);
+    mWorld->Render(cmdBuffer, passList);
+    mSelectionRenderer->Render(cmdBuffer, passList);
+
+    // Draw the skybox
+    mRenderQueue->AppendMesh(cmdBuffer, mSkybox->mMesh.get(), mSkybox->mMaterial.get());
 
     // Draw retained meshes
-    //RetainedRenderer::DrawList drawList;
-    //mScene->CreateDrawList(drawList, vp);
-    //mScene->RenderDrawList(cmdBuffer, drawList);
-    mRenderQueue->Clear();
     mScene->SubmitGPUMemory(cmdBuffer);
     mScene->SubmitToRenderQueue(cmdBuffer, *mRenderQueue, vp);
-    mRenderQueue->Flush(cmdBuffer);
 
-    mSelectionRenderer->Render(cmdBuffer);
+    // Render the render passes
+    for (auto& pass : passList.mPasses)
+    {
+        pass.mRenderQueue->Flush(cmdBuffer);
+    }
+
     mOnRender.Invoke(cmdBuffer);
-    // Render the skybox
-    cmdBuffer.DrawMesh(mSkybox->mMesh.get(), mSkybox->mMaterial.get());
+    //cmdBuffer.DrawMesh(mSkybox->mMesh.get(), mSkybox->mMaterial.get());
 
     // Render UI
     mCanvas->Render(cmdBuffer);

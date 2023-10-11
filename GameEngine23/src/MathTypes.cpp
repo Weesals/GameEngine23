@@ -1,5 +1,22 @@
 #include "MathTypes.h"
 
+#include <cmath>
+#include <algorithm>
+
+Int2 Int2::Min(Int2 v1, Int2 v2) { return Int2(std::min(v1.x, v2.x), std::min(v1.y, v2.y)); }
+Int2 Int2::Max(Int2 v1, Int2 v2) { return Int2(std::max(v1.x, v2.x), std::max(v1.y, v2.y)); }
+Int2 Int2::Clamp(Int2 v, Int2 min, Int2 max) { return Int2(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y)); }
+int Int2::Dot(Int2 v1, Int2 v2) { return v1.x * v2.x + v1.y * v2.y; }
+int Int2::CSum(Int2 v) { return v.x + v.y; }
+int Int2::CMul(Int2 v) { return v.x * v.y; }
+
+Int2 Int2::FloorToInt(Vector2 v) { return Int2((int)std::floorf(v.x), (int)std::floorf(v.y)); }
+Int2 Int2::CeilToInt(Vector2 v) { return Int2((int)std::ceilf(v.x), (int)std::ceilf(v.y)); }
+
+Int4 Int4::Min(Int4 v1, Int4 v2) { return Int4(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z), std::min(v1.w, v2.w)); }
+Int4 Int4::Max(Int4 v1, Int4 v2) { return Int4(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z), std::max(v1.w, v2.w)); }
+Int4 Int4::Clamp(Int4 v, Int4 min, Int4 max) { return Int4(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y), std::min(std::max(v.z, min.z), max.z), std::min(std::max(v.w, min.w), max.w)); }
+
 Frustum4::Frustum4(Matrix vp) {
 	mPlaneXs = vp.m[0][3] + Vector4(vp.m[0][0], -vp.m[0][0], vp.m[0][1], -vp.m[0][1]);
 	mPlaneYs = vp.m[1][3] + Vector4(vp.m[1][0], -vp.m[1][0], vp.m[1][1], -vp.m[1][1]);
@@ -35,6 +52,27 @@ bool Frustum4::GetIsVisible(Vector3 pos)  const {
 bool Frustum4::GetIsVisible(Vector3 pos, Vector3 ext)  const {
 	return GetVisibility(pos, ext) > 0;
 }
+void Frustum4::IntersectPlane(Vector3 dir, float c, Vector3 points[4]) const {
+	auto crossXs = mPlaneYs.xzyw() * mPlaneZs.zywx() - mPlaneZs.xzyw() * mPlaneYs.zywx();
+	auto crossYs = mPlaneZs.xzyw() * mPlaneXs.zywx() - mPlaneXs.xzyw() * mPlaneZs.zywx();
+	auto crossZs = mPlaneXs.xzyw() * mPlaneYs.zywx() - mPlaneYs.xzyw() * mPlaneXs.zywx();
+
+	auto up = Vector4(dir, c);
+	auto crossUpXs = up.y * mPlaneZs.xzyw() - up.z * mPlaneYs.xzyw();
+	auto crossUpYs = up.z * mPlaneXs.xzyw() - up.x * mPlaneZs.xzyw();
+	auto crossUpZs = up.x * mPlaneYs.xzyw() - up.y * mPlaneXs.xzyw();
+
+	auto dets = crossXs * up.x + crossYs * up.y + crossZs * up.z;
+
+	auto posXs = (mPlaneDs.xzyw() * crossUpXs.yzwx() + up.w * crossXs - mPlaneDs.zywx() * crossUpXs.xyzw()) / dets;
+	auto posYs = (mPlaneDs.xzyw() * crossUpYs.yzwx() + up.w * crossYs - mPlaneDs.zywx() * crossUpYs.xyzw()) / dets;
+	auto posZs = (mPlaneDs.xzyw() * crossUpZs.yzwx() + up.w * crossZs - mPlaneDs.zywx() * crossUpZs.xyzw()) / dets;
+
+	points[0] = Vector3(posXs.x, posYs.x, posZs.x);
+	points[1] = Vector3(posXs.y, posYs.y, posZs.y);
+	points[2] = Vector3(posXs.z, posYs.z, posZs.z);
+	points[3] = Vector3(posXs.w, posYs.w, posZs.w);
+}
 Vector4 Frustum4::GetProjectedDistances(Vector3 pos)  const {
 	return dot4(mPlaneXs, mPlaneYs, mPlaneZs, pos.x, pos.y, pos.z) + mPlaneDs;
 }
@@ -49,11 +87,31 @@ Frustum::Frustum(Matrix vp)
 {
 	mNearPlane = Vector4(vp.m[0][3] + vp.m[0][2], vp.m[1][3] + vp.m[1][2], vp.m[2][3] + vp.m[2][2], vp.m[3][3] + vp.m[3][2]);
 	mFarPlane  = Vector4(vp.m[0][3] - vp.m[0][2], vp.m[1][3] - vp.m[1][2], vp.m[2][3] - vp.m[2][2], vp.m[3][3] - vp.m[3][2]);
-	mNearPlane /= mNearPlane.xyz().Length();
-	mFarPlane /= mFarPlane.xyz().Length();
+	//mNearPlane /= mNearPlane.xyz().Length();
+	//mFarPlane /= mFarPlane.xyz().Length();
 }
 Vector3 Frustum::Backward()  const { return mNearPlane.xyz(); }
 Vector3 Frustum::Forward()  const { return mFarPlane.xyz(); }
+Matrix Frustum::CalculateViewProj() const {
+	Matrix r;
+	r.m[0][3] = (mPlaneXs.x + mPlaneXs.y) / 2.0f;
+	r.m[1][3] = (mPlaneYs.x + mPlaneYs.y) / 2.0f;
+	r.m[2][3] = (mPlaneZs.x + mPlaneZs.y) / 2.0f;
+	r.m[3][3] = (mPlaneDs.x + mPlaneDs.y) / 2.0f;
+	r.m[0][0] = mPlaneXs.x - r.m[0][3];
+	r.m[1][0] = mPlaneYs.x - r.m[1][3];
+	r.m[2][0] = mPlaneZs.x - r.m[2][3];
+	r.m[3][0] = mPlaneDs.x - r.m[3][3];
+	r.m[0][1] = mPlaneXs.z - r.m[0][3];
+	r.m[1][1] = mPlaneYs.z - r.m[1][3];
+	r.m[2][1] = mPlaneZs.z - r.m[2][3];
+	r.m[3][1] = mPlaneDs.z - r.m[3][3];
+	r.m[0][2] = mNearPlane.x - r.m[0][3];
+	r.m[1][2] = mNearPlane.y - r.m[1][3];
+	r.m[2][2] = mNearPlane.z - r.m[2][3];
+	r.m[3][2] = mNearPlane.w - r.m[3][3];
+	return r;
+}
 float Frustum::GetVisibility(Vector3 pos) const {
 	Vector4 distances = GetProjectedDistances(pos);
 	Vector2 nfdistances = GetProjectedDistancesNearFar(pos);
@@ -71,6 +129,9 @@ bool Frustum::GetIsVisible(Vector3 pos)  const {
 }
 bool Frustum::GetIsVisible(Vector3 pos, Vector3 ext)  const {
 	return GetVisibility(pos, ext) > 0;
+}
+Frustum Frustum::TransformToLocal(Matrix tform) const {
+	return Frustum(tform * CalculateViewProj());
 }
 Vector2 Frustum::GetProjectedDistancesNearFar(Vector3 pos)  const {
 	return Vector2(

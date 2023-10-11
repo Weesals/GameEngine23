@@ -6,7 +6,6 @@
 
 LandscapeRenderer::LandscapeRenderer()
 {
-	mInstanceOffsets.reserve(256);
 }
 
 void LandscapeRenderer::Initialise(const std::shared_ptr<Landscape>& landscape, const std::shared_ptr<Material>& rootMaterial)
@@ -62,8 +61,13 @@ std::shared_ptr<Mesh>& LandscapeRenderer::RequireTileMesh()
 	return mTileMesh;
 }
 
-void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
+void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, RenderQueue* queue, const Frustum& frustum)
 {
+	auto scale = mLandscape->GetScale();
+	auto xform = Matrix::CreateScale(scale, 1.0f, scale) *
+		Matrix::CreateTranslation(mLandscape->GetSizing().Location);
+	auto localFrustum = frustum.TransformToLocal(xform);
+
 	// Pack heightmap data into a texture
 	if (mHeightMap == nullptr)
 	{
@@ -119,50 +123,47 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
 		// Mark the data as current
 		mDirtyRegion = Landscape::LandscapeChangeEvent::None();
 		mRevision = mLandscape->GetRevision();
-	}
 
-	// Calculate material parameters
-	auto scale = mLandscape->GetScale();
-	auto xform = Matrix::CreateScale(scale, 1.0f, scale) *
-		Matrix::CreateTranslation(mLandscape->GetSizing().Location);
-	mLandMaterial->SetUniform("Model", xform);
-	mLandMaterial->SetUniform("HeightMap", mHeightMap);
-	mLandMaterial->SetUniform("HeightRange", Vector4(mMetadata.MinHeight, mMetadata.MaxHeight, 0.0f, 0.0f));
+		// Calculate material parameters
+		mLandMaterial->SetUniform("Model", xform);
+		mLandMaterial->SetUniform("HeightMap", mHeightMap);
+		mLandMaterial->SetUniform("HeightRange", Vector4(mMetadata.MinHeight, mMetadata.MaxHeight, 0.0f, 0.0f));
+	}
 
 	// How many tile instances we need to render
 	Int2 tileCount = (mLandscape->GetSize() + TileResolution - 1) / TileResolution;
 
-	Frustum frustum(vp);
-
-	mInstanceOffsets.reserve(tileCount.y * tileCount.x);
-	int i = -1;
-	int minChanged = std::numeric_limits<int>::max();
-	int maxChanged = std::numeric_limits<int>::min();
-	// Render the generated instances
-	for (int y = 0; y < tileCount.y; ++y)
+	// Calculate the min/max AABB of the projected frustum 
+	Vector2 visMin, visMax;
 	{
-		for (int x = 0; x < tileCount.x; ++x)
+		Vector3 points[4];
+		localFrustum.IntersectPlane(Vector3::Up, 0.0f, points);
+		visMin = std::accumulate(points + 1, points + 4, points[0].xz(), [](auto c, auto p) { return Vector2::Min(c, p.xz()); });
+		visMax = std::accumulate(points + 1, points + 4, points[0].xz(), [](auto c, auto p) { return Vector2::Max(c, p.xz()); });
+	}
+	Int2 visMinI = Int2::Max(Int2::FloorToInt(visMin / TileResolution), (Int2)0);
+	Int2 visMaxI = Int2::Min(Int2::CeilToInt(visMax / TileResolution), tileCount - 1);
+
+	auto instanceOffsets = cmdBuffer.RequireFrameData<OffsetIV2>(Int2::CMul(visMaxI - visMinI + 1));
+	int i = 0;
+	// Render the generated instances
+	for (int y = visMinI.y; y <= visMaxI.y; ++y)
+	{
+		for (int x = visMinI.x; x <= visMaxI.x; ++x)
 		{
 			auto value = OffsetIV2((uint16_t)(y * TileResolution), (uint16_t)(x * TileResolution));
-			auto ctr = Vector3::Transform(Vector3((x + 0.5f) * TileResolution, 1.0f, (y + 0.5f) * TileResolution), xform);
+			auto ctr = Vector3((x + 0.5f) * TileResolution, 1.0f, (y + 0.5f) * TileResolution);
 			auto ext = Vector3(TileResolution / 2.0f, 2.0f, TileResolution / 2.0f);
-			if (!frustum.GetIsVisible(ctr, ext)) continue;
-
+			if (!localFrustum.GetIsVisible(ctr, ext)) continue;
+			instanceOffsets[i] = value;
 			++i;
-			if (i >= mInstanceOffsets.size()) mInstanceOffsets.push_back({ });
-			else if (mInstanceOffsets[i] == value) continue;
-			mInstanceOffsets[i] = value;
-			minChanged = std::min(minChanged, i);
-			maxChanged = std::max(maxChanged, i);
 		}
 	}
-	++i;
-	if ((int)mInstanceOffsets.size() > i) {
-		mInstanceOffsets.erase(mInstanceOffsets.begin() + i, mInstanceOffsets.end());
-		minChanged = std::min(minChanged, i);
-		maxChanged = std::max(maxChanged, i);
-	}
-	mLandscapeDraw.SetInstanceData(mInstanceOffsets.data(), (int)mInstanceOffsets.size(), 0, minChanged <= maxChanged);
-	mLandscapeDraw.Draw(cmdBuffer, DrawConfig::MakeDefault());
+	// TODO: Return the unused per-frame data?
+
+	auto drawHash = GenericHash(instanceOffsets.data(), i);
+	mLandscapeDraw.SetInstanceData(instanceOffsets.data(), i, 0, drawHash != mLandscapeDrawHash);
+	mLandscapeDraw.Draw(cmdBuffer, queue, DrawConfig::MakeDefault());
+	mLandscapeDrawHash = drawHash;
 
 }

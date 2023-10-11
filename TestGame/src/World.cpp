@@ -161,7 +161,7 @@ void World::Step(float dt)
     mWorldEffects.GetModified(mMovedEntities, otime, time.mSteps);
 }
 
-void World::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
+void World::Render(CommandBuffer& cmdBuffer, RenderPassList passes)
 {
     auto& time = *mECS.get_mut<Singleton::Time>();
     for (auto it = mMovedEntities.begin(); it != mMovedEntities.end(); ++it) {
@@ -177,9 +177,8 @@ void World::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
             data.mWorld = t.GetMatrix();
             data.mHighlight = mWorldEffects.GetHighlightFor(e, time.mSteps);
             if (i >= r.mInstanceIds.size()) {
-                if (meshMat != nullptr) meshMat->InheritProperties(material);
-                Material* useMat = meshMat.get();
-                if (useMat == nullptr) useMat = material.get();
+                Material* useMat = material.get();
+                if (meshMat != nullptr) (useMat = meshMat.get())->InheritProperties(material);
                 r.mInstanceIds.push_back(mScene->AppendInstance(mesh.get(), useMat, sizeof(data)));
                 if (meshMat != nullptr) meshMat->RemoveInheritance(material);
             }
@@ -188,7 +187,10 @@ void World::Render(CommandBuffer& cmdBuffer, const Matrix& vp)
         }
     }
     mMovedEntities.clear();
-    mLandscapeRenderer->Render(cmdBuffer, vp);
+    for (auto& pass : passes.mPasses)
+    {
+        mLandscapeRenderer->Render(cmdBuffer, pass.mRenderQueue, pass.mFrustum);
+    }
 }
 
 void World::RaycastEntities(Ray& ray, const std::function<void(flecs::entity e, float)>& onentity) const

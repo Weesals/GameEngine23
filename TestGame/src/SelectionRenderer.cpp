@@ -50,58 +50,68 @@ void SelectionRenderer::OnEntityRegistered(flecs::entity entity)
 {
 }
 
-void SelectionRenderer::Render(CommandBuffer& cmdBuffer)
+void SelectionRenderer::Render(CommandBuffer& cmdBuffer, RenderPassList& passList)
 {
-	std::vector<Vector4> instanceData;
-	std::vector<Vector4> instanceData2;
-
-	// Generate instances for selection reticles
-	for (auto entity : mManager->GetSelection())
+	int selCount = (int)mManager->GetSelection().size();
+	if (selCount == 0) return;
 	{
-		if (!entity.is_alive()) continue;
-		const auto& tform = entity.get<Components::Transform>();
-		const auto& footprint = entity.get<Components::Footprint>();
-		instanceData.push_back(Vector4(tform->mPosition, footprint != nullptr ? footprint->mSize.x : 1.0f));
-		Vector4 i = Vector4::Zero;
-		auto owner = entity.target<Components::Owner>();
-		if (owner.is_alive()) i.w = (float)owner.get<MetaComponents::PlayerData>()->mPlayerId;
-		instanceData2.push_back(i);
+		auto instanceData = cmdBuffer.RequireFrameData<Vector4>(selCount);
+		auto instanceData2 = cmdBuffer.RequireFrameData<Vector4>(selCount);
+
+		// Generate instances for selection reticles
+		int i = 0;
+		for (auto entity : mManager->GetSelection())
+		{
+			if (!entity.is_alive()) continue;
+			const auto& tform = entity.get<Components::Transform>();
+			const auto& footprint = entity.get<Components::Footprint>();
+			instanceData[i] = (Vector4(tform->mPosition, footprint != nullptr ? footprint->mSize.x : 1.0f));
+			Vector4 data2 = Vector4::Zero;
+			auto owner = entity.target<Components::Owner>();
+			if (owner.is_alive()) data2.w = (float)owner.get<MetaComponents::PlayerData>()->mPlayerId;
+			instanceData2[i] = data2;
+			++i;
+		}
+		auto hash = VariadicHash(
+			GenericHash(instanceData.data(), i * sizeof(instanceData.data()[0])),
+			GenericHash(instanceData.data(), i * sizeof(instanceData.data()[0]))
+		);
+
+		// Render the generated instances
+		mSelectionRenderer.SetInstanceData(instanceData.data(), i, 0, mSelectionRendererHash != hash);
+		mSelectionRenderer.SetInstanceData(instanceData2.data(), i, 1, mSelectionRendererHash != hash);
+		for (auto& pass : passList)
+			mSelectionRenderer.Draw(cmdBuffer, pass.mRenderQueue, DrawConfig::MakeDefault());
+		mSelectionRendererHash = hash;
 	}
-	auto hash = VariadicHash(
-		GenericHash(instanceData.data(), instanceData.size() * sizeof(instanceData.data()[0])),
-		GenericHash(instanceData.data(), instanceData.size() * sizeof(instanceData.data()[0]))
-	);
-
-	// Render the generated instances
-	mSelectionRenderer.SetInstanceData(instanceData.data(), (int)instanceData.size(), 0, mSelectionRendererHash != hash);
-	mSelectionRenderer.SetInstanceData(instanceData2.data(), (int)instanceData2.size(), 1, mSelectionRendererHash != hash);
-	mSelectionRenderer.Draw(cmdBuffer, DrawConfig::MakeDefault());
-	mSelectionRendererHash = hash;
-	instanceData.clear();
-	instanceData2.clear();
-
-	// Generate instances for rendering target flags
-	for (auto entity : mManager->GetSelection())
+	
 	{
-		if (!entity.is_alive()) continue;
-		const auto& moveTarget = entity.get<Components::Runtime::ActionMove>();
-		if (moveTarget == nullptr) continue;
-		instanceData.push_back(Vector4(moveTarget->mLocation, 0.0f));
-		Vector4 i = Vector4::Zero;
-		auto owner = entity.target<Components::Owner>();
-		if (owner.is_alive()) i.w = (float)owner.get<MetaComponents::PlayerData>()->mPlayerId;
-		instanceData2.push_back(i);
-	}
-	hash = VariadicHash(
-		GenericHash(instanceData.data(), instanceData.size() * sizeof(instanceData.data()[0])),
-		GenericHash(instanceData.data(), instanceData.size() * sizeof(instanceData.data()[0]))
-	);
+		auto instanceData = cmdBuffer.RequireFrameData<Vector4>(selCount);
+		auto instanceData2 = cmdBuffer.RequireFrameData<Vector4>(selCount);
+		// Generate instances for rendering target flags
+		int i = 0;
+		for (auto entity : mManager->GetSelection())
+		{
+			if (!entity.is_alive()) continue;
+			const auto& moveTarget = entity.get<Components::Runtime::ActionMove>();
+			if (moveTarget == nullptr) continue;
+			instanceData[i] = Vector4(moveTarget->mLocation, 0.0f);
+			Vector4 data2 = Vector4::Zero;
+			auto owner = entity.target<Components::Owner>();
+			if (owner.is_alive()) data2.w = (float)owner.get<MetaComponents::PlayerData>()->mPlayerId;
+			instanceData2[i] = data2;
+			++i;
+		}
+		auto hash = VariadicHash(
+			GenericHash(instanceData.data(), i * sizeof(instanceData.data()[0])),
+			GenericHash(instanceData.data(), i * sizeof(instanceData.data()[0]))
+		);
 
-	// Render flags for movement markers
-	mFlagRenderer.SetInstanceData(instanceData.data(), (int)instanceData.size(), 0, mFlagRendererHash != hash);
-	mFlagRenderer.SetInstanceData(instanceData2.data(), (int)instanceData2.size(), 1, mFlagRendererHash != hash);
-	mFlagRenderer.Draw(cmdBuffer, DrawConfig::MakeDefault());
-	mFlagRendererHash = hash;
-	instanceData.clear();
-	instanceData2.clear();
+		// Render flags for movement markers
+		mFlagRenderer.SetInstanceData(instanceData.data(), i, 0, mFlagRendererHash != hash);
+		mFlagRenderer.SetInstanceData(instanceData2.data(), i, 1, mFlagRendererHash != hash);
+		for (auto& pass : passList)
+			mFlagRenderer.Draw(cmdBuffer, pass.mRenderQueue, DrawConfig::MakeDefault());
+		mFlagRendererHash = hash;
+	}
 }

@@ -5,8 +5,6 @@
 // math operations that can be replicated
 #include "../inc/SimpleMath.h"
 
-#include <algorithm>
-
 typedef DirectX::SimpleMath::Plane Plane;
 typedef DirectX::SimpleMath::Vector2 Vector2;
 typedef DirectX::SimpleMath::Vector3 Vector3;
@@ -32,9 +30,15 @@ struct Int2
 	inline Int2 operator *(const int o) const { return Int2(x * o, y * o); }
 	inline Int2 operator /(const int o) const { return Int2(x / o, y / o); }
 
-	static Int2 Min(Int2 v1, Int2 v2) { return Int2(std::min(v1.x, v2.x), std::min(v1.y, v2.y)); }
-	static Int2 Max(Int2 v1, Int2 v2) { return Int2(std::max(v1.x, v2.x), std::max(v1.y, v2.y)); }
-	static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return Int2(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y)); }
+	static Int2 Min(Int2 v1, Int2 v2);
+	static Int2 Max(Int2 v1, Int2 v2);
+	static Int2 Clamp(Int2 v, Int2 min, Int2 max);
+	static int Dot(Int2 v1, Int2 v2);
+	static int CSum(Int2 v);
+	static int CMul(Int2 v);
+
+	static Int2 FloorToInt(Vector2 v);
+	static Int2 CeilToInt(Vector2 v);
 
 	inline Int2 operator =(Vector2 v) { return Int2((int)v.x, (int)v.y); }
 	inline operator Vector2() const { return Vector2((float)x, (float)y); }
@@ -55,12 +59,9 @@ struct Int4
 	inline Int4 operator *(const int o) const { return Int4(x * o, y * o, z * o, w * o); }
 	inline Int4 operator /(const int o) const { return Int4(x / o, y / o, z / o, w / o); }
 
-	template<auto Fn>
-	static Int4 Apply(Int4 v1, Int4 v2) { return Int4(Fn(v1.x, v2.x), Fn(v1.y, v2.y)); }
-
-	static Int4 Min(Int4 v1, Int4 v2) { return Int4(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z), std::min(v1.w, v2.w)); }
-	static Int4 Max(Int4 v1, Int4 v2) { return Int4(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z), std::max(v1.w, v2.w)); }
-	static Int4 Clamp(Int4 v, Int4 min, Int4 max) { return Int4(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y), std::min(std::max(v.z, min.z), max.z), std::min(std::max(v.w, min.w), max.w)); }
+	static Int4 Min(Int4 v1, Int4 v2);
+	static Int4 Max(Int4 v1, Int4 v2);
+	static Int4 Clamp(Int4 v, Int4 min, Int4 max);
 
 	inline Int4 operator =(Vector4 v) { return Int4((int)v.x, (int)v.y, (int)v.z, (int)v.w); }
 	inline operator Vector4() const { return Vector4((float)x, (float)y, (float)z, (float)w); }
@@ -132,6 +133,7 @@ struct Frustum4
 	float GetVisibility(Vector3 pos, Vector3 ext) const;
 	bool GetIsVisible(Vector3 pos) const;
 	bool GetIsVisible(Vector3 pos, Vector3 ext) const;
+	void IntersectPlane(Vector3 dir, float c, Vector3 points[4]) const;
 protected:
 	Vector4 GetProjectedDistances(Vector3 pos) const;
 	static Vector4 dot4(Vector4 xs, Vector4 ys, Vector4 zs, Vector4 mx, Vector4 my, Vector4 mz);
@@ -145,10 +147,13 @@ struct Frustum : public Frustum4
 	Vector3 Backward() const;
 	Vector3 Forward() const;
 	Frustum(Matrix vp);
+	Matrix CalculateViewProj() const;
 	float GetVisibility(Vector3 pos) const;
 	float GetVisibility(Vector3 pos, Vector3 ext) const;
 	bool GetIsVisible(Vector3 pos) const;
 	bool GetIsVisible(Vector3 pos, Vector3 ext) const;
+
+	Frustum TransformToLocal(Matrix tform) const;
 protected:
 	Vector2 GetProjectedDistancesNearFar(Vector3 pos) const;
 };

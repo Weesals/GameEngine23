@@ -1,5 +1,6 @@
 #include "RetainedRenderer.h"
 
+
 RetainedRenderer::RetainedRenderer(const std::shared_ptr<GraphicsDeviceBase>& graphics)
 	: mGraphics(graphics), mGPUBuffer(1024)
 {

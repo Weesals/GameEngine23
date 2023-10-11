@@ -32,8 +32,9 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     ComPtr<ID3D12GraphicsCommandList> mCmdList;
     ID3D12RootSignature* mLastRootSig;
     const D3DResourceCache::D3DPipelineState* mLastPipeline;
-    const D3DResourceCache::D3DMesh* mLastMesh;
     const D3DConstantBuffer* mLastCBs[10];
+    UINT64 mLastResources[10];
+    std::vector<D3D12_VERTEX_BUFFER_VIEW> tVertexViews;
 public:
     D3DCommandBuffer(GraphicsDeviceD3D12* device) : mDevice(device) {
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -71,7 +72,6 @@ public:
         mCmdList->OMSetRenderTargets(1, &descriptor, FALSE, &depth);
         mLastRootSig = nullptr;
         mLastPipeline = nullptr;
-        mLastMesh = nullptr;
         std::fill(mLastCBs, mLastCBs + _countof(mLastCBs), nullptr);
     }
     // Clear the screen
@@ -127,11 +127,11 @@ public:
         auto& cache = mDevice->GetResourceCache();
         auto* pipelineState = (D3DResourceCache::D3DPipelineState*)state->mPipelineHash;
 
-        std::vector<D3D12_VERTEX_BUFFER_VIEW> vertexViews;
-        vertexViews.reserve(2);
+        tVertexViews.clear();
+        tVertexViews.reserve(2);
         D3D12_INDEX_BUFFER_VIEW indexView;
         int indexCount = -1;
-        cache.ComputeElementData(bindings, mCmdList.Get(), vertexViews, indexView, indexCount);
+        cache.ComputeElementData(bindings, mCmdList.Get(), tVertexViews, indexView, indexCount);
 
         BindPipelineState(pipelineState);
 
@@ -158,13 +158,15 @@ public:
             auto rootSig = pipelineState->mRootSignature;
             auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
             handle.ptr += buffer->mSRVOffset;
-            mCmdList->SetGraphicsRootDescriptorTable(rootSig->mNumConstantBuffers + rb->mBindPoint, handle);
+            auto bindingId = rootSig->mNumConstantBuffers + rb->mBindPoint;
+            if (mLastResources[bindingId] == handle.ptr) continue;
+            mCmdList->SetGraphicsRootDescriptorTable(bindingId, handle);
+            mLastResources[bindingId] = handle.ptr;
         }
 
-        mCmdList->IASetVertexBuffers(0, (uint32_t)vertexViews.size(), vertexViews.data());
+        mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
         mCmdList->IASetIndexBuffer(&indexView);
-        mLastMesh = nullptr;
-
+        
         // Issue the draw calls
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
         mCmdList->DrawIndexedInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0, 0);

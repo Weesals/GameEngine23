@@ -364,6 +364,11 @@ namespace DirectX
             inline Vector2& xy() { return *(Vector2*)&x; }
             inline Vector2& yz() { return *(Vector2*)&y; }
             inline Vector3& xyz() { return *(Vector3*)&x; }
+            inline Vector4 xzyw() const { return Vector4(x, z, y, w); }
+            inline Vector4 zywx() const { return Vector4(z, y, w, x); }
+            inline Vector4 yzwx() const { return Vector4(y, z, w, x); }
+            inline const Vector4& xyzw() const { return *this; }
+            inline Vector4& xyzw() { return *this; }
             inline Vector4 operator +(float v) const { return Vector4(x + v, y + v, z + v, w + v); }
             inline Vector4 operator -(float v) const { return Vector4(x - v, y - v, z + v, w + v); }
 

@@ -20,7 +20,7 @@ void D3DResourceCache::CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size) {
     // Register buffer to be destroyed in the future
     if (buffer != nullptr)
     {
-        mUploadBufferCache.InsertItem(buffer);
+        mDelayedRelease.InsertItem(buffer);
         buffer = nullptr;
     }
     auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(size);
@@ -152,11 +152,12 @@ void D3DResourceCache::RequireD3DBuffer(D3DBufferWithSRV* d3dBuf, const Graphics
 // the frame completes rendering
 ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(int uploadSize)
 {
+    uploadSize = (uploadSize + 255) & (~255);
     auto& uploadBufferItem = mUploadBufferCache.RequireItem(uploadSize,
         [&](auto& item) // Allocate a new item
         {
             auto uploadHeapType = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-            auto uploadBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadSize);
+            auto uploadBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(item.mLayoutHash);
             ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommittedResource(
                 &uploadHeapType,
                 D3D12_HEAP_FLAG_NONE,
@@ -359,7 +360,7 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
     D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount)
 {
     auto RequireBuffer = [&](const BufferLayout& binding, D3DBinding& d3dBin) {
-        if (d3dBin.mBuffer == nullptr || d3dBin.mSize != binding.mBuffer.mSize) {
+        if (d3dBin.mBuffer == nullptr || d3dBin.mSize < binding.mBuffer.mSize) {
             d3dBin.mSize = binding.mBuffer.mSize;
             CreateBuffer(d3dBin.mBuffer, d3dBin.mSize);
             d3dBin.mBuffer->SetName(
@@ -368,6 +369,7 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
                 binding.mUsage == BufferLayout::Usage::Instance ? L"InstanceBuffer" :
                 L"ElementBuffer"
             );
+            d3dBin.mGPUMemory = d3dBin.mBuffer->GetGPUVirtualAddress();
         }
         };
     indexCount = -1;
@@ -376,7 +378,7 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
             RequireBuffer(binding, d3dBin);
             indexCount = binding.mCount;
             indexView = {
-                d3dBin.mBuffer->GetGPUVirtualAddress() + (UINT)(binding.mOffset * itemSize),
+                d3dBin.mGPUMemory + (UINT)(binding.mOffset * itemSize),
                 (UINT)(binding.mCount * itemSize),
                 (DXGI_FORMAT)binding.mElements[0].mFormat
             };
@@ -384,7 +386,7 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
             }, [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
                 RequireBuffer(binding, d3dBin);
                 inputViews.push_back({
-                    d3dBin.mBuffer->GetGPUVirtualAddress() + (UINT)(binding.mOffset * itemSize),
+                    d3dBin.mGPUMemory + (UINT)(binding.mOffset * itemSize),
                     (UINT)(binding.mCount * itemSize),
                     (UINT)itemSize
                     });
@@ -392,6 +394,11 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
                     if (d3dBin.mRevision == binding.mBuffer.mRevision) return;
                     WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), binding.mBuffer.mSize, //binding.mCount * itemSize,
                         [&](auto* data) {
+                            // Fast path
+                            if (binding.mElements.size() == 1 && binding.mElements[0].mBufferStride == itemSize) {
+                                memcpy(data, (uint8_t*)binding.mElements[0].mData, binding.mBuffer.mSize);
+                                return;
+                            }
                             int count = binding.mBuffer.mSize / itemSize;
                             int toffset = 0;
                             for (auto& element : binding.mElements) {
@@ -415,6 +422,7 @@ void D3DResourceCache::SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameI
 {
     mConstantBufferCache.SetResourceLockIds(lockFrameId, writeFrameId);
     mUploadBufferCache.SetResourceLockIds(lockFrameId, writeFrameId);
+    mDelayedRelease.SetResourceLockIds(lockFrameId, writeFrameId);
 }
 // Ensure a material is ready to be rendererd by the GPU (with the specified vertex layout)
 D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(const Material& material, std::span<const BufferLayout*> bindings)

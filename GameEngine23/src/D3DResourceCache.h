@@ -129,6 +129,7 @@ public:
     };
     struct D3DBinding {
         ComPtr<ID3D12Resource> mBuffer;
+        D3D12_GPU_VIRTUAL_ADDRESS mGPUMemory;
         int mSize = -1;
         int mRevision = 0;
         BufferLayout::Usage mUsage;
@@ -150,7 +151,8 @@ private:
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
-    PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mUploadBufferCache;
+    PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
+    PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
     int mCBOffset;
     std::vector<uint8_t> mTempData;
 
