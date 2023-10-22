@@ -71,16 +71,18 @@ public:
 	std::span<const uint8_t> SetValue(Identifier name, const T* data, int count)
 	{
 		static_assert(std::is_same<int, T>::value || std::is_same<float, T>::value
-			|| std::is_same<std::shared_ptr<TextureBase>, T>::value,
+			|| std::is_same<std::shared_ptr<void>, T>::value
+			|| std::is_same<const void*, T>::value,
 			"Types must be int or float based");
 
 		return SetValue(name, data, count, TypeCache::Require<T>());
 	}
-	std::span<const uint8_t> SetValue(Identifier name, const void* data, int count, const TypeCache::TypeInfo& typeInfo);
 	// Get the binary data for a value in this set
 	std::span<const uint8_t> GetValueData(Identifier name) const;
 	const uint8_t* GetDataRaw() const;
 private:
+	std::span<const uint8_t> SetValue(Identifier name, const void* data, int count, const TypeCache::TypeInfo& typeInfo);
+
 	// Resize the binary data allocated to an item, and
 	// move the ByteOffset of other relevant other types
 	void ResizeData(int at, int newSize, int oldSize);
@@ -114,6 +116,7 @@ struct DepthMode
 	bool mWriteEnable;
 	DepthMode(Comparisons c = Comparisons::Less, bool write = true) : mComparison(c), mWriteEnable(write) { }
 	static DepthMode MakeOff() { return DepthMode(Comparisons::Always, false);}
+	static DepthMode MakeReadOnly(Comparisons comparison = Comparisons::LEqual) { return DepthMode(comparison, false); }
 };
 
 class Material;
@@ -328,8 +331,13 @@ public:
 		MarkChanged();
 		return r;
 	}
-	std::span<const uint8_t> SetUniformTexture(Identifier name, const std::shared_ptr<TextureBase>& tex) {
-		auto r = mParameters.SetValue<std::shared_ptr<TextureBase>>(name, &tex, 1);
+	std::span<const uint8_t> SetUniformTexture(Identifier name, const std::shared_ptr<void>& tex) {
+		auto r = mParameters.SetValue<std::shared_ptr<void>>(name, &tex, 1);
+		MarkChanged();
+		return r;
+	}
+	std::span<const uint8_t> SetUniformTexture(Identifier name, const void* buffer) {
+		auto r = mParameters.SetValue<const void*>(name, &buffer, 1);
 		MarkChanged();
 		return r;
 	}

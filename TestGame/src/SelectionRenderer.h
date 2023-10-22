@@ -4,6 +4,7 @@
 #include "GraphicsDeviceBase.h"
 #include <FBXImport.h>
 #include <RenderQueue.h>
+#include <RetainedRenderer.h>
 
 #include <memory>
 

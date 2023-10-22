@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-Texture::Texture()
+TextureBase::TextureBase()
 	: mRevision(0) { }
 
 void Texture::SetSize(Int2 size)

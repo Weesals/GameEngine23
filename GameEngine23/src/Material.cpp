@@ -31,14 +31,11 @@ std::span<const uint8_t> ParameterSet::SetValue(Identifier name, const void* dat
 	Item newParam = { &typeInfo, 0, count };
 	auto newSize = typeInfo.mSize * count;
 	auto i = mItems.find(name);
-	if (i == mItems.end())
-	{
+	if (i == mItems.end()) {
 		newParam.mByteOffset = (int)mData.size();
 		mData.resize(mData.size() + newSize);
 		mItems[name] = newParam;
-	}
-	else
-	{
+	} else {
 		newParam.mByteOffset = i->second.mByteOffset;
 		auto oldSize = i->second.mType->mSize * i->second.mCount;
 		if (newSize != oldSize) ResizeData(newParam.mByteOffset, newSize, oldSize);
@@ -218,7 +215,7 @@ void Material::ResolveResources(CommandBuffer& cmdBuffer, std::vector<const void
 	for (auto* cb : pipeline->mConstantBuffers) {
 		uint8_t tmpData[512];
 		for (auto& val : cb->mValues) {
-			auto data = GetUniformBinaryData(val.mNameId);
+			auto data = GetUniformBinaryData(val.mName);
 			std::memcpy(tmpData + val.mOffset, data.data(), data.size());
 		}
 		resources.push_back(cmdBuffer.RequireConstantBuffer(std::span<uint8_t>(tmpData, cb->mSize)));
@@ -226,7 +223,7 @@ void Material::ResolveResources(CommandBuffer& cmdBuffer, std::vector<const void
 	// Get other resource data for this batch
 	{
 		for (auto* rb : pipeline->mResources) {
-			auto* data = GetUniformTexture(rb->mNameId);
+			auto* data = GetUniformTexture(rb->mName);
 			resources.push_back(data == nullptr ? nullptr : data->get());
 		}
 	}

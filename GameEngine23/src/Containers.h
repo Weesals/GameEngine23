@@ -1,4 +1,6 @@
 #pragma once
+
+#include <stdint.h>
 #include <cassert>
 
 template<class T, int Size = 7>
@@ -7,12 +9,16 @@ struct InplaceVector {
 	uint8_t mSize = 0;
 	InplaceVector() { }
 	InplaceVector(T value) { for (int i = 0; i < Size; ++i) mValues[i] = value; }
+    InplaceVector(std::span<T> arr) { for (int i = 0; i < arr.size(); ++i) mValues[i] = arr[i]; mSize = (uint8_t)arr.size(); }
 	uint8_t size() const { return mSize; }
 	bool empty() const { return mSize == 0; }
 	T* begin() { return mValues; }
 	T* end() { return mValues + mSize; }
-	void push_back(uint8_t v) { assert(mSize < Size); mValues[mSize++] = v; }
-	T& pop_back() { return mValues[--mSize]; }
+    T* data() { return mValues; }
+    void push_back(T v) { assert(mSize < Size); mValues[mSize++] = v; }
+    void push_back_if_not_null(T v) { if (!v) return; assert(mSize < Size); mValues[mSize++] = v; }
+    T& pop_back() { return mValues[--mSize]; }
+    void resize(uint8_t size) { mSize = size; }
 	T& operator[](int i) { return mValues[i]; }
 	const T& operator[](int i) const { return mValues[i]; }
 };
@@ -119,8 +125,7 @@ struct SparseIndices
 {
     std::vector<RangeInt> mRanges;
     int Allocate() { return Allocate(1).start; }
-    RangeInt Allocate(int count)
-    {
+    RangeInt Allocate(int count) {
         for (auto block = mRanges.begin(); block != mRanges.end(); ++block)
         {
             if (block->length < count) continue;
@@ -136,8 +141,7 @@ struct SparseIndices
         Return(range.start, range.length);
         range = RangeInt(0, 0);
     }
-    void Return(int start, int count)
-    {
+    void Return(int start, int count) {
         if (mRanges.empty()) { mRanges.push_back(RangeInt(start, count)); return; }
         auto it = std::partition_point(mRanges.begin(), mRanges.end(), [&](auto& item) {
             return item.start < start;
@@ -182,11 +186,9 @@ struct SparseIndices
         //--block;*/
         mRanges.insert(it, RangeInt(start, count));
     }
-    int Find(int index)
-    {
+    int Find(int index) {
         int min = 0, max = (int)mRanges.size() - 1;
-        while (max >= min)
-        {
+        while (max >= min) {
             int mid = (min + max) / 2;
             auto value = mRanges[mid];
             if (index < value.start) max = mid - 1;
@@ -195,9 +197,15 @@ struct SparseIndices
         }
         return -1;
     }
+    int Compact(int from) {
+        if (mRanges.size() == 0) return 0;
+        auto back = mRanges.back();
+        if (back.end() != from) return 0;
+        mRanges.erase(mRanges.end() - 1);
+        return back.length;
+    }
     bool Contains(int index) { return Find(index) != -1; }
-    struct Iterator
-    {
+    struct Iterator {
         SparseIndices& mIndices;
         int mUnallocIndex;
         int mCurrent;
@@ -210,11 +218,9 @@ struct SparseIndices
         }
         Iterator& operator ++() {
             ++mCurrent;
-            if (mUnallocIndex < mIndices.mRanges.size())
-            {
+            if (mUnallocIndex < mIndices.mRanges.size()) {
                 auto unused = mIndices.mRanges[mUnallocIndex];
-                if (mCurrent >= unused.start)
-                {
+                if (mCurrent >= unused.start) {
                     mCurrent += unused.length;
                     ++mUnallocIndex;
                 }

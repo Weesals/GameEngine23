@@ -11,6 +11,7 @@
 // Used for efficient construction of constant buffers
 // and determining which materials can cause cached value invalidation
 class MaterialEvaluator {
+	static const uint16_t InvalidSize = -1;
 	std::unique_ptr<uint8_t[]> mBuffer = nullptr;
 	int mBufferSize = 0;
 public:
@@ -26,7 +27,8 @@ public:
 	uint16_t mValueOffset;
 	uint16_t mComputedOffset;
 	uint16_t mParameterOffset;
-	uint16_t mDataSize;
+	uint16_t mDataSize = InvalidSize;
+	bool IsValid() { return mDataSize != InvalidSize; }
 	void RequireBuffer(int size) {
 		if (size <= mBufferSize) return;
 		mBuffer.reset(new uint8_t[mBufferSize = size]);
@@ -60,15 +62,26 @@ public:
 	std::span<uint8_t> EvaluateAppend(std::vector<uint8_t>& data, int finalSize) const {
 		int begin = (int)data.size();
 		data.resize(begin + mDataSize);
+		std::memset(data.data(), 0, finalSize);
 		Evaluate(std::span<uint8_t>(data.begin() + begin, mDataSize));
 		data.resize(begin + finalSize);
 		return std::span<uint8_t>(data.begin() + begin, finalSize);
+	}
+	void EvaluateSafe(std::span<uint8_t> data) const {
+		if (mDataSize == data.size()) {
+			Evaluate(data);
+		}
+		else {
+			std::array<uint8_t, 512> tmpData;
+			Evaluate(tmpData);
+			std::memcpy(data.data(), tmpData.data(), data.size());
+		}
 	}
 	static void ResolveConstantBuffer(ShaderBase::ConstantBuffer* cb, std::span<const Material*> materialStack, uint8_t* buffer) {
 		for (auto& val : cb->mValues) {
 			for (auto* mat : materialStack) {
 				Material::ParameterContext context(materialStack);
-				auto data = context.GetUniform(val.mNameId);
+				auto data = context.GetUniform(val.mName);
 				std::memcpy(buffer + val.mOffset, data.data(), data.size());
 			}
 		}
@@ -84,8 +97,10 @@ public:
 		// Get constant buffer data for this batch
 		for (auto* cb : pipeline->mConstantBuffers) {
 			uint8_t tmpData[512];
+			auto count = (int)(uint32_t)(cb->mSize + sizeof(uint64_t)) / sizeof(uint64_t);
+			for (int i = 0; i < count; ++i) ((uint64_t*)tmpData)[i] = 0;
 			for (auto& val : cb->mValues) {
-				auto data = context.GetUniform(val.mNameId);
+				auto data = context.GetUniform(val.mName);
 				std::memcpy(tmpData + val.mOffset, data.data(), data.size());
 			}
 			outResources[r++] = cmdBuffer.RequireConstantBuffer(std::span<uint8_t>(tmpData, cb->mSize));
@@ -93,7 +108,7 @@ public:
 		// Get other resource data for this batch
 		{
 			for (auto* rb : pipeline->mResources) {
-				auto data = context.GetUniform(rb->mNameId);
+				auto data = context.GetUniform(rb->mName);
 				outResources[r++] = data.empty() ? nullptr : ((std::shared_ptr<void*>*)data.data())->get();
 			}
 		}
@@ -170,9 +185,13 @@ public:
 		Finalize();
 		for (auto& value : mValues) value.mOutputOffset = InvalidOffset;
 	}
-	void SetItemOutputOffset(Identifier name, int offset) {
-		for (auto& value : mValues)
-			if (value.mName == name) { value.mOutputOffset = offset; break; }
+	void SetItemOutputOffset(Identifier name, int offset, int byteSize = -1) {
+		for (auto& value : mValues) {
+			if (value.mName != name) continue;
+			value.mOutputOffset = offset;
+			if (byteSize >= 0) value.mDataSize = byteSize;
+			break;
+		}
 	}
 	void RepairOutputOffsets(bool allowCompacting = true) {
 		if (allowCompacting) {

@@ -2,8 +2,80 @@
 
 #include "RenderQueue.h"
 
+/*
+* Each retained renderable keeps a RetainedMaterialSet (span<Material>)
+* When rendering, add instances with matset id
+* Resolve matsets
+* Resolve PSO and resources
+* Combine matsets based on PSO/res
+* Combine instances with same mesh/matset
+* Issue render calls
+* 
+* Need PSO before can resolve CBs
+* Should match individual CBs
+* TODO: Partial CBs? Where one CB contains another with some offset/size
+* 
+* RenderPassList::AddInstance(Mesh, []{ Material })
+* RetainedRenderer::AppendMesh(Mesh, []{ Pass.OverrideMaterial, Material }, SceneId)
+* -> Get a new matset ID with Pass.OverrideMaterial
+* -> Add to batch with key { Mesh, MatSetID } => { SceneId }
+* OnRender()
+* -> Iterate all (dirty) batches
+*   -> Generate MaterialEvaluator
+*   -> Generate SourceHash
+*   -> Append to SourceHashCache { size_t Hash, MatEval } => { batch_id[] }
+* -> Iterate all SourceHashCache x batch_id
+*   -> Generate instance (culling)
+*   -> If no instances, continue
+*   -> Generate CB/res
+*   -> Append draw call
+*/
+
+size_t ResolvedMaterialSets::GenerateHash(CommandBuffer& cmdBuffer, size_t valueHash, int matSetId) {
+	size_t hash = (size_t)cmdBuffer.GetGraphics();
+	// TODO: Find subregions of CBs
+	hash = AppendHash(valueHash, hash);
+	hash = AppendHash(matSetId, hash);
+	return hash;
+}
+int ResolvedMaterialSets::RequireResolved(CommandBuffer& cmdBuffer, std::span<const ShaderBase::UniformValue> values, int matSetId) {
+	size_t valueHash = 0;
+	for (auto& value : values) valueHash += value.GenerateHash() * 1234567;
+	size_t hash = GenerateHash(cmdBuffer, valueHash, matSetId);
+	auto item = mResolvedByHash.find(hash);
+	if (item == mResolvedByHash.end()) {
+		item = mResolvedByHash.insert(std::make_pair(hash, (int)mResolved.size())).first;
+		mResolved.push_back(ResolvedMaterialSet());
+	}
+	auto& resolved = mResolved[item->second];
+	if (!resolved.mEvaluator.IsValid()) {
+		mMaterialCollector.Clear();
+		auto materials = mMatCollection->GetMaterials(matSetId);
+		MaterialCollectorContext context(materials, mMaterialCollector);
+		for (int v = 0; v < values.size(); ++v)
+			context.GetUniformSource(values[v].mName, context);
+
+		// Force the correct output layout
+		mMaterialCollector.FinalizeAndClearOutputOffsets();
+		for (int v = 0; v < values.size(); ++v)
+			mMaterialCollector.SetItemOutputOffset(values[v].mName, values[v].mOffset, values[v].mSize);
+		mMaterialCollector.RepairOutputOffsets();
+
+		// Add the resource evaluator
+		mMaterialCollector.BuildEvaluator(resolved.mEvaluator);
+
+		resolved.mSourceHash = GenericHash({ mMaterialCollector.GenerateSourceHash(), valueHash });
+	}
+	return item->second;
+}
+const ResolvedMaterialSets::ResolvedMaterialSet& ResolvedMaterialSets::GetResolved(int id) {
+	return mResolved[id];
+}
+
+
 RetainedScene::RetainedScene()
 	: mGPUBuffer(1024)
+	, mResolvedMats(&mMatCollection)
 {
 	mFreeGPUBuffer.Return(0, mGPUBuffer.GetCount());
 }
@@ -54,190 +126,165 @@ void RetainedScene::SubmitGPUMemory(CommandBuffer& cmdBuffer) {
 }
 
 
-RetainedRenderer::RetainedRenderer(const std::shared_ptr<GraphicsDeviceBase>& graphics)
-	: mGraphics(graphics)
-{
+
+
+RetainedRenderer::RetainedRenderer() {
 	mInstanceBufferLayout = BufferLayoutPersistent(-1, 0, BufferLayout::Usage::Instance, -1, 1);
 	mInstanceBufferLayout.AppendElement(
 		BufferLayout::Element("INSTANCE", BufferFormat::FORMAT_R32_UINT, sizeof(int), sizeof(int), nullptr)
 	);
 }
-
-
-int RetainedRenderer::RequireRetainedCB(const ShaderBase::ConstantBuffer* constantBuffer, std::span<const Material*> materials) {
-	mMaterialCollector.Clear();
-	auto& values = constantBuffer->mValues;
-	// Find the source of each parameter, generate hash
-	MaterialCollectorContext context(materials, mMaterialCollector);
-	for (int v = 0; v < values.size(); ++v)
-		context.GetUniformSource(values[v].mNameId, context);
-	auto hash = GenericHash({ mMaterialCollector.GenerateSourceHash(), constantBuffer->GenerateHash() });
-
-	// Check if we have a setup for this cb set and source set
-	auto cb = mCBBySourceHash.find(hash);
-	if (cb != mCBBySourceHash.end()) return cb->second;
-
-	// Force the correct output layout
-	mMaterialCollector.FinalizeAndClearOutputOffsets();
-	for (int v = 0; v < values.size(); ++v)
-		mMaterialCollector.SetItemOutputOffset(values[v].mNameId, values[v].mOffset);
-	mMaterialCollector.RepairOutputOffsets();
-
-	// Add the resource evaluator
-	RetainedCBuffer cbuffer;
-	mMaterialCollector.BuildEvaluator(cbuffer.mMaterialEval);
-	cbuffer.mFinalSize = constantBuffer->mSize;
-	auto cbid = mRetainedCBuffers.Add(std::move(cbuffer));
-	mCBBySourceHash.emplace(std::make_pair(hash, cbid));
-	return cbid;
+void RetainedRenderer::SetScene(const std::shared_ptr<RetainedScene>& scene) {
+	mGPUScene = scene;
+	mInstanceMaterial.SetUniformTexture("instanceData", &mGPUScene->GetGPUBuffer());
 }
-int RetainedRenderer::RequireRetainedResources(std::span<const ShaderBase::ResourceBinding* const> resources, std::span<const Material*> materials) {
-	mMaterialCollector.Clear();
-	size_t hash = 0;
-	// Find the source of each resource, generate hash
-	MaterialCollectorContext context(materials, mMaterialCollector);
-	for (int v = 0; v < resources.size(); ++v) {
-		const auto* resource = resources[v];
-		context.GetUniformSource(resource->mNameId, context);
-		hash = AppendHash(((int)resource->mNameId << 16) | v, hash);
-	}
-	hash = AppendHash(mMaterialCollector.GenerateSourceHash(), hash);
-
-	// Check if we have a setup for this resource set and source set
-	auto cb = mCBBySourceHash.find(hash);
-	if (cb != mCBBySourceHash.end()) return cb->second;
-
-	// Force the correct output layout
-	mMaterialCollector.FinalizeAndClearOutputOffsets();
-	for (int v = 0; v < resources.size(); ++v)
-		mMaterialCollector.SetItemOutputOffset(resources[v]->mNameId, v * sizeof(std::shared_ptr<Texture>));
-	mMaterialCollector.RepairOutputOffsets();
-
-	// Add the resource evaluator
-	RetainedCBuffer cbuffer;
-	mMaterialCollector.BuildEvaluator(cbuffer.mMaterialEval);
-	cbuffer.mFinalSize = cbuffer.mMaterialEval.mDataSize;
-	auto cbid = mRetainedCBuffers.Add(std::move(cbuffer));
-	cb = mCBBySourceHash.emplace(std::make_pair(hash, cbid)).first;
-	return cbid;
-}
-int RetainedRenderer::CalculateBatchId(const Mesh* mesh, std::span<const Material*> materials) {
-	// Need to calculate a hash for required batch state
-	size_t batchHash = 0;
-
-	// Find vertex bindings
-	std::vector<const BufferLayout*> bindings;
-	mesh->CreateMeshLayout(bindings);
-	bindings.push_back(&mInstanceBufferLayout);
-	auto pso = mGraphics->RequirePipeline(+bindings, materials);
-	// ###############################
-	//				TODO
-	// ###############################
-	batchHash = AppendHash(pso, batchHash);
-	batchHash = AppendHash(mesh, batchHash);
-
-	// Find relevant constant buffer sources
-	std::vector<int> retainedCBs(pso->mConstantBuffers.size());
-	for (int i = 0; i < retainedCBs.size(); ++i) {
-		auto& cb = pso->mConstantBuffers[i];
-		auto cbid = cb != nullptr ? RequireRetainedCB(cb, materials) : -1;
-		batchHash = AppendHash(cbid, batchHash);
-		retainedCBs[i] = cbid;
-	}
-
-	// Find relevant resource sources
-	int retainedResId = RequireRetainedResources(pso->mResources, materials);
-	AppendHash(retainedResId, batchHash);
-
-	// Create the batch if it doesnt exist
-	auto batchKV = mBatchByHash.find(batchHash);
-	if (batchKV == mBatchByHash.end()) {
-		auto batchId = mBatches.Add({
-			.mMesh = mesh,
-			.mPipelineLayout = pso,
-			.mBufferLayout = std::move(bindings),
-			.mRetainedCBs = std::move(retainedCBs),
-			.mRetainedResourcesId = retainedResId,
-		});
-		batchKV = mBatchByHash.insert(std::make_pair(batchHash, batchId)).first;
-	}
-	return batchKV->second;
-}
-
-// Add a mesh to the persistent scene
+const std::shared_ptr<RetainedScene>& RetainedRenderer::GetScene() const { return mGPUScene; }
 int RetainedRenderer::AppendInstance(const Mesh* mesh, std::span<const Material*> materials, int sceneId) {
-	int batchId = CalculateBatchId(mesh, materials);
-	auto instanceId = mInstances.Add(Instance{ .mBatchId = batchId, .mSceneId = sceneId, });
-	mBatches[batchId].mInstances.push_back(instanceId);
-	return instanceId;
+	InplaceVector<const Material*, 10> mats(materials);
+	mats.push_back(&mInstanceMaterial);
+	int matSetId = mGPUScene->GetMatCollection().Require(mats);
+	auto key = StateKey(mesh, matSetId);
+	auto bucket = std::partition_point(mBatches.begin(), mBatches.end(), [&](auto& item) { return item < key; });
+	if (bucket == mBatches.end() || key != *bucket) {
+		bucket = mBatches.insert(bucket, Batch(mesh, matSetId));
+		std::vector<const BufferLayout*> bindings;
+		mesh->CreateMeshLayout(bindings);
+		bindings.push_back(&mInstanceBufferLayout);
+		bucket->OverwriteBufferLayout(bindings);
+	}
+	auto instance = std::partition_point(bucket->mInstances.begin(), bucket->mInstances.end(), [&](auto& item) { return item < sceneId; });
+	bucket->mInstances.insert(instance, sceneId);
+	mInstanceBatches.insert(std::make_pair(sceneId, key));
+	return sceneId;
 }
-// Remove a mesh instance
-void RetainedRenderer::RemoveInstance(int instanceId) {
-	auto& instance = mInstances[instanceId];
-	auto& batch = mBatches[instance.mBatchId];
-	batch.mInstances.erase(std::remove(batch.mInstances.begin(), batch.mInstances.end(), instanceId), batch.mInstances.end());
-	mInstances.Return(instanceId);
+void RetainedRenderer::RemoveInstance(int sceneId) {
+	auto key = mInstanceBatches.find(sceneId)->second;
+	mInstanceBatches.erase(sceneId);
+	auto bucket = std::partition_point(mBatches.begin(), mBatches.end(), [&](auto& item) { return item < key; });
+	auto instance = std::partition_point(bucket->mInstances.begin(), bucket->mInstances.end(), [&](auto& item) { return item < sceneId; });
+	bucket->mInstances.erase(instance);
 }
-
-void RetainedRenderer::SubmitToRenderQueue(CommandBuffer& cmdBuffer, RenderQueue& drawList, const Frustum& frustum) {
+void RetainedRenderer::SubmitToRenderQueue(CommandBuffer& cmdBuffer, RenderQueue& queue, const Frustum& frustum) {
 	auto& gpuBuffer = mGPUScene->GetGPUBuffer();
-	// Generate draw commands from batches
-	Identifier gInstanceDataId = "instanceData";
 	for (auto& batch : mBatches) {
 		if (batch.mInstances.empty()) continue;
-		auto instBegin = drawList.mInstancesBuffer.size();
-		auto resources = cmdBuffer.RequireFrameData<const void*>(batch.mPipelineLayout->GetResourceCount());
-		int r = 0;
+
+		auto* mesh = batch.mMesh;
+		auto instBegin = queue.mInstancesBuffer.size();
 
 		// Calculate visible instances
-		auto& bbox = batch.mMesh->GetBoundingBox();
+		auto& bbox = mesh->GetBoundingBox();
 		auto bboxCtr = bbox.Centre();
 		auto bboxExt = bbox.Extents();
 		for (auto& instance : batch.mInstances) {
-			auto data = mGPUScene->GetInstanceData(mInstances[instance].mSceneId);
+			auto data = mGPUScene->GetInstanceData(instance);
 			auto& matrix = *(Matrix*)(data.data());
 			if (!frustum.GetIsVisible(Vector3::Transform(bboxCtr, matrix), bboxExt)) continue;
-			drawList.mInstancesBuffer.push_back(mInstances[instance].mSceneId);
+			queue.mInstancesBuffer.push_back(instance);
 		}
 		// If no instances were created, quit
-		if (drawList.mInstancesBuffer.size() == instBegin) continue;
+		if (queue.mInstancesBuffer.size() == instBegin) continue;
+
+		// Compute and cache CB and resource data
+		auto* graphics = cmdBuffer.GetGraphics();
+		auto meshMatHash = VariadicHash(batch.mMesh, batch.mMaterialSetId, cmdBuffer.GetGraphics());
+		auto resolvedKV = mPipelineCache.find(meshMatHash);
+		if (resolvedKV == mPipelineCache.end()) {
+			auto materials = mGPUScene->GetMatCollection().GetMaterials(batch.mMaterialSetId);
+			auto pso = graphics->RequirePipeline(batch.mBufferLayout, materials);
+			resolvedKV = mPipelineCache.insert(std::make_pair(meshMatHash, ResolvedPipeline{
+				.mPipeline = pso,
+			})).first;
+			auto& resolved = resolvedKV->second;
+			for (auto* cb : pso->mConstantBuffers) {
+				auto resolvedId = mGPUScene->mResolvedMats.RequireResolved(cmdBuffer, cb->mValues, batch.mMaterialSetId);
+				resolved.mResolvedCBs.push_back(resolvedId);
+			}
+			std::vector<ShaderBase::UniformValue> resources;
+			for (size_t i = 0; i < pso->mResources.size(); ++i) {
+				auto* res = pso->mResources[i];
+				resources.push_back(ShaderBase::UniformValue{
+					.mName = IdentifierWithName(res->mName),
+					.mOffset = (int)(i * sizeof(void*)),
+					.mSize = (int)sizeof(void*),
+				});
+			}
+			resolved.mResolvedResources = mGPUScene->mResolvedMats.RequireResolved(cmdBuffer, resources, batch.mMaterialSetId);
+		}
+
+		auto& resolved = resolvedKV->second;
+		auto* pipeline = resolved.mPipeline;
+		auto resources = cmdBuffer.RequireFrameData<const void*>(pipeline->GetResourceCount());
+		int r = 0;
 
 		// Get constant buffer data for this batch
-		for (auto& cbid : batch.mRetainedCBs) {
+		for (int i = 0; i < resolved.mResolvedCBs.size(); ++i) {
+			auto cbid = resolved.mResolvedCBs[i];
 			void* resource = nullptr;
 			if (cbid >= 0) {
-				auto& cb = mRetainedCBuffers[cbid];
-				auto cbData = cb.mMaterialEval.EvaluateAppend(drawList.mFrameData, cb.mFinalSize);
+				auto& resolved = mGPUScene->mResolvedMats.GetResolved(cbid);
+				auto cbData = resolved.mEvaluator.EvaluateAppend(queue.mFrameData, pipeline->mConstantBuffers[i]->mSize);
 				resource = cmdBuffer.RequireConstantBuffer(cbData);
-				//resource = cbData.data();
 			}
 			resources[r++] = resource;
 		}
 		// Get other resource data for this batch
 		{
-			uint8_t tmpData[1024];
-			auto& resCB = mRetainedCBuffers[batch.mRetainedResourcesId];
-			resCB.mMaterialEval.Evaluate(std::span<uint8_t>(tmpData, tmpData + 1024));
-			auto& pipResources = batch.mPipelineLayout->mResources;
-			for (auto i = 0; i < pipResources.size(); ++i) {
-				resources[r++] =
-					pipResources[i]->mNameId == gInstanceDataId ? &gpuBuffer :
-					((const std::shared_ptr<void>*)tmpData)[i].get()
-				;
-			}
+			auto& resCB = mGPUScene->mResolvedMats.GetResolved(resolved.mResolvedResources);
+			int count = (int)pipeline->mResources.size();
+			resCB.mEvaluator.EvaluateSafe(std::span<uint8_t>((uint8_t*)&resources[r], sizeof(void*) * count));
+			r += count;
 		}
 
 		// Need to force this to use queues instance buffer
 		// (so that the range can be adjusted by RenderQueue)
 		// TODO: A more generic approach
-		batch.mBufferLayout.back() = &drawList.mInstanceBufferLayout;
+		batch.mBufferLayout.back() = &queue.mInstanceBufferLayout;
 		// Add the draw command
-		drawList.AppendMesh(
-			batch.mMesh->GetName().c_str(),
-			batch.mPipelineLayout,
+		queue.AppendMesh(
+			mesh->GetName().c_str(),
+			pipeline,
 			batch.mBufferLayout.data(),
 			resources.data(),
-			RangeInt::FromBeginEnd((int)instBegin, (int)drawList.mInstancesBuffer.size())
+			RangeInt::FromBeginEnd((int)instBegin, (int)queue.mInstancesBuffer.size())
 		);
 	}
+}
+
+
+RenderPass::RenderPass(std::string_view name)
+	: mName(name), mFrustum(Matrix::Identity)
+{
+	mRetainedRenderer = std::make_shared<RetainedRenderer>();
+}
+void RenderPass::UpdateViewProj(const Matrix& view, const Matrix& proj)
+{
+	mView = view;
+	mProjection = proj;
+	mFrustum = Frustum(view * proj);
+}
+
+int RenderPassList::AddInstance(const Mesh* mesh, std::span<const Material*> materials, int dataSize) {
+	auto sceneId = mScene->AllocateInstance(dataSize);
+	if (sceneId >= (int)mPassIdsBySceneId.size()) mPassIdsBySceneId.resize(sceneId + 1);
+	mPassIdsBySceneId[sceneId] = mPassIds.Allocate((int)mPasses.size());
+	auto range = mPassIdsBySceneId[sceneId];
+	for (int i = 0; i < range.length; ++i) {
+		auto pass = mPasses[i];
+		InplaceVector<const Material*, 10> renMaterials;
+		renMaterials.push_back_if_not_null(pass->mOverrideMaterial.get());
+		for (auto* mat : materials) renMaterials.push_back(mat);
+		mPassIds[range.start + i] =
+			mPasses[i]->mRetainedRenderer->AppendInstance(mesh, renMaterials, sceneId);
+	}
+	return sceneId;
+}
+void RenderPassList::RemoveInstance(int sceneId) {
+	auto range = mPassIdsBySceneId[sceneId];
+	for (int i = 0; i < range.length; ++i) {
+		auto instanceId = mPassIds[range.start + i];
+		if (instanceId < 0) continue;
+		mPasses[i]->mRetainedRenderer->RemoveInstance(instanceId);
+	}
+	mScene->RemoveInstance(sceneId);
 }

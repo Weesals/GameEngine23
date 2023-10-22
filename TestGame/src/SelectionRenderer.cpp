@@ -9,6 +9,7 @@ SelectionRenderer::SelectionRenderer(std::shared_ptr<SelectionManager>& manager,
 	mMaterial = std::make_shared<Material>(L"assets/selection.hlsl");
 	mMaterial->InheritProperties(rootMaterial);
 	mMaterial->SetBlendMode(BlendMode::AlphaBlend());
+	mMaterial->SetDepthMode(DepthMode::MakeReadOnly());
 	// Generate a XZ quad of 2x2 size centred at 0,0 (with uvs and normals)
 	{
 		mMesh = std::make_shared<Mesh>("Selection");

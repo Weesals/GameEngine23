@@ -126,7 +126,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::GetOrCreatePipelineState(c
 {
     return GetOrCreate(pipelineMapping, hash);
 }
-D3DResourceCache::D3DRT* D3DResourceCache::RequireD3DRT(const RenderTarget2D* rt) {
+D3DResourceCache::D3DRenderSurface* D3DResourceCache::RequireD3DRT(const RenderTarget2D* rt) {
     return GetOrCreate(rtMapping, rt);
 }
 // Allocate or retrieve a container for GPU buffers for this item
@@ -548,7 +548,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = 1;
         psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-        psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+        psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState->mPipelineState)));
         pipelineState->mPipelineState->SetName(sourcePS.GetPath().c_str());
@@ -586,7 +586,7 @@ D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(const ShaderBase::Con
     std::memset(mTempData.data(), 0, sizeof(mTempData[0]) * mTempData.size());
     for (auto& var : cBuffer.mValues)
     {
-        auto varData = material.GetUniformBinaryData(var.mNameId);
+        auto varData = material.GetUniformBinaryData(var.mName);
         std::memcpy(mTempData.data() + var.mOffset, varData.data(), varData.size());
     }
     return RequireConstantBuffer(mTempData);

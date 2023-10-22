@@ -66,17 +66,22 @@ static size_t AppendHash(const T& value, size_t hash)
 template<typename T>
 static size_t GenericHash(const T& value)
 {
-    return AppendHash((uint8_t*)&value, sizeof(T), 0);
+    return AppendHash((const uint8_t*)&value, sizeof(T), 0);
 }
 static size_t GenericHash(const void* data, size_t size)
 {
-    return AppendHash((uint8_t*)data, size, 0);
+    return AppendHash((const uint8_t*)data, size, 0);
 }
 static size_t GenericHash(std::initializer_list<size_t> values)
 {
     size_t hash = 0;
     for (auto& value : values) { hash *= 0x9E3779B97F4A7C15uL; hash ^= hash >> 16; hash += value; }
     return hash;
+}
+template<typename T>
+static size_t ArrayHash(std::span<T> values)
+{
+    return AppendHash((const uint8_t*)values.data(), values.size() * sizeof(T), 0);
 }
 static size_t VariadicHash() { return 0; }
 template<class First, class... Args>

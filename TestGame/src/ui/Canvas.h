@@ -8,19 +8,39 @@
 
 #include <InputDispatcher.h>
 
+#include "CanvasMeshBuilder.h"
+#include "CanvasTransform.h"
+
 class Canvas;
+class CanvasRenderable;
+
+struct CanvasBinding {
+	Canvas* mCanvas;
+	CanvasRenderable* mParent;
+	CanvasBinding();
+	CanvasBinding(Canvas* canvas);
+	CanvasBinding(CanvasRenderable* parent);
+};
 
 // An item that forms a part of the UI
-class CanvasRenderable
-{
+class CanvasRenderable {
 protected:
-	Canvas* mCanvas;
+	CanvasBinding mBinding;
 	std::vector<std::shared_ptr<CanvasRenderable>> mChildren;
+	CanvasTransform mTransform;
+	CanvasLayout mLayoutCache;
 public:
-	virtual void Initialise(Canvas* canvas);
+	CanvasRenderable();
+	virtual ~CanvasRenderable() { }
+	Canvas* GetCanvas() { return mBinding.mCanvas; }
+	CanvasRenderable* GetParent() { return mBinding.mParent; }
+	virtual void Initialise(CanvasBinding binding);
+	virtual void Uninitialise(CanvasBinding binding);
 	virtual void AppendChild(const std::shared_ptr<CanvasRenderable>& child);
 	virtual void RemoveChild(const std::shared_ptr<CanvasRenderable>& child);
-	virtual void Render(CommandBuffer& cmdBuffer) = 0;
+	void SetTransform(const CanvasTransform& transform);
+	virtual void UpdateLayout(const CanvasLayout& parent);
+	virtual void Render(CommandBuffer& cmdBuffer);
 
 	template<class T>
 	const std::shared_ptr<T>& FindChild() {
@@ -39,32 +59,32 @@ class Canvas : public CanvasRenderable, std::enable_shared_from_this<Canvas>
 public:
 	typedef Delegate<const std::shared_ptr<Input>&> OnInput;
 
-private:
+protected:
 	std::shared_ptr<Mesh> mMesh;
 	std::shared_ptr<Material> mMaterial;
-	std::shared_ptr<Texture> mFontTexture;
 
 	Int2 mSize;
 	OnInput mOnInput;
 	int mDrawCount;
+
+	CanvasMeshBuilder mMeshBuilder;
 
 public:
 
 	Canvas();
 	~Canvas();
 
-	void SetSize(Int2 size);
+	virtual void SetSize(Int2 size);
 	Int2 GetSize() const;
-	int GetDrawCount() { return mDrawCount; }
+	virtual bool GetIsPointerOverUI(Vector2 v) const;
+	int GetDrawCount() const { return mDrawCount; }
+
+	CanvasMeshBuilder& GetBuilder() { return mMeshBuilder; }
 
 	OnInput::Reference RegisterInputIntercept(const OnInput::Function& callback);
-	bool GetIsPointerOverUI(Vector2 v) const;
 
-	void AppendChild(const std::shared_ptr<CanvasRenderable>& child) override;
-	void RemoveChild(const std::shared_ptr<CanvasRenderable>& child) override;
-
-	void Update(const std::shared_ptr<Input>& input);
-	void Render(CommandBuffer& cmdBuffer) override;
+	virtual void Update(const std::shared_ptr<Input>& input);
+	virtual void Render(CommandBuffer& cmdBuffer) override;
 };
 
 // Intercepts input pointer events and prevents the user

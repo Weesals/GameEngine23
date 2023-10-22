@@ -1,3 +1,5 @@
+#pragma once
+
 //-------------------------------------------------------------------------------------
 // SimpleMath.h -- Simplified C++ Math wrapper for DirectXMath
 //
@@ -18,8 +20,7 @@
 #include <compare>
 //#endif
 
-
-#pragma once
+#pragma optimize("gty", on)
 
 namespace DirectX
 {
@@ -359,11 +360,14 @@ namespace DirectX
             //inline Vector4& operator= (const DirectX::SimpleMath::Vector4& o) noexcept { x = o.x; y = o.y; z = o.z; w = o.w; return *this; }
             inline const Vector2& xy() const { return *(Vector2*)&x; }
             inline const Vector2& yz() const { return *(Vector2*)&y; }
+            inline const Vector2& zw() const { return *(Vector2*)&z; }
             inline Vector2 xz() const { return Vector2(x, z); }
             inline const Vector3& xyz() const { return *(Vector3*)this; }
             inline Vector2& xy() { return *(Vector2*)&x; }
             inline Vector2& yz() { return *(Vector2*)&y; }
+            inline Vector2& zw() { return *(Vector2*)&z; }
             inline Vector3& xyz() { return *(Vector3*)&x; }
+            inline Vector3& yzw() { return *(Vector3*)&y; }
             inline Vector4 xzyw() const { return Vector4(x, z, y, w); }
             inline Vector4 zywx() const { return Vector4(z, y, w, x); }
             inline Vector4 yzwx() const { return Vector4(y, z, w, x); }
@@ -1183,6 +1187,8 @@ namespace std
     };
 
 } // namespace std
+
+#pragma optimize("gty", off)
 
 #ifdef __clang__
 #pragma clang diagnostic pop

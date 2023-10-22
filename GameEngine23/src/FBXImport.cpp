@@ -98,15 +98,48 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 			});
 		}
 
+		// Merge same vertices
+		auto& vbuffer = mesh->GetVertexBuffer();
+		std::vector<int> vertRemap;
+		std::unordered_map<size_t, int> vertHashMap;
+		vertRemap.reserve(vbuffer.mCount);
+		vertHashMap.reserve(vbuffer.mCount / 2);
+		for (int v = 0; v < vbuffer.mCount; ++v) {
+			size_t hash = 0;
+			for (auto& element : vbuffer.GetElements()) {
+				hash = AppendHash((uint8_t*)element.mData + element.mBufferStride * v, element.mItemSize, hash);
+			}
+			int index = (int)vertHashMap.size();
+			auto match = vertHashMap.find(hash);
+			if (match != vertHashMap.end()) {
+				index = vertRemap[match->second];
+			}
+			else {
+				vertHashMap.insert(std::make_pair(hash, v));
+			}
+			vertRemap.push_back(index);
+			if (index != v) {
+				// Copy vertex to compacted index
+				for (auto& element : vbuffer.GetElements()) {
+					std::memcpy(
+						(uint8_t*)element.mData + element.mBufferStride * index,
+						(uint8_t*)element.mData + element.mBufferStride * v,
+						element.mItemSize);
+				}
+			}
+		}
+		vbuffer.mCount = (int)vertHashMap.size();
+		vbuffer.CalculateImplicitSize();
+
 		// Copy indices
 		mesh->SetIndexFormat(false);
 		mesh->SetIndexCount(indCount);
 		auto indices = fbxMeshGeo->getFaceIndices();
-		std::transform(indices, indices + indCount, mesh->GetIndicesV().begin(), [](const auto item) {
+		std::transform(indices, indices + indCount, mesh->GetIndicesV().begin(), [&](const auto item) {
 			// Negative indices represent the end of a face in this library
 			// but we requested triangulation, so ignore it
 			int idx = (item < 0) ? -item - 1 : item;
-			return idx;
+			return vertRemap[idx];
 		});
 
 		// If the mesh transform flipped face orientation,

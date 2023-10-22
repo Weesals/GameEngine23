@@ -14,15 +14,16 @@ class ShaderBase
 public:
     // Reflected uniforms that can be set by the application
     struct UniformValue {
-        std::string mName;
-        Identifier mNameId;
+        IdentifierWithName mName;
         int mOffset;
         int mSize;
         bool operator ==(const UniformValue& other) const = default;
+        size_t GenerateHash() const {
+            return ((int)mName.mId << 16) | mOffset;
+        }
     };
     struct ConstantBuffer {
-        std::string mName;
-        Identifier mNameId;
+        IdentifierWithName mName;
         int mSize;
         int mBindPoint;
         std::vector<UniformValue> mValues;
@@ -36,15 +37,14 @@ public:
         }
         size_t GenerateHash() const {
             size_t hash = 0;
-            for (auto& value : mValues) hash = AppendHash(((int)value.mNameId << 16) | value.mOffset, hash);
+            for (auto& value : mValues) hash = AppendHash(((int)value.mName << 16) | value.mOffset, hash);
             return hash;
         }
         bool operator ==(const ConstantBuffer& other) const = default;
     };
     enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, };
     struct ResourceBinding {
-        std::string mName;
-        Identifier mNameId;
+        IdentifierWithName mName;
         int mBindPoint;
         int mStride;
         ResourceTypes mType;
@@ -52,10 +52,8 @@ public:
     };
     enum ParameterTypes : uint8_t { P_Unknown, P_UInt, P_SInt, P_Float, };
     struct InputParameter {
-        std::string mName;
-        std::string mSemantic;
-        Identifier mNameId;
-        Identifier mSemanticId;
+        IdentifierWithName mName;
+        IdentifierWithName mSemantic;
         int mSemanticIndex;
         int mRegister;
         uint8_t mMask;

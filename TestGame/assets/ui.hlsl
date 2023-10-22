@@ -3,7 +3,6 @@
 cbuffer ConstantBuffer : register(b0)
 {
     matrix Projection;
-    float TexId;
 };
 
 struct VSInput

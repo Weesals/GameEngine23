@@ -1,5 +1,6 @@
 #include "RenderQueue.h"
 #include "MaterialEvaluator.h"
+#include "RetainedRenderer.h"
 
 RenderQueue::RenderQueue() {
 	mInstanceBufferLayout = BufferLayoutPersistent((size_t)this, 0, BufferLayout::Usage::Instance, -1);
@@ -19,6 +20,18 @@ std::span<const void*> RenderQueue::RequireMaterialResources(CommandBuffer& cmdB
 	const PipelineLayout* pipeline, const Material* material)
 {
 	return MaterialEvaluator::ResolveResources(cmdBuffer, pipeline, std::span<const Material*>(&material, 1));
+}
+std::span<const BufferLayout*> RenderQueue::ImmortalizeBufferLayout(CommandBuffer& cmdBuffer, std::span<const BufferLayout*> bindings) {
+	// Copy buffer contents
+	auto renBufferLayouts = cmdBuffer.RequireFrameData<BufferLayout>(bindings,
+		[](auto* buffer) { return *buffer; });
+	// Copy elements from each buffer
+	for (auto& buffer : renBufferLayouts)
+		buffer.mElements = cmdBuffer.RequireFrameData(buffer.GetElements()).data();
+	// Create array of pointers
+	auto renBuffersPtrs = cmdBuffer.RequireFrameData<const BufferLayout*>(renBufferLayouts,
+		[](auto& layout) { return &layout; });
+	return renBuffersPtrs;
 }
 void RenderQueue::AppendMesh(const char* name, const PipelineLayout* pipeline, const BufferLayout** buffers,
 	const void** resources, RangeInt instances)
@@ -70,8 +83,10 @@ void RenderQueue::Flush(CommandBuffer& cmdBuffer)
 }
 
 
-MeshDraw::MeshDraw() : mMesh(nullptr), mMaterial(nullptr) { }
-MeshDraw::MeshDraw(Mesh* mesh, Material* material) : mMesh(mesh), mMaterial(material) { }
+MeshDraw::MeshDraw() : mMesh(nullptr) { }
+MeshDraw::MeshDraw(const Mesh* mesh, const Material* material) : MeshDraw(mesh, std::span<const Material*>(&material, 1)) { }
+MeshDraw::MeshDraw(const Mesh* mesh, std::span<const Material*> materials)
+	: mMesh(mesh), mMaterials(materials.begin(), materials.end()) { }
 MeshDraw::~MeshDraw() {
 }
 void MeshDraw::InvalidateMesh() {
@@ -85,10 +100,9 @@ const MeshDraw::RenderPassCache* MeshDraw::GetPassCache(CommandBuffer& cmdBuffer
 		return renderPass.mId < item.mRenderPass.mId;
 		});
 	if (item == mPassCache.end() || item->mRenderPass != renderPass) {
-		const Material* materials[]{ mMaterial };
 		item = mPassCache.emplace(item, RenderPassCache{
 			.mRenderPass = renderPass,
-			.mPipeline = cmdBuffer.GetGraphics()->RequirePipeline(mBufferLayout, materials, renderPass),
+			.mPipeline = cmdBuffer.GetGraphics()->RequirePipeline(mBufferLayout, mMaterials, renderPass),
 		});
 	}
 	if (!item->mPipeline->IsValid()) return nullptr;
@@ -99,13 +113,15 @@ void MeshDraw::Draw(CommandBuffer& cmdBuffer, const DrawConfig& config) {
 	auto passCache = GetPassCache(cmdBuffer, IdentifierWithName::None);
 	if (passCache == nullptr) return;
 	assert(passCache->mPipeline->mBindings.size() == mBufferLayout.size());
-	mMaterial->ResolveResources(cmdBuffer, mResources, passCache->mPipeline);
-	cmdBuffer.DrawMesh(mBufferLayout, passCache->mPipeline, mResources, config, mMaterial->GetInstanceCount());
-	mResources.clear();
+	int instanceCount = 0;
+	for (auto* mat : mMaterials) instanceCount = std::max(instanceCount, mat->GetInstanceCount());
+	auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, mMaterials);
+	cmdBuffer.DrawMesh(mBufferLayout, passCache->mPipeline, resources, config, instanceCount);
 }
 
 MeshDrawInstanced::MeshDrawInstanced() : MeshDraw() { }
-MeshDrawInstanced::MeshDrawInstanced(Mesh* mesh, Material* material) : MeshDraw(mesh, material) {
+MeshDrawInstanced::MeshDrawInstanced(const Mesh* mesh, const Material* material) : MeshDrawInstanced(mesh, std::span<const Material*>(&material, 1)) { }
+MeshDrawInstanced::MeshDrawInstanced(const Mesh* mesh, std::span<const Material*> materials) : MeshDraw(mesh, materials) {
 	mInstanceBuffer = BufferLayoutPersistent(rand(), 0, BufferLayout::Usage::Instance, 0);
 }
 MeshDrawInstanced::~MeshDrawInstanced() { }
@@ -114,8 +130,9 @@ void MeshDrawInstanced::InvalidateMesh() {
 	mBufferLayout.push_back(&mInstanceBuffer);
 }
 int MeshDrawInstanced::GetInstanceCount() {
-	auto instanceCount = mInstanceBuffer.IsValid() ? mInstanceBuffer.mCount : mMaterial->GetInstanceCount();
-	if (instanceCount == 0) return 0;
+	if (mInstanceBuffer.IsValid()) return mInstanceBuffer.mCount;
+	int instanceCount = 0;
+	for (auto* mat : mMaterials) instanceCount = std::max(instanceCount, mat->GetInstanceCount());
 	return instanceCount;
 }
 int MeshDrawInstanced::AddInstanceElement(const char* name, BufferFormat fmt, int stride) {
@@ -139,9 +156,8 @@ void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, const DrawConfig& config)
 	auto passCache = GetPassCache(cmdBuffer, IdentifierWithName::None);
 	if (passCache == nullptr) return;
 	assert(passCache->mPipeline->mBindings.size() == mBufferLayout.size());
-	mMaterial->ResolveResources(cmdBuffer, mResources, passCache->mPipeline);
-	cmdBuffer.DrawMesh(mBufferLayout, passCache->mPipeline, mResources, config, instanceCount);
-	mResources.clear();
+	auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, mMaterials);
+	cmdBuffer.DrawMesh(mBufferLayout, passCache->mPipeline, resources, config, instanceCount);
 }
 void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, RenderQueue* queue, const DrawConfig& config) {
 	int instanceCount = GetInstanceCount();
@@ -149,13 +165,12 @@ void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, RenderQueue* queue, const
 	auto passCache = GetPassCache(cmdBuffer, IdentifierWithName::None);
 	if (passCache == nullptr) return;
 	if (queue != nullptr) {
-		auto resources = queue->RequireMaterialResources(cmdBuffer, passCache->mPipeline, mMaterial);
+		auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, mMaterials);
 		queue->AppendMesh(mMesh->GetName().c_str(), passCache->mPipeline, mBufferLayout.data(), resources.data(), RangeInt(0, instanceCount));
 	}
 	else {
-		mMaterial->ResolveResources(cmdBuffer, mResources, passCache->mPipeline);
-		cmdBuffer.DrawMesh(mBufferLayout, passCache->mPipeline, mResources, config, instanceCount);
-		mResources.clear();
+		auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, mMaterials);
+		cmdBuffer.DrawMesh(mBufferLayout, passCache->mPipeline, resources, config, instanceCount);
 	}
 }
 void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, RenderPass& pass, const DrawConfig& config) {
@@ -164,56 +179,13 @@ void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, RenderPass& pass, const D
 	auto passCache = GetPassCache(cmdBuffer, pass.GetRenderPassOverride());
 	if (passCache == nullptr) return;
 	auto& queue = pass.mRenderQueue;
-	const Material* mats[] = { pass.mOverrideMaterial.get(), mMaterial, };
-	std::span<const Material*> renderMats(mats + (mats[0] == nullptr ? 1 : 0), mats + 2);
-	auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, renderMats);
+	InplaceVector<const Material*, 10> renMaterials;
+	renMaterials.push_back_if_not_null(pass.mOverrideMaterial.get());
+	for (auto* mat : mMaterials) renMaterials.push_back(mat);
 
-	// Copy buffer contents
-	auto renBufferLayouts = cmdBuffer.RequireFrameData<BufferLayout>(+mBufferLayout,
-		[](auto* buffer) { return *buffer; });
-	// Copy elements from each buffer
-	for (auto& buffer : renBufferLayouts)
-		buffer.mElements = cmdBuffer.RequireFrameData(buffer.GetElements()).data();
-	// Create array of pointers
-	auto renBuffersPtrs = cmdBuffer.RequireFrameData<const BufferLayout*>(renBufferLayouts,
-		[](auto& layout) { return &layout; });
+	auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, renMaterials);
+	auto renBufferPtrs = queue.ImmortalizeBufferLayout(cmdBuffer, mBufferLayout);
 
-	queue.AppendMesh(mMesh->GetName().c_str(), passCache->mPipeline, renBuffersPtrs.data(),
+	queue.AppendMesh(mMesh->GetName().c_str(), passCache->mPipeline, renBufferPtrs.data(),
 		resources.data(), RangeInt(0, instanceCount));
-}
-
-RenderPass::RenderPass(std::string_view name, const std::shared_ptr<GraphicsDeviceBase>& graphics)
-	: mName(name), mFrustum(Matrix::Identity)
-{
-	mRetainedRenderer = std::make_shared<RetainedRenderer>(graphics);
-}
-void RenderPass::UpdateViewProj(const Matrix& view, const Matrix& proj)
-{
-	mView = view;
-	mProjection = proj;
-	mFrustum = Frustum(view * proj);
-}
-
-int RenderPassList::AddInstance(const Mesh* mesh, const Material* material, int dataSize) {
-	auto sceneId = mScene->AllocateInstance(dataSize);
-	if (sceneId >= (int)mPassIdsBySceneId.size()) mPassIdsBySceneId.resize(sceneId + 1);
-	mPassIdsBySceneId[sceneId] = mPassIds.Allocate((int)mPasses.size());
-	auto range = mPassIdsBySceneId[sceneId];
-	for (int i = 0; i < range.length; ++i) {
-		auto pass = mPasses[i];
-		const Material* materials[2] = { pass->mOverrideMaterial.get(), material, };
-		std::span<const Material*> matsSpan(materials + (materials[0] == nullptr ? 1 : 0), materials + 2);
-		mPassIds[range.start + i] =
-			mPasses[i]->mRetainedRenderer->AppendInstance(mesh, matsSpan, sceneId);
-	}
-	return sceneId;
-}
-void RenderPassList::RemoveInstance(int sceneId) {
-	auto range = mPassIdsBySceneId[sceneId];
-	for (int i = 0; i < range.length; ++i) {
-		auto instanceId = mPassIds[range.start + i];
-		if (instanceId < 0) continue;
-		mPasses[i]->mRetainedRenderer->RemoveInstance(instanceId);
-	}
-	mScene->RemoveInstance(sceneId);
 }

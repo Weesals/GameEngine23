@@ -6,6 +6,8 @@ Camera::Camera()
 	: mFOV((float)(std::numbers::pi / 4.0f))
 	, mAspect(1.0f)
 	, mOrientation(Quaternion(0.0f, 1.0f, 0.0f, 0.0f))
+	, mNearPlane(0.5f)
+	, mFarPlane(300.0f)
 { }
 
 // Move along the horizontal plane, relative to camera orientation
@@ -26,7 +28,7 @@ const Matrix& Camera::GetProjectionMatrix()
 		mProjMatrix = Matrix::CreatePerspectiveFieldOfView(
 			mFOV,
 			mAspect,
-			0.5f, 300.0f
+			mNearPlane, mFarPlane
 		);
 	}
 	return mProjMatrix;

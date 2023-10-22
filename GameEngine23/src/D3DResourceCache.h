@@ -55,13 +55,24 @@ public:
         int mSRVOffset;
         int mRevision = 0;
     };
-    struct D3DBufferWithSRVAndRTV : public D3DBufferWithSRV {
+    struct D3DRenderSurface : public D3DBufferWithSRV {
         int mRTVOffset;
         int mWidth, mHeight;
-    };
-    struct D3DRT {
-        D3DBufferWithSRVAndRTV mFrameBuffer;
-        D3DBufferWithSRVAndRTV mDepthBuffer;
+        mutable D3D12_RESOURCE_STATES mState = D3D12_RESOURCE_STATE_COMMON;
+        template<class T>
+        bool RequireState(T& barriers, D3D12_RESOURCE_STATES state) const {
+            if (mState == state) return false;
+            D3D12_RESOURCE_BARRIER barrier;
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+            barrier.Transition.pResource = mBuffer.Get();
+            barrier.Transition.StateBefore = mState;
+            barrier.Transition.StateAfter = state;
+            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barriers.push_back(barrier);
+            mState = state;
+            return true;
+        }
     };
     // The GPU data for a mesh
     struct D3DMesh
@@ -129,7 +140,7 @@ public:
         std::vector<const ShaderBase::ResourceBinding*> mResourceBindings;
         std::vector<D3D12_INPUT_ELEMENT_DESC> mInputElements;
 
-        size_t mHash;
+        size_t mHash = 0;
         ResourceSets mCBBindings;
         ResourceSets mRSBindings;
         std::unique_ptr<PipelineLayout> mLayout;
@@ -148,6 +159,8 @@ public:
     int mDSOffset;
     int mCBOffset;
 
+    std::unordered_map<Int2, std::unique_ptr<D3DRenderSurface>> depthBufferPool;
+
 private:
     D3DGraphicsDevice& mD3D12;
 
@@ -156,7 +169,7 @@ private:
     // and clean up GPU resources
     D3DRootSignature mRootSignature;
     std::unordered_map<const Mesh*, std::unique_ptr<D3DMesh>> meshMapping;
-    std::unordered_map<const RenderTarget2D*, std::unique_ptr<D3DRT>> rtMapping;
+    std::unordered_map<const RenderTarget2D*, std::unique_ptr<D3DRenderSurface>> rtMapping;
     std::unordered_map<const Texture*, std::unique_ptr<D3DBufferWithSRV>> textureMapping;
     std::unordered_map<ShaderKey, std::unique_ptr<D3DShader>> shaderMapping;
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
@@ -182,7 +195,7 @@ public:
         std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,
         D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
-    D3DRT* RequireD3DRT(const RenderTarget2D* rt);
+    D3DRenderSurface* RequireD3DRT(const RenderTarget2D* rt);
     D3DMesh* RequireD3DMesh(const Mesh& mesh);
     D3DBufferWithSRV* RequireD3DBuffer(const Texture& mesh);
     D3DShader* RequireShader(const Shader& shader, const std::string& profile, const IdentifierWithName& renderPass);

@@ -3,45 +3,76 @@
 #include "Play.h"
 #include <imgui.h>
 
-void UIPlay::Initialise(Canvas* canvas)
-{
-	CanvasRenderable::Initialise(canvas);
-	mInputIntercept = canvas->RegisterInputIntercept([this](const std::shared_ptr<Input>& input)
-		{
-			if (input->IsKeyDown(0x2E/*VK_DELETE*/))
-			{
-				auto& selection = mPlay->GetSelection();
-				auto entity = selection->GetHeroEntity();
-				if (entity.is_valid()) entity.destruct();
-			}
-		}
-	);
+UIResources::UIResources()
+	: mPlay(nullptr), mPlayerId(-1) { }
+void UIResources::Initialise(Play* play, int playerId) {
+	mPlay = play;
+	mPlayerId = playerId;
 }
-void UIPlay::Render(CommandBuffer& cmdBuffer)
-{
-	//ImGui::ShowDemoWindow(&show_demo_window);
-	auto world = mPlay->GetWorld();
-
-	auto size = mCanvas->GetSize();
-
+void UIResources::Render(CommandBuffer& cmdBuffer) {
+	if (mPlay == nullptr) return;
+	auto& world = mPlay->GetWorld();
 	// Display the players resources
-	auto player = world->GetPlayer(1);
-	auto pdata = player.get<MetaComponents::PlayerData>();
-	if (ImGui::Begin("Player", 0, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse))
+	auto player = world->GetPlayer(mPlayerId);
+	auto* pdata = player.get<MetaComponents::PlayerData>();
+	auto size = mLayoutCache.GetSize();
+	if (ImGui::Begin("Player", 0, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDecoration))
 	{
-		auto wsize = ImGui::GetWindowSize();
-		ImGui::SetWindowSize(ImVec2(200.0f, 50.0f));
-		ImGui::SetWindowPos(ImVec2(size.x / 2 - wsize.x / 2, 10.0f), ImGuiCond_Always);
-		ImGui::BeginTable("Resources", 10);
+		auto& layout = mLayoutCache;
+		auto layoutSize = layout.GetSize();
+		ImGui::SetWindowSize(ImVec2(layoutSize.x, layoutSize.y), ImGuiCond_Always);
+		ImGui::SetWindowPos(ImVec2(layout.mPosition.x, layout.mPosition.y), ImGuiCond_Always);
+		ImGui::BeginTable("Resources", pdata->mResources.size());
 		for (auto res : pdata->mResources)
 		{
 			ImGui::TableNextColumn();
 			ImGui::Text("%d = %d", res.mResourceId, res.mAmount);
 		}
 		ImGui::EndTable();
-		ImGui::Image((ImTextureID)&mPlay->GetShadowPass()->mRenderTarget, ImVec2(200, 200));
+		//ImGui::Image((ImTextureID)&mPlay->GetShadowPass()->mRenderTarget, ImVec2(200, 200));
 	}
 	ImGui::End();
+}
+
+UIPlay::UIPlay(Play* play)
+	: mPlay(play)
+{
+	mResources = std::make_shared<UIResources>();
+	mResources->Initialise(play, 1);
+	mResources->SetTransform(CanvasTransform::MakeAnchored(Vector2(400.0f, 30.0f), Vector2(0.5f, 0.0f), Vector2(0.0f, 10.0f)));
+	AppendChild(mResources);
+}
+
+void UIPlay::Initialise(CanvasBinding binding) {
+	CanvasRenderable::Initialise(binding);
+	mInputIntercept = GetCanvas()->RegisterInputIntercept([this](const std::shared_ptr<Input>& input) {
+			if (input->IsKeyDown(0x2E/*VK_DELETE*/)) {
+				auto& selection = mPlay->GetSelection();
+				auto entity = selection->GetHeroEntity();
+				if (entity.is_valid()) entity.destruct();
+			}
+		}
+	);
+	mBackground = CanvasImage(&GetCanvas()->GetBuilder());
+}
+void UIPlay::Uninitialise(CanvasBinding binding) {
+	mInputIntercept = { };
+	CanvasRenderable::Uninitialise(binding);
+}
+void UIPlay::UpdateLayout(const CanvasLayout& parent) {
+	//mTransform.mAnchors[0] = fmod(mTransform.mAnchors[0] + 0.01f, 0.5f);
+	CanvasRenderable::UpdateLayout(parent);
+	mBackground.UpdateLayout(mLayoutCache);
+}
+void UIPlay::Compose(CanvasCompositor::Context& compositor) {
+	compositor.Append(mBackground);
+}
+void UIPlay::Render(CommandBuffer& cmdBuffer) {
+	CanvasRenderable::Render(cmdBuffer);
+
+	auto& world = mPlay->GetWorld();
+
+	auto size = mLayoutCache.GetSize();
 
 	// Display details of the selected unit
 	const auto& selection = mPlay->GetSelection();

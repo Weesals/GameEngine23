@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Canvas.h"
+#include "ui/Canvas.h"
 #include <imgui.h>
 
 class UIGraphicsDebug : public CanvasRenderable
@@ -23,7 +23,7 @@ public:
 
 		if (ImGui::Begin("GDbg", 0, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
 		{
-			int uiCount = mCanvas->GetDrawCount();
+			int uiCount = GetCanvas()->GetDrawCount();
 			auto& stats = mGraphics->mStatistics;
 			int frameData = cmdBuffer.GetFrameDataConsumed();
 			ImGui::Text("FPS = %.0f", fps, ms);

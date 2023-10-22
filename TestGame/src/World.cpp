@@ -1,3 +1,5 @@
+#define ECS_META_IMPL IMPL
+
 #include "World.h"
 
 #include <numbers>
@@ -71,6 +73,17 @@ void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std:
     auto& time = *mECS.get_mut<Singleton::Time>();
     time.mDeltaTime = 0.0f;
 
+    {
+        using namespace Components;
+        //ECS_META_COMPONENT(mECS, LineOfSight);
+        //ECS_META_COMPONENT(mECS, Durability);
+        //ECS_META_COMPONENT(mECS, Mobility);
+
+        mECS.component<Mobility>()
+            .member<float>("mSpeed")
+            .member<float>("mTurnSpeed");
+    }
+
     mPrototypes = std::make_shared<Prototypes>();
     mPrototypes->Load(mECS);
     mMutatedProtos = std::make_shared<MutatedPrototypes>();
@@ -126,6 +139,11 @@ void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std:
         }
     });
 
+    mECS.set<flecs::Rest>({});
+    mECS.import<flecs::monitor>();
+
+    //flecs::meta::StructType<Components::Renderable> ren;
+
     // Create a set of entities
     auto deerProtoId = mPrototypes->GetPrototypeId("Deer");
     auto treeProtoId = mPrototypes->GetPrototypeId("Tree");
@@ -178,12 +196,10 @@ void World::Render(CommandBuffer& cmdBuffer, RenderPassList passes)
             data.mWorld = t.GetMatrix();
             data.mHighlight = mWorldEffects.GetHighlightFor(e, time.mSteps);
             if (i >= r.mInstanceIds.size()) {
-                Material* useMat = material.get();
-                if (meshMat != nullptr) (useMat = meshMat.get())->InheritProperties(material);
-                //auto sceneId = mScene->GetScene()->AllocateInstance(sizeof(data));
-                int sceneId = mPassList->AddInstance(mesh.get(), useMat, sizeof(data));
-                //r.mInstanceIds.push_back(mScene->AppendInstance(mesh.get(), useMat, sceneId));
-                if (meshMat != nullptr) meshMat->RemoveInheritance(material);
+                InplaceVector<const Material*, 2> materials;
+                materials.push_back(material.get());
+                materials.push_back_if_not_null(meshMat.get());
+                int sceneId = mPassList->AddInstance(mesh.get(), materials, sizeof(data));
                 r.mInstanceIds.push_back(sceneId);
             }
             //auto& instance = mScene->GetInstance(r.mInstanceIds[i]);

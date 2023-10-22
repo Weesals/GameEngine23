@@ -28,6 +28,8 @@
 using namespace DirectX;
 using namespace DirectX::SimpleMath;
 
+#pragma optimize("gty", on)
+
 inline XMVECTOR XM_CALLCONV _XMLoadFloat2(const Vector2* pSource) noexcept {
     return DirectX::XMLoadFloat2((const XMFLOAT2*)pSource);
 }
@@ -4008,3 +4010,5 @@ void Viewport::Unproject(const Vector3& p, const Matrix& proj, const Matrix& vie
     v = XMVector3Unproject(v, x, y, width, height, minDepth, maxDepth, projection, *(XMMATRIX*)&view, *(XMMATRIX*)&world);
     XMStoreFloat3(&result, v);
 }
+
+#pragma optimize("gty", off)

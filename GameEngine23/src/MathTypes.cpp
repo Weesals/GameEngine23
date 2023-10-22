@@ -3,6 +3,8 @@
 #include <cmath>
 #include <algorithm>
 
+#pragma optimize("gty", on)
+
 Int2 Int2::Min(Int2 v1, Int2 v2) { return Int2(std::min(v1.x, v2.x), std::min(v1.y, v2.y)); }
 Int2 Int2::Max(Int2 v1, Int2 v2) { return Int2(std::max(v1.x, v2.x), std::max(v1.y, v2.y)); }
 Int2 Int2::Clamp(Int2 v, Int2 min, Int2 max) { return Int2(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y)); }
@@ -22,16 +24,18 @@ Frustum4::Frustum4(Matrix vp) {
 	mPlaneYs = vp.m[1][3] + Vector4(vp.m[1][0], -vp.m[1][0], vp.m[1][1], -vp.m[1][1]);
 	mPlaneZs = vp.m[2][3] + Vector4(vp.m[2][0], -vp.m[2][0], vp.m[2][1], -vp.m[2][1]);
 	mPlaneDs = vp.m[3][3] + Vector4(vp.m[3][0], -vp.m[3][0], vp.m[3][1], -vp.m[3][1]);
-	/*Vector4 lengths = Vector4(
-		1.f / Vector3(mPlaneXs[0], mPlaneYs[0], mPlaneZs[0]).Length(),
-		1.f / Vector3(mPlaneXs[1], mPlaneYs[1], mPlaneZs[1]).Length(),
-		1.f / Vector3(mPlaneXs[2], mPlaneYs[2], mPlaneZs[2]).Length(),
-		1.f / Vector3(mPlaneXs[3], mPlaneYs[3], mPlaneZs[3]).Length()
+}
+void Frustum4::Normalize() {
+	Vector4 factors = 1.0f / Vector4(
+		Vector3(mPlaneXs[0], mPlaneYs[0], mPlaneZs[0]).Length(),
+		Vector3(mPlaneXs[1], mPlaneYs[1], mPlaneZs[1]).Length(),
+		Vector3(mPlaneXs[2], mPlaneYs[2], mPlaneZs[2]).Length(),
+		Vector3(mPlaneXs[3], mPlaneYs[3], mPlaneZs[3]).Length()
 	);
-	mPlaneXs *= lengths;
-	mPlaneYs *= lengths;
-	mPlaneZs *= lengths;
-	mPlaneDs *= lengths;*/
+	mPlaneXs *= factors;
+	mPlaneYs *= factors;
+	mPlaneZs *= factors;
+	mPlaneDs *= factors;
 }
 Vector3 Frustum4::Left() const { return Vector3(mPlaneXs.x, mPlaneYs.x, mPlaneZs.x); }
 Vector3 Frustum4::Right() const { return Vector3(mPlaneXs.y, mPlaneYs.y, mPlaneZs.y); }
@@ -87,8 +91,11 @@ Frustum::Frustum(Matrix vp)
 {
 	mNearPlane = Vector4(vp.m[0][3] + vp.m[0][2], vp.m[1][3] + vp.m[1][2], vp.m[2][3] + vp.m[2][2], vp.m[3][3] + vp.m[3][2]);
 	mFarPlane  = Vector4(vp.m[0][3] - vp.m[0][2], vp.m[1][3] - vp.m[1][2], vp.m[2][3] - vp.m[2][2], vp.m[3][3] - vp.m[3][2]);
-	//mNearPlane /= mNearPlane.xyz().Length();
-	//mFarPlane /= mFarPlane.xyz().Length();
+}
+void Frustum::Normalize() {
+	Frustum4::Normalize();
+	mNearPlane /= mNearPlane.xyz().Length();
+	mFarPlane /= mFarPlane.xyz().Length();
 }
 Vector3 Frustum::Backward()  const { return mNearPlane.xyz(); }
 Vector3 Frustum::Forward()  const { return mFarPlane.xyz(); }
@@ -130,6 +137,18 @@ bool Frustum::GetIsVisible(Vector3 pos)  const {
 bool Frustum::GetIsVisible(Vector3 pos, Vector3 ext)  const {
 	return GetVisibility(pos, ext) > 0;
 }
+void Frustum::GetCorners(Vector3 corners[8]) const {
+	auto vp = CalculateViewProj().Invert();
+	int i = 0;
+	for (float z = -1.0f; z < 1.5f; z += 2.0f) {
+		for (float y = -1.0f; y < 1.5f; y += 2.0f) {
+			for (float x = -1.0f; x < 1.5f; x += 2.0f) {
+				auto point = Vector4::Transform(Vector4(x, y, z, 1.0f), vp);
+				corners[i++] = point.xyz() / point.w;
+			}
+		}
+	}
+}
 Frustum Frustum::TransformToLocal(const Matrix& tform) const {
 	return Frustum(tform * CalculateViewProj());
 }
@@ -139,3 +158,4 @@ Vector2 Frustum::GetProjectedDistancesNearFar(Vector3 pos) const {
 		Vector3::Dot(mFarPlane.xyz(), pos) + mFarPlane.w
 	);
 }
+#pragma optimize("gty", off)

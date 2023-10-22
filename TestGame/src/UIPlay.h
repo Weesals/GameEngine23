@@ -1,15 +1,31 @@
 #pragma once
 
-#include "Canvas.h"
+#include "ui/Canvas.h"
+#include "ui/CanvasElements.h"
 
 class Play;
 
-class UIPlay : public CanvasRenderable
-{
+class UIResources : public CanvasRenderable {
+	Play* mPlay;
+	int mPlayerId;
+public:
+	UIResources();
+	void Initialise(Play* play, int playerId);
+	void Render(CommandBuffer& cmdBuffer) override;
+};
+
+class UIPlay : public CanvasRenderable {
 	Play* mPlay;
 	Canvas::OnInput::Reference mInputIntercept;
+
+	CanvasImage mBackground;
+	std::shared_ptr<UIResources> mResources;
+
 public:
-	UIPlay(Play* play) : mPlay(play) { }
-	void Initialise(Canvas* canvas) override;
+	UIPlay(Play* play);
+	void Initialise(CanvasBinding binding) override;
+	void Uninitialise(CanvasBinding binding) override;
+	void UpdateLayout(const CanvasLayout& parent) override;
+	void Compose(CanvasCompositor::Context& composer);
 	void Render(CommandBuffer& cmdBuffer) override;
 };

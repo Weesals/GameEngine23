@@ -2,6 +2,7 @@
 
 #include <numbers>
 #include <FBXImport.h>
+#include "ui/CanvasImGui.h"
 
 #include "InputInteractions.h"
 #include "UIGraphicsDebug.h"
@@ -29,6 +30,14 @@ void Play::Initialise(Platform& platform)
     mGraphics = platform.GetGraphics();
     mInput = platform.GetInput();
 
+    // Create UI
+    auto clientSize = mGraphics->GetClientSize();
+    mCanvas = std::make_shared<CanvasImGui>();
+    mCanvas->SetSize(clientSize);
+    mPlayUI = std::make_shared<UIPlay>(this);
+    mCanvas->AppendChild(mPlayUI);
+    mCanvas->AppendChild(std::make_shared<UIGraphicsDebug>(mGraphics));
+
     // Set up input interactions
     mInputDispatcher = std::make_shared<InputDispatcher>();
     mInputDispatcher->Initialise(mInput);
@@ -41,13 +50,6 @@ void Play::Initialise(Platform& platform)
 
     // Create root resources
     mRootMaterial = std::make_shared<Material>();
-
-    auto clientSize = mGraphics->GetClientSize();
-    mCanvas = std::make_shared<Canvas>();
-    mCanvas->SetSize(clientSize);
-    mPlayUI = std::make_shared<UIPlay>(this);
-    mCanvas->AppendChild(mPlayUI);
-    mCanvas->AppendChild(std::make_shared<UIGraphicsDebug>(mGraphics));
 
     // Initialise other things
     mSelection = std::make_shared<SelectionManager>();
@@ -65,6 +67,8 @@ void Play::Initialise(Platform& platform)
     mCamera.SetPosition(Vector3::Transform(Vector3(0.0f, 0.0f, -90.0f), mCamera.GetOrientation()));
     mCamera.SetFOV(15.0f * (float)std::numbers::pi / 180.0f);
     mCamera.SetAspect(clientSize.x / clientSize.y);
+    mCamera.SetNearPlane(70.0f);
+    mCamera.SetFarPlane(110.0f);
 
     mSunLight = std::make_shared<DirectionalLight>();
 
@@ -118,8 +122,8 @@ void Play::Initialise(Platform& platform)
     });
 
     mScene = std::make_shared<RetainedScene>();
-    mBasePass = std::make_shared<RenderPass>("Base", platform.GetGraphics());
-    mShadowPass = std::make_shared<RenderPass>("Shadow", platform.GetGraphics());
+    mBasePass = std::make_shared<RenderPass>("Base");
+    mShadowPass = std::make_shared<RenderPass>("Shadow");
     mBasePass->mRetainedRenderer->SetScene(mScene);
     mBasePass->mOverrideMaterial = std::make_shared<Material>();
     mShadowPass->mRetainedRenderer->SetScene(mScene);
@@ -176,24 +180,41 @@ void Play::Step()
     mRootMaterial->SetUniform("View", mCamera.GetViewMatrix());
     mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix());
     mWorld->Step(dt);
-
-    auto timer = steady_clock::now() - now;
-    auto gfxDbg = mCanvas->FindChild<UIGraphicsDebug>();
-    gfxDbg->AppendStepTimer(timer);
 }
 
 void Play::Render(CommandBuffer& cmdBuffer)
 {
-    auto now = steady_clock::now();
-    Matrix view = mCamera.GetViewMatrix();
-    Matrix proj = mCamera.GetProjectionMatrix();
-    Matrix vp = view * proj;
     mBasePass->mRenderQueue.Clear();
-    mBasePass->UpdateViewProj(view, proj);
+    mBasePass->UpdateViewProj(mCamera.GetViewMatrix(), mCamera.GetProjectionMatrix());
+
+    // Create shadow projection based on frustum near/far corners
+    auto frustum = mBasePass->mFrustum;
+    Vector3 corners[8];
+    frustum.GetCorners(corners);
+    Matrix lightViewMatrix = Matrix::CreateLookAt(Vector3(20, 50, -100), Vector3(0, -5, 0), Vector3::Up);
+    for (auto& corner : corners) corner = Vector3::Transform(corner, lightViewMatrix);
+    auto lightFMin = std::accumulate(corners, corners + 8, Vector3(std::numeric_limits<float>::max()),
+        [](auto a, auto v) { return Vector3::Min(a, v); });
+    auto lightFMax = std::accumulate(corners, corners + 8, Vector3(std::numeric_limits<float>::lowest()),
+        [](auto a, auto v) { return Vector3::Max(a, v); });
+    // Or project onto terrain if smaller
+    frustum.IntersectPlane(Vector3::Up, 0.0f, corners);
+    frustum.IntersectPlane(Vector3::Up, 5.0f, corners + 4);
+    for (auto& corner : corners) corner = Vector3::Transform(corner, lightViewMatrix);
+    auto lightTMin = std::accumulate(corners, corners + 8, Vector3(std::numeric_limits<float>::max()),
+        [](auto a, auto v) { return Vector3::Min(a, v); });
+    auto lightTMax = std::accumulate(corners, corners + 8, Vector3(std::numeric_limits<float>::lowest()),
+        [](auto a, auto v) { return Vector3::Max(a, v); });
+
+    auto lightMin = Vector3::Max(lightFMin, lightTMin);
+    auto lightMax = Vector3::Min(lightFMax, lightTMax);
+
+    lightViewMatrix.Translation(lightViewMatrix.Translation() - (lightMin + lightMax) / 2.0f);
+    auto lightSize = lightMax - lightMin;
     mShadowPass->mRenderQueue.Clear();
     mShadowPass->UpdateViewProj(
-        Matrix::CreateLookAt(Vector3(20, 50, -100), Vector3(0, -5, 0), Vector3::Up),
-        Matrix::CreatePerspectiveFieldOfView(45 * 3.14f / 180.0f, 1.0f, 40.0f, 150.0f)
+        lightViewMatrix,
+        Matrix::CreateOrthographic(lightSize.x, lightSize.y, -lightSize.z / 2.0f, lightSize.z / 2.0f)
     );
     mShadowPass->mOverrideMaterial->SetUniform("View", mShadowPass->mView);
     mShadowPass->mOverrideMaterial->SetUniform("Projection", mShadowPass->mProjection);
@@ -223,10 +244,6 @@ void Play::Render(CommandBuffer& cmdBuffer)
 
     // Render UI
     mCanvas->Render(cmdBuffer);
-
-    auto timer = steady_clock::now() - now;
-    auto gfxDbg = mCanvas->FindChild<UIGraphicsDebug>();
-    gfxDbg->AppendRenderTimer(timer);
 }
 
 // Send an action request (move, attack, etc.) to selected entities

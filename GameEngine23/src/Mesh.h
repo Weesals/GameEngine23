@@ -196,6 +196,14 @@ struct BufferFormatType {
 		SInt =	0b10000100000100000000000001000100000100010000,
 		//UInt =	0b01000001000001000000000001000100000100010000,
 	};*/
+	static bool GetIsDepthBuffer(BufferFormat fmt) {
+		static uint64_t depthMask[] = {
+			   0b0000000010000000001000010000000000000000000100000000000000000000,
+			   0b0000000000000000000000000000000000000000000000000000000000000000,
+			//	^64		^56		^48		^40		^32		^24		^16		^8		^0
+		};
+		return (depthMask[fmt >> 7] & (1ull << (fmt & 63))) != 0;
+	}
 };
 
 struct BufferLayout {
@@ -207,6 +215,10 @@ struct BufferLayout {
 		BufferFormat mFormat = FORMAT_UNKNOWN;
 		void* mData = nullptr;
 		Element() { }
+		Element(const char* name, BufferFormat format)
+			: Element(name, format, 0, 0, nullptr) {
+			mItemSize = mBufferStride = BufferFormatType::GetType(format).GetByteSize();
+		}
 		Element(const char* name, BufferFormat format, int stride, int size, void* data)
 			: mBindName(name), mFormat(format), mBufferStride(stride), mItemSize(size), mData(data)
 		{ }
@@ -230,9 +242,13 @@ struct BufferLayout {
 	std::span<Element> GetElements() { return std::span<Element>(mElements, mElementCount); }
 	std::span<const Element> GetElements() const { return std::span<const Element>((const Element*)mElements, mElementCount); }
 	bool IsValid() { return mElementCount != 0; }
+	int CalculateBufferStride() const {
+		int size = 0;
+		for (auto& el : GetElements()) size += el.mItemSize;
+		return size;
+	}
 	void CalculateImplicitSize(int minSize = 0, bool roundTo256 = false) {
-		mBuffer.mSize = 0;
-		for (auto& el : GetElements()) mBuffer.mSize += el.mItemSize;
+		mBuffer.mSize = CalculateBufferStride();
 		mBuffer.mSize *= mCount;
 		mBuffer.mSize = std::max(mBuffer.mSize, minSize);
 		if (roundTo256) mBuffer.mSize = (mBuffer.mSize + 255) & (~255);
@@ -291,7 +307,6 @@ struct BufferView {
 	* 
 	*/
 	const BufferLayout::Element* mElement;
-	int mCount;
 	static bool IsFloat(BufferFormat fmt) { return 0b01011 & (int)fmt; }
 
 	template<bool B> struct Bool { constexpr static bool Get() { return B; } };
@@ -384,7 +399,7 @@ struct BufferView {
 			return value;
 		}
 	};
-	BufferView(const BufferLayout::Element* element, int count) : mElement(element), mCount(count) { }
+	BufferView(const BufferLayout::Element* element) : mElement(element) { }
 	Vector4 GetVec4(int index) const {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		auto type = BufferFormatType::GetType(mElement->mFormat);
@@ -615,15 +630,29 @@ struct TypedIterator : public TypedAccessor<T> {
 };
 
 template<typename T>
-struct TypedBufferView : public BufferView {
-	using BufferView::BufferView;
-	TypedBufferView() : BufferView(nullptr, -1) {  }
-	TypedIterator<T> begin() const { return TypedIterator<T>(*this, 0); }
-	TypedIterator<T> end() const { return TypedIterator<T>(*this, mCount); }
-	TypedAccessor<T> operator[](int i) const { assert(i >= 0 && i < mCount); return TypedAccessor<T>(*this, i); }
-	size_t size() const { return mCount; }
+struct TypedBufferView {
+	RangeInt mRange;
+	BufferView mView;
+	
+	TypedBufferView() : mView(nullptr) {  }
+	TypedBufferView(const BufferLayout::Element* element, int count) : mView(element), mRange(0, count) {  }
+	TypedBufferView(const BufferLayout::Element* element, RangeInt range) : mView(element), mRange(range) {  }
+	TypedIterator<T> begin() const { return TypedIterator<T>(mView, mRange.start); }
+	TypedIterator<T> end() const { return TypedIterator<T>(mView, mRange.end()); }
+	TypedAccessor<T> operator[](int i) const { assert(mRange.Contains(i)); return TypedAccessor<T>(mView, mRange.start + i); }
+	size_t size() const { return mRange.length; }
 	template<typename O>
-	TypedBufferView<O> Reinterpret() { return TypedBufferView<O>(mElement, mCount); }
+	TypedBufferView<O> Reinterpret() { return TypedBufferView<O>(mView.mElement, mRange); }
+	void Set(std::span<const Vector4> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const Vector3> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const Vector2> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const float> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const Int4> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const Int2> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const int> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	void Set(std::span<const ColorB4> values, int offset = 0) { mView.Set(values, offset + mRange.start); }
+	template<typename V>
+	void Set(int offset, const V value) { mView.Set(offset + mRange.start, value); }
 };
 
 // Store data related to drawing a mesh
@@ -797,6 +826,8 @@ public:
 	TypedBufferView<int> GetIndicesV(bool require = false) {
 		return TypedBufferView<int>(&mIndexBinds.GetElements()[0], mIndexBinds.mCount);
 	}
+
+	BufferLayoutPersistent& GetVertexBuffer() const { return mVertexBinds; }
 
 	void CreateMeshLayout(std::vector<const BufferLayout*>& bindings) const {
 		if (mVertexBinds.mBuffer.mSize == -1) mVertexBinds.CalculateImplicitSize();

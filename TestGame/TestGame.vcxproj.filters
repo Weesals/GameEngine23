@@ -61,7 +61,7 @@
     <ClCompile Include="src\InputInteractions.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
-    <ClCompile Include="src\Canvas.cpp">
+    <ClCompile Include="src\ui\Canvas.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
     <ClCompile Include="src\EntityComponents.cpp">
@@ -76,6 +76,9 @@
     <ClCompile Include="src\UIPlay.cpp">
       <Filter>Game\UI</Filter>
     </ClCompile>
+    <ClCompile Include="src\ui\CanvasImGui.cpp" />
+    <ClCompile Include="src\ui\CanvasMeshBuilder.cpp" />
+    <ClCompile Include="src\ui\CanvasTransform.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Platform.h">
@@ -108,7 +111,7 @@
     <ClInclude Include="src\InputInteractions.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
-    <ClInclude Include="src\Canvas.h">
+    <ClInclude Include="src\ui\Canvas.h">
       <Filter>Game\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\EntityComponents.h">
@@ -124,6 +127,10 @@
       <Filter>Game\UI</Filter>
     </ClInclude>
     <ClInclude Include="src\UIGraphicsDebug.h" />
+    <ClInclude Include="src\ui\CanvasImGui.h" />
+    <ClInclude Include="src\ui\CanvasMeshBuilder.h" />
+    <ClInclude Include="src\ui\CanvasTransform.h" />
+    <ClInclude Include="src\ui\CanvasElements.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="assets\include\lighting.hlsl">
@@ -200,5 +207,10 @@
     <CopyFileToFolders Include="assets\SM_ArcheryRange.fbx">
       <Filter>Content</Filter>
     </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\include\common.hlsl">
+      <Filter>Content\include</Filter>
+    </None>
   </ItemGroup>
 </Project>

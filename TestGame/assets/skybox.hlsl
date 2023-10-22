@@ -27,6 +27,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 Original code was translated and adapted for ShaderToy by P.Z.
 */
 
+#include "include/common.hlsl"
+
 static const float _Exposure = 1.0;
 static const float3 _GroundColor = float3(.40, .39, .38);
 static const float _SunSize = 0.04;
@@ -59,15 +61,11 @@ static const float kSamples = 2.0;
 #define MIE_G2 0.9801 
 #define SKY_GROUND_THRESHOLD 0.02 
 
-cbuffer ConstantBuffer : register(b0)
+cbuffer ConstantBuffer : register(b1)
 {
-    matrix ModelViewProjection;
     matrix InvModelViewProjection;
     float2 Resolution;
-    //float Time;
-    //float DayTime;
     float3 _WorldSpaceLightDir0;
-    float3 _LightColor0;
 };
 
 struct VSInput

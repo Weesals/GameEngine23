@@ -36,7 +36,7 @@ class GraphicsDeviceD3D12 :
 
     // Each frame needs its own allocator
     ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
-    D3DResourceCache::D3DRT mFrameBuffers[FrameCount];
+    D3DResourceCache::D3DRenderSurface mFrameBuffers[FrameCount];
 
 public:
     GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window);
@@ -55,7 +55,7 @@ public:
     IDXGISwapChain3* GetSwapChain() const { return mDevice.GetSwapChain(); }
 
     ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
-    const D3DResourceCache::D3DRT& GetBackBuffer() const { return mFrameBuffers[mBackBufferIndex]; }
+    const D3DResourceCache::D3DRenderSurface& GetBackBuffer() const { return mFrameBuffers[mBackBufferIndex]; }
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 

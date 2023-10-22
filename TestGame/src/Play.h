@@ -15,7 +15,7 @@
 #include "SelectionManager.h"
 #include "SelectionRenderer.h"
 
-#include "Canvas.h"
+#include "ui/Canvas.h"
 class UIPlay;
 
 using steady_clock = std::chrono::steady_clock;
@@ -72,6 +72,7 @@ public:
 
 	const std::shared_ptr<const GraphicsDeviceBase>& GetGraphics() const { return mGraphics; }
 	const std::shared_ptr<const Input>& GetInput() const { return mInput; }
+	const std::shared_ptr<Canvas>& GetCanvas() const { return mCanvas; }
 	const std::shared_ptr<SelectionManager>& GetSelection() const { return mSelection; }
 
 	const std::shared_ptr<RenderPass>& GetShadowPass() const { return mShadowPass; }

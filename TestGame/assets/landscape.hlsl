@@ -2,20 +2,14 @@
 
 #define PI 3.14159265359
 
-cbuffer WorldCB : register(b0)
-{
-    float3 _LightColor0;
-    float3 _ViewSpaceLightDir0;
-    float3 _ViewSpaceUpVector;
-    float4x4 ShadowIVViewProjection;
-}
+#include "include/common.hlsl"
+#include "include/lighting.hlsl"
+#include "include/noise.hlsl"
+
 cbuffer ConstantBuffer : register(b1)
 {
-    matrix Model;
     matrix ModelView;
     matrix ModelViewProjection;
-    //float2 Offsets[256];
-    float Time;
     float4 HeightRange;
 };
 
@@ -23,9 +17,6 @@ SamplerState g_sampler : register(s0);
 Texture2D<float4> HeightMap : register(t0);
 Texture2D<float4> GrassTexture : register(t1);
 Texture2D<float4> ShadowMap : register(t2);
-
-#include "include/lighting.hlsl"
-#include "include/noise.hlsl"
 
 struct VSInput
 {
@@ -88,7 +79,7 @@ float2 PermuteUV(float2 uv, float rnd)
 }
 
 float4 PSMain(PSInput input) : SV_TARGET
-{    
+{
     float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);
     

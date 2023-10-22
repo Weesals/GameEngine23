@@ -94,8 +94,18 @@ struct IdentifierWithName : Identifier
     IdentifierWithName() : Identifier() { }
     IdentifierWithName(const std::string_view& name) : Identifier(name), mName(name) { }
     IdentifierWithName(const char* name) : IdentifierWithName(std::string_view(name)) { }
+    IdentifierWithName(const IdentifierWithName& other) = default;
+    IdentifierWithName(IdentifierWithName&& other) = default;
+    ~IdentifierWithName() {
+        int a = 0;
+    }
+    IdentifierWithName& operator =(const IdentifierWithName& other) = default;
+    IdentifierWithName& operator =(IdentifierWithName&& other) = default;
     operator const std::string& () const { return mName; }
+    operator short() const { return mId; }
     const std::string& GetName() const { return mName; }
+    bool operator ==(const std::string& other) const { return mName == other; }
+    bool operator !=(const std::string& other) const { return mName != other; }
     static const IdentifierWithName None;
 };
 

@@ -136,7 +136,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="inc\flecs.c" />
-    <ClCompile Include="src\Canvas.cpp" />
+    <ClCompile Include="src\ui\Canvas.cpp" />
+    <ClCompile Include="src\ui\CanvasImGui.cpp" />
     <ClCompile Include="src\EntityComponents.cpp" />
     <ClCompile Include="src\EntitySystems.cpp" />
     <ClCompile Include="src\InputInteractions.cpp" />
@@ -150,11 +151,15 @@
     <ClCompile Include="src\SelectionManager.cpp" />
     <ClCompile Include="src\SelectionRenderer.cpp" />
     <ClCompile Include="src\UIPlay.cpp" />
+    <ClCompile Include="src\ui\CanvasMeshBuilder.cpp" />
+    <ClCompile Include="src\ui\CanvasTransform.cpp" />
     <ClCompile Include="src\World.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\flecs.h" />
-    <ClInclude Include="src\Canvas.h" />
+    <ClInclude Include="src\ui\Canvas.h" />
+    <ClInclude Include="src\ui\CanvasElements.h" />
+    <ClInclude Include="src\ui\CanvasImGui.h" />
     <ClInclude Include="src\EntityComponents.h" />
     <ClInclude Include="src\EntitySystems.h" />
     <ClInclude Include="src\InputInteractions.h" />
@@ -168,6 +173,8 @@
     <ClInclude Include="src\SelectionRenderer.h" />
     <ClInclude Include="src\UIGraphicsDebug.h" />
     <ClInclude Include="src\UIPlay.h" />
+    <ClInclude Include="src\ui\CanvasMeshBuilder.h" />
+    <ClInclude Include="src\ui\CanvasTransform.h" />
     <ClInclude Include="src\World.h" />
   </ItemGroup>
   <ItemGroup>
@@ -333,6 +340,14 @@
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
       <FileType>Document</FileType>
     </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="assets\include\common.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+      <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</DeploymentContent>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

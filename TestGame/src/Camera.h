@@ -7,6 +7,8 @@ class Camera
 	// Projection parameters
 	float mFOV;
 	float mAspect;
+	float mNearPlane;
+	float mFarPlane;
 
 	// View parameters
 	Vector3 mPosition;
@@ -28,12 +30,18 @@ public:
 	// Getters/setters
 	void SetFOV(float fov) { mFOV = fov; InvalidateProj(); }
 	void SetAspect(float aspect) { mAspect = aspect; InvalidateProj(); }
+	void SetNearPlane(float near) { mNearPlane = near; InvalidateProj(); }
+	void SetFarPlane(float far) { mFarPlane = far; InvalidateProj(); }
+
+	Vector3 GetRight() const { return Vector3::Transform(Vector3(1.0f, 0.0f, 0.0f), GetOrientation()); }
+	Vector3 GetUp() const { return Vector3::Transform(Vector3(0.0f, 1.0f, 0.0f), GetOrientation()); }
+	Vector3 GetForward() const { return Vector3::Transform(Vector3(0.0f, 0.0f, 1.0f), GetOrientation()); }
 
 	void SetPosition(Vector3 pos) { mPosition = pos; InvalidateView(); }
-	const Vector3& GetPosition() { return mPosition; }
+	const Vector3& GetPosition() const { return mPosition; }
 
 	void SetOrientation(Quaternion ori) { mOrientation = ori; InvalidateView(); }
-	const Quaternion& GetOrientation() { return mOrientation; }
+	const Quaternion& GetOrientation() const { return mOrientation; }
 
 	// Move along the horizontal plane, relative to camera orientation
 	// Also smooths motion

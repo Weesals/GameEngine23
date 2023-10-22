@@ -11,13 +11,13 @@ void CommandBuffer::DrawMesh(const Mesh* mesh, const Material* material, const D
     for (auto* cb : pipeline->mConstantBuffers) {
         uint8_t tmpData[4096];
         for (auto& val : cb->mValues) {
-            auto data = material->GetUniformBinaryData(val.mNameId);
+            auto data = material->GetUniformBinaryData(val.mName);
             std::memcpy(tmpData + val.mOffset, data.data(), data.size());
         }
         resources[i++] = RequireConstantBuffer(std::span<uint8_t>(tmpData, cb->mSize));
     }
     for (auto* rb : pipeline->mResources) {
-        auto* data = material->GetUniformTexture(rb->mNameId);
+        auto* data = material->GetUniformTexture(rb->mName);
         resources[i++] = data == nullptr ? nullptr : data->get();
     }
     DrawMesh(tBindingLayout, pipeline,

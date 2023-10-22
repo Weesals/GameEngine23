@@ -13,7 +13,6 @@ typedef DirectX::SimpleMath::Matrix Matrix;
 typedef DirectX::SimpleMath::Quaternion Quaternion;
 typedef DirectX::SimpleMath::Color Color;
 typedef DirectX::SimpleMath::ColorB4 ColorB4;
-
 struct Int2
 {
 	int x, y;
@@ -29,6 +28,8 @@ struct Int2
 	inline Int2 operator -(const int o) const { return Int2(x - o, y - o); }
 	inline Int2 operator *(const int o) const { return Int2(x * o, y * o); }
 	inline Int2 operator /(const int o) const { return Int2(x / o, y / o); }
+	inline bool operator ==(Int2 o) const noexcept { return x == o.x && y == o.y; }
+	inline bool operator !=(Int2 o) const noexcept { return x == o.x && y == o.y; }
 
 	static Int2 Min(Int2 v1, Int2 v2);
 	static Int2 Max(Int2 v1, Int2 v2);
@@ -66,6 +67,40 @@ struct Int4
 	inline Int4 operator =(Vector4 v) { return Int4((int)v.x, (int)v.y, (int)v.z, (int)v.w); }
 	inline operator Vector4() const { return Vector4((float)x, (float)y, (float)z, (float)w); }
 };
+namespace std
+{
+	template<> struct less<Int2>
+	{
+		bool operator()(const Int2& V1, const Int2& V2) const noexcept
+		{
+			return ((V1.x < V2.x) || ((V1.x == V2.x) && (V1.y < V2.y)));
+		}
+	};
+	template<> struct less<Int4>
+	{
+		bool operator()(const Int4& V1, const Int4& V2) const noexcept
+		{
+			return ((V1.x < V2.x)
+				|| ((V1.x == V2.x) && (V1.y < V2.y))
+				|| ((V1.x == V2.x) && (V1.y == V2.y) && (V1.z < V2.z))
+				|| ((V1.x == V2.x) && (V1.y == V2.y) && (V1.z == V2.z) && (V1.w < V2.w)));
+		}
+	};
+	template <> struct std::hash<Int2>
+	{
+		std::size_t operator()(const Int2& k) const
+		{
+			return *(size_t*)&k;
+		}
+	};
+	template <> struct std::hash<Int4>
+	{
+		std::size_t operator()(const Int4& k) const
+		{
+			return ((size_t*)&k)[0] + ((size_t*)&k)[1] * 1234;
+		}
+	};
+}
 
 struct RectInt
 {
@@ -80,10 +115,11 @@ struct RectInt
 struct RangeInt
 {
 	int start, length;
-	int end() { return start + length; }
+	int end() const { return start + length; }
 	void end(int end) { length = end - start; }
 	RangeInt() : start(0), length(0) { }
 	RangeInt(int start, int length) : start(start), length(length) { }
+	bool Contains(int value) const { value -= start; return (uint32_t)value < (uint32_t)length; }
 	static RangeInt FromBeginEnd(int begin, int end) { return RangeInt(begin, end - begin); }
 };
 
@@ -129,6 +165,7 @@ struct Frustum4
 	Vector3 Down() const;
 	Vector3 Up() const;
 	Frustum4(Matrix vp);
+	void Normalize();
 	float GetVisibility(Vector3 pos) const;
 	float GetVisibility(Vector3 pos, Vector3 ext) const;
 	bool GetIsVisible(Vector3 pos) const;
@@ -147,11 +184,13 @@ struct Frustum : public Frustum4
 	Vector3 Backward() const;
 	Vector3 Forward() const;
 	Frustum(Matrix vp);
+	void Normalize();
 	Matrix CalculateViewProj() const;
 	float GetVisibility(Vector3 pos) const;
 	float GetVisibility(Vector3 pos, Vector3 ext) const;
 	bool GetIsVisible(Vector3 pos) const;
 	bool GetIsVisible(Vector3 pos, Vector3 ext) const;
+	void GetCorners(Vector3 corners[8]) const;
 
 	Frustum TransformToLocal(const Matrix& tform) const;
 protected:

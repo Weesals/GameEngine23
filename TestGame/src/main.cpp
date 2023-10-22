@@ -1,5 +1,6 @@
 #include "Platform.h"
 #include "Play.h"
+#include "UIGraphicsDebug.h"
 
 #include "RetainedRenderer.h"
 
@@ -18,9 +19,14 @@ int main()
     // Run the game loop
     while (platform.MessagePump() == 0)
     {
-        // Update the game
-        play.Step();
+        auto gfxDbg = play.GetCanvas()->FindChild<UIGraphicsDebug>();
 
+        // Update the game
+        auto now = steady_clock::now();
+        play.Step();
+        gfxDbg->AppendStepTimer(steady_clock::now() - now);
+
+        now = steady_clock::now();
         // Begin rendering
         cmdBuffer.Reset();
 
@@ -29,6 +35,8 @@ int main()
 
         // Finish rendering
         cmdBuffer.Execute();
+
+        gfxDbg->AppendRenderTimer(steady_clock::now() - now);
 
         platform.Present();
     }

@@ -1,37 +1,11 @@
-#include "Canvas.h"
+#include "CanvasImGui.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
 
-// All renderables will receive a reference to the canvas
-// when they are added to the canvas hierarchy
-void CanvasRenderable::Initialise(Canvas* canvas)
+CanvasImGui::CanvasImGui()
 {
-	mCanvas = canvas;
-}
-void CanvasRenderable::AppendChild(const std::shared_ptr<CanvasRenderable>& child)
-{
-	child->Initialise(mCanvas);
-	mChildren.push_back(child);
-}
-void CanvasRenderable::RemoveChild(const std::shared_ptr<CanvasRenderable>& child)
-{
-	auto i = std::find(mChildren.begin(), mChildren.end(), child);
-	if (i != mChildren.end()) mChildren.erase(i);
-}
-void CanvasRenderable::Render(CommandBuffer& cmdBuffer)
-{
-	for (auto& item : mChildren)
-	{
-		item->Render(cmdBuffer);
-	}
-}
-
-Canvas::Canvas()
-{
-	// ImGui buffers are pushed into this mesh for rendering
 	mMesh = std::make_shared<Mesh>("Canvas");
-	mMaterial = std::make_shared<Material>(L"assets/ui.hlsl");
 
 	// Initialise the ImGui system
 	IMGUI_CHECKVERSION();
@@ -52,31 +26,18 @@ Canvas::Canvas()
 	// to the canvas (itself)
 	Initialise(this);
 }
-Canvas::~Canvas()
-{
+CanvasImGui::~CanvasImGui() {
 	ImGui::DestroyContext();
 }
 
-void Canvas::SetSize(Int2 size)
-{
-	mSize = size;
+void CanvasImGui::SetSize(Int2 size) {
+	Canvas::SetSize(size);
 	ImGuiIO& io = ImGui::GetIO();
 	io.DisplaySize = ImVec2((float)size.x, (float)size.y);
-	mMaterial->SetUniform("Projection", Matrix::CreateOrthographicOffCenter(0.0f, io.DisplaySize.x, io.DisplaySize.y, 0.0f, 0.0f, 500.0f));
-}
-Int2 Canvas::GetSize() const
-{
-	return mSize;
-}
-
-Canvas::OnInput::Reference Canvas::RegisterInputIntercept(const Canvas::OnInput::Function& callback)
-{
-	return mOnInput.Add(callback);
 }
 
 // Check if the specified point is over any active windows
-bool Canvas::GetIsPointerOverUI(Vector2 v) const
-{
+bool CanvasImGui::GetIsPointerOverUI(Vector2 v) const {
 	auto context = ImGui::GetCurrentContext();
 	for (auto window : context->Windows)
 	{
@@ -84,19 +45,10 @@ bool Canvas::GetIsPointerOverUI(Vector2 v) const
 		auto rect = window->Rect();
 		if (rect.Contains(ImVec2(v.x, v.y))) return true;
 	}
-	return false;
+	return Canvas::GetIsPointerOverUI(v);
 }
 
-void Canvas::AppendChild(const std::shared_ptr<CanvasRenderable>& child)
-{
-	CanvasRenderable::AppendChild(child);
-}
-void Canvas::RemoveChild(const std::shared_ptr<CanvasRenderable>& child)
-{
-	CanvasRenderable::RemoveChild(child);
-}
-
-void Canvas::Update(const std::shared_ptr<Input>& input)
+void CanvasImGui::Update(const std::shared_ptr<Input>& input)
 {
 	ImGuiIO& io = ImGui::GetIO();
 	const auto& pointers = input->GetPointers();
@@ -106,13 +58,13 @@ void Canvas::Update(const std::shared_ptr<Input>& input)
 		io.AddMousePosEvent(pointer->mPositionCurrent.x, pointer->mPositionCurrent.y);
 		io.AddMouseButtonEvent(0, pointer->IsButtonDown(0));
 	}
-	mOnInput.Invoke(input);
+	Canvas::Update(input);
 }
-void Canvas::Render(CommandBuffer& cmdBuffer)
-{
+
+void CanvasImGui::Render(CommandBuffer& cmdBuffer) {
 	ImGui::NewFrame();
 
-	CanvasRenderable::Render(cmdBuffer);
+	Canvas::Render(cmdBuffer);
 
 	ImGui::Render();
 
@@ -181,20 +133,5 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 			++mDrawCount;
 		}
 		iCount += cmdList->IdxBuffer.Size;
-	}
-}
-
-CanvasInterceptInteraction::CanvasInterceptInteraction(const std::shared_ptr<Canvas>& canvas)
-	: mCanvas(canvas) { }
-ActivationScore CanvasInterceptInteraction::GetActivation(Performance performance)
-{
-	if (mCanvas->GetIsPointerOverUI(performance.GetPositionCurrent())) return ActivationScore::MakeActive();
-	return ActivationScore::MakeNone();
-}
-void CanvasInterceptInteraction::OnUpdate(Performance& performance)
-{
-	if (!performance.IsDown() && !mCanvas->GetIsPointerOverUI(performance.GetPositionCurrent()))
-	{
-		performance.SetInteraction(nullptr, true);
 	}
 }

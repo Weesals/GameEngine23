@@ -1,5 +1,6 @@
 #include "LandscapeRenderer.h"
 #include <ResourceLoader.h>
+#include <RetainedRenderer.h>
 
 #include <algorithm>
 #include <numeric>

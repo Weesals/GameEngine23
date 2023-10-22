@@ -88,6 +88,8 @@ public:
             D3D12_SHADER_BUFFER_DESC bufferDesc;
             pBufferReflection->GetDesc(&bufferDesc);
 
+            if (bufferDesc.Type != D3D_CT_CBUFFER) continue;
+
             D3D12_SHADER_INPUT_BIND_DESC bindDesc;
             for (UINT b = 0; b < shaderDesc.BoundResources; ++b)
             {
@@ -97,7 +99,7 @@ public:
 
             // The data we have extracted for this constant buffer
             ConstantBuffer cbuffer;
-            cbuffer.mNameId = Identifier::RequireStringId(cbuffer.mName = bufferDesc.Name);
+            cbuffer.mName = bufferDesc.Name;
             cbuffer.mSize = bufferDesc.Size;
             cbuffer.mBindPoint = bindDesc.BindPoint;
 
@@ -110,13 +112,12 @@ public:
                 pVariableReflection->GetDesc(&variableDesc);
 
                 // The values for this uniform
-                UniformValue value = {
-                    variableDesc.Name,
-                    Identifier::RequireStringId(variableDesc.Name),
-                    (int)variableDesc.StartOffset,
-                    (int)variableDesc.Size,
+                UniformValue value {
+                    .mName = variableDesc.Name,
+                    .mOffset = (int)variableDesc.StartOffset,
+                    .mSize = (int)variableDesc.Size,
                 };
-                cbuffer.mValues.push_back(value);
+                cbuffer.mValues.emplace_back(value);
             }
             mReflection.mConstantBuffers.push_back(cbuffer);
         }
@@ -129,7 +130,7 @@ public:
             if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE)
             {
                 ResourceBinding rbinding;
-                rbinding.mNameId = Identifier::RequireStringId(rbinding.mName = resourceDesc.Name);
+                rbinding.mName = resourceDesc.Name;
                 rbinding.mBindPoint = resourceDesc.BindPoint;
                 rbinding.mType = ResourceTypes::R_Texture;
                 mReflection.mResourceBindings.push_back(rbinding);
@@ -137,7 +138,7 @@ public:
             if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED)
             {
                 ResourceBinding bbinding;
-                bbinding.mNameId = Identifier::RequireStringId(bbinding.mName = resourceDesc.Name);
+                bbinding.mName = resourceDesc.Name;
                 bbinding.mBindPoint = resourceDesc.BindPoint;
                 bbinding.mStride = resourceDesc.NumSamples;
                 bbinding.mType = ResourceTypes::R_SBuffer;
@@ -149,8 +150,8 @@ public:
             D3D12_SIGNATURE_PARAMETER_DESC inputDesc;
             pShaderReflection->GetInputParameterDesc(i, &inputDesc);
             ShaderBase::InputParameter parameter;
-            parameter.mNameId = Identifier::RequireStringId(parameter.mName = "");
-            parameter.mSemanticId = Identifier::RequireStringId(parameter.mSemantic = inputDesc.SemanticName);
+            parameter.mName = "";
+            parameter.mSemantic = inputDesc.SemanticName;
             parameter.mSemanticIndex = inputDesc.SemanticIndex;
             parameter.mRegister = inputDesc.Register;
             parameter.mMask = inputDesc.Mask;

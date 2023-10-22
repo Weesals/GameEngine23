@@ -2,16 +2,7 @@
 
 #define PI 3.14159265359
 
-cbuffer WorldCB : register(b0)
-{
-    float3 _LightColor0;
-    float3 _ViewSpaceLightDir0;
-    float3 _ViewSpaceUpVector;
-    float4x4 View;
-    float4x4 ViewProjection;
-    float4x4 ShadowViewProjection;
-}
-
+#include "include/common.hlsl"
 #include "include/lighting.hlsl"
 
 struct VSInput
@@ -58,14 +49,7 @@ PSInput VSMain(VSInput input)
     result.viewPos = mul(View, float4(worldPos, 1.0)).xyz;
     result.normal = mul(View, float4(worldNrm, 0.0)).xyz;
     result.uv = input.uv;
-    
-    /*result.position = lerp(
-        float4(input.position.xyz / 5.0, 1.0),
-        result.position,
-        0.5 + 0.5 * sin(Time * 6.0)
-    );*/
-    //result.position.x += sin(Time);
-    
+        
 #if defined(VULKAN)
     result.position.y = -result.position.y;
 #endif
@@ -74,7 +58,7 @@ PSInput VSMain(VSInput input)
 }
 
 float4 PSMain(PSInput input) : SV_TARGET
-{    
+{
     InstanceData instance = instanceData[input.primitiveId];
     
     float3 viewDir = normalize(input.viewPos);
@@ -107,13 +91,29 @@ float4 PSMain(PSInput input) : SV_TARGET
     return float4(o, 1);
 }
 
-PSInput ShadowCast_VSMain(VSInput input)
+struct ShadowCast_VSInput
 {
-    return VSMain(input);
+    uint primitiveId : INSTANCE;
+    float4 position : POSITION;
+};
+struct ShadowCast_PSInput
+{
+    float4 position : SV_POSITION;
+};
+
+ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input)
+{
+    ShadowCast_PSInput result;
+    InstanceData instance = instanceData[input.primitiveId];
+    float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
+    result.position = mul(ViewProjection, float4(worldPos, 1.0));  
+#if defined(VULKAN)
+    result.position.y = -result.position.y;
+#endif
+    return result;
 }
 
-float4 ShadowCast_PSMain(PSInput input) : SV_TARGET
+float4 ShadowCast_PSMain(ShadowCast_PSInput input) : SV_TARGET
 {
-    float d = input.position.z;
-    return float4(d.xxx, 1);
+    return 1.0;
 }

@@ -6,7 +6,9 @@
 #include "GraphicsUtility.h"
 #include "GraphicsDeviceBase.h"
 #include "RenderTarget2D.h"
-#include "RetainedRenderer.h"
+
+class RenderPass;
+class RetainedRenderer;
 
 class RenderQueue
 {
@@ -33,6 +35,7 @@ public:
 	void Clear();
 	std::span<const void*> RequireMaterialResources(CommandBuffer& cmdBuffer,
 		const PipelineLayout* pipeline, const Material* material);
+	std::span<const BufferLayout*> ImmortalizeBufferLayout(CommandBuffer& cmdBuffer, std::span<const BufferLayout*> bindings);
 	void AppendMesh(const char* name,
 		const PipelineLayout* pipeline, const BufferLayout** buffers,
 		const void** resources, RangeInt instances);
@@ -43,68 +46,35 @@ public:
 
 };
 
-struct RenderPass
-{
-	std::string mName;
-	RenderQueue mRenderQueue;
-	Matrix mView;
-	Matrix mProjection;
-	Frustum mFrustum;
-	std::shared_ptr<RenderTarget2D> mRenderTarget;
-	std::shared_ptr<Material> mOverrideMaterial;
-	std::shared_ptr<RetainedRenderer> mRetainedRenderer;
-	RenderPass(std::string_view name, const std::shared_ptr<GraphicsDeviceBase>& graphics);
-	void UpdateViewProj(const Matrix& view, const Matrix& proj);
-	const IdentifierWithName& GetRenderPassOverride() const {
-		return mOverrideMaterial != nullptr ? mOverrideMaterial->GetRenderPassOverride() : IdentifierWithName::None;
-	}
-};
-class RenderPassList {
-	std::shared_ptr<RetainedScene> mScene;
-	SparseArray<int> mPassIds;
-	std::vector<RangeInt> mPassIdsBySceneId;
-public:
-	std::vector<RenderPass*> mPasses;
-	RenderPassList(const std::shared_ptr<RetainedScene>& scene)
-		: mScene(scene) { }
-	std::vector<RenderPass*>::iterator begin() { return mPasses.begin(); }
-	std::vector<RenderPass*>::iterator end() { return mPasses.end(); }
-	int AddInstance(const Mesh* mesh, const Material* material, int dataSize);
-	template<class T>
-	bool UpdateInstanceData(int sceneId, const T& tdata) {
-		return mScene->UpdateInstanceData(sceneId, tdata);
-	}
-	void RemoveInstance(int sceneId);
-};
-
-class MeshDraw
-{
+class MeshDraw {
+	friend class RetainedRenderer;
 protected:
+	const Mesh* mMesh;
+	std::vector<const Material*> mMaterials;
 	std::vector<const BufferLayout*> mBufferLayout;
-	std::vector<const void*> mResources;
 	struct RenderPassCache {
 		Identifier mRenderPass;
 		const PipelineLayout* mPipeline;
 	};
 	std::vector<RenderPassCache> mPassCache;
 public:
-	const Mesh* mMesh;
-	const Material* mMaterial;
 	MeshDraw();
-	MeshDraw(Mesh* mesh, Material* material);
-	~MeshDraw();
+	MeshDraw(const Mesh* mesh, const Material* material);
+	MeshDraw(const Mesh* mesh, std::span<const Material*> materials);
+	virtual ~MeshDraw();
+	const Mesh* GetMesh() const { return mMesh; }
 	virtual void InvalidateMesh();
 	const RenderPassCache* GetPassCache(CommandBuffer& cmdBuffer, const IdentifierWithName& renderPass);
 	void Draw(CommandBuffer& cmdBuffer, const DrawConfig& config);
 };
 
-class MeshDrawInstanced : public MeshDraw
-{
+class MeshDrawInstanced : public MeshDraw {
 protected:
 	BufferLayoutPersistent mInstanceBuffer;
 public:
 	MeshDrawInstanced();
-	MeshDrawInstanced(Mesh* mesh, Material* material);
+	MeshDrawInstanced(const Mesh* mesh, const Material* material);
+	MeshDrawInstanced(const Mesh* mesh, std::span<const Material*> materials);
 	~MeshDrawInstanced();
 	virtual void InvalidateMesh() override;
 	int GetInstanceCount();
