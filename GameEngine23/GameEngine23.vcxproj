@@ -73,11 +73,11 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;.\externals\soil\include;.\externals\stb_image\</IncludePath>
-    <LibraryPath>.\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>.\lib;.\externals\freetype\objs;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;.\externals\soil\include;.\externals\stb_image\</IncludePath>
-    <LibraryPath>.\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>.\lib;.\externals\freetype\objs;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -114,14 +114,14 @@
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;.\externals\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <Lib>
-      <AdditionalLibraryDirectories>.\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\lib;.\externals\freetype\objs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -132,7 +132,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;.\externals\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -141,7 +141,7 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <Lib>
-      <AdditionalLibraryDirectories>.\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\lib;.\externals\freetype\objs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -175,6 +175,8 @@
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="inc\SimpleMath.h" />
     <ClInclude Include="src\Texture.h" />
+    <ClInclude Include="src\ui\font\FontRenderer.h" />
+    <ClInclude Include="src\utility\DistanceFieldGenerator.h" />
     <ClInclude Include="src\VulkanShader.h" />
     <ClInclude Include="src\WindowBase.h" />
     <ClInclude Include="src\WindowWin32.h" />
@@ -202,6 +204,8 @@
     <ClCompile Include="src\Resources.cpp" />
     <ClCompile Include="src\RetainedRenderer.cpp" />
     <ClCompile Include="src\Texture.cpp" />
+    <ClCompile Include="src\ui\font\FontRenderer.cpp" />
+    <ClCompile Include="src\ui\sprite\Sprite.cpp" />
     <ClCompile Include="src\VulkanShader.cpp" />
     <ClCompile Include="src\WindowWin32.cpp" />
   </ItemGroup>

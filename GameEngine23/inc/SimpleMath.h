@@ -130,6 +130,9 @@ namespace DirectX
             float Length() const noexcept;
             float LengthSquared() const noexcept;
 
+            float Sum() const noexcept;
+            float AbsSum() const noexcept;
+
             Vector2 Normalize() noexcept;
             void Normalize(Vector2& result) const noexcept;
 
@@ -913,10 +916,10 @@ namespace DirectX
             {
                 struct
                 {
-                    uint8_t x;
-                    uint8_t y;
-                    uint8_t z;
-                    uint8_t w;
+                    uint8_t r;
+                    uint8_t g;
+                    uint8_t b;
+                    uint8_t a;
                 };
                 uint32_t v;
             };
@@ -929,18 +932,28 @@ namespace DirectX
             ColorB4(ColorB4&&) = default;
             ColorB4& operator=(ColorB4&&) = default;
 
-            constexpr ColorB4(uint8_t _x, uint8_t _y, uint8_t _z, uint8_t _w) noexcept : x(_x), y(_y), z(_z), w(_w) {}
+            constexpr ColorB4(uint8_t _x, uint8_t _y, uint8_t _z, uint8_t _w) noexcept : r(_x), g(_y), b(_z), a(_w) {}
             explicit constexpr ColorB4(uint32_t Packed) noexcept : v(Packed) {}
-            explicit ColorB4(_In_reads_(4) const uint8_t* pArray) noexcept : x(pArray[0]), y(pArray[1]), z(pArray[2]), w(pArray[3]) {}
+            explicit ColorB4(_In_reads_(4) const uint8_t* pArray) noexcept : ColorB4(pArray[0], pArray[1], pArray[2], pArray[3]) {}
             explicit ColorB4(float _x, float _y, float _z, float _w) noexcept;
             explicit ColorB4(_In_reads_(4) const float* pArray) noexcept;
 
             ColorB4& operator= (uint32_t Packed) noexcept { v = Packed; return *this; }
+            uint32_t GetPacked() const { return v; }
+
+            explicit operator Vector4() const { return Vector4(r, g, b, a) / 255.0f; }
 
             static const ColorB4 White;
             static const ColorB4 Black;
+            static const ColorB4 Clear;
             static ColorB4 FromARGB(uint32_t packed) {
                 return ColorB4(packed);// (packed << 8) | (packed >> 24));
+            }
+            static ColorB4 MakeWhite(uint8_t alpha = 255) {
+                return ColorB4((uint8_t)255, (uint8_t)255, (uint8_t)255, alpha);
+            }
+            static ColorB4 MakeBlack(uint8_t alpha = 255) {
+                return ColorB4((uint8_t)0, (uint8_t)0, (uint8_t)0, alpha);
             }
         };
 

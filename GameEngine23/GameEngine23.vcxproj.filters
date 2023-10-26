@@ -129,6 +129,8 @@
     <ClInclude Include="src\RenderQueue.h" />
     <ClInclude Include="src\RenderTarget2D.h" />
     <ClInclude Include="src\Lighting.h" />
+    <ClInclude Include="src\ui\font\FontRenderer.h" />
+    <ClInclude Include="src\utility\DistanceFieldGenerator.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -195,6 +197,8 @@
     <ClCompile Include="src\GraphicsDeviceBase.cpp" />
     <ClCompile Include="src\RenderTarget2D.cpp" />
     <ClCompile Include="src\Lighting.cpp" />
+    <ClCompile Include="src\ui\font\FontRenderer.cpp" />
+    <ClCompile Include="src\ui\sprite\Sprite.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="inc\SimpleMath.inl">

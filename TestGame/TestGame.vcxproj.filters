@@ -79,6 +79,7 @@
     <ClCompile Include="src\ui\CanvasImGui.cpp" />
     <ClCompile Include="src\ui\CanvasMeshBuilder.cpp" />
     <ClCompile Include="src\ui\CanvasTransform.cpp" />
+    <ClCompile Include="src\ui\CanvasElements.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Platform.h">
@@ -161,6 +162,7 @@
       <Filter>Content</Filter>
     </FxCompile>
     <FxCompile Include="assets\retained.hlsl" />
+    <FxCompile Include="assets\text.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\T_CharactersAtlas.png">
@@ -212,5 +214,8 @@
     <None Include="assets\include\common.hlsl">
       <Filter>Content\include</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Font Include="assets\Roboto-Regular.ttf" />
   </ItemGroup>
 </Project>

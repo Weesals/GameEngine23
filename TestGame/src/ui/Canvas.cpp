@@ -15,14 +15,22 @@ CanvasRenderable::CanvasRenderable() {
 }
 void CanvasRenderable::Initialise(CanvasBinding binding) {
 	mBinding = binding;
+	if (mBinding.mCanvas != nullptr)
+		for (auto& child : mChildren) child->Initialise(CanvasBinding(this));
 }
 void CanvasRenderable::Uninitialise(CanvasBinding binding) {
+	if (mBinding.mCanvas != nullptr)
+		for (auto& child : mChildren) child->Uninitialise(CanvasBinding(this));
+	mBinding = { };
 }
 void CanvasRenderable::AppendChild(const std::shared_ptr<CanvasRenderable>& child) {
-	child->Initialise(CanvasBinding(this));
+	if (mBinding.mCanvas != nullptr)
+		child->Initialise(CanvasBinding(this));
 	mChildren.push_back(child);
 }
 void CanvasRenderable::RemoveChild(const std::shared_ptr<CanvasRenderable>& child) {
+	if (mBinding.mCanvas != nullptr)
+		child->Uninitialise(CanvasBinding(this));
 	auto i = std::find(mChildren.begin(), mChildren.end(), child);
 	if (i != mChildren.end()) mChildren.erase(i);
 }
@@ -35,6 +43,13 @@ void CanvasRenderable::UpdateLayout(const CanvasLayout& parent) {
 		item->UpdateLayout(mLayoutCache);
 	}
 }
+void CanvasRenderable::Compose(CanvasCompositor::Context& composer) {
+	for (auto& item : mChildren) {
+		auto childContext = composer.InsertChild((int)(uintptr_t)item.get());
+		item->Compose(childContext);
+		childContext.ClearRemainder();
+	}
+}
 void CanvasRenderable::Render(CommandBuffer& cmdBuffer) {
 	for (auto& item : mChildren) {
 		item->Render(cmdBuffer);
@@ -42,6 +57,7 @@ void CanvasRenderable::Render(CommandBuffer& cmdBuffer) {
 }
 
 Canvas::Canvas()
+	: mCompositor(&mMeshBuilder)
 {
 	// ImGui buffers are pushed into this mesh for rendering
 	mMesh = std::make_shared<Mesh>("Canvas");
@@ -86,7 +102,11 @@ void Canvas::Render(CommandBuffer& cmdBuffer)
 	CanvasRenderable::UpdateLayout(rootLayout);
 	CanvasRenderable::Render(cmdBuffer);
 
-	//mMeshBuilder.Render(cmdBuffer, mMaterial.get());
+	auto builder = mCompositor.CreateBuilder();
+	auto root = mCompositor.CreateRoot(&builder);
+	Compose(root);
+	root.ClearRemainder();
+	mCompositor.Render(cmdBuffer, mMaterial.get());
 }
 
 CanvasInterceptInteraction::CanvasInterceptInteraction(const std::shared_ptr<Canvas>& canvas)

@@ -89,7 +89,7 @@ void LandscapeRenderer::Render(CommandBuffer& cmdBuffer, RenderPass& pass)
 		int heightMax = std::accumulate(heightmap.begin(), heightmap.end(), std::numeric_limits<int>::min(),
 			[](int v, auto item) { return std::max(v, (int)item.Height); });
 		// Get the inner texture data
-		auto& pxHeightData = mHeightMap->GetRawData();
+		auto pxHeightData = mHeightMap->GetRawData();
 		auto range = mDirtyRegion.Range;
 		for (int y = range.GetMin().y; y < range.GetMax().y; ++y)
 		{

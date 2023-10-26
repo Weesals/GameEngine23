@@ -294,7 +294,7 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
     // Update the texture data
     auto srcData = tex.GetData();
     D3D12_SUBRESOURCE_DATA textureData = {};
-    textureData.pData = reinterpret_cast<UINT8*>(srcData.data());
+    textureData.pData = reinterpret_cast<const UINT8*>(srcData.data());
     textureData.RowPitch = 4 * size.x;
     textureData.SlicePitch = textureData.RowPitch * size.y;
     auto uploadBuffer = AllocateUploadBuffer((int)uploadSize);
@@ -315,8 +315,8 @@ D3DResourceCache::D3DBufferWithSRV* D3DResourceCache::RequireCurrentTexture(cons
         {
             mDefaultTexture = std::make_shared<Texture>();
             mDefaultTexture->SetSize(4);
-            auto& data = mDefaultTexture->GetData();
-            std::fill((uint32_t*)data.begin()._Ptr, (uint32_t*)data.end()._Ptr, 0xffe0e0e0);
+            auto data = mDefaultTexture->GetRawData();
+            std::fill((uint32_t*)&*data.begin(), (uint32_t*)(&*data.begin() + data.size()), 0xffe0e0e0);
             mDefaultTexture->MarkChanged();
         }
         texture = mDefaultTexture.get();

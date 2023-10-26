@@ -8,9 +8,13 @@ class Play;
 class UIResources : public CanvasRenderable {
 	Play* mPlay;
 	int mPlayerId;
+	CanvasImage mBackground;
 public:
 	UIResources();
-	void Initialise(Play* play, int playerId);
+	void Setup(Play* play, int playerId);
+	void Initialise(CanvasBinding binding) override;
+	void UpdateLayout(const CanvasLayout& parent) override;
+	void Compose(CanvasCompositor::Context& composer) override;
 	void Render(CommandBuffer& cmdBuffer) override;
 };
 
@@ -19,6 +23,7 @@ class UIPlay : public CanvasRenderable {
 	Canvas::OnInput::Reference mInputIntercept;
 
 	CanvasImage mBackground;
+	CanvasText mText;
 	std::shared_ptr<UIResources> mResources;
 
 public:
@@ -26,6 +31,6 @@ public:
 	void Initialise(CanvasBinding binding) override;
 	void Uninitialise(CanvasBinding binding) override;
 	void UpdateLayout(const CanvasLayout& parent) override;
-	void Compose(CanvasCompositor::Context& composer);
+	void Compose(CanvasCompositor::Context& composer) override;
 	void Render(CommandBuffer& cmdBuffer) override;
 };

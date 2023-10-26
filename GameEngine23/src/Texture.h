@@ -22,12 +22,13 @@ class Texture : public TextureBase
 	std::vector<uint8_t> mData;
 
 public:
+	using TextureBase::TextureBase;
 	void SetSize(Int2 size);
 	Int2 GetSize() const;
 
 	// Set texture data in 0xAABBGGRR format
 	void SetPixels32Bit(std::span<const uint32_t> colors);
-	std::vector<uint8_t>& GetRawData();
-	const std::vector<uint8_t>& GetData() const;
+	std::span<uint8_t> GetRawData();
+	std::span<const uint8_t> GetData() const;
 
 };

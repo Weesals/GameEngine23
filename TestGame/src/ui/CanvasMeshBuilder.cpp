@@ -75,17 +75,17 @@ RangeInt CanvasMeshBuilder::RequireVertices(int vcount) {
 	mVertices.mCount += vcount;
 	return range;
 }
-RangeInt CanvasMeshBuilder::RequireIndices(int vcount) {
-	RangeInt range = mFreeIndices.Allocate(vcount);
+RangeInt CanvasMeshBuilder::RequireIndices(int icount) {
+	RangeInt range = mFreeIndices.Allocate(icount);
 	if (range.start >= 0) return range;
 	mIndices.mCount -= mFreeIndices.Compact(mIndices.mCount);
-	range = RangeInt(mIndices.mCount, vcount);
+	range = RangeInt(mIndices.mCount, icount);
 	if (range.end() * mIndexBufferStrideCache >= mIndices.mBuffer.mSize) {
 		int newSize = mIndices.mBuffer.mSize + 1024 * mIndexBufferStrideCache;
 		newSize = std::max(newSize, range.end() * mIndexBufferStrideCache);
 		if (!ResizeBuffer(mIndices, newSize)) return RangeInt(0, 0);
 	}
-	mIndices.mCount += vcount;
+	mIndices.mCount += icount;
 	return range;
 }
 
@@ -104,13 +104,4 @@ void CanvasMeshBuilder::Deallocate(int id) {
 CanvasVertices CanvasMeshBuilder::MapVertices(int id) {
 	auto& range = mRanges[id];
 	return CanvasVertices(this, range);
-}
-void CanvasMeshBuilder::Render(CommandBuffer& cmdBuffer, const Material* material) {
-	std::vector<const BufferLayout*> bindings;
-	bindings.push_back(&mIndices);
-	bindings.push_back(&mVertices);
-	std::span<const Material*> materials(&material, 1);
-	auto pso = cmdBuffer.GetGraphics()->RequirePipeline(bindings, materials);
-	auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, pso, materials);
-	cmdBuffer.DrawMesh(bindings, pso, resources, DrawConfig::MakeDefault());
 }

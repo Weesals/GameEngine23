@@ -2,6 +2,9 @@
 
 #include <stdint.h>
 #include <cassert>
+#include <span>
+#include <vector>
+#include <algorithm>
 
 template<class T, int Size = 7>
 struct InplaceVector {

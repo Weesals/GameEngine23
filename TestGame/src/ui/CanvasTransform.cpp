@@ -12,6 +12,15 @@ Vector3 CanvasLayout::TransformPositionN(Vector3 v) const {
 		+ mAxisY.xyz() * v.y
 		+ mAxisZ * v.z;
 }
+CanvasLayout CanvasLayout::MinMaxNormalized(float xmin, float ymin, float xmax, float ymax) {
+	return CanvasLayout{
+		.mAxisX = mAxisX * (xmax - xmin),
+		.mAxisY = mAxisY * (ymax - ymin),
+		.mAxisZ = mAxisZ,
+		.mPosition = mPosition + mAxisX.xyz() * xmin + mAxisY.xyz() * ymin
+	};
+}
+
 
 void CanvasTransform::Apply(const CanvasLayout& parent, CanvasLayout& layout) {
 	Vector2 size(parent.mAxisX.w, parent.mAxisY.w);

@@ -23,11 +23,11 @@ void Texture::SetPixels32Bit(std::span<const uint32_t> colors)
 		});
 	MarkChanged();
 }
-std::vector<uint8_t>& Texture::GetRawData()
+std::span<uint8_t> Texture::GetRawData()
 {
 	return mData;
 }
-const std::vector<uint8_t>& Texture::GetData() const
+std::span<const uint8_t> Texture::GetData() const
 {
 	return mData;
 }

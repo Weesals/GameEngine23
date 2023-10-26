@@ -4,6 +4,7 @@
 // SimpleMath at least provides a consistent interface for
 // math operations that can be replicated
 #include "../inc/SimpleMath.h"
+#include <cmath>
 
 typedef DirectX::SimpleMath::Plane Plane;
 typedef DirectX::SimpleMath::Vector2 Vector2;
@@ -13,6 +14,74 @@ typedef DirectX::SimpleMath::Matrix Matrix;
 typedef DirectX::SimpleMath::Quaternion Quaternion;
 typedef DirectX::SimpleMath::Color Color;
 typedef DirectX::SimpleMath::ColorB4 ColorB4;
+
+class Easing {
+protected:
+	struct Power2Ease {		// Smooth at start
+		float operator () (float l) const { return l * l; }
+	};
+	struct ElasticEase {	// Smooth at start (ie. inverted from normal use)
+		float mSteps = 2.5f;
+		ElasticEase(float steps) : mSteps(steps) { }
+		float operator () (float l) const { return std::cosf((1.0f - l) * mSteps * 3.1416f) * l * l; }
+	};
+	struct BackEase {
+		float mAmplitude = 1.75f;
+		BackEase(float amplitude) : mAmplitude(amplitude) { }
+		float operator () (float l) const { auto l2 = l * l; return (1.0f + mAmplitude) * l2 * l - mAmplitude * l2; }
+	};
+	template<class T> struct _EaseMode {
+		T mEase;
+		_EaseMode(const T& ease) : mEase(ease) { }
+	};
+public:
+	struct Modes {
+		template<class T> struct _EaseIn : public _EaseMode<T> {
+			using _EaseMode<T>::_EaseMode;
+			float operator () (float l) const { return this->mEase(l); }
+			auto WithFromTo(float from, float to) const { MakeWithFromTo(*this, from, to); }
+		};
+		template<class T> struct _EaseOut : public _EaseMode<T> {
+			using _EaseMode<T>::_EaseMode;
+			float operator () (float l) const { return 1.0f - this->mEase(1.0f - l); }
+		};
+		template<class T> struct _WithFromTo : public _EaseMode<T> {
+			float mFrom, mRange;
+			_WithFromTo(const T& ease, float from = 0.0f, float to = 1.0f) :
+				_EaseMode<T>(ease), mFrom(from), mRange(to - from) { }
+			float operator () (float l) const { return this->mEase(l) * mRange + mFrom; }
+		};
+		template<class T> struct _WithDuration : public _EaseMode<T> {
+			float mDuration;
+			_WithDuration(const T& ease, float duration = 1.0f) :
+				_EaseMode<T>(ease), mDuration(duration) { }
+			float operator () (float l) const { return l < 0 ? 0.0f : l > mDuration ? 1.0f : this->mEase(l / mDuration); }
+		};
+	};
+	static auto Power2In(float duration = 1.0f) {
+		return MakeWithDuration(MakeEaseIn(Power2Ease()), duration);
+	}
+	static auto Power2Out(float duration = 1.0f) {
+		return MakeWithDuration(MakeEaseOut(Power2Ease()), duration);
+	}
+	static auto ElasticIn(float duration = 1.0f, float steps = 2.5f) {
+		return MakeWithDuration(MakeEaseIn(ElasticEase(steps)), duration);
+	}
+	static auto ElasticOut(float duration = 1.0f, float steps = 2.5f) {
+		return MakeWithDuration(MakeEaseOut(ElasticEase(steps)), duration);
+	}
+	static auto BackIn(float duration = 1.0f, float amplitude = 1.75f) {
+		return MakeWithDuration(MakeEaseIn(BackEase(amplitude)), duration);
+	}
+	static auto BackOut(float duration = 1.0f, float amplitude = 1.75f) {
+		return MakeWithDuration(MakeEaseOut(BackEase(amplitude)), duration);
+	}
+	static auto MakeEaseIn(auto fn) { return Modes::_EaseIn<decltype(fn)>(fn); }
+	static auto MakeEaseOut(auto fn) { return Modes::_EaseOut<decltype(fn)>(fn); }
+	static auto MakeWithDuration(auto fn, float dur) { return Modes::_WithDuration<decltype(fn)>(fn, dur); }
+	static auto MakeWithFromTo(auto fn, float from, float to) { return Modes::_WithFromTo<decltype(fn)>(fn, from, to); }
+};
+
 struct Int2
 {
 	int x, y;

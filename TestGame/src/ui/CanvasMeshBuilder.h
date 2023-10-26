@@ -33,12 +33,16 @@ public:
 	TypedBufferView<uint32_t> GetIndices(RangeInt range) const;
 	void MarkVerticesChanged(RangeInt range);
 	void MarkIndicesChanged(RangeInt range);
+
+	const BufferLayoutPersistent* GetVertices() const { return &mVertices; }
 };
 
 struct CanvasVertices : public CanvasMeshBuffer::CanvasRange {
 	CanvasMeshBuffer* mBuilder;
 	CanvasVertices(CanvasMeshBuffer* builder, CanvasMeshBuffer::CanvasRange range)
 		: CanvasMeshBuffer::CanvasRange(range), mBuilder(builder) { }
+	int GetVertexCount() const { return mVertexRange.length; }
+	int GetIndexCount() const { return mIndexRange.length; }
 	TypedBufferView<Vector3> GetPositions();
 	TypedBufferView<Vector2> GetTexCoords();
 	TypedBufferView<ColorB4> GetColors();
@@ -59,8 +63,6 @@ public:
 	void Deallocate(int id);
 
 	CanvasVertices MapVertices(int id);
-
-	void Render(CommandBuffer& cmdBuffer, const Material* material);
 
 };
 

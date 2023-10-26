@@ -14,6 +14,7 @@ struct CanvasLayout {
 	Vector3 TransformPosition(Vector3 v) const;
 	// Normalized position (0 to 1) (faster)
 	Vector3 TransformPositionN(Vector3 v) const;
+	CanvasLayout MinMaxNormalized(float xmin, float ymin, float xmax, float ymax);
 };
 
 struct CanvasTransform {

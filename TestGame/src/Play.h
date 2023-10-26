@@ -69,6 +69,7 @@ public:
     void Initialise(Platform& platform);
 
 	Camera& GetCamera() { return mCamera; }
+	float GetTime() const { return mTime; }
 
 	const std::shared_ptr<const GraphicsDeviceBase>& GetGraphics() const { return mGraphics; }
 	const std::shared_ptr<const Input>& GetInput() const { return mInput; }

@@ -10,6 +10,7 @@
 
 #include "CanvasMeshBuilder.h"
 #include "CanvasTransform.h"
+#include "CanvasElements.h"
 
 class Canvas;
 class CanvasRenderable;
@@ -40,6 +41,7 @@ public:
 	virtual void RemoveChild(const std::shared_ptr<CanvasRenderable>& child);
 	void SetTransform(const CanvasTransform& transform);
 	virtual void UpdateLayout(const CanvasLayout& parent);
+	virtual void Compose(CanvasCompositor::Context& composer);
 	virtual void Render(CommandBuffer& cmdBuffer);
 
 	template<class T>
@@ -68,6 +70,7 @@ protected:
 	int mDrawCount;
 
 	CanvasMeshBuilder mMeshBuilder;
+	CanvasCompositor mCompositor;
 
 public:
 

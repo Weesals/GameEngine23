@@ -314,6 +314,9 @@ float Vector2::LengthSquared() const noexcept
     return XMVectorGetX(X);
 }
 
+float Vector2::Sum() const noexcept { return x + y; }
+float Vector2::AbsSum() const noexcept { return (x < 0.0f ? -x : x) + (y < 0.0f ? -y : y); }
+
 float Vector2::Dot(const Vector2& V1, const Vector2& V2) noexcept
 {
     using namespace DirectX;
@@ -3801,12 +3804,8 @@ ColorB4::ColorB4
     float _z,
     float _w
 ) noexcept
-{
-    x = (uint8_t)(_x * 255);
-    y = (uint8_t)(_x * 255);
-    z = (uint8_t)(_x * 255);
-    w = (uint8_t)(_x * 255);
-}
+    : ColorB4((uint8_t)(_x * 255), (uint8_t)(_y * 255), (uint8_t)(_z * 255), (uint8_t)(_w * 255))
+{ }
 
 //------------------------------------------------------------------------------
 _Use_decl_annotations_
@@ -3818,6 +3817,7 @@ ColorB4::ColorB4(const float* pArray) noexcept
 auto t = 255U;
 const ColorB4 ColorB4::White = ColorB4(255_uc, 255_uc, 255_uc, 255_uc);
 const ColorB4 ColorB4::Black = ColorB4(0_uc, 0_uc, 0_uc, 255_uc);
+const ColorB4 ColorB4::Clear = ColorB4(0_uc, 0_uc, 0_uc, 0_uc);
 
 
 

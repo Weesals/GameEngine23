@@ -255,17 +255,18 @@ struct BufferLayout {
 	}
 };
 struct BufferLayoutPersistent : public BufferLayout {
-private:
+protected:
 	std::vector<Element> mElementsStore;
 public:
-	BufferLayoutPersistent() : BufferLayout() { mElementsStore.reserve(2); }
+	int mAllocCount = 0;
+	BufferLayoutPersistent() : BufferLayout() { }
 	BufferLayoutPersistent(size_t identifier, int size, Usage usage, int count, int reserve = 4)
 		: BufferLayout(identifier, size, usage, count)
 	{
 		mElementsStore.reserve(reserve);
 	}
 	BufferLayoutPersistent(const BufferLayoutPersistent& other) { *this = other; }
-	BufferLayoutPersistent(BufferLayoutPersistent&& other) { *this = std::move(other); }
+	BufferLayoutPersistent(BufferLayoutPersistent&& other) noexcept { *this = std::move(other); }
 	BufferLayoutPersistent& operator =(const BufferLayoutPersistent& other) {
 		*(BufferLayout*)this = *(BufferLayout*)&other;
 		mElementsStore = other.mElementsStore;
@@ -283,6 +284,20 @@ public:
 		mElements = mElementsStore.data();
 		mElementCount = (int)mElementsStore.size();
 		return mElementCount - 1;
+	}
+
+	// Note! Unsfe! Must manually free later!
+	bool AllocResize(int newCount) {
+		int newSizeBytes = 0;
+		for (auto& el : GetElements()) {
+			auto newData = realloc(el.mData, el.mBufferStride * newCount);
+			if (newData != nullptr) el.mData = newData;
+			else return false;
+			newSizeBytes += el.mItemSize;
+		}
+		mBuffer.mSize = newSizeBytes * newCount;
+		mAllocCount = newCount;
+		return true;
 	}
 };
 template<class T>
@@ -428,17 +443,17 @@ struct BufferView {
 		if (type.size == BufferFormatType::Size8 && type.IsIntOrNrm()) {std::memcpy(&value, data, mElement->mItemSize); return value; }
 		if (type.IsIntOrNrm()) {
 			if (type.IsNormalized()) {
-				if (type.IsSigned()) Getter::GetO4<true, true, true>(&value.x, type.size, data, mElement->mItemSize);
-				else				Getter::GetO4<true, false, true>(&value.x, type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) Getter::GetO4<true, true, true>(&value.r, type.size, data, mElement->mItemSize);
+				else				Getter::GetO4<true, false, true>(&value.r, type.size, data, mElement->mItemSize);
 			}
 			else {
-				if (type.IsSigned()) Getter::GetO4<false, true, true>(&value.x, type.size, data, mElement->mItemSize);
-				else				Getter::GetO4<false, false, true>(&value.x, type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) Getter::GetO4<false, true, true>(&value.r, type.size, data, mElement->mItemSize);
+				else				Getter::GetO4<false, false, true>(&value.r, type.size, data, mElement->mItemSize);
 			}
 			return value;
 		}
 		if (type.IsFloat()) {
-			Getter::ConvertTypedGet<true, uint8_t, true, true, float>(&value.x, data, mElement->mItemSize);
+			Getter::ConvertTypedGet<true, uint8_t, true, true, float>(&value.r, data, mElement->mItemSize);
 			return value;
 		}
 		throw "Not implemented";
@@ -475,7 +490,8 @@ struct BufferView {
 	template<> float Get<float>(int index) const { return GetFloat(index); }
 	template<> Int4 Get<Int4>(int index) const { return GetInt4(index); }
 	template<> ColorB4 Get<ColorB4>(int index) const { return GetColorB4(index); }
-	template<> int Get<int>(int index) const { return GetInt(index); }
+	template<> int32_t Get<int32_t>(int index) const { return GetInt(index); }
+	template<> uint32_t Get<uint32_t>(int index) const { return (uint32_t)GetInt(index); }
 
 	void Set(int index, Vector4 value) {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
@@ -500,7 +516,7 @@ struct BufferView {
 	void Set(int index, ColorB4 value) {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		if (mElement->mFormat == FORMAT_R8G8B8A8_UNORM || mElement->mFormat == FORMAT_R8G8B8A8_UINT) { std::memcpy(data, &value, mElement->mItemSize); return; }
-		Set(index, Vector4(value.x, value.y, value.z, value.w) / 255.0f);
+		Set(index, (Vector4)value);
 	}
 	void Set(int index, Int4 value) {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
@@ -538,7 +554,8 @@ struct BufferView {
 		}
 		throw "Not supported";
 	}
-	void Set(int index, int value) { Set(index, Int2(value, value)); }
+	void Set(int index, int32_t value) { Set(index, Int2(value, value)); }
+	void Set(int index, uint32_t value) { Set(index, Int2((int)value, (int)value)); }
 
 	void Set(std::span<const Vector4> values, int offset = 0) {
 		if (Float32FastPath(offset, values.data(), (int)values.size(), 4)) return;
@@ -564,7 +581,11 @@ struct BufferView {
 		if (Int32FastPath(offset, values.data(), (int)values.size(), 2)) return;
 		for (int i = 0; i < values.size(); ++i) Set(offset + i, values[i]);
 	}
-	void Set(std::span<const int> values, int offset = 0) {
+	void Set(std::span<const int32_t> values, int offset = 0) {
+		if (Int32FastPath(offset, values.data(), (int)values.size(), 1)) return;
+		for (int i = 0; i < values.size(); ++i) Set(offset + i, values[i]);
+	}
+	void Set(std::span<const uint32_t> values, int offset = 0) {
 		if (Int32FastPath(offset, values.data(), (int)values.size(), 1)) return;
 		for (int i = 0; i < values.size(); ++i) Set(offset + i, values[i]);
 	}
@@ -575,7 +596,7 @@ struct BufferView {
 
 	template<class T>
 	bool DataFastPath(BufferFormatType type, int index, const void* data, int count, int chCount) {
-		if (type.GetComponentCount() == chCount) { memcpy((T*)mElement->mData + index, data, count * chCount * sizeof(T)); return true; }
+		if (type.GetComponentCount() == chCount) { memcpy((T*)mElement->mData + index * chCount, data, count * chCount * sizeof(T)); return true; }
 		int dstCnt = mElement->mItemSize / sizeof(T);
 		int cpyCnt = std::min(chCount, dstCnt);
 		T* dstData = (T*)mElement->mData;
@@ -639,7 +660,7 @@ struct TypedBufferView {
 	TypedBufferView(const BufferLayout::Element* element, RangeInt range) : mView(element), mRange(range) {  }
 	TypedIterator<T> begin() const { return TypedIterator<T>(mView, mRange.start); }
 	TypedIterator<T> end() const { return TypedIterator<T>(mView, mRange.end()); }
-	TypedAccessor<T> operator[](int i) const { assert(mRange.Contains(i)); return TypedAccessor<T>(mView, mRange.start + i); }
+	TypedAccessor<T> operator[](int i) const { i += mRange.start; assert(mRange.Contains(i)); return TypedAccessor<T>(mView, i); }
 	size_t size() const { return mRange.length; }
 	template<typename O>
 	TypedBufferView<O> Reinterpret() { return TypedBufferView<O>(mView.mElement, mRange); }
