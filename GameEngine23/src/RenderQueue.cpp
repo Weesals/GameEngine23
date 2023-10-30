@@ -56,7 +56,7 @@ void RenderQueue::AppendMesh(const char* name, CommandBuffer& cmdBuffer, const M
 	AppendMesh(name, pipeline, &pbuffLayout.front(), resources.data(), RangeInt(0, 1));
 }
 
-void RenderQueue::Flush(CommandBuffer& cmdBuffer)
+void RenderQueue::Render(CommandBuffer& cmdBuffer)
 {
 	// Setup the instance buffer
 	mInstanceBufferLayout.mElements[0].mData = mInstancesBuffer.data();

@@ -393,3 +393,15 @@ public:
 
 	static Material NullInstance;
 };
+
+class RootMaterial : public Material {
+	void InitialiseDefaults();
+public:
+	RootMaterial();
+	RootMaterial(const std::wstring& shaderPath);
+	RootMaterial(const std::shared_ptr<Shader>& vertexShader, const std::shared_ptr<Shader>& pixelShader);
+
+	void SetResolution(Vector2 res);
+	void SetView(const Matrix& view);
+	void SetProjection(const Matrix& proj);
+};

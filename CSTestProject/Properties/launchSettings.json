@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "CSTestProject": {
+      "commandName": "Project",
+      "workingDirectory": "../TestGame",
+      "nativeDebugging": true
+    }
+  }
+}

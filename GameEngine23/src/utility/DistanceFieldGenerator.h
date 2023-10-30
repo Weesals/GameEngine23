@@ -7,12 +7,16 @@
 #include <chrono>
 #include <algorithm>
 
+extern "C" {
+    __declspec(dllimport) void __stdcall OutputDebugStringA(const char* lpOutputString);
+}
+
 class DistanceFieldGenerator {
     std::vector<Vector2> values;
 public:
     void SeedAAEdges(std::span<const ColorB4> texdata, Int2 tsize) {
         values.resize(tsize.x * tsize.y);
-        std::fill(values.begin(), values.end(), Vector2(0.0f, 1000000.0f));
+        std::fill(values.begin(), values.end(), Vector2(1000000.0f, 1000000.0f));
 
         auto Observe = [](Vector2& item, Vector2 value, int r) {
             if (value.LengthSquared() < item.LengthSquared()) {
@@ -57,33 +61,33 @@ public:
                 pN2 = pN1;
                 for (int i = 0; i < 4; ++i) {
                     auto sign4 = ((pN64 >> (i * 8)) & 0x80808080);
-                    if (sign4 == 0x00000080 || sign4 == 0x80808000) {
-                        auto& rcorners = *(Corners*)(pN + i);
-                        auto eX = (float)(127 - rcorners.p00) / (rcorners.p10 - rcorners.p00);
-                        auto eY = (float)(127 - rcorners.p00) / (rcorners.p01 - rcorners.p00);
-                        Vector2 n(eY, eX);
-                        float len = Vector2::Dot(n, n);
-                        if (len > 0.0001f) n /= std::sqrt(len);
-                        auto e = n * (Vector2::Dot(n, Vector2(0.0f, eY)) - Vector2::Dot(n, Vector2(1.0f, 1.0f)));
-                        Observe(values[indices[(i + 0) & 3]], n * (n.y * eY), i);
-                        Observe(values[indices[(i + 1) & 3]], Vector2(eX - 1.0f, 0.0f), i);
-                        Observe(values[indices[(i + 2) & 3]], e, i);// n* (-1.0f * n.x - n.y * (1.0f - eY)), i);
-                        Observe(values[indices[(i + 3) & 3]], Vector2(0.0f, eY - 1.0f), i);
-                        break;
-                    }
+                    // Two pixels aligned
                     if (sign4 == 0x80800000) {
                         auto& rcorners = *(Corners*)(pN + i);
                         auto e0 = (float)(127 - rcorners.p00) / (rcorners.p01 - rcorners.p00);
                         auto e1 = (float)(127 - rcorners.p10) / (rcorners.p11 - rcorners.p10);
                         Vector2 n(e0 - e1, 1.0f);
-                        float len = Vector2::Dot(n, n);
-                        if (len > 0.0001f) n /= std::sqrt(len);
+                        n /= std::sqrt(Vector2::Dot(n, n));
                         Vector2 n1 = n.x > 0.0f ? n : Vector2(0.0f, 1.0f);
                         Vector2 n2 = n.x < 0.0f ? n : Vector2(0.0f, 1.0f);
                         Observe(values[indices[(i + 0) & 3]], n1 * (e0 - 0.0f), i);
                         Observe(values[indices[(i + 1) & 3]], n2 * (e1 - 0.0f), i);
                         Observe(values[indices[(i + 2) & 3]], n1 * (e1 - 1.0f), i);
                         Observe(values[indices[(i + 3) & 3]], n2 * (e0 - 1.0f), i);
+                        break;
+                    }
+                    // Single pixel
+                    sign4 &= 0xff00ffff;
+                    if (sign4 == 0x00000080 || sign4 == 0x80008000) {
+                        auto& rcorners = *(Corners*)(pN + i);
+                        auto eX = (float)(127 - rcorners.p00) / (rcorners.p10 - rcorners.p00);
+                        auto eY = (float)(127 - rcorners.p00) / (rcorners.p01 - rcorners.p00);
+                        Vector2 n(eY, eX);
+                        float nD = 1.0f / Vector2::Dot(n, n);
+                        Observe(values[indices[(i + 0) & 3]], n * ((n.y * eY) * nD), i);
+                        Observe(values[indices[(i + 1) & 3]], Vector2(eX - 1.0f, 0.0f), i);
+                        Observe(values[indices[(i + 2) & 3]], n * ((n.y * eY - n.x - n.y) * nD), i);
+                        Observe(values[indices[(i + 3) & 3]], Vector2(0.0f, eY - 1.0f), i);
                         break;
                     }
                 }
@@ -99,37 +103,21 @@ public:
         
         // Calculate distances along Y axis
         for (int x = 0; x < tsize.x; ++x) {
-            float lastEdgeY = -1000000.0f;
+            int lastEdgeY = 0;
+            Vector2 lastEdge = Vector2(0.0f, -1000000.0f);
             for (int y = 0; y < tsize.y; ++y) {
                 int iy = y * tsize.x;
-                auto pp1 = texdata[x + iy].a;
-                if (y > 0) {
-                    auto py0 = texdata[x + iy - tsize.x].a;
-                    if ((pp1 > 127) != (py0 > 127)) {
-                        float prevEdgeY = lastEdgeY;
-                        lastEdgeY = y - (float)(127 - pp1) / (py0 - pp1);
-                        int start = std::max((int)(prevEdgeY + lastEdgeY + 0.5f) / 2, 0);
-                        for (int y2 = start; y2 <= y - 1; ++y2) {
-                            float dy = lastEdgeY - y2;
-                            if (std::abs(values[x + y2 * tsize.x].AbsSum()) < std::abs(dy)) continue;
-                            values[x + y2 * tsize.x] = Vector2(0.0f, dy);
-                        }
-                    }
+                if (values[x + iy].y >= 1000000.0f && y < tsize.y - 1) continue;
+                int mid = lastEdgeY == 0 ? 0 : y == tsize.y - 1 ? tsize.y : (lastEdgeY + y) / 2;
+                int y2 = lastEdgeY;
+                for (; y2 < mid; ++y2) {
+                    values[x + y2 * tsize.x] = lastEdge - Vector2((float)x, (float)y2);
                 }
-                if (std::abs(values[x + iy].AbsSum()) > std::abs(lastEdgeY - y)) {
-                    values[x + iy] = Vector2(0, lastEdgeY - y);
+                lastEdge = values[x + iy] + Vector2((float)x, (float)y);
+                for (; y2 < y; ++y2) {
+                    values[x + y2 * tsize.x] = lastEdge - Vector2((float)x, (float)y2);
                 }
-                if (x > 0) {
-                    auto px0 = texdata[x - 1 + iy].a;
-                    if ((pp1 > 127) != (px0 > 127)) {
-                        float lastEdgeX = x - (float)(127 - pp1) / (px0 - pp1);
-                        for (int x2 = x - 1; x2 <= x; ++x2) {
-                            float dx = lastEdgeX - x2;
-                            if (std::abs(values[x2 + iy].AbsSum()) < std::abs(dx)) break;
-                            values[x2 + iy] = Vector2(dx, 0.0f);
-                        }
-                    }
-                }
+                lastEdgeY = y + 1;
             }
         }
         auto timer1 = std::chrono::system_clock::now();
@@ -174,21 +162,22 @@ public:
         WriteTime(str + 19, endTime - startTime);
         WriteTime(str + 23, timer1 - startTime);
         WriteTime(str + 27, endTime - timer1);
-        //OutputDebugStringA(str);
+        OutputDebugStringA(str);
     }
-    void ApplyDistances(std::span<ColorB4> texdata, Int2 tsize) {
+    void ApplyDistances(std::span<ColorB4> texdata, Int2 tsize, float spread = 32.0f) {
         auto startTime = std::chrono::system_clock::now();
         // Calculate final distance values
         for (int y = 0; y < tsize.y; ++y) {
             int iy = y * tsize.x;
             for (int x = 0; x < tsize.x; ++x) {
                 auto& a = texdata[x + iy].a;
-                a = (uint8_t)std::clamp(127.5f + (a > 127 ? 32.0f : -32.0f) * values[x + iy].Length(), 0.0f, 255.0f);
+                a = (uint8_t)std::clamp(127.5f + (a > 127 ? spread : -spread) * values[x + iy].Length(), 0.0f, 255.0f);
             }
         }
         auto endTime = std::chrono::system_clock::now();
         char str[] = "Distance field write 000 ms\n";
         WriteTime(str + 21, endTime - startTime);
+        OutputDebugStringA(str);
     }
 
     static void WriteTime(char* str, std::chrono::system_clock::duration duration) {

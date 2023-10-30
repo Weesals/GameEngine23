@@ -1,0 +1,33 @@
+-std=c++20
+--additional
+	-Wno-deprecated-declarations
+	-Wno-expansion-to-defined
+	-Wno-extern-c-compat
+	-Wno-extern-initializer
+	-Wno-extra-tokens
+	-Wno-ignored-attributes
+	-Wno-ignored-pragma-intrinsic
+	-Wno-macro-redefined
+	-Wno-nonportable-include-path
+	-Wno-pragma-pack
+--config
+	exclude-com-proxies
+	exclude-enum-operators
+	generate-aggressive-inlining
+	generate-cpp-attributes
+	generate-macro-bindings
+	generate-guid-member
+	generate-unmanaged-constants
+	latest-codegen
+--include-directory
+	../../GameEngine23/src
+--file
+	../src/CSBindings.h
+--traverse
+	../src/CSBindings.h
+--libraryPath
+	CSBindings
+--namespace
+	GameEngine23.Interop
+--output
+	../../CSTestProject/Interop.cs

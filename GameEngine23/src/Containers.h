@@ -234,7 +234,7 @@ struct SparseIndices
     };
 
     Iterator begin() { return Iterator(*this); }
-    Iterator end() { Iterator it(*this); it.mCurrent = mRanges.back().end(); }
+    Iterator end() { Iterator it(*this); it.mCurrent = mRanges.back().end(); return it; }
 private:
     bool AttemptMerge(std::vector<RangeInt>::iterator it)
     {
@@ -289,8 +289,8 @@ struct SparseArray
         mItems[id] = std::move(value);
         return id;
     }
-    template<class T>
-    RangeInt AddRange(const T& arr)
+    template<class O>
+    RangeInt AddRange(const O& arr)
     {
         auto range = Allocate((int)arr.size());
         int i = range.start;

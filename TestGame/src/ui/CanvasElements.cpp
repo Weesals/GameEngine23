@@ -15,18 +15,117 @@ void CanvasText::SetFont(const std::shared_ptr<FontInstance>& font) {
 	mIsInvalid = true;
 }
 void CanvasText::SetFontSize(float size) {
-	mFontSize = size;
+	mDefaultStyle.mFontSize = size;
+}
+void CanvasText::SetColor(ColorB4 color) {
+	mDefaultStyle.mColor = color;
+	mIsInvalid = true;
 }
 
-void CanvasText::UpdateLayout(const CanvasLayout& layout) {
-	if (mIsInvalid) {
-		mIsInvalid = false;
-		int vcount = 0;
-		for (auto chr : mText) {
-			auto glyph = mFont->GetGlyph(mFont->GetGlyphId(chr));
-			if (glyph.mGlyph != chr) continue;
-			vcount += 4;
+void CanvasText::UpdateGlyphLayout(const CanvasLayout& layout) {
+	float lineHeight = (float)mFont->GetLineHeight();
+	mGlyphLayout.clear();
+	mStyles.clear();
+	mStyles.push_back(mDefaultStyle);
+	Vector2 pos = Vector2::Zero;
+	Vector2 size = Vector2::Zero;
+	std::vector<ColorB4> colorStack;
+	std::vector<float> sizeStack;
+	int activeStyle = 0;
+	auto CompareConsume = [](const std::string& str, int& c, std::string_view key) {
+		if (str.compare(c, key.length(), key) != 0) return false;
+		c += (int)key.length();
+		return true;
+	};
+	for (int c = 0; c < mText.size(); ++c) {
+		auto chr = mText[c];
+		if (chr == '<') {
+			static std::string_view colorkey = "<color=";
+			if (CompareConsume(mText, c, colorkey)) {
+				for (; c < mText.length() && std::isspace(mText[c]); ++c);
+				CompareConsume(mText, c, "0x");
+				CompareConsume(mText, c, "#");
+				uint32_t color = 0;
+				int count = 0;
+				for (; c < mText.length() && std::isxdigit(mText[c]); ++c, ++count) {
+					color = (color << 4) | (
+						std::isdigit(mText[c]) ? mText[c] - '0' :
+						(std::toupper(mText[c]) - 'A') + 10
+					);
+				}
+				// Upscale to 32 bit
+				if (count <= 4) color = ((color & 0xf000) * 0x11000) | ((color & 0x0f00) * 0x1100) | ((color & 0x00f0) * 0x110) | ((color & 0x000f) * 0x11);
+				// If no alpha specified, force full alpha
+				if (count == 3 || count == 6) color |= 0xff000000;
+				colorStack.push_back(ColorB4::FromARGB(color));
+				activeStyle = -1;
+				continue;
+			}
+			static std::string_view colorendkey = "</color";
+			if (CompareConsume(mText, c, colorendkey)) {
+				colorStack.pop_back();
+				activeStyle = -1;
+				continue;
+			}
+			static std::string_view sizekey = "<size=";
+			if (CompareConsume(mText, c, sizekey)) {
+				char* end = &mText[c];
+				sizeStack.push_back(std::strtof(end, &end));
+				c = (int)(end - mText.data());
+				activeStyle = -1;
+				continue;
+			}
+			static std::string_view sizeendkey = "</size";
+			if (CompareConsume(mText, c, sizeendkey)) {
+				sizeStack.pop_back();
+				activeStyle = -1;
+				continue;
+			}
 		}
+		auto glyphId = mFont->GetGlyphId(chr);
+		auto glyph = mFont->GetGlyph(glyphId);
+		if (glyph.mGlyph != chr) continue;
+
+		if (activeStyle == -1) {
+			auto style = mDefaultStyle;
+			if (!colorStack.empty()) style.mColor = colorStack.back();
+			if (!sizeStack.empty()) style.mFontSize = sizeStack.back();
+			activeStyle = (int)(std::find(mStyles.begin(), mStyles.end(), style) - mStyles.begin());
+			if (activeStyle >= mStyles.size()) mStyles.push_back(style);
+		}
+
+		auto& style = mStyles[activeStyle];
+		float scale = style.mFontSize / lineHeight;
+		auto glyphSize2 = Vector2((float)glyph.mAdvance, lineHeight) * scale;
+
+		if (pos.x + glyphSize2.x >= layout.mAxisX.w) {
+			pos.x = 0;
+			pos.y += lineHeight * scale;
+			if (pos.y + glyphSize2.y > layout.mAxisY.w) break;
+			if (pos.x + glyphSize2.x >= layout.mAxisX.w) break;
+		}
+		mGlyphLayout.push_back(GlyphLayout{
+			.mVertexOffset = -1,
+			.mGlyphId = (uint16_t)glyphId,
+			.mStyleId = (uint16_t)activeStyle,
+			.mLocalPosition = pos + glyphSize2 / 2.0f,
+		});
+		pos.x += glyphSize2.x;
+		size = Vector2::Max(size, Vector2(pos.x, pos.y + (float)(glyph.mOffset.y + glyph.mSize.y) * scale));
+		if (c > 0)  pos.x += mFont->GetKerning(mText[c - 1], chr) * scale;
+	}
+	auto offset = (layout.GetSize() - size) / 2.0f;
+	for (auto& layout : mGlyphLayout) {
+		layout.mLocalPosition += offset;
+	}
+}
+void CanvasText::UpdateLayout(const CanvasLayout& layout) {
+	mLayout = layout;
+	UpdateGlyphLayout(layout);
+
+	int vcount = (int)mGlyphLayout.size() * 4;
+	if (mIsInvalid || mBufferId == -1 || mBuilder->MapVertices(mBufferId).GetVertexCount() < vcount) {
+		mIsInvalid = false;
 		if (mBufferId != -1 && mBuilder->MapVertices(mBufferId).GetVertexCount() != vcount) {
 			mBuilder->Deallocate(mBufferId);
 			mBufferId = -1;
@@ -43,76 +142,79 @@ void CanvasText::UpdateLayout(const CanvasLayout& layout) {
 				inds[i + 4] = v + 3;
 				inds[i + 5] = v + 2;
 			}
-			for (auto& color : rectVerts.GetColors()) color = ColorB4::White;
+		}
+		{
+			auto rectVerts = mBuilder->MapVertices(mBufferId);
+			for (auto& color : rectVerts.GetColors()) color = mDefaultStyle.mColor;
 		}
 	}
 	auto textVerts = mBuilder->MapVertices(mBufferId);
 	auto positions = textVerts.GetPositions();
 	auto uvs = textVerts.GetTexCoords();
-	int index = 0;
-	Vector2 pos = layout.mPosition.xy();
-	float atlasTexelSize = 1.0f / mFont->GetTexture()->GetSize().x;
-	float lineHeight = (float)mFont->GetLineHeight();
-	mGlyphLayout.resize(mText.size());
-	float scale = mFontSize / mFont->GetLineHeight();
-	for (int c = 0; c < mText.size(); ++c) {
-		auto chr = mText[c];
-		auto glyphId = mFont->GetGlyphId(chr);
-		auto glyph = mFont->GetGlyph(glyphId);
-		if (glyph.mGlyph != chr) continue;
-		auto uv_1 = (Vector2)glyph.mAtlasOffset * atlasTexelSize;
+	auto colors = textVerts.GetColors();
+	auto atlasTexelSize = 1.0f / mFont->GetTexture()->GetSize().x;
+	auto lineHeight = (float)mFont->GetLineHeight();
+	int vindex = 0;
+	for (int c = 0; c < mGlyphLayout.size(); ++c) {
+		auto& layout = mGlyphLayout[c];
+		auto& glyph = mFont->GetGlyph(layout.mGlyphId);
+		if (glyph.mGlyph == -1) continue;
+		auto& style = mStyles[layout.mStyleId];
+		auto scale = style.mFontSize / lineHeight;
+		layout.mVertexOffset = vindex;
+		auto uv_1 = (Vector2)(glyph.mAtlasOffset) * atlasTexelSize;
 		auto uv_2 = (Vector2)(glyph.mAtlasOffset + glyph.mSize) * atlasTexelSize;
-		auto glypSize2 = Vector2((float)glyph.mAdvance, lineHeight) * scale;
 		auto size2 = (Vector2)glyph.mSize * scale;
-		auto offset2 = (Vector2)glyph.mOffset * scale;
-
-		mGlyphLayout[c] = GlyphLayout{
-			.mVertexOffset = index,
-			.mGlyphId = glyphId,
-			.mLocalPosition = pos + glypSize2 / 2.0f,
-		};
-
-		auto glyphPos0 = pos + offset2;
-		auto glyphPos1 = glyphPos0 + size2;
-		uvs[index] = Vector2(uv_1.x, uv_1.y);
-		positions[index++] = Vector2(glyphPos0.x, glyphPos0.y);;
-		uvs[index] = Vector2(uv_2.x, uv_1.y);
-		positions[index++] = Vector2(glyphPos1.x, glyphPos0.y);
-		uvs[index] = Vector2(uv_1.x, uv_2.y);
-		positions[index++] = Vector2(glyphPos0.x, glyphPos1.y);
-		uvs[index] = Vector2(uv_2.x, uv_2.y);
-		positions[index++] = Vector2(glyphPos1.x, glyphPos1.y);
-
-		pos.x += glypSize2.x;
-		if (c > 0)  pos.x += mFont->GetKerning(mText[c - 1], chr) * scale;
+		auto glyphOffMin = (Vector2)glyph.mOffset - Vector2((float)glyph.mAdvance, lineHeight) / 2.0f;
+		auto glyphPos0 = mLayout.TransformPosition2D(layout.mLocalPosition + glyphOffMin * scale);
+		auto glyphDeltaX = mLayout.mAxisX.xy() * size2.x;
+		auto glyphDeltaY = mLayout.mAxisY.xy() * size2.y;
+		colors[vindex] = style.mColor;
+		uvs[vindex] = Vector2(uv_1.x, uv_1.y);
+		positions[vindex++] = glyphPos0;
+		colors[vindex] = style.mColor;
+		uvs[vindex] = Vector2(uv_2.x, uv_1.y);
+		positions[vindex++] = glyphPos0 + glyphDeltaX;
+		colors[vindex] = style.mColor;
+		uvs[vindex] = Vector2(uv_1.x, uv_2.y);
+		positions[vindex++] = glyphPos0 + glyphDeltaY;
+		colors[vindex] = style.mColor;
+		uvs[vindex] = Vector2(uv_2.x, uv_2.y);
+		positions[vindex++] = glyphPos0 + glyphDeltaY + glyphDeltaX;
 	}
+	for (; vindex < positions.size(); ++vindex) positions[vindex] = { };
 	textVerts.MarkChanged();
 }
 void CanvasText::UpdateAnimation(float timer) {
-	mFontSize = 120;
 	timer -= floorf(timer / 4.0f) * 4.0f;
 	auto lineHeight = mFont->GetLineHeight();
 	auto textVerts = mBuilder->MapVertices(mBufferId);
 	auto positions = textVerts.GetPositions();
 	auto easein = Easing::ElasticOut(0.5f, 2.5f);
 	auto easeout = Easing::Power2Out(0.333f);
-	float scale = mFontSize / mFont->GetLineHeight();
 	for (int c = 0; c < mGlyphLayout.size(); ++c) {
 		auto& layout = mGlyphLayout[c];
 		auto& glyph = mFont->GetGlyph(layout.mGlyphId);
+		if (glyph.mGlyph == -1) continue;
+		auto& style = mStyles[layout.mStyleId];
 		int index = layout.mVertexOffset;
-		auto glyphPos0 = layout.mLocalPosition
-			+ ((Vector2)glyph.mOffset
-			- Vector2(glyph.mAdvance / 2.0f, lineHeight / 2.0f)) * scale;
-		auto glyphPos1 = glyphPos0 + (Vector2)glyph.mSize * scale;
+		float scale = style.mFontSize / mFont->GetLineHeight();
+		auto glyphOffMin = (Vector2)glyph.mOffset - Vector2(glyph.mAdvance / 2.0f, lineHeight / 2.0f);
+		auto glyphOffMax = glyphOffMin + (Vector2)glyph.mSize;
+		glyphOffMin *= scale;
+		glyphOffMax *= scale;
 		auto l = easein(timer - c * 0.1f) * easeout(4.0f - timer);
-		glyphPos0 = Vector2::Lerp(layout.mLocalPosition, glyphPos0, l);
-		glyphPos1 = Vector2::Lerp(layout.mLocalPosition, glyphPos1, l);
-		positions[index++] = Vector2(glyphPos0.x, glyphPos0.y);
-		positions[index++] = Vector2(glyphPos1.x, glyphPos0.y);
-		positions[index++] = Vector2(glyphPos0.x, glyphPos1.y);
-		positions[index++] = Vector2(glyphPos1.x, glyphPos1.y);
+		glyphOffMin = Vector2::Lerp(Vector2::Zero, glyphOffMin, l);
+		glyphOffMax = Vector2::Lerp(Vector2::Zero, glyphOffMax, l);
+		auto glyphPos0 = mLayout.TransformPosition2D(layout.mLocalPosition + glyphOffMin);
+		auto glyphDeltaX = mLayout.mAxisX.xy() * (glyphOffMax.x - glyphOffMin.x);
+		auto glyphDeltaY = mLayout.mAxisY.xy() * (glyphOffMax.y - glyphOffMin.y);
+		positions[index++] = glyphPos0;
+		positions[index++] = glyphPos0 + glyphDeltaX;
+		positions[index++] = glyphPos0 + glyphDeltaY;
+		positions[index++] = glyphPos0 + glyphDeltaY + glyphDeltaX;
 	}
+	textVerts.MarkChanged();
 }
 
 

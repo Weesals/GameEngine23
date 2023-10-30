@@ -6,7 +6,7 @@
 void NativePlatform::Initialize()
 {
     // Create the window
-    auto window = std::make_shared<WindowWin32>(L"RTS Demo");
+    auto window = std::make_shared<WindowWin32>(L"Game Engine 23");
     // Initiaise graphics
     auto device = std::make_shared<GraphicsDeviceD3D12>(window);
 
@@ -16,7 +16,7 @@ void NativePlatform::Initialize()
 
     // Set the platform references
     mWindow = window;
-    //mGraphics = device;
+    mGraphics = device;
     mInput = input;
 }
 

@@ -19,35 +19,34 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <VCProjectVersion>16.0</VCProjectVersion>
+    <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{b4d584ec-2464-4735-9639-6253ff3c1b69}</ProjectGuid>
-    <RootNamespace>GameEngine23</RootNamespace>
+    <ProjectGuid>{c65d787c-9b8e-48e7-a442-5b694ccdcacc}</ProjectGuid>
+    <RootNamespace>CSBindings</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>GameEngine23</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
-    <ConfigurationType>Application</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -71,24 +70,19 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;.\externals\soil\include;.\externals\stb_image\</IncludePath>
-    <LibraryPath>.\lib;.\externals\freetype\objs;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>.\inc;.\externals\volk;.\externals\Vulkan-Headers\include;.\externals\SPIRV-Reflect;.\externals\soil\include;.\externals\stb_image\</IncludePath>
-    <LibraryPath>.\lib;.\externals\freetype\objs;$(LibraryPath)</LibraryPath>
-  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;_DEBUG;CSBINDINGS_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -97,32 +91,34 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>WIN32;NDEBUG;CSBINDINGS_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;CSBINDINGS_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;.\externals\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\GameEngine23\src</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>../GameEngine23/lib/;../GameEngine23/externals/freetype/objs/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
-    <Lib>
-      <AdditionalLibraryDirectories>.\lib;.\externals\freetype\objs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-    </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -130,91 +126,31 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;CSBINDINGS_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>.\inc;.\externals\Vulkan-Headers\include;.\externals\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>..\GameEngine23\src</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>../GameEngine23/lib/;../GameEngine23/externals/freetype/objs/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
-    <Lib>
-      <AdditionalLibraryDirectories>.\lib;.\externals\freetype\objs;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-    </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="src\Buffer.h" />
-    <ClInclude Include="src\Lighting.h" />
-    <ClInclude Include="src\RenderQueue.h" />
-    <ClInclude Include="src\Containers.h" />
-    <ClInclude Include="src\D3DResourceCache.h" />
-    <ClInclude Include="src\D3DGraphicsDevice.h" />
-    <ClInclude Include="src\D3DShader.h" />
-    <ClInclude Include="src\Delegate.h" />
-    <ClInclude Include="src\FBXImport.h" />
-    <ClInclude Include="src\Geometry.h" />
-    <ClInclude Include="src\GraphicsBuffer.h" />
-    <ClInclude Include="src\GraphicsDeviceBase.h" />
-    <ClInclude Include="src\GraphicsDeviceD3D12.h" />
-    <ClInclude Include="src\GraphicsDeviceMulti.h" />
-    <ClInclude Include="src\GraphicsDeviceVulkan.h" />
-    <ClInclude Include="src\GraphicsUtility.h" />
-    <ClInclude Include="src\Input.h" />
-    <ClInclude Include="src\InputDispatcher.h" />
-    <ClInclude Include="src\Material.h" />
-    <ClInclude Include="src\MaterialEvaluator.h" />
-    <ClInclude Include="src\MathTypes.h" />
-    <ClInclude Include="src\Mesh.h" />
-    <ClInclude Include="src\Model.h" />
-    <ClInclude Include="src\NativePlatform.h" />
-    <ClInclude Include="src\RenderTarget2D.h" />
-    <ClInclude Include="src\ResourceLoader.h" />
-    <ClInclude Include="src\Resources.h" />
-    <ClInclude Include="src\RetainedRenderer.h" />
-    <ClInclude Include="src\Shader.h" />
-    <ClInclude Include="inc\SimpleMath.h" />
-    <ClInclude Include="src\Texture.h" />
-    <ClInclude Include="src\ui\font\FontRenderer.h" />
-    <ClInclude Include="src\utility\DistanceFieldGenerator.h" />
-    <ClInclude Include="src\VulkanShader.h" />
-    <ClInclude Include="src\WindowBase.h" />
-    <ClInclude Include="src\WindowWin32.h" />
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="src\CSBindings.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="inc\SimpleMath.cpp" />
-    <ClCompile Include="src\GraphicsDeviceBase.cpp" />
-    <ClCompile Include="src\Lighting.cpp" />
-    <ClCompile Include="src\RenderQueue.cpp" />
-    <ClCompile Include="src\Core.cpp" />
-    <ClCompile Include="src\D3DResourceCache.cpp" />
-    <ClCompile Include="src\D3DGraphicsDevice.cpp" />
-    <ClCompile Include="src\FBXImport.cpp" />
-    <ClCompile Include="src\GraphicsBuffer.cpp" />
-    <ClCompile Include="inc\miniz.c" />
-    <ClCompile Include="inc\ofbx.cpp" />
-    <ClCompile Include="src\GraphicsDeviceD3D12.cpp" />
-    <ClCompile Include="src\GraphicsDeviceVulkan.cpp" />
-    <ClCompile Include="src\InputDispatcher.cpp" />
-    <ClCompile Include="src\Material.cpp" />
-    <ClCompile Include="src\MathTypes.cpp" />
-    <ClCompile Include="src\NativePlatform.cpp" />
-    <ClCompile Include="src\RenderTarget2D.cpp" />
-    <ClCompile Include="src\ResourceLoader.cpp" />
-    <ClCompile Include="src\Resources.cpp" />
-    <ClCompile Include="src\RetainedRenderer.cpp" />
-    <ClCompile Include="src\Texture.cpp" />
-    <ClCompile Include="src\ui\font\FontRenderer.cpp" />
-    <ClCompile Include="src\ui\sprite\Sprite.cpp" />
-    <ClCompile Include="src\VulkanShader.cpp" />
-    <ClCompile Include="src\WindowWin32.cpp" />
+    <ProjectReference Include="..\GameEngine23\GameEngine23.vcxproj">
+      <Project>{b4d584ec-2464-4735-9639-6253ff3c1b69}</Project>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="inc\SimpleMath.inl" />
-  </ItemGroup>
-  <ItemGroup>
-    <Natvis Include="debug\GameEngine23.natvis" />
+    <ClInclude Include="src\CSBindings.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

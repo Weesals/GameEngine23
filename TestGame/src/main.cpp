@@ -41,8 +41,3 @@ int main()
         platform.Present();
     }
 }
-extern "C" {
-    void Draw() {
-        main();
-    }
-}

@@ -88,7 +88,7 @@ void CanvasImGui::Render(CommandBuffer& cmdBuffer) {
 			auto& v = cmdList->VtxBuffer.Data[i];
 			positions[vCount + i] = Vector2(v.pos.x, v.pos.y);
 			uvs[vCount + i] = Vector2(v.uv.x, v.uv.y);
-			auto c = ColorB4::FromARGB(v.col);
+			auto c = ColorB4::FromABGR(v.col);
 			colors[vCount + i] = c;
 		}
 		// Copy indices
@@ -134,4 +134,5 @@ void CanvasImGui::Render(CommandBuffer& cmdBuffer) {
 		}
 		iCount += cmdList->IdxBuffer.Size;
 	}
+	mMaterial->SetUniformTexture("Texture", nullptr);
 }

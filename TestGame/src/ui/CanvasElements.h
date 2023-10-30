@@ -16,13 +16,13 @@ public:
 	CanvasElement() : mBufferId(-1), mBuilder(nullptr) { }
 	CanvasElement(const CanvasElement& other) = delete;
 	CanvasElement(CanvasElement&& other) noexcept {
-		mBuilder = other.mBuilder;
-		mBufferId = other.mBufferId;
+		*this = std::move(other);
 		other.mBufferId = -1;
 	}
 	~CanvasElement() {
 		if (mBufferId != -1) mBuilder->Deallocate(mBufferId);
 	}
+	CanvasElement& operator =(CanvasElement&& other) = default;
 	void SetMaterial(const std::shared_ptr<Material>& mat) { mMaterial = mat; }
 	const std::shared_ptr<Material>& GetMaterial() const { return mMaterial; }
 	bool IsValid() const { return mBufferId != -1; }
@@ -61,16 +61,25 @@ public:
 
 class CanvasText : public CanvasElement {
 protected:
+	struct GlyphStyle {
+		float mFontSize = 24;
+		ColorB4 mColor = ColorB4::Black;
+		bool operator ==(const GlyphStyle& o) const = default;
+	};
 	struct GlyphLayout {
 		int mVertexOffset;
-		int mGlyphId;
+		uint16_t mGlyphId;
+		uint16_t mStyleId;
 		Vector2 mLocalPosition;
 	};
 	std::string mText;
 	std::shared_ptr<FontInstance> mFont;
+	CanvasLayout mLayout;
+	std::vector<GlyphStyle> mStyles;
 	std::vector<GlyphLayout> mGlyphLayout;
+	GlyphStyle mDefaultStyle;
 	bool mIsInvalid = true;
-	float mFontSize = 24;
+	void UpdateGlyphLayout(const CanvasLayout& layout);
 public:
 	using CanvasElement::CanvasElement;
 	CanvasText(CanvasMeshBuilder* builder) : CanvasElement(builder) { }
@@ -85,6 +94,7 @@ public:
 	void SetText(std::string_view text);
 	void SetFont(const std::shared_ptr<FontInstance>& font);
 	void SetFontSize(float size);
+	void SetColor(ColorB4 color);
 	void UpdateLayout(const CanvasLayout& layout);
 	void UpdateAnimation(float timer);
 };

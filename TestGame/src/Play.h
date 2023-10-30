@@ -26,7 +26,7 @@ class Skybox
 public:
 	std::shared_ptr<Mesh> mMesh;
 	std::shared_ptr<Material> mMaterial;
-	void Initialise(std::shared_ptr<Material>& rootMaterial);
+	void Initialise(const std::shared_ptr<Material>& rootMaterial);
 };
 
 class Play
@@ -52,7 +52,7 @@ private:
 	std::shared_ptr<RenderPass> mShadowPass;
 	std::shared_ptr<World> mWorld;
 
-	std::shared_ptr<Material> mRootMaterial;
+	std::shared_ptr<RootMaterial> mRootMaterial;
 	std::shared_ptr<Skybox> mSkybox;
 	std::shared_ptr<DirectionalLight> mSunLight;
 

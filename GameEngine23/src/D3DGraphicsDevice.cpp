@@ -1,3 +1,5 @@
+#define PIX 1
+
 #include "D3DGraphicsDevice.h"
 #include <sstream>
 #include <stdexcept>
@@ -8,6 +10,35 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+
+
+#if PIX
+#include <filesystem>
+#include <shlobj.h>
+
+static std::wstring GetLatestWinPixGpuCapturerPath() {
+    LPWSTR programFilesPath = nullptr;
+    SHGetKnownFolderPath(FOLDERID_ProgramFiles, KF_FLAG_DEFAULT, NULL, &programFilesPath);
+
+    std::filesystem::path pixInstallationPath = programFilesPath;
+    pixInstallationPath /= "Microsoft PIX";
+
+    std::wstring newestVersionFound;
+
+    for (auto const& directory_entry : std::filesystem::directory_iterator(pixInstallationPath)) {
+        if (directory_entry.is_directory()) {
+            if (newestVersionFound.empty() || newestVersionFound < directory_entry.path().filename().c_str()) {
+                newestVersionFound = directory_entry.path().filename().c_str();
+            }
+        }
+    }
+
+    if (newestVersionFound.empty()) return { };
+
+    return pixInstallationPath / newestVersionFound / L"WinPixGpuCapturer.dll";
+}
+
+#endif
 
 // From DirectXTK wiki
 inline void ThrowIfFailed(HRESULT hr)
@@ -24,6 +55,12 @@ inline void ThrowIfFailed(HRESULT hr)
 // Initialise D3D with the specified window
 D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
 {
+#if PIX
+    if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0) {
+        auto path = GetLatestWinPixGpuCapturerPath();
+        if (!path.empty()) LoadLibrary(path.c_str());
+    }
+#endif
     CoInitialize(nullptr);
 
     auto hWnd = window.GetHWND();

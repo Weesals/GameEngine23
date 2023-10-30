@@ -58,6 +58,10 @@ public:
 			float operator () (float l) const { return l < 0 ? 0.0f : l > mDuration ? 1.0f : this->mEase(l / mDuration); }
 		};
 	};
+	static auto MakeEaseIn(auto fn) { return Modes::_EaseIn<decltype(fn)>(fn); }
+	static auto MakeEaseOut(auto fn) { return Modes::_EaseOut<decltype(fn)>(fn); }
+	static auto MakeWithDuration(auto fn, float dur) { return Modes::_WithDuration<decltype(fn)>(fn, dur); }
+	static auto MakeWithFromTo(auto fn, float from, float to) { return Modes::_WithFromTo<decltype(fn)>(fn, from, to); }
 	static auto Power2In(float duration = 1.0f) {
 		return MakeWithDuration(MakeEaseIn(Power2Ease()), duration);
 	}
@@ -76,10 +80,6 @@ public:
 	static auto BackOut(float duration = 1.0f, float amplitude = 1.75f) {
 		return MakeWithDuration(MakeEaseOut(BackEase(amplitude)), duration);
 	}
-	static auto MakeEaseIn(auto fn) { return Modes::_EaseIn<decltype(fn)>(fn); }
-	static auto MakeEaseOut(auto fn) { return Modes::_EaseOut<decltype(fn)>(fn); }
-	static auto MakeWithDuration(auto fn, float dur) { return Modes::_WithDuration<decltype(fn)>(fn, dur); }
-	static auto MakeWithFromTo(auto fn, float from, float to) { return Modes::_WithFromTo<decltype(fn)>(fn, from, to); }
 };
 
 struct Int2
@@ -199,7 +199,7 @@ struct BoundingBox {
 	BoundingBox() : BoundingBox(Vector3::Zero, Vector3::Zero) { }
 	BoundingBox(Vector3 min, Vector3 max)
 		: mMin(min), mMax(max) { }
-	static BoundingBox FromMinMax(Vector3 min, Vector3 max) { BoundingBox(min, max); }
+	static BoundingBox FromMinMax(Vector3 min, Vector3 max) { return BoundingBox(min, max); }
 };
 
 struct Ray

@@ -490,7 +490,8 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::
         //hash = AppendHash(el, hash);
         // TODO: Append binding layout hash
     }
-    hash = AppendHash(std::initializer_list<Identifier>{ sourceVS.GetIdentifier(), sourcePS.GetIdentifier() }, hash);
+    hash = AppendHash(std::make_pair(sourceVS.GetIdentifier(), sourcePS.GetIdentifier()), hash);
+    hash = AppendHash((int)renderPass, hash);
     auto pipelineState = GetOrCreatePipelineState(sourceVS, sourcePS, hash);
     while (pipelineState->mHash != hash)
     {

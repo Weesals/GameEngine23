@@ -64,6 +64,7 @@ public:
 protected:
 	std::shared_ptr<Mesh> mMesh;
 	std::shared_ptr<Material> mMaterial;
+	std::shared_ptr<FontInstance> mDefaultFont;
 
 	Int2 mSize;
 	OnInput mOnInput;
@@ -81,6 +82,7 @@ public:
 	Int2 GetSize() const;
 	virtual bool GetIsPointerOverUI(Vector2 v) const;
 	int GetDrawCount() const { return mDrawCount; }
+	const std::shared_ptr<FontInstance>& GetDefaultFont() { return mDefaultFont; }
 
 	CanvasMeshBuilder& GetBuilder() { return mMeshBuilder; }
 

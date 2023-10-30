@@ -85,7 +85,7 @@ public:
                 .mGlyph = Glyph {
                     .mGlyph = (uint8_t)c1,
                     .mSize = Int2((int)bitmap.width, (int)bitmap.rows),
-                    .mOffset = Int2((int)mFace->glyph->bitmap_left, mLineHeight - (int)mFace->glyph->bitmap_top),
+                    .mOffset = Int2((int)mFace->glyph->bitmap_left, (int)((mFace->ascender >> 6) - mFace->glyph->bitmap_top)),
                     .mAdvance = (int)(mFace->glyph->advance.x >> 6),
                 },
                 .mDataOffset = (int)pxdata.size(),

@@ -941,13 +941,22 @@ namespace DirectX
             ColorB4& operator= (uint32_t Packed) noexcept { v = Packed; return *this; }
             uint32_t GetPacked() const { return v; }
 
+            bool operator == (const ColorB4& o) const { return v == o.v; }
+            bool operator != (const ColorB4& o) const { return v != o.v; }
+
             explicit operator Vector4() const { return Vector4(r, g, b, a) / 255.0f; }
 
             static const ColorB4 White;
             static const ColorB4 Black;
             static const ColorB4 Clear;
             static ColorB4 FromARGB(uint32_t packed) {
-                return ColorB4(packed);// (packed << 8) | (packed >> 24));
+                return ColorB4((packed & 0xff00ff00) | ((packed << 16) & 0xff0000) | ((packed >> 16) & 0xff));
+            }
+            static ColorB4 FromABGR(uint32_t packed) {
+                return ColorB4(packed);
+            }
+            static ColorB4 FromRGBA(uint32_t packed) {
+                return ColorB4((packed << 24) | (packed >> 8));
             }
             static ColorB4 MakeWhite(uint8_t alpha = 255) {
                 return ColorB4((uint8_t)255, (uint8_t)255, (uint8_t)255, alpha);

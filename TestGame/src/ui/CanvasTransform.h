@@ -9,12 +9,21 @@ struct CanvasLayout {
 	Vector4 mAxisY;
 	Vector3 mAxisZ;
 	Vector3 mPosition;
-	int mRevision;
+	int mHash;	// Unused
 	Vector2 GetSize() const { return Vector2(mAxisX.w, mAxisY.w); }
 	Vector3 TransformPosition(Vector3 v) const;
+	Vector3 TransformPosition2D(Vector2 v) const;
 	// Normalized position (0 to 1) (faster)
 	Vector3 TransformPositionN(Vector3 v) const;
-	CanvasLayout MinMaxNormalized(float xmin, float ymin, float xmax, float ymax);
+	Vector3 TransformPosition2DN(Vector2 v) const;
+	CanvasLayout MinMaxNormalized(float xmin, float ymin, float xmax, float ymax) const;
+	// Remove and return a slice from the top of this area, with the given height
+	CanvasLayout SliceTop(float height);
+	CanvasLayout SliceBottom(float height);
+	CanvasLayout SliceLeft(float width);
+	CanvasLayout SliceRight(float width);
+	CanvasLayout RotateN(float amount, Vector2 pivotN) const;
+	static CanvasLayout MakeBox(Vector2 size);
 };
 
 struct CanvasTransform {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Texture.h"
-#include "Mesh.h"
+#include "Buffer.h"
 
 class RenderTarget2D : public TextureBase
 {

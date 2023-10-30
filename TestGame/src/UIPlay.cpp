@@ -5,8 +5,6 @@
 
 #include "ui/font/FontRenderer.h"
 
-std::shared_ptr<Texture> fontTexture;
-
 UIResources::UIResources()
 	: mPlay(nullptr), mPlayerId(-1)
 {
@@ -23,12 +21,31 @@ void UIResources::UpdateLayout(const CanvasLayout& parent) {
 	if (!mBackground.IsValid())
 		mBackground = CanvasImage(&GetCanvas()->GetBuilder());
 	mBackground.UpdateLayout(mLayoutCache);
+
+	if (mPlay != nullptr) {
+		auto& world = mPlay->GetWorld();
+		auto player = world->GetPlayer(mPlayerId);
+		auto* pdata = player.get<MetaComponents::PlayerData>();
+		auto textArea = mLayoutCache;
+		int count = (int)pdata->mResources.size();
+		for (int r = 0; r < count; ++r) {
+			auto& res = pdata->mResources[r];
+			if (r >= mResourceTexts.size()) {
+				mResourceTexts.emplace_back(&GetCanvas()->GetBuilder());
+				mResourceTexts[r].SetFont(GetCanvas()->GetDefaultFont());
+			}
+			mResourceTexts[r].SetText(std::format("{} = <color=#f80>{}</color>", res.mResourceId, res.mAmount));
+			mResourceTexts[r].UpdateLayout(textArea.SliceLeft(mLayoutCache.GetSize().x / count));
+		}
+	}
 }
 void UIResources::Compose(CanvasCompositor::Context& composer) {
 	composer.Append(mBackground);
+	for (auto& text : mResourceTexts) composer.Append(text);
 }
 void UIResources::Render(CommandBuffer& cmdBuffer) {
 	if (mPlay == nullptr) return;
+	return;
 	auto& world = mPlay->GetWorld();
 	// Display the players resources
 	auto player = world->GetPlayer(mPlayerId);
@@ -72,13 +89,11 @@ void UIPlay::Initialise(CanvasBinding binding) {
 		}
 	);
 	mBackground = CanvasImage(&GetCanvas()->GetBuilder());
-	auto renderer = FontRenderer::Create();
-	auto instance = renderer->CreateInstance();
-	instance->Load("assets/Roboto-Regular.ttf", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-=_+[]{}\\|;:'\",.<>/?`~ ");
-	fontTexture = instance->GetTexture();
 	mText = CanvasText(&GetCanvas()->GetBuilder());
-	mText.SetFont(instance);
+	mText.SetFont(GetCanvas()->GetDefaultFont());
 	mText.SetText("Hello World!");
+	mText.SetFontSize(30);
+	mText.SetColor(ColorB4::Black);
 }
 void UIPlay::Uninitialise(CanvasBinding binding) {
 	mInputIntercept = { };
@@ -87,12 +102,18 @@ void UIPlay::Uninitialise(CanvasBinding binding) {
 void UIPlay::UpdateLayout(const CanvasLayout& parent) {
 	//mTransform.mAnchors[0] = fmod(mTransform.mAnchors[0] + 0.01f, 0.5f);
 	CanvasRenderable::UpdateLayout(parent);
-	mBackground.UpdateLayout(mLayoutCache);
-	mText.UpdateLayout(mLayoutCache.MinMaxNormalized(0.1f, 0.1f, 1.0f, 1.0f));
-	mText.UpdateAnimation(mPlay->GetTime());
+	auto time = mPlay->GetTime();
+	auto widthN = 0.1f + std::sinf(time * 2.0f) * 0.1f;
+	auto layout = mLayoutCache
+		.MinMaxNormalized(0.15f - widthN / 2.0f, 0.2f, 0.15f + widthN / 2.0f, 1.0f)
+		.SliceTop(60.0f)
+		.RotateN(mPlay->GetTime(), Vector2(0.5f, 0.5f));
+	mBackground.UpdateLayout(layout);
+	mText.UpdateLayout(layout);
+	//mText.UpdateAnimation(mPlay->GetTime());
 }
 void UIPlay::Compose(CanvasCompositor::Context& compositor) {
-	//compositor.Append(mBackground);
+	compositor.Append(mBackground);
 	compositor.Append(mText);
 	CanvasRenderable::Compose(compositor);
 }
@@ -148,7 +169,7 @@ void UIPlay::Render(CommandBuffer& cmdBuffer) {
 					ImGui::Text("%d = %d", res.mResourceId, res.mAmount);
 				}
 			}
-			ImGui::Image((ImTextureID)&fontTexture, ImVec2(500, 500), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 1));
+			ImGui::Image((ImTextureID)&GetCanvas()->GetDefaultFont()->GetTexture(), ImVec2(500, 500), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 1));
 		}
 		ImVec2 pos(10.0f, size.y - 10.0f);
 		auto wsize = ImGui::GetWindowSize();

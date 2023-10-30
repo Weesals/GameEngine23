@@ -9,6 +9,7 @@ class UIResources : public CanvasRenderable {
 	Play* mPlay;
 	int mPlayerId;
 	CanvasImage mBackground;
+	std::vector<CanvasText> mResourceTexts;
 public:
 	UIResources();
 	void Setup(Play* play, int playerId);

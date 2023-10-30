@@ -131,6 +131,7 @@
     <ClInclude Include="src\Lighting.h" />
     <ClInclude Include="src\ui\font\FontRenderer.h" />
     <ClInclude Include="src\utility\DistanceFieldGenerator.h" />
+    <ClInclude Include="src\Buffer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">

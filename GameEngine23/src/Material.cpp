@@ -236,3 +236,71 @@ Material MakeNullMaterial() {
 	return mat;
 }
 Material Material::NullInstance = MakeNullMaterial();
+
+RootMaterial::RootMaterial()
+	: Material()
+{
+	InitialiseDefaults();
+}
+RootMaterial::RootMaterial(const std::wstring& shaderPath)
+	: Material(shaderPath)
+{
+	InitialiseDefaults();
+}
+RootMaterial::RootMaterial(const std::shared_ptr<Shader>& vertexShader, const std::shared_ptr<Shader>& pixelShader)
+	: Material(vertexShader, pixelShader)
+{
+	InitialiseDefaults();
+}
+
+
+void RootMaterial::InitialiseDefaults() {
+	static Identifier iMMat = "Model";
+	static Identifier iVMat = "View";
+	static Identifier iPMat = "Projection";
+	static Identifier iMVMat = "ModelView";
+	static Identifier iMVPMat = "ModelViewProjection";
+	static Identifier iLightDir = "_WorldSpaceLightDir0";
+	SetUniform("Model", Matrix::Identity);
+	SetView(Matrix::CreateLookAt(Vector3(0, 5, -10), Vector3(0, 0, 0), Vector3(0, 1, 0)));
+	SetProjection(Matrix::CreatePerspectiveFieldOfView(1.0f, 1.0, 1.0f, 500.0f));
+	SetComputedUniform<Matrix>("ModelView", [=](auto& context) {
+        auto m = context.GetUniform<Matrix>(iMMat);
+        auto v = context.GetUniform<Matrix>(iVMat);
+        return (m * v);
+    });
+    SetComputedUniform<Matrix>("ViewProjection", [=](auto& context) {
+        auto v = context.GetUniform<Matrix>(iVMat);
+        auto p = context.GetUniform<Matrix>(iPMat);
+        return (v * p);
+    });
+    SetComputedUniform<Matrix>("ModelViewProjection", [=](auto& context) {
+        auto mv = context.GetUniform<Matrix>(iMVMat);
+        auto p = context.GetUniform<Matrix>(iPMat);
+        return (mv * p);
+    });
+    SetComputedUniform<Matrix>("InvModelViewProjection", [=](auto& context) {
+        auto mvp = context.GetUniform<Matrix>(iMVPMat);
+        return mvp.Invert();
+    });
+    SetComputedUniform<Vector3>("_ViewSpaceLightDir0", [=](auto& context) {
+        auto lightDir = context.GetUniform<Vector3>(iLightDir);
+        auto view = context.GetUniform<Matrix>(iVMat);
+        return Vector3::TransformNormal(lightDir, view);
+    });
+    SetComputedUniform<Vector3>("_ViewSpaceUpVector", [=](auto& context) {
+        return context.GetUniform<Matrix>(iVMat).Up();
+    });
+}
+void RootMaterial::SetResolution(Vector2 res) {
+	static Identifier iRes = "Resolution";
+	SetUniform(iRes, res);
+}
+void RootMaterial::SetView(const Matrix& view) {
+	static Identifier iView = "View";
+	SetUniform(iView, view);
+}
+void RootMaterial::SetProjection(const Matrix& proj) {
+	static Identifier iProj = "Projection";
+	SetUniform(iProj, proj);
+}

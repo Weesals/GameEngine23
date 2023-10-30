@@ -11,7 +11,6 @@ CanvasBinding::CanvasBinding(CanvasRenderable* parent)
 // when they are added to the canvas hierarchy
 CanvasRenderable::CanvasRenderable() {
 	mTransform = CanvasTransform::MakeDefault();
-	mLayoutCache.mRevision = -1;
 }
 void CanvasRenderable::Initialise(CanvasBinding binding) {
 	mBinding = binding;
@@ -63,6 +62,11 @@ Canvas::Canvas()
 	mMesh = std::make_shared<Mesh>("Canvas");
 	mMaterial = std::make_shared<Material>(L"assets/ui.hlsl");
 
+	auto renderer = FontRenderer::Create();
+	auto instance = renderer->CreateInstance();
+	instance->Load("assets/Roboto-Regular.ttf", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-=_+[]{}\\|;:'\",.<>/?`~ ");
+	mDefaultFont = instance;
+
 	// The Canvas is a CanvasRenderable, so it also needs a reference
 	// to the canvas (itself)
 	Initialise(this);
@@ -94,11 +98,7 @@ void Canvas::Update(const std::shared_ptr<Input>& input)
 }
 void Canvas::Render(CommandBuffer& cmdBuffer)
 {
-	CanvasLayout rootLayout;
-	rootLayout.mAxisX = Vector4(1, 0, 0, 1) * (float)mSize.x;
-	rootLayout.mAxisY = Vector4(0, 1, 0, 1) * (float)mSize.y;
-	rootLayout.mAxisZ = Vector3(0, 0, 1);
-	rootLayout.mPosition = Vector3::Zero;
+	CanvasLayout rootLayout = CanvasLayout::MakeBox((Vector2)mSize);
 	CanvasRenderable::UpdateLayout(rootLayout);
 	CanvasRenderable::Render(cmdBuffer);
 

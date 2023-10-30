@@ -81,7 +81,7 @@ StyleCopReport.xml
 *.ipdb
 *.pgc
 *.pgd
-*.rsp
+# *.rsp
 *.sbr
 *.tlb
 *.tli
@@ -397,3 +397,4 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 /TestGame/imgui.ini
+/Ignore

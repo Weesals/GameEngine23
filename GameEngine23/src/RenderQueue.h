@@ -42,7 +42,7 @@ public:
 	void AppendMesh(const char* name,
 		CommandBuffer& cmdBuffer, const Mesh* mesh, const Material* material);
 
-	void Flush(CommandBuffer& cmdBuffer);
+	void Render(CommandBuffer& cmdBuffer);
 
 };
 

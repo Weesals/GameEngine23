@@ -8,7 +8,7 @@
 #include "UIGraphicsDebug.h"
 #include "UIPlay.h"
 
-void Skybox::Initialise(std::shared_ptr<Material>& rootMaterial)
+void Skybox::Initialise(const std::shared_ptr<Material>& rootMaterial)
 {
     // Generate a skybox mesh
     mMesh = std::make_shared<Mesh>("Skybox");
@@ -49,7 +49,7 @@ void Play::Initialise(Platform& platform)
     mInputDispatcher->RegisterInteraction(std::make_shared<CanvasInterceptInteraction>(mCanvas), true);
 
     // Create root resources
-    mRootMaterial = std::make_shared<Material>();
+    mRootMaterial = std::make_shared<RootMaterial>();
 
     // Initialise other things
     mSelection = std::make_shared<SelectionManager>();
@@ -72,7 +72,6 @@ void Play::Initialise(Platform& platform)
 
     mSunLight = std::make_shared<DirectionalLight>();
 
-    mRootMaterial->SetUniform("Resolution", clientSize);
     mRootMaterial->SetUniform("DayTime", 0.5f);
     mRootMaterial->SetUniform("_WorldSpaceLightDir0", lightVec);
     mRootMaterial->SetUniform("_LightColor0", 4 * Vector3(1.0f, 0.98f, 0.95f));
@@ -84,42 +83,9 @@ void Play::Initialise(Platform& platform)
     };
     mRootMaterial->SetUniform("_PlayerColors", playerColors);
 
-    Identifier iMMat = "Model";
-    Identifier iVMat = "View";
-    Identifier iPMat = "Projection";
-    Identifier iMVMat = "ModelView";
-    Identifier iMVPMat = "ModelViewProjection";
-    Identifier iLightDir = "_WorldSpaceLightDir0";
-    mRootMaterial->SetUniform("Model", Matrix::Identity);
-    mRootMaterial->SetUniform("View", mCamera.GetViewMatrix());
-    mRootMaterial->SetUniform("Projection", mCamera.GetProjectionMatrix());
-    mRootMaterial->SetComputedUniform<Matrix>("ModelView", [=](auto& context) {
-        auto m = context.GetUniform<Matrix>(iMMat);
-        auto v = context.GetUniform<Matrix>(iVMat);
-        return (m * v);
-    });
-    mRootMaterial->SetComputedUniform<Matrix>("ViewProjection", [=](auto& context) {
-        auto v = context.GetUniform<Matrix>(iVMat);
-        auto p = context.GetUniform<Matrix>(iPMat);
-        return (v * p);
-    });
-    mRootMaterial->SetComputedUniform<Matrix>("ModelViewProjection", [=](auto& context) {
-        auto mv = context.GetUniform<Matrix>(iMVMat);
-        auto p = context.GetUniform<Matrix>(iPMat);
-        return (mv * p);
-    });
-    mRootMaterial->SetComputedUniform<Matrix>("InvModelViewProjection", [=](auto& context) {
-        auto mvp = context.GetUniform<Matrix>(iMVPMat);
-        return mvp.Invert();
-    });
-    mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceLightDir0", [=](auto& context) {
-        auto lightDir = context.GetUniform<Vector3>(iLightDir);
-        auto view = context.GetUniform<Matrix>(iVMat);
-        return Vector3::TransformNormal(lightDir, view);
-    });
-    mRootMaterial->SetComputedUniform<Vector3>("_ViewSpaceUpVector", [=](auto& context) {
-        return context.GetUniform<Matrix>(iVMat).Up();
-    });
+    mRootMaterial->SetResolution(clientSize);
+    mRootMaterial->SetView(mCamera.GetViewMatrix());
+    mRootMaterial->SetProjection(mCamera.GetProjectionMatrix());
 
     mScene = std::make_shared<RetainedScene>();
     mBasePass = std::make_shared<RenderPass>("Base");
@@ -186,6 +152,12 @@ void Play::Render(CommandBuffer& cmdBuffer)
 {
     mBasePass->mRenderQueue.Clear();
     mBasePass->UpdateViewProj(mCamera.GetViewMatrix(), mCamera.GetProjectionMatrix());
+    mBasePass->UpdateViewProj(
+        Matrix::CreateLookAt(Vector3(0, 5, -10), Vector3(0, 0, 0), Vector3(0, 1, 0)),
+        Matrix::CreatePerspectiveFieldOfView(1.0f, 1.0, 1.0f, 500.0f)
+    );
+    mRootMaterial->SetUniform("View", mBasePass->mView);
+    mRootMaterial->SetUniform("Projection", mBasePass->mProjection);
 
     // Create shadow projection based on frustum near/far corners
     auto frustum = mBasePass->mFrustum;
@@ -236,7 +208,7 @@ void Play::Render(CommandBuffer& cmdBuffer)
         cmdBuffer.SetRenderTarget(pass->mRenderTarget.get());
         cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
 
-        pass->mRenderQueue.Flush(cmdBuffer);
+        pass->mRenderQueue.Render(cmdBuffer);
     }
 
     mOnRender.Invoke(cmdBuffer);
