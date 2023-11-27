@@ -31,7 +31,7 @@ void Play::Initialise(Platform& platform)
     mInput = platform.GetInput();
 
     // Create UI
-    auto clientSize = mGraphics->GetClientSize();
+    auto clientSize = mGraphics->GetResolution();
     mCanvas = std::make_shared<CanvasImGui>();
     mCanvas->SetSize(clientSize);
     mPlayUI = std::make_shared<UIPlay>(this);
@@ -66,7 +66,7 @@ void Play::Initialise(Platform& platform)
     );
     mCamera.SetPosition(Vector3::Transform(Vector3(0.0f, 0.0f, -90.0f), mCamera.GetOrientation()));
     mCamera.SetFOV(15.0f * (float)std::numbers::pi / 180.0f);
-    mCamera.SetAspect(clientSize.x / clientSize.y);
+    mCamera.SetAspect((float)clientSize.x / clientSize.y);
     mCamera.SetNearPlane(70.0f);
     mCamera.SetFarPlane(110.0f);
 
@@ -152,12 +152,6 @@ void Play::Render(CommandBuffer& cmdBuffer)
 {
     mBasePass->mRenderQueue.Clear();
     mBasePass->UpdateViewProj(mCamera.GetViewMatrix(), mCamera.GetProjectionMatrix());
-    mBasePass->UpdateViewProj(
-        Matrix::CreateLookAt(Vector3(0, 5, -10), Vector3(0, 0, 0), Vector3(0, 1, 0)),
-        Matrix::CreatePerspectiveFieldOfView(1.0f, 1.0, 1.0f, 500.0f)
-    );
-    mRootMaterial->SetUniform("View", mBasePass->mView);
-    mRootMaterial->SetUniform("Projection", mBasePass->mProjection);
 
     // Create shadow projection based on frustum near/far corners
     auto frustum = mBasePass->mFrustum;

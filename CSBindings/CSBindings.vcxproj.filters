@@ -6,5 +6,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\CSBindings.h" />
+    <ClInclude Include="src\BridgeTypes.h" />
   </ItemGroup>
 </Project>

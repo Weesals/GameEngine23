@@ -45,13 +45,13 @@ class Mesh
 		assert(id == -1);
 		auto type = BufferFormatType::GetType(fmt);
 		auto bsize = type.GetByteSize();
-		id = mVertexBinds.AppendElement(BufferLayout::Element(name, fmt, bsize, bsize, nullptr));
-		mVertexBinds.mBuffer.mSize = -1;
+		id = mVertexBinds.AppendElement(BufferLayout::Element(name, fmt, bsize, nullptr));
+		mVertexBinds.mSize = -1;
 		RequireVertexAlloc(id);
 		return id;
 	}
 	void RequireVertexAlloc(int8_t id) {
-		auto& vbind = mVertexBinds.mElements[id];
+		auto& vbind = mVertexBinds.GetElements()[id];
 		if (vbind.mData == nullptr) {
 			int size = vbind.mBufferStride * GetVertexCount();
 			if (size > 0) vbind.mData = malloc(size);
@@ -67,12 +67,12 @@ class Mesh
 
 	void RequireVertexElementFormat(int8_t& elId, BufferFormat fmt, const char* name) {
 		if (elId == -1) { CreateVertexBind(elId, name, fmt); return; }
-		auto& el = mVertexBinds.mElements[elId];
+		auto& el = mVertexBinds.GetElements()[elId];
 		if (el.mFormat == fmt) return;
 		el.mFormat = fmt;
-		el.mItemSize = el.mBufferStride = BufferFormatType::GetType(el.mFormat).GetByteSize();
+		el.mBufferStride = BufferFormatType::GetType(el.mFormat).GetByteSize();
 		if (el.mData != nullptr) Realloc(el, GetVertexCount());
-		mVertexBinds.mBuffer.mSize = -1;
+		mVertexBinds.mSize = -1;
 	}
 
 public:
@@ -86,8 +86,8 @@ public:
 		//mVertexTexCoordId(-1)
 	{
 		for (auto i = mVertexTexCoordId.begin(); i != mVertexTexCoordId.end(); ++i) *i = -1;
-		mVertexPositionId = mVertexBinds.AppendElement(BufferLayout::Element{ "POSITION", BufferFormat::FORMAT_R32G32B32_FLOAT, sizeof(Vector3), sizeof(Vector3), nullptr, });
-		mIndexBinds.AppendElement(BufferLayout::Element{ "INDEX", BufferFormat::FORMAT_R32_UINT, sizeof(int), sizeof(int), nullptr, });
+		mVertexPositionId = mVertexBinds.AppendElement(BufferLayout::Element{ "POSITION", BufferFormat::FORMAT_R32G32B32_FLOAT, sizeof(Vector3), nullptr, });
+		mIndexBinds.AppendElement(BufferLayout::Element{ "INDEX", BufferFormat::FORMAT_R32_UINT, sizeof(int), nullptr, });
 	}
 
 	const std::string& GetName() const { return mName; }
@@ -128,9 +128,9 @@ public:
 	}
 	void SetIndexFormat(bool _32bit) {
 		SetIndexCount(0);
-		auto& el = mIndexBinds.mElements[0];
+		auto& el = mIndexBinds.GetElements()[0];
 		el.mFormat = _32bit ? BufferFormat::FORMAT_R32_UINT : BufferFormat::FORMAT_R16_UINT;
-		el.mItemSize = el.mBufferStride = BufferFormatType::GetType(el.mFormat).GetByteSize();
+		el.mBufferStride = BufferFormatType::GetType(el.mFormat).GetByteSize();
 		mIndexBinds.CalculateImplicitSize();
 	}
 
@@ -140,7 +140,7 @@ public:
 		for (auto& binding : mVertexBinds.GetElements())
 			Realloc(binding, count);
 		mVertexBinds.mCount = count;
-		mVertexBinds.mBuffer.mRevision++;
+		mVertexBinds.mRevision++;
 		mVertexBinds.CalculateImplicitSize();
 		MarkChanged();
 	}
@@ -150,7 +150,7 @@ public:
 		for (auto& binding : mIndexBinds.GetElements())
 			Realloc(binding, count);
 		mIndexBinds.mCount = count;
-		mIndexBinds.mBuffer.mRevision++;
+		mIndexBinds.mRevision++;
 		mIndexBinds.CalculateImplicitSize();
 		MarkChanged();
 	}
@@ -181,9 +181,10 @@ public:
 	}
 
 	BufferLayoutPersistent& GetVertexBuffer() const { return mVertexBinds; }
+	BufferLayoutPersistent& GetIndexBuffer() const { return mIndexBinds; }
 
 	void CreateMeshLayout(std::vector<const BufferLayout*>& bindings) const {
-		if (mVertexBinds.mBuffer.mSize == -1) mVertexBinds.CalculateImplicitSize();
+		if (mVertexBinds.mSize == -1) mVertexBinds.CalculateImplicitSize();
 		bindings.insert(bindings.end(), { &mIndexBinds, &mVertexBinds });
 	}
 
@@ -193,8 +194,8 @@ public:
 	// Notify graphics and other dependents that the mesh data has changed
 	void MarkChanged() {
 		mRevision++;
-		mVertexBinds.mBuffer.mRevision++;
-		mIndexBinds.mBuffer.mRevision++;
+		mVertexBinds.mRevision++;
+		mIndexBinds.mRevision++;
 	}
 
 private:

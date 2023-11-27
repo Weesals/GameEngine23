@@ -107,7 +107,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		for (int v = 0; v < vbuffer.mCount; ++v) {
 			size_t hash = 0;
 			for (auto& element : vbuffer.GetElements()) {
-				hash = AppendHash((uint8_t*)element.mData + element.mBufferStride * v, element.mItemSize, hash);
+				hash = AppendHash((uint8_t*)element.mData + element.mBufferStride * v, element.mFormat, hash);
 			}
 			int index = (int)vertHashMap.size();
 			auto match = vertHashMap.find(hash);
@@ -124,7 +124,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 					std::memcpy(
 						(uint8_t*)element.mData + element.mBufferStride * index,
 						(uint8_t*)element.mData + element.mBufferStride * v,
-						element.mItemSize);
+						element.GetItemByteSize());
 				}
 			}
 		}

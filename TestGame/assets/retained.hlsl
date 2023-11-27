@@ -5,6 +5,10 @@
 #include "include/common.hlsl"
 #include "include/lighting.hlsl"
 
+cbuffer Testing : register(b1)
+{
+    float4 TestValue;
+}
 struct VSInput
 {
     //uint instanceId : SV_InstanceID;
@@ -23,7 +27,7 @@ struct PSInput
     float3 normal : NORMAL;
 };
 
-SamplerState g_sampler : register(s0);
+SamplerState BilinearSampler : register(s0);
 Texture2D<float4> Texture : register(t0);
 Texture2D<float4> ShadowMap : register(t1);
 
@@ -64,7 +68,7 @@ float4 PSMain(PSInput input) : SV_TARGET
     float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);
     // TODO: Should be sampled from textures
-    float4 t = Texture.Sample(g_sampler, input.uv);
+    float4 t = Texture.Sample(BilinearSampler, input.uv);
     float3 Albedo = t.rgb;
     float3 Specular = 0.06;
     float Roughness = 0.7;

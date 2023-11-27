@@ -13,6 +13,8 @@
 --config
 	exclude-com-proxies
 	exclude-enum-operators
+	#generate-callconv-member-function
+	#generate-template-bindings
 	generate-aggressive-inlining
 	generate-cpp-attributes
 	generate-macro-bindings
@@ -29,5 +31,31 @@
 	CSBindings
 --namespace
 	GameEngine23.Interop
+--remap
+	Identifier=CSIdentifier
+	Mesh=NativeMesh
+	Model=NativeModel
+	Texture=NativeTexture
+	RenderTarget2D=NativeRenderTarget
+	Shader=NativeShader
+	Material=NativeMaterial
+	PipelineLayout=NativePipeline
+	FontInstance=NativeFont
+	RenderPass=NativeRenderPass
+	Vector2=System.Numerics.Vector2
+	Vector3=System.Numerics.Vector3
+	Vector4=System.Numerics.Vector4
+	Matrix=System.Numerics.Matrix4x4
+	Int2=Weesals.Engine.Int2
+	Int2C=Weesals.Engine.Int2
+	Int4=Weesals.Engine.Int4
+	ColorB4=Weesals.Engine.Color
+	Rect=Weesals.Engine.RectF
+	RectInt=Weesals.Engine.RectI
+	BufferFormat=Weesals.Engine.BufferFormat
+	Frustum=Weesals.Engine.Frustum
+	BoundingBox=Weesals.Engine.BoundingBox
+--with-using
+	CSGraphics=System.Numerics
 --output
 	../../CSTestProject/Interop.cs

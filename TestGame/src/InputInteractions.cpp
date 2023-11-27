@@ -19,7 +19,7 @@ bool SelectInteraction::OnBegin(Performance& performance)
     auto& world = mPlay->GetWorld();
 
     // Find entity under the mouse
-    Ray ray = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetClientSize());
+    Ray ray = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetResolution());
     auto nearest = world->RaycastEntity(ray);
 
     // If not holding shift, clear selection
@@ -54,7 +54,7 @@ bool OrderInteraction::OnBegin(Performance& performance)
     auto& world = mPlay->GetWorld();
 
     // Find target location
-    Ray ray = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetClientSize());
+    Ray ray = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetResolution());
     Landscape::LandscapeHit hit;
     auto pos = world->GetLandscape()->Raycast(ray, hit)
         ? hit.mHitPosition
@@ -114,8 +114,8 @@ void CameraInteraction::OnUpdate(Performance& performance)
     else
     {
         // Default is pan
-        auto ray0 = camera.ViewportToRay(performance.GetPositionPrevious() / graphics->GetClientSize());
-        auto ray1 = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetClientSize());
+        auto ray0 = camera.ViewportToRay(performance.GetPositionPrevious() / graphics->GetResolution());
+        auto ray1 = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetResolution());
         pos += ray0.ProjectTo(Plane(Vector3::Up, 0.0f)) - ray1.ProjectTo(Plane(Vector3::Up, 0.0f));
     }
     camera.SetPosition(pos);
@@ -143,7 +143,7 @@ void TerrainPaintInteraction::OnUpdate(Performance& performance)
     auto& world = mPlay->GetWorld();
 
     // Get brush position
-    Ray ray = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetClientSize());
+    Ray ray = camera.ViewportToRay(performance.GetPositionCurrent() / graphics->GetResolution());
     auto hit = ray.ProjectTo(Plane(Vector3::Up, 0.0f));
     auto& sizing = world->GetLandscape()->GetSizing();
     auto& heightMap = world->GetLandscape()->GetRawHeightMap();
@@ -214,7 +214,7 @@ bool PlacementInteraction::OnBegin(Performance& performance)
 void PlacementInteraction::OnUpdate(Performance& performance)
 {
     // Update placement position
-    auto mray = mPlay->GetCamera().ViewportToRay(performance.GetPositionCurrent() / mPlay->GetGraphics()->GetClientSize());
+    auto mray = mPlay->GetCamera().ViewportToRay(performance.GetPositionCurrent() / mPlay->GetGraphics()->GetResolution());
     mTransform = Components::Transform(mray.ProjectTo(Plane(Vector3::Up, 0.0f)), (float)std::numbers::pi);
     mTransform.mPosition.x = std::round(mTransform.mPosition.x);
     mTransform.mPosition.z = std::round(mTransform.mPosition.z);

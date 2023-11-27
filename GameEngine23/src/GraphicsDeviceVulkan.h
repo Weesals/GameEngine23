@@ -152,7 +152,7 @@ public:
 
     bool MemoryTypeFromProperties(uint32_t typeBits, vk::MemoryPropertyFlags requirements_mask, uint32_t& typeIndex);
 
-    Vector2 GetClientSize() const override;
+    Int2 GetClientSize() const override;
 
     CommandBuffer CreateCommandBuffer() override;
 

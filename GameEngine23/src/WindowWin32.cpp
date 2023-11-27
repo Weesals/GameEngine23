@@ -41,11 +41,11 @@ void WindowWin32::SetInput(std::shared_ptr<Input> input)
     mInput = input;
 }
 
-std::pair<int, int> WindowWin32::GetClientSize() const
+Int2 WindowWin32::GetClientSize() const
 {
     RECT clientRect;
     GetClientRect(GetHWND(), &clientRect);
-    return std::pair<int, int>(
+    return Int2(
         (uint32_t)(clientRect.right - clientRect.left),
         (uint32_t)(clientRect.bottom - clientRect.top)
     );
@@ -65,6 +65,11 @@ int WindowWin32::MessagePump()
     return 0;
 }
 
+void WindowWin32::Close()
+{
+    CloseWindow(hWnd);
+}
+
 std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
 {
     if (mMousePointer == nullptr && mInput != nullptr) mMousePointer = mInput->AllocatePointer(-1);
@@ -76,9 +81,10 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     switch (message)
     {
     case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
-        EndPaint(hWnd, &ps);
+        //PAINTSTRUCT ps;
+        //HDC hdc = BeginPaint(hWnd, &ps);
+        //EndPaint(hWnd, &ps);
+        ValidateRect(hWnd, nullptr);
     } break;
     // Receive mouse events
     case WM_LBUTTONDOWN: {

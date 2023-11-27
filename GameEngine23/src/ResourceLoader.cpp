@@ -40,10 +40,23 @@ const std::shared_ptr<Texture>& ResourceLoader::LoadTexture(const std::wstring_v
 			}
 		);
 		tex->MarkChanged();
-		mLoadedTextures.insert(std::make_pair(std::wstring(path), tex)).second;
+		i = mLoadedTextures.insert(std::make_pair(std::wstring(path), tex)).first;
 		//SOIL_free_image_data(data);
 		stbi_image_free(data);
-		i = mLoadedTextures.find(path);
+	}
+	return i->second;
+}
+const std::shared_ptr<FontInstance>& ResourceLoader::LoadFont(const std::wstring_view& path)
+{
+	if (mFontRenderer == nullptr) mFontRenderer = FontRenderer::Create();
+	auto i = mLoadedFonts.find(path);
+	if (i == mLoadedFonts.end())
+	{
+		auto instance = mFontRenderer->CreateInstance();
+		std::string pathStr;
+		std::transform(path.begin(), path.end(), std::back_inserter(pathStr), [](auto c) { return (char)c; });
+		instance->Load(pathStr, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-=_+[]{}\\|;:'\",.<>/?`~ ");
+		i = mLoadedFonts.insert(std::make_pair(std::wstring(path), instance)).first;
 	}
 	return i->second;
 }

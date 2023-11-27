@@ -35,7 +35,7 @@ public:
 	void Clear();
 	std::span<const void*> RequireMaterialResources(CommandBuffer& cmdBuffer,
 		const PipelineLayout* pipeline, const Material* material);
-	std::span<const BufferLayout*> ImmortalizeBufferLayout(CommandBuffer& cmdBuffer, std::span<const BufferLayout*> bindings);
+	static std::span<const BufferLayout*> ImmortalizeBufferLayout(CommandBuffer& cmdBuffer, std::span<const BufferLayout*> bindings);
 	void AppendMesh(const char* name,
 		const PipelineLayout* pipeline, const BufferLayout** buffers,
 		const void** resources, RangeInt instances);

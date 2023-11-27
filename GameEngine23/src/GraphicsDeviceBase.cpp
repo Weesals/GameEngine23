@@ -27,6 +27,17 @@ void CommandBuffer::DrawMesh(const Mesh* mesh, const Material* material, const D
 }
 
 
+struct Getter {
+    std::span<const Material*> materials;
+    template<class T, typename Fn>
+    T MaterialGet(const Fn& fn) {
+        T out = T();
+        for (auto& mat : materials) {
+            if (fn(mat, out)) return out;
+        }
+        return out;
+    };
+};
 const PipelineLayout* GraphicsDeviceBase::RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials) {
     IdentifierWithName renderQueue;
     for (auto& mat : materials) {
@@ -34,4 +45,13 @@ const PipelineLayout* GraphicsDeviceBase::RequirePipeline(std::span<const Buffer
         if (renderQueue.IsValid()) break;
     }
     return RequirePipeline(bindings, materials, renderQueue);
+}
+const PipelineLayout* GraphicsDeviceBase::RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderQueue) {
+    Getter getter = { .materials = materials };
+    // Get the relevant shaders
+    const auto& sourceVS = *getter.MaterialGet<Shader*>([](const Material* mat, Shader*& out) { out = mat->GetVertexShader().get(); return out != nullptr; });
+    const auto& sourcePS = *getter.MaterialGet<Shader*>([](const Material* mat, Shader*& out) { out = mat->GetPixelShader().get(); return out != nullptr; });
+    const auto& materialState = materials.back()->GetMaterialState();
+
+    return RequirePipeline(sourceVS, sourcePS, materialState, bindings, renderQueue);
 }

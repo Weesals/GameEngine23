@@ -14,7 +14,7 @@ class ShaderBase
 public:
     // Reflected uniforms that can be set by the application
     struct UniformValue {
-        IdentifierWithName mName;
+        Identifier mName;
         int mOffset;
         int mSize;
         bool operator ==(const UniformValue& other) const = default;
@@ -23,7 +23,7 @@ public:
         }
     };
     struct ConstantBuffer {
-        IdentifierWithName mName;
+        Identifier mName;
         int mSize;
         int mBindPoint;
         std::vector<UniformValue> mValues;
@@ -31,7 +31,7 @@ public:
         int GetValueIndex(const std::string& name) const {
             for (size_t i = 0; i < mValues.size(); i++)
             {
-                if (mValues[i].mName == name) return (int)i;
+                if (mValues[i].mName.GetName() == name) return (int)i;
             }
             return -1;
         }
@@ -44,7 +44,7 @@ public:
     };
     enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, };
     struct ResourceBinding {
-        IdentifierWithName mName;
+        Identifier mName;
         int mBindPoint;
         int mStride;
         ResourceTypes mType;
@@ -52,8 +52,8 @@ public:
     };
     enum ParameterTypes : uint8_t { P_Unknown, P_UInt, P_SInt, P_Float, };
     struct InputParameter {
-        IdentifierWithName mName;
-        IdentifierWithName mSemantic;
+        Identifier mName;
+        Identifier mSemantic;
         int mSemanticIndex;
         int mRegister;
         uint8_t mMask;
@@ -125,6 +125,7 @@ public:
     virtual GraphicsDeviceBase* GetGraphics() const = 0;
     virtual void Reset() = 0;
     virtual void SetRenderTarget(const RenderTarget2D* target) { }
+    virtual void SetViewport(RectInt viewport) { }
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
     virtual void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) { }
@@ -138,6 +139,7 @@ protected:
     std::unique_ptr<CommandBufferInteropBase> mInterop;
     ExpandableMemoryArena mArena;
     std::vector<const BufferLayout*> tBindingLayout;
+    void* RequireFrameData(int size) { return mArena.Require(size); }
 public:
     CommandBuffer(CommandBuffer& other) = delete;
     CommandBuffer(CommandBuffer&& other) = default;
@@ -145,10 +147,10 @@ public:
     CommandBuffer& operator = (CommandBuffer&& other) = default;
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
     void Reset() { mInterop->Reset(); mArena.Clear(); }
+    void SetViewport(RectInt viewport) { mInterop->SetViewport(viewport); }
     void SetRenderTarget(const RenderTarget2D* target) { mInterop->SetRenderTarget(target); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
     int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
-    void* RequireFrameData(int size) { return mArena.Require(size); }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
     template<class T> std::span<T> RequireFrameData(std::span<T> data) {
         auto outData = std::span<T>((T*)RequireFrameData((int)(data.size() * sizeof(T))), data.size());
@@ -205,14 +207,20 @@ public:
     virtual ~GraphicsDeviceBase() { }
 
     // Get the resolution of the client area
-    virtual Vector2 GetClientSize() const = 0;
+    virtual Int2 GetResolution() const = 0;
+    virtual void SetResolution(Int2 res) = 0;
 
     // Create a command buffer which allows draw calls to be submitted
     virtual CommandBuffer CreateCommandBuffer() = 0;
 
     // Calculate which PSO this draw call would land in
     const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials);
-    virtual const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass) = 0;
+    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass);
+    virtual const PipelineLayout* RequirePipeline(
+        const Shader& vertexShader, const Shader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+        const IdentifierWithName& renderPass
+    ) = 0;
 
     // Rendering is complete; flip the backbuffer
     virtual void Present() = 0;

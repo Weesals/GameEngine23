@@ -131,7 +131,7 @@ void RetainedScene::SubmitGPUMemory(CommandBuffer& cmdBuffer) {
 RetainedRenderer::RetainedRenderer() {
 	mInstanceBufferLayout = BufferLayoutPersistent(-1, 0, BufferLayout::Usage::Instance, -1, 1);
 	mInstanceBufferLayout.AppendElement(
-		BufferLayout::Element("INSTANCE", BufferFormat::FORMAT_R32_UINT, sizeof(int), sizeof(int), nullptr)
+		BufferLayout::Element("INSTANCE", BufferFormat::FORMAT_R32_UINT, sizeof(int), nullptr)
 	);
 }
 void RetainedRenderer::SetScene(const std::shared_ptr<RetainedScene>& scene) {
@@ -156,6 +156,19 @@ int RetainedRenderer::AppendInstance(const Mesh* mesh, std::span<const Material*
 	bucket->mInstances.insert(instance, sceneId);
 	mInstanceBatches.insert(std::make_pair(sceneId, key));
 	return sceneId;
+}
+void RetainedRenderer::SetVisible(int sceneId, bool visible) {
+	auto key = mInstanceBatches.find(sceneId)->second;
+	auto bucket = std::partition_point(mBatches.begin(), mBatches.end(), [&](auto& item) { return item < key; });
+	auto instance = std::partition_point(bucket->mInstances.begin(), bucket->mInstances.end(), [&](auto& item) { return item < sceneId; });
+	if (visible) {
+		if (instance == bucket->mInstances.end() || *instance != sceneId)
+			bucket->mInstances.insert(instance, sceneId);
+	}
+	else {
+		if (instance != bucket->mInstances.end() && *instance == sceneId)
+			bucket->mInstances.erase(instance);
+	}
 }
 void RetainedRenderer::RemoveInstance(int sceneId) {
 	auto key = mInstanceBatches.find(sceneId)->second;
@@ -264,25 +277,29 @@ void RenderPass::UpdateViewProj(const Matrix& view, const Matrix& proj)
 	mFrustum = Frustum(view * proj);
 }
 
+int RenderPassList::GetPassInstanceId(int sceneId, int passId) {
+	int instPassIdOffset = sceneId * (int)mPasses.size();
+	return mInstancePassIds[instPassIdOffset + passId];
+}
 int RenderPassList::AddInstance(const Mesh* mesh, std::span<const Material*> materials, int dataSize) {
 	auto sceneId = mScene->AllocateInstance(dataSize);
-	if (sceneId >= (int)mPassIdsBySceneId.size()) mPassIdsBySceneId.resize(sceneId + 1);
-	mPassIdsBySceneId[sceneId] = mPassIds.Allocate((int)mPasses.size());
-	auto range = mPassIdsBySceneId[sceneId];
-	for (int i = 0; i < range.length; ++i) {
+	int reqInstPassIdC = (sceneId + 1) * (int)mPasses.size();
+	if (mInstancePassIds.size() < reqInstPassIdC) mInstancePassIds.resize(reqInstPassIdC);
+	int instPassIdOffset = sceneId * (int)mPasses.size();
+	for (int i = 0; i < (int)mPasses.size(); ++i) {
 		auto pass = mPasses[i];
 		InplaceVector<const Material*, 10> renMaterials;
 		renMaterials.push_back_if_not_null(pass->mOverrideMaterial.get());
 		for (auto* mat : materials) renMaterials.push_back(mat);
-		mPassIds[range.start + i] =
+		mInstancePassIds[instPassIdOffset + i] =
 			mPasses[i]->mRetainedRenderer->AppendInstance(mesh, renMaterials, sceneId);
 	}
 	return sceneId;
 }
 void RenderPassList::RemoveInstance(int sceneId) {
-	auto range = mPassIdsBySceneId[sceneId];
-	for (int i = 0; i < range.length; ++i) {
-		auto instanceId = mPassIds[range.start + i];
+	int instPassIdOffset = sceneId * (int)mPasses.size();
+	for (int i = 0; i < mPasses.size(); ++i) {
+		auto instanceId = mInstancePassIds[instPassIdOffset + i];
 		if (instanceId < 0) continue;
 		mPasses[i]->mRetainedRenderer->RemoveInstance(instanceId);
 	}

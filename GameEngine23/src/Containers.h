@@ -21,6 +21,7 @@ struct InplaceVector {
     void push_back(T v) { assert(mSize < Size); mValues[mSize++] = v; }
     void push_back_if_not_null(T v) { if (!v) return; assert(mSize < Size); mValues[mSize++] = v; }
     T& pop_back() { return mValues[--mSize]; }
+    T& back() { return mValues[mSize - 1]; }
     void resize(uint8_t size) { mSize = size; }
 	T& operator[](int i) { return mValues[i]; }
 	const T& operator[](int i) const { return mValues[i]; }

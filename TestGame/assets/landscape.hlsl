@@ -13,10 +13,11 @@ cbuffer ConstantBuffer : register(b1)
     float4 HeightRange;
 };
 
-SamplerState g_sampler : register(s0);
+SamplerState BilinearSampler : register(s0);
 Texture2D<float4> HeightMap : register(t0);
 Texture2D<float4> GrassTexture : register(t1);
 Texture2D<float4> ShadowMap : register(t2);
+SamplerComparisonState ShadowSampler : register(s2);
 
 struct VSInput
 {
@@ -62,8 +63,8 @@ PSInput VSMain(VSInput input)
     
     result.localPos = worldPos;
     result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
-    result.viewPos = mul(ModelView, float4(worldPos, 1.0));
-    result.normal = mul(ModelView, float4(worldNrm, 0.0));
+    result.viewPos = mul(ModelView, float4(worldPos, 1.0)).xyz;
+    result.normal = mul(ModelView, float4(worldNrm, 0.0)).xyz;
     
 #if defined(VULKAN)
     result.position.y = -result.position.y;
@@ -92,8 +93,8 @@ float4 PSMain(PSInput input) : SV_TARGET
     float4 shadowVPos = mul(ShadowIVViewProjection, float4(input.viewPos, 1.0));
     shadowVPos.xyz /= shadowVPos.w;
     shadowVPos.y *= -1.0;
-    float4 shadowSample = ShadowMap.Sample(g_sampler, 0.5 + shadowVPos.xy * 0.5);
-    float shadow = step(shadowVPos.z, shadowSample.r + 0.002);
+    //float4 shadowSample = ShadowMap.Sample(BilinearSampler, 0.5 + shadowVPos.xy * 0.5);
+    float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, 0.5 + shadowVPos.xy * 0.5, shadowVPos.z - 0.002).r;
 
 
     {
@@ -119,7 +120,7 @@ float4 PSMain(PSInput input) : SV_TARGET
         for (int j = 0; j < 3; ++j)
         {
             Albedo += w[j] *
-                GrassTexture.Sample(g_sampler, PermuteUV(input.localPos.xz * 0.05, rnd[j])).rgb;
+                GrassTexture.Sample(BilinearSampler, PermuteUV(input.localPos.xz * 0.05, rnd[j])).rgb;
         }
     }
     

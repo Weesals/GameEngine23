@@ -836,7 +836,7 @@ void GraphicsDeviceVulkan::CreateResources()
 }
 
 // Size of the renderable area
-Vector2 GraphicsDeviceVulkan::GetClientSize() const
+Int2 GraphicsDeviceVulkan::GetClientSize() const
 {
     return Vector2((float)mExtents.width, (float)mExtents.height);
 }

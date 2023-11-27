@@ -79,7 +79,8 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = { };
     CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
         CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
-        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
+        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_POINT),
+        CD3DX12_STATIC_SAMPLER_DESC(2, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 0, 16, D3D12_COMPARISON_FUNC_LESS_EQUAL),
     };
     rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -341,9 +342,9 @@ void ProcessBindings(std::span<const BufferLayout*> bindings, std::map<size_t, s
     int vbuffCount = 0;
     for (auto* bindingPtr : bindings) {
         auto& binding = *bindingPtr;
-        auto d3dBinIt = bindingMap.find(binding.mBuffer.mIdentifier);
+        auto d3dBinIt = bindingMap.find(binding.mIdentifier);
         if (d3dBinIt == bindingMap.end()) {
-            d3dBinIt = bindingMap.emplace(std::make_pair(binding.mBuffer.mIdentifier, std::make_unique<D3DResourceCache::D3DBinding>())).first;
+            d3dBinIt = bindingMap.emplace(std::make_pair(binding.mIdentifier, std::make_unique<D3DResourceCache::D3DBinding>())).first;
             d3dBinIt->second->mRevision = -16;
             d3dBinIt->second->mUsage = binding.mUsage;
         }
@@ -352,8 +353,8 @@ void ProcessBindings(std::span<const BufferLayout*> bindings, std::map<size_t, s
         uint32_t itemSize = 0;
         if (binding.mUsage == BufferLayout::Usage::Index) {
             assert(binding.GetElements().size() == 1);
-            assert(binding.GetElements()[0].mBufferStride == binding.GetElements()[0].mItemSize);
-            itemSize = binding.GetElements()[0].mItemSize;
+            assert(binding.GetElements()[0].mBufferStride == binding.GetElements()[0].GetItemByteSize());
+            itemSize = binding.GetElements()[0].GetItemByteSize();
             OnIndices(binding, *d3dBin, itemSize);
         }
         else {
@@ -362,9 +363,10 @@ void ProcessBindings(std::span<const BufferLayout*> bindings, std::map<size_t, s
                 : binding.mUsage == BufferLayout::Usage::Instance || binding.mUsage == BufferLayout::Usage::Uniform ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
                 : throw "Not implemented";
             for (auto& element : binding.GetElements()) {
-                if (element.mItemSize >= 4) itemSize = (itemSize + 3) & (~3);
-                OnElement(D3D12_INPUT_ELEMENT_DESC{ element.mBindName, 0, (DXGI_FORMAT)element.mFormat, (uint32_t)vbuffCount,
-                    PostIncrement(itemSize, (uint32_t)element.mItemSize), classification,
+                auto elItemSize = element.GetItemByteSize();
+                if (elItemSize >= 4) itemSize = (itemSize + 3) & (~3);
+                OnElement(D3D12_INPUT_ELEMENT_DESC{ element.mBindName.GetName().c_str(), 0, (DXGI_FORMAT)element.mFormat, (uint32_t)vbuffCount,
+                    PostIncrement(itemSize, (uint32_t)elItemSize), classification,
                     binding.mUsage == BufferLayout::Usage::Instance ? 1u : 0u });
             }
             OnVertices(binding, *d3dBin, itemSize);
@@ -390,8 +392,8 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
     D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount)
 {
     auto RequireBuffer = [&](const BufferLayout& binding, D3DBinding& d3dBin) {
-        if (d3dBin.mBuffer == nullptr || d3dBin.mSize < binding.mBuffer.mSize) {
-            d3dBin.mSize = binding.mBuffer.mSize;
+        if (d3dBin.mBuffer == nullptr || d3dBin.mSize < binding.mSize) {
+            d3dBin.mSize = binding.mSize;
             CreateBuffer(d3dBin.mBuffer, d3dBin.mSize);
             d3dBin.mBuffer->SetName(
                 binding.mUsage == BufferLayout::Usage::Vertex ? L"VertexBuffer" :
@@ -421,31 +423,32 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
                     (UINT)itemSize
                     });
                 }, [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-                    if (d3dBin.mRevision == binding.mBuffer.mRevision) return;
+                    if (d3dBin.mRevision == binding.mRevision) return;
                     auto state = binding.mUsage == BufferLayout::Usage::Index ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
                     auto beginWrite = {
                         CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), state, D3D12_RESOURCE_STATE_COPY_DEST),
                     };
                     cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
-                    WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), binding.mBuffer.mSize, //binding.mCount * itemSize,
+                    WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), binding.mSize, //binding.mCount * itemSize,
                         [&](auto* data) {
                             // Fast path
                             if (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize) {
-                                memcpy(data, (uint8_t*)binding.GetElements()[0].mData, binding.mBuffer.mSize);
+                                memcpy(data, (uint8_t*)binding.GetElements()[0].mData, binding.mSize);
                                 return;
                             }
-                            int count = binding.mBuffer.mSize / itemSize;
+                            int count = binding.mSize / itemSize;
                             int toffset = 0;
                             for (auto& element : binding.GetElements()) {
+                                auto elItemSize = element.GetItemByteSize();
                                 for (int s = 0; s < count; ++s) {   //binding.mCount
-                                    memcpy(data + s * itemSize + toffset, (uint8_t*)element.mData + element.mBufferStride * s, element.mItemSize);
+                                    memcpy(data + s * itemSize + toffset, (uint8_t*)element.mData + element.mBufferStride * s, elItemSize);
                                 }
-                                toffset += element.mItemSize;
+                                toffset += elItemSize;
                             }
                         },
                         0//binding.mOffset * itemSize
                     );
-                    d3dBin.mRevision = binding.mBuffer.mRevision;
+                    d3dBin.mRevision = binding.mRevision;
                     auto endWrite = {
                         CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, state),
                     };
@@ -459,30 +462,15 @@ void D3DResourceCache::SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameI
     mUploadBufferCache.SetResourceLockIds(lockFrameId, writeFrameId);
     mDelayedRelease.SetResourceLockIds(lockFrameId, writeFrameId);
 }
-struct Getter {
-    std::span<const Material*> materials;
-    template<class T, typename Fn>
-    T MaterialGet(const Fn& fn) {
-        T out = T();
-        for (auto& mat : materials) {
-            if (fn(mat, out)) return out;
-        }
-        return out;
-    };
-};
 // Ensure a material is ready to be rendererd by the GPU (with the specified vertex layout)
-D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::span<const Material*> materials, std::span<const BufferLayout*> bindings, const IdentifierWithName& renderPass)
+D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
+    const Shader& vertexShader, const Shader& pixelShader,
+    const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+    const IdentifierWithName& renderPass
+)
 {
-    Getter getter = { .materials = materials };
-    // Get the relevant shaders
-    const auto& sourceVS = *getter.MaterialGet<Shader*>([](const Material* mat, Shader*& out) { out = mat->GetVertexShader().get(); return out != nullptr; });
-    const auto& sourcePS = *getter.MaterialGet<Shader*>([](const Material* mat, Shader*& out) { out = mat->GetPixelShader().get(); return out != nullptr; });
-    const auto& blendMode = materials.back()->GetBlendMode();
-    const auto& rasterMode = materials.back()->GetRasterMode();
-    const auto& depthMode = materials.back()->GetDepthMode();
-
     // Find (or create) a pipeline that matches these requirements
-    size_t hash = GenericHash({ GenericHash(blendMode), GenericHash(rasterMode), GenericHash(depthMode), GenericHash((Identifier)renderPass), });
+    size_t hash = GenericHash({ GenericHash(materialState), GenericHash((Identifier)renderPass), });
     for (auto* binding : bindings) {
         for (auto& el : binding->GetElements()) {
             hash = AppendHash(el.mBufferStride, hash);
@@ -490,9 +478,9 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::
         //hash = AppendHash(el, hash);
         // TODO: Append binding layout hash
     }
-    hash = AppendHash(std::make_pair(sourceVS.GetIdentifier(), sourcePS.GetIdentifier()), hash);
+    hash = AppendHash(std::make_pair(vertexShader.GetIdentifier(), pixelShader.GetIdentifier()), hash);
     hash = AppendHash((int)renderPass, hash);
-    auto pipelineState = GetOrCreatePipelineState(sourceVS, sourcePS, hash);
+    auto pipelineState = GetOrCreatePipelineState(vertexShader, pixelShader, hash);
     while (pipelineState->mHash != hash)
     {
         pipelineState->mHash = hash;
@@ -501,8 +489,8 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::
         auto device = mD3D12.GetD3DDevice();
 
         // Make sure shaders are compiled
-        auto vShader = RequireShader(sourceVS, StrVSProfile, renderPass);
-        auto pShader = RequireShader(sourcePS, StrPSProfile, renderPass);
+        auto vShader = RequireShader(vertexShader, StrVSProfile, renderPass);
+        auto pShader = RequireShader(pixelShader, StrPSProfile, renderPass);
         if (vShader == nullptr || pShader == nullptr) break;
         if (vShader->mShader == nullptr || pShader->mShader == nullptr) break;
 
@@ -533,18 +521,18 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::
         psoDesc.VS = CD3DX12_SHADER_BYTECODE(vShader->mShader.Get());
         psoDesc.PS = CD3DX12_SHADER_BYTECODE(pShader->mShader.Get());
         psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-        psoDesc.RasterizerState.CullMode = (D3D12_CULL_MODE)rasterMode.mCullMode;
+        psoDesc.RasterizerState.CullMode = (D3D12_CULL_MODE)materialState.mRasterMode.mCullMode;
         psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
         psoDesc.BlendState.RenderTarget[0].BlendEnable = TRUE;
-        psoDesc.BlendState.RenderTarget[0].SrcBlend = ToD3DBArg(blendMode.mSrcColorBlend);
-        psoDesc.BlendState.RenderTarget[0].DestBlend = ToD3DBArg(blendMode.mDestColorBlend);
-        psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = ToD3DBArg(blendMode.mSrcAlphaBlend);
-        psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = ToD3DBArg(blendMode.mDestAlphaBlend);
-        psoDesc.BlendState.RenderTarget[0].BlendOp = ToD3DBOp(blendMode.mBlendColorOp);
-        psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = ToD3DBOp(blendMode.mBlendAlphaOp);
+        psoDesc.BlendState.RenderTarget[0].SrcBlend = ToD3DBArg(materialState.mBlendMode.mSrcColorBlend);
+        psoDesc.BlendState.RenderTarget[0].DestBlend = ToD3DBArg(materialState.mBlendMode.mDestColorBlend);
+        psoDesc.BlendState.RenderTarget[0].SrcBlendAlpha = ToD3DBArg(materialState.mBlendMode.mSrcAlphaBlend);
+        psoDesc.BlendState.RenderTarget[0].DestBlendAlpha = ToD3DBArg(materialState.mBlendMode.mDestAlphaBlend);
+        psoDesc.BlendState.RenderTarget[0].BlendOp = ToD3DBOp(materialState.mBlendMode.mBlendColorOp);
+        psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = ToD3DBOp(materialState.mBlendMode.mBlendAlphaOp);
         psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC1(D3D12_DEFAULT);
-        psoDesc.DepthStencilState.DepthFunc = (D3D12_COMPARISON_FUNC)depthMode.mComparison;
-        psoDesc.DepthStencilState.DepthWriteMask = depthMode.mWriteEnable ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+        psoDesc.DepthStencilState.DepthFunc = (D3D12_COMPARISON_FUNC)materialState.mDepthMode.mComparison;
+        psoDesc.DepthStencilState.DepthWriteMask = materialState.mDepthMode.mWriteEnable ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = 1;
@@ -552,7 +540,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(std::
         psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState->mPipelineState)));
-        pipelineState->mPipelineState->SetName(sourcePS.GetPath().c_str());
+        pipelineState->mPipelineState->SetName(pixelShader.GetPath().c_str());
 
         // Collect constant buffers required by the shaders
         // TODO: Throw an error if different constant buffers

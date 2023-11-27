@@ -34,11 +34,13 @@ public:
     HWND GetHWND() const { return hWnd; }
 
     // Get the size of the inner window area (not including border or title bar)
-    std::pair<int, int> GetClientSize() const override;
+    Int2 GetClientSize() const override;
 
     // Process window messages and then return control to the callee
     // Non-zero values mean the window was closed
     int MessagePump() override;
+
+    void Close() override;
 
     // Helper functions for receiving messages from Windows
     static LRESULT CALLBACK _WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);

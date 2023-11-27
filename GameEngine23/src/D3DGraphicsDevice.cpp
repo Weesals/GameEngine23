@@ -104,23 +104,6 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     ThrowIfFailed(mD3DDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCmdQueue)));
 
-    // Check the window for how large the backbuffer should be
-    mClientSize = window.GetClientSize();
-
-    // Create the swap chain
-    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-    swapChainDesc.BufferCount = FrameCount;
-    swapChainDesc.Width = std::get<0>(mClientSize);
-    swapChainDesc.Height = std::get<1>(mClientSize);
-    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    swapChainDesc.SampleDesc.Count = 1;
-
-    ComPtr<IDXGISwapChain1> swapChain;
-    ThrowIfFailed(d3dFactory->CreateSwapChainForHwnd(mCmdQueue.Get(), hWnd, &swapChainDesc, nullptr, nullptr, &swapChain));
-    ThrowIfFailed(swapChain.As(&mSwapChain));
-
     // Create descriptor heaps.
     {
         // Describe and create a shader resource view (SRV) and constant 
@@ -156,9 +139,35 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
         mDescriptorHandleSizeDSV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
         mDescriptorHandleSizeSRV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     }
+
+    // Check the window for how large the backbuffer should be
+    mResolution = window.GetClientSize();
+
+    // Create the swap chain
+    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+    swapChainDesc.BufferCount = FrameCount;
+    swapChainDesc.Width = mResolution.x;
+    swapChainDesc.Height = mResolution.y;
+    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    swapChainDesc.SampleDesc.Count = 1;
+
+    ComPtr<IDXGISwapChain1> swapChain;
+    ThrowIfFailed(d3dFactory->CreateSwapChainForHwnd(mCmdQueue.Get(), hWnd, &swapChainDesc, nullptr, nullptr, &swapChain));
+    ThrowIfFailed(swapChain.As(&mSwapChain));
 }
 
 D3DGraphicsDevice::~D3DGraphicsDevice()
 {
     CoUninitialize();
+}
+void D3DGraphicsDevice::SetResolution(Int2 res) {
+    if (mResolution == res) return;
+    mResolution = res;
+    ResizeSwapBuffers();
+}
+void D3DGraphicsDevice::ResizeSwapBuffers() {
+    auto hr = mSwapChain->ResizeBuffers(0, (UINT)mResolution.x, (UINT)mResolution.y, DXGI_FORMAT_UNKNOWN, 0);
+    ThrowIfFailed(hr);
 }

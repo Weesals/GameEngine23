@@ -232,8 +232,8 @@ public:
 		return hash;
 	}
 	void BuildEvaluator(MaterialEvaluator& cache) {
-		int dataOffset = 0;
-		if (!mValues.empty()) { auto& last = mValues.back(); dataOffset = last.mOutputOffset + last.mDataSize; }
+		/*int dataOffset = 0;
+		if (!mValues.empty()) { auto& last = mValues.back(); dataOffset = last.mOutputOffset + last.mDataSize; }*/
 		cache.mValueOffset = (uint16_t)(sizeof(MaterialEvaluator::Source) * mSources.size());
 		cache.mComputedOffset = (uint16_t)(cache.mValueOffset + sizeof(MaterialEvaluator::Value) * mValueCount);
 		cache.mParameterOffset = (uint16_t)(cache.mComputedOffset + sizeof(MaterialEvaluator::Value) * (mValues.size() - mValueCount));
@@ -244,10 +244,10 @@ public:
 		std::copy(mSources.begin(), mSources.end(), cache.GetSources());
 		std::copy(mParameterIds.begin(), mParameterIds.end(), cache.GetParameters());
 		auto destValues = cache.GetValues();
-		for (auto& value : mValues) *(destValues++) = value;
-		mSources.clear();
-		mValues.clear();
-		mParameterIds.clear();
+		for (auto& value : mValues) *(destValues++) = (MaterialCollector::Value)value;
+		//mSources.clear();
+		//mValues.clear();
+		//mParameterIds.clear();
 		Clear();
 	}
 private:

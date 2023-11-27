@@ -54,8 +54,22 @@ std::span<const uint8_t> ParameterSet::GetValueData(Identifier name) const
 	auto size = i->second.mType->mSize * i->second.mCount;
 	return std::span<const uint8_t>(mData.data() + i->second.mByteOffset, size);
 }
-const uint8_t* ParameterSet::GetDataRaw() const
+const TypeCache::TypeInfo* ParameterSet::GetValueType(Identifier name) const
 {
+	auto i = mItems.find(name);
+	if (i == mItems.end()) return { };
+	return i->second.mType;
+}
+int ParameterSet::GetItemIdentifiers(Identifier* outlist, int capacity) const {
+	int count = 0;
+	for (auto& item : mItems) {
+		if (count > capacity) break;
+		outlist[count] = item.first;
+		++count;
+	}
+	return count;
+}
+const uint8_t* ParameterSet::GetDataRaw() const {
 	return mData.data();
 }
 
@@ -120,16 +134,18 @@ const std::shared_ptr<Shader>& Material::GetPixelShader(bool inherit) const
 }
 
 // How to blend with the backbuffer
-void Material::SetBlendMode(BlendMode mode) { mBlendMode = mode; }
-const BlendMode& Material::GetBlendMode() const { return mBlendMode; }
+void Material::SetBlendMode(BlendMode mode) { mMaterialState.mBlendMode = mode; }
+const BlendMode& Material::GetBlendMode() const { return mMaterialState.mBlendMode; }
 
 // How rasterize
-void Material::SetRasterMode(RasterMode mode) { mRasterMode = mode; }
-const RasterMode& Material::GetRasterMode() const { return mRasterMode; }
+void Material::SetRasterMode(RasterMode mode) { mMaterialState.mRasterMode = mode; }
+const RasterMode& Material::GetRasterMode() const { return mMaterialState.mRasterMode; }
 
 // How to clip
-void Material::SetDepthMode(DepthMode mode) { mDepthMode = mode; }
-const DepthMode& Material::GetDepthMode() const { return mDepthMode; }
+void Material::SetDepthMode(DepthMode mode) { mMaterialState.mDepthMode = mode; }
+const DepthMode& Material::GetDepthMode() const { return mMaterialState.mDepthMode; }
+
+const MaterialState& Material::GetMaterialState() const { return mMaterialState; }
 
 // Materials handle instancing
 void Material::SetInstanceCount(int count) { mInstanceCount = count; }
@@ -263,7 +279,7 @@ void RootMaterial::InitialiseDefaults() {
 	static Identifier iLightDir = "_WorldSpaceLightDir0";
 	SetUniform("Model", Matrix::Identity);
 	SetView(Matrix::CreateLookAt(Vector3(0, 5, -10), Vector3(0, 0, 0), Vector3(0, 1, 0)));
-	SetProjection(Matrix::CreatePerspectiveFieldOfView(1.0f, 1.0, 1.0f, 500.0f));
+	SetProjection(Matrix::CreatePerspectiveFieldOfView(1.0f, 1.0f, 1.0f, 500.0f));
 	SetComputedUniform<Matrix>("ModelView", [=](auto& context) {
         auto m = context.GetUniform<Matrix>(iMMat);
         auto v = context.GetUniform<Matrix>(iVMat);

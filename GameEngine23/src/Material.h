@@ -79,6 +79,8 @@ public:
 	}
 	// Get the binary data for a value in this set
 	std::span<const uint8_t> GetValueData(Identifier name) const;
+	const TypeCache::TypeInfo* GetValueType(Identifier name) const;
+	int GetItemIdentifiers(Identifier* outlist, int capacity) const;
 	const uint8_t* GetDataRaw() const;
 private:
 	std::span<const uint8_t> SetValue(Identifier name, const void* data, int count, const TypeCache::TypeInfo& typeInfo);
@@ -152,9 +154,16 @@ public:
 	std::span<const uint8_t> GetUniformSource(Identifier name, MaterialCollectorContext& context) const;
 };
 
+// How to blend/raster/clip
+struct MaterialState
+{
+	BlendMode mBlendMode;
+	RasterMode mRasterMode;
+	DepthMode mDepthMode;
+};
 
 // Stores a binding of shaders and uniform parameter values
-class Material
+class Material : public std::enable_shared_from_this<Material>
 {
 	friend class MaterialEvaluator;
 	friend class MaterialCollector;
@@ -232,9 +241,7 @@ private:
 	IdentifierWithName mRenderPassOverride;
 
 	// How to blend/raster/clip
-	BlendMode mBlendMode;
-	RasterMode mRasterMode;
-	DepthMode mDepthMode;
+	MaterialState mMaterialState;
 
 	// Parameters to be set
 	ParameterSet mParameters;
@@ -253,8 +260,8 @@ private:
 	int mRevision;
 
 	// Utility functions to unpack floats/ints from complex types
-	template<typename D> void Unpack(int v, D&& del) { del(&v, 1); }
-	template<typename D> void Unpack(float v, D&& del) { del(&v, 1); }
+	template<typename D> void Unpack(const int& v, D&& del) { del(&v, 1); }
+	template<typename D> void Unpack(const float& v, D&& del) { del(&v, 1); }
 	template<typename D> void Unpack(const Vector2& v, D&& del) { del(&v.x, 2); }
 	template<typename D> void Unpack(const Vector3& v, D&& del) { del(&v.x, 3); }
 	template<typename D> void Unpack(const Vector4& v, D&& del) { del(&v.x, 4); }
@@ -291,12 +298,15 @@ private:
 public:
 
 	Material() : Material(nullptr, nullptr) { }
-	Material(const std::wstring& shaderPath)
+	Material(const std::wstring_view& shaderPath)
 		: Material(std::make_shared<Shader>(shaderPath, "VSMain"), std::make_shared<Shader>(shaderPath, "PSMain"))
 	{ }
 	Material(const std::shared_ptr<Shader>& vertexShader, const std::shared_ptr<Shader>& pixelShader)
 		: mVertexShader(vertexShader), mPixelShader(pixelShader), mInstanceCount(0), mRevision(0)
 	{ }
+
+	std::shared_ptr<Material> GetSharedPtr() { return shared_from_this(); }
+	const ParameterSet& GetParametersRaw() const { return mParameters; }
 
 	// Set shaders bound to this material
 	void SetVertexShader(const std::shared_ptr<Shader>& shader);
@@ -319,6 +329,8 @@ public:
 	// How to clip
 	void SetDepthMode(DepthMode mode);
 	const DepthMode& GetDepthMode() const;
+
+	const MaterialState& GetMaterialState() const;
 
 	// Materials handle instancing
 	void SetInstanceCount(int count);

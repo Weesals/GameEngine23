@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MathTypes.h"
+#include "Resources.h"
 #include <span>
 #include <algorithm>
 #include <cassert>
@@ -208,49 +209,48 @@ struct BufferFormatType {
 struct BufferLayout {
 	enum Usage : uint8_t { Vertex, Index, Instance, Uniform, };
 	struct Element {
-		const char* mBindName;
-		uint16_t mItemSize = 0;		// Size of each item
+		Identifier mBindName;
 		uint16_t mBufferStride = 0;	// Separation between items in this buffer (>= mItemSize)
 		BufferFormat mFormat = FORMAT_UNKNOWN;
 		void* mData = nullptr;
 		Element() { }
-		Element(const char* name, BufferFormat format)
-			: Element(name, format, 0, 0, nullptr) {
-			mItemSize = mBufferStride = BufferFormatType::GetType(format).GetByteSize();
+		Element(Identifier name, BufferFormat format)
+			: Element(name, format, 0, nullptr) {
+			mBufferStride = BufferFormatType::GetType(format).GetByteSize();
 		}
-		Element(const char* name, BufferFormat format, int stride, int size, void* data)
-			: mBindName(name), mFormat(format), mBufferStride(stride), mItemSize(size), mData(data)
+		Element(Identifier name, BufferFormat format, int stride, void* data)
+			: mBindName(name), mFormat(format), mBufferStride(stride), mData(data)
 		{ }
+		int GetItemByteSize() const {
+			int bsize = BufferFormatType::GetType(mFormat).GetByteSize();
+			assert(bsize <= mBufferStride);
+			return bsize;
+		}
 	};
-	struct Buffer {
-		size_t mIdentifier;
-		int mRevision;
-		int mSize;		// Size in bytes to allocate for the entire buffer
-		Buffer(size_t identifier, int size, int revision = 0)
-			: mIdentifier(identifier), mSize(size), mRevision(revision) { }
-	};
-	Buffer mBuffer;
-	Element* mElements;
-	uint16_t mElementCount;
+	size_t mIdentifier;
+	int mRevision = 0;
+	int mSize = 0;		// Size in bytes to allocate for the entire buffer
+	Element* mElements = nullptr;
+	uint8_t mElementCount = 0;
 	Usage mUsage = Usage::Vertex;
 	int mOffset = 0;	// Offset in count when binding a view to this buffer
 	int mCount = 0;		// How many elements to make current
-	BufferLayout() : mBuffer(0, 0) { }
+	BufferLayout() : mIdentifier(0), mSize(0), mUsage(Usage::Vertex) { }
 	BufferLayout(size_t identifier, int size, Usage usage, int count)
-		: mBuffer(identifier, size), mUsage(usage), mCount(count) { }
+		: mIdentifier(identifier), mSize(size), mUsage(usage), mCount(count) { }
 	std::span<Element> GetElements() { return std::span<Element>(mElements, mElementCount); }
 	std::span<const Element> GetElements() const { return std::span<const Element>((const Element*)mElements, mElementCount); }
 	bool IsValid() { return mElementCount != 0; }
 	int CalculateBufferStride() const {
 		int size = 0;
-		for (auto& el : GetElements()) size += el.mItemSize;
+		for (auto& el : GetElements()) size += el.GetItemByteSize();
 		return size;
 	}
 	void CalculateImplicitSize(int minSize = 0, bool roundTo256 = false) {
-		mBuffer.mSize = CalculateBufferStride();
-		mBuffer.mSize *= mCount;
-		mBuffer.mSize = std::max(mBuffer.mSize, minSize);
-		if (roundTo256) mBuffer.mSize = (mBuffer.mSize + 255) & (~255);
+		mSize = CalculateBufferStride();
+		mSize *= mCount;
+		mSize = std::max(mSize, minSize);
+		if (roundTo256) mSize = (mSize + 255) & (~255);
 	}
 };
 struct BufferLayoutPersistent : public BufferLayout {
@@ -292,9 +292,9 @@ public:
 			auto newData = realloc(el.mData, el.mBufferStride * newCount);
 			if (newData != nullptr) el.mData = newData;
 			else return false;
-			newSizeBytes += el.mItemSize;
+			newSizeBytes += el.GetItemByteSize();
 		}
-		mBuffer.mSize = newSizeBytes * newCount;
+		mSize = newSizeBytes * newCount;
 		mAllocCount = newCount;
 		return true;
 	}
@@ -321,6 +321,8 @@ struct BufferView {
 	*
 	*/
 	const BufferLayout::Element* mElement;
+	BufferFormatType mType;
+	uint16_t mItemSize;
 	static bool IsFloat(BufferFormat fmt) { return 0b01011 & (int)fmt; }
 
 	template<bool B> struct Bool { constexpr static bool Get() { return B; } };
@@ -416,21 +418,24 @@ struct BufferView {
 			return value;
 		}
 	};
-	BufferView(const BufferLayout::Element* element) : mElement(element) { }
+	BufferView(const BufferLayout::Element* element)
+		: mElement(element)
+		, mType(BufferFormatType::GetType(element->mFormat))
+		, mItemSize(mType.GetByteSize()) { }
 	Vector4 GetVec4(int index) const {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		auto type = BufferFormatType::GetType(mElement->mFormat);
 		if (type.size == BufferFormatType::Size32 && type.type == BufferFormatType::Float) {
-			Vector4 value = { }; std::memcpy(&value, data, mElement->mItemSize); return value;
+			Vector4 value = { }; std::memcpy(&value, data, mItemSize); return value;
 		}
 		if (type.IsIntOrNrm()) {
 			if (type.IsNormalized()) {
-				if (type.IsSigned()) return Getter::GetItoF4<true, true>(type.size, data, mElement->mItemSize);
-				else return Getter::GetItoF4<true, false>(type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) return Getter::GetItoF4<true, true>(type.size, data, mItemSize);
+				else return Getter::GetItoF4<true, false>(type.size, data, mItemSize);
 			}
 			else {
-				if (type.IsSigned()) return Getter::GetItoF4<false, true>(type.size, data, mElement->mItemSize);
-				else return Getter::GetItoF4<false, false>(type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) return Getter::GetItoF4<false, true>(type.size, data, mItemSize);
+				else return Getter::GetItoF4<false, false>(type.size, data, mItemSize);
 			}
 		}
 		throw "Not implemented";
@@ -442,20 +447,20 @@ struct BufferView {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		auto type = BufferFormatType::GetType(mElement->mFormat);
 		ColorB4 value(ColorB4::Black);
-		if (type.size == BufferFormatType::Size8 && type.IsIntOrNrm()) { std::memcpy(&value, data, mElement->mItemSize); return value; }
+		if (type.size == BufferFormatType::Size8 && type.IsIntOrNrm()) { std::memcpy(&value, data, mItemSize); return value; }
 		if (type.IsIntOrNrm()) {
 			if (type.IsNormalized()) {
-				if (type.IsSigned()) Getter::GetO4<true, true, true>(&value.r, type.size, data, mElement->mItemSize);
-				else				Getter::GetO4<true, false, true>(&value.r, type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) Getter::GetO4<true, true, true>(&value.r, type.size, data, mItemSize);
+				else				Getter::GetO4<true, false, true>(&value.r, type.size, data, mItemSize);
 			}
 			else {
-				if (type.IsSigned()) Getter::GetO4<false, true, true>(&value.r, type.size, data, mElement->mItemSize);
-				else				Getter::GetO4<false, false, true>(&value.r, type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) Getter::GetO4<false, true, true>(&value.r, type.size, data, mItemSize);
+				else				Getter::GetO4<false, false, true>(&value.r, type.size, data, mItemSize);
 			}
 			return value;
 		}
 		if (type.IsFloat()) {
-			Getter::ConvertTypedGet<true, uint8_t, true, true, float>(&value.r, data, mElement->mItemSize);
+			Getter::ConvertTypedGet<true, uint8_t, true, true, float>(&value.r, data, mItemSize);
 			return value;
 		}
 		throw "Not implemented";
@@ -465,21 +470,21 @@ struct BufferView {
 		auto type = BufferFormatType::GetType(mElement->mFormat);
 		Int4 value = { };
 		if (type.size == BufferFormatType::Size32 && type.IsIntOrNrm()) {
-			std::memcpy(&value, data, mElement->mItemSize); return value;
+			std::memcpy(&value, data, mItemSize); return value;
 		}
 		if (type.IsIntOrNrm()) {
 			if (type.IsNormalized()) {
-				if (type.IsSigned()) Getter::GetO4<true, true, false>(&value.x, type.size, data, mElement->mItemSize);
-				else				Getter::GetO4<true, false, false>(&value.x, type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) Getter::GetO4<true, true, false>(&value.x, type.size, data, mItemSize);
+				else				Getter::GetO4<true, false, false>(&value.x, type.size, data, mItemSize);
 			}
 			else {
-				if (type.IsSigned()) Getter::GetO4<false, true, false>(&value.x, type.size, data, mElement->mItemSize);
-				else				Getter::GetO4<false, false, false>(&value.x, type.size, data, mElement->mItemSize);
+				if (type.IsSigned()) Getter::GetO4<false, true, false>(&value.x, type.size, data, mItemSize);
+				else				Getter::GetO4<false, false, false>(&value.x, type.size, data, mItemSize);
 			}
 			return value;
 		}
 		if (type.IsFloat()) {
-			Getter::ConvertTypedGet<false, int, true, true, float>(&value.x, data, mElement->mItemSize);
+			Getter::ConvertTypedGet<false, int, true, true, float>(&value.x, data, mItemSize);
 			return value;
 		}
 		throw "Not implemented";
@@ -498,15 +503,15 @@ struct BufferView {
 	void Set(int index, Vector4 value) {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		auto type = BufferFormatType::GetType(mElement->mFormat);
-		if (type.size == BufferFormatType::Size32 && type.IsFloat()) { std::memcpy(data, &value, mElement->mItemSize); return; }
+		if (type.size == BufferFormatType::Size32 && type.IsFloat()) { std::memcpy(data, &value, mItemSize); return; }
 		if (type.IsIntOrNrm()) {
 			if (type.IsNormalized()) {
-				if (type.IsSigned()) Getter::SetO4<true, true, true, true>(data, type.size, &value.x, mElement->mItemSize);
-				else				Getter::SetO4<true, false, true, true>(data, type.size, &value.x, mElement->mItemSize);
+				if (type.IsSigned()) Getter::SetO4<true, true, true, true>(data, type.size, &value.x, mItemSize);
+				else				Getter::SetO4<true, false, true, true>(data, type.size, &value.x, mItemSize);
 			}
 			else {
-				if (type.IsSigned()) Getter::SetO4<false, true, true, true>(data, type.size, &value.x, mElement->mItemSize);
-				else				Getter::SetO4<false, false, true, true>(data, type.size, &value.x, mElement->mItemSize);
+				if (type.IsSigned()) Getter::SetO4<false, true, true, true>(data, type.size, &value.x, mItemSize);
+				else				Getter::SetO4<false, false, true, true>(data, type.size, &value.x, mItemSize);
 			}
 			return;
 		}
@@ -517,26 +522,26 @@ struct BufferView {
 	void Set(int index, float value) { Set(index, Vector4(value)); }
 	void Set(int index, ColorB4 value) {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
-		if (mElement->mFormat == FORMAT_R8G8B8A8_UNORM || mElement->mFormat == FORMAT_R8G8B8A8_UINT) { std::memcpy(data, &value, mElement->mItemSize); return; }
+		if (mElement->mFormat == FORMAT_R8G8B8A8_UNORM || mElement->mFormat == FORMAT_R8G8B8A8_UINT) { std::memcpy(data, &value, mItemSize); return; }
 		Set(index, (Vector4)value);
 	}
 	void Set(int index, Int4 value) {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		auto type = BufferFormatType::GetType(mElement->mFormat);
-		if (type.size == BufferFormatType::Size32 && type.IsIntOrNrm()) { std::memcpy(data, &value, mElement->mItemSize); return; }
+		if (type.size == BufferFormatType::Size32 && type.IsIntOrNrm()) { std::memcpy(data, &value, mItemSize); return; }
 		if (type.IsIntOrNrm()) {
 			if (type.IsNormalized()) {
-				if (type.IsSigned()) Getter::SetO4<true, false, false, true>(data, type.size, &value.x, mElement->mItemSize);
-				else				Getter::SetO4<true, false, false, true>(data, type.size, &value.x, mElement->mItemSize);
+				if (type.IsSigned()) Getter::SetO4<true, false, false, true>(data, type.size, &value.x, mItemSize);
+				else				Getter::SetO4<true, false, false, true>(data, type.size, &value.x, mItemSize);
 			}
 			else {
-				if (type.IsSigned()) Getter::SetO4<false, true, false, true>(data, type.size, &value.x, mElement->mItemSize);
-				else				Getter::SetO4<false, false, false, true>(data, type.size, &value.x, mElement->mItemSize);
+				if (type.IsSigned()) Getter::SetO4<false, true, false, true>(data, type.size, &value.x, mItemSize);
+				else				Getter::SetO4<false, false, false, true>(data, type.size, &value.x, mItemSize);
 			}
 			return;
 		}
 		if (type.IsFloat()) {
-			Getter::ConvertTypedSet<false, false, float, false>((float*)data, &value.x, mElement->mItemSize);
+			Getter::ConvertTypedSet<false, false, float, false>((float*)data, &value.x, mItemSize);
 			return;
 		}
 		throw "Not supported";
@@ -545,14 +550,14 @@ struct BufferView {
 		auto* data = (uint8_t*)mElement->mData + index * mElement->mBufferStride;
 		auto type = BufferFormatType::GetType(mElement->mFormat);
 		if (type.size == BufferFormatType::Size32) {
-			if (type.IsIntOrNrm()) { std::memcpy(data, &value, mElement->mItemSize); return; }
-			if (type.IsFloat()) { std::transform(&value.x, &value.x + mElement->mItemSize / sizeof(float), (float*)data, [=](auto v) { return (float)v; }); return; }
+			if (type.IsIntOrNrm()) { std::memcpy(data, &value, mItemSize); return; }
+			if (type.IsFloat()) { std::transform(&value.x, &value.x + mType.GetComponentCount(), (float*)data, [=](auto v) { return (float)v; }); return; }
 		}
 		if (type.size == BufferFormatType::Size16) {
-			if (type.IsIntOrNrm()) { std::transform(&value.x, &value.x + mElement->mItemSize / sizeof(int16_t), (int16_t*)data, [=](auto v) { return (int16_t)v; }); return; }
+			if (type.IsIntOrNrm()) { std::transform(&value.x, &value.x + mType.GetComponentCount(), (int16_t*)data, [=](auto v) { return (int16_t)v; }); return; }
 		}
 		if (type.size == BufferFormatType::Size8) {
-			if (type.IsIntOrNrm()) { std::transform(&value.x, &value.x + mElement->mItemSize / sizeof(int8_t), (int8_t*)data, [=](auto v) { return (int8_t)v; }); return; }
+			if (type.IsIntOrNrm()) { std::transform(&value.x, &value.x + mType.GetComponentCount(), (int8_t*)data, [=](auto v) { return (int8_t)v; }); return; }
 		}
 		throw "Not supported";
 	}
@@ -599,7 +604,7 @@ struct BufferView {
 	template<class T>
 	bool DataFastPath(BufferFormatType type, int index, const void* data, int count, int chCount) {
 		if (type.GetComponentCount() == chCount) { memcpy((T*)mElement->mData + index * chCount, data, count * chCount * sizeof(T)); return true; }
-		int dstCnt = mElement->mItemSize / sizeof(T);
+		int dstCnt = mType.GetComponentCount();
 		int cpyCnt = std::min(chCount, dstCnt);
 		T* dstData = (T*)mElement->mData;
 		T* srcData = (T*)data;

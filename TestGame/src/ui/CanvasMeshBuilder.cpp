@@ -25,10 +25,10 @@ TypedBufferView<uint32_t> CanvasMeshBuffer::GetIndices(RangeInt range) const {
 	return TypedBufferView<uint32_t>(&mIndices.mElements[0], range);
 }
 void CanvasMeshBuffer::MarkVerticesChanged(RangeInt range) {
-	mVertices.mBuffer.mRevision++;
+	mVertices.mRevision++;
 }
 void CanvasMeshBuffer::MarkIndicesChanged(RangeInt range) {
-	mIndices.mBuffer.mRevision++;
+	mIndices.mRevision++;
 }
 
 
@@ -39,16 +39,6 @@ TypedBufferView<uint32_t> CanvasVertices::GetIndices() { return mBuilder->GetInd
 void CanvasVertices::MarkChanged() {
 	mBuilder->MarkVerticesChanged(mVertexRange);
 	mBuilder->MarkIndicesChanged(mIndexRange);
-}
-
-bool CanvasMeshBuffer::ResizeBuffer(BufferLayout& buffer, int newSizeBytes) {
-	for (auto& el : buffer.GetElements()) {
-		auto newData = realloc(el.mData, newSizeBytes);
-		if (newData != nullptr) el.mData = newData;
-		else return false;
-	}
-	buffer.mBuffer.mSize = newSizeBytes;
-	return true;
 }
 
 CanvasMeshBuilder::CanvasMeshBuilder() {
@@ -67,10 +57,10 @@ RangeInt CanvasMeshBuilder::RequireVertices(int vcount) {
 	if (range.start >= 0) return range;
 	mVertices.mCount -= mFreeVertices.Compact(mVertices.mCount);
 	range = RangeInt(mVertices.mCount, vcount);
-	if (range.end() * mVertexBufferStrideCache >= mVertices.mBuffer.mSize) {
-		int newSize = mVertices.mBuffer.mSize + 1024 * mVertexBufferStrideCache;
+	if (range.end() * mVertexBufferStrideCache >= mVertices.mSize) {
+		int newSize = mVertices.mSize + 1024 * mVertexBufferStrideCache;
 		newSize = std::max(newSize, range.end() * mVertexBufferStrideCache);
-		if (!ResizeBuffer(mVertices, newSize)) return RangeInt(0, 0);
+		if (!mVertices.AllocResize(newSize)) return RangeInt(0, 0);
 	}
 	mVertices.mCount += vcount;
 	return range;
@@ -80,10 +70,10 @@ RangeInt CanvasMeshBuilder::RequireIndices(int icount) {
 	if (range.start >= 0) return range;
 	mIndices.mCount -= mFreeIndices.Compact(mIndices.mCount);
 	range = RangeInt(mIndices.mCount, icount);
-	if (range.end() * mIndexBufferStrideCache >= mIndices.mBuffer.mSize) {
-		int newSize = mIndices.mBuffer.mSize + 1024 * mIndexBufferStrideCache;
+	if (range.end() * mIndexBufferStrideCache >= mIndices.mSize) {
+		int newSize = mIndices.mSize + 1024 * mIndexBufferStrideCache;
 		newSize = std::max(newSize, range.end() * mIndexBufferStrideCache);
-		if (!ResizeBuffer(mIndices, newSize)) return RangeInt(0, 0);
+		if (!mIndices.AllocResize(newSize)) return RangeInt(0, 0);
 	}
 	mIndices.mCount += icount;
 	return range;

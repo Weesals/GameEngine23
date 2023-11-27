@@ -7,7 +7,7 @@
 struct Identifier
 {
     short mId;
-    Identifier() : mId(-1) { }
+    Identifier() : mId(0) { }
     Identifier(int id) : mId((short)id) { }
     Identifier(const std::string_view& name);
     Identifier(const std::wstring_view& name);
@@ -18,12 +18,8 @@ struct Identifier
     bool operator ==(const Identifier& o) const { return mId == o.mId; }
     bool operator !=(const Identifier& o) const { return mId != o.mId; }
     operator int() const { return mId; }
-    const std::string& GetName() const {
-        static const std::string empty;
-        for (auto& kv : gStringToId) if (kv.second == *this) return kv.first;
-        return empty;
-    }
-    bool IsValid() const { return mId != -1; }
+    const std::string& GetName() const { return GetName(*this); }
+    bool IsValid() const { return mId != 0; }
 
 public:
     struct comp
@@ -61,30 +57,15 @@ private:
     };
     // TODO: Use hat trie instead of map
     static std::unordered_map<std::string, Identifier, string_hash, std::equal_to<>> gStringToId;
-    static std::unordered_map<std::wstring, Identifier, string_hash, std::equal_to<>> gWStringToId;
+    static std::unordered_map<Identifier, std::string> gIdToString;
 
 public:
     // Get a persistent id for the any string
     // (to more efficiently track via resource paths or other attributes)
-    static Identifier RequireStringId(const std::string_view& name)
-    {
-        auto i = gStringToId.find(name);
-        if (i == gStringToId.end())
-            i = gStringToId.insert({ std::string(name), (int)gStringToId.size() }).first;
-        return i->second;
-    }
-    static Identifier RequireStringId(const std::wstring_view& name)
-    {
-        auto i = gWStringToId.find(name);
-        if (i == gWStringToId.end())
-            i = gWStringToId.insert({ std::wstring(name), (int)gWStringToId.size() }).first;
-        return i->second;
-    }
-    static void Purge()
-    {
-        gStringToId.clear();
-        gWStringToId.clear();
-    }
+    static Identifier RequireStringId(const std::string_view& name);
+    static Identifier RequireStringId(const std::wstring_view& name);
+    static const std::string& GetName(Identifier identifier);
+    static void Purge();
 
 };
 
@@ -94,11 +75,10 @@ struct IdentifierWithName : Identifier
     IdentifierWithName() : Identifier() { }
     IdentifierWithName(const std::string_view& name) : Identifier(name), mName(name) { }
     IdentifierWithName(const char* name) : IdentifierWithName(std::string_view(name)) { }
+    IdentifierWithName(const Identifier& other) : Identifier(other), mName(other.GetName()) { }
     IdentifierWithName(const IdentifierWithName& other) = default;
     IdentifierWithName(IdentifierWithName&& other) = default;
-    ~IdentifierWithName() {
-        int a = 0;
-    }
+    ~IdentifierWithName() { }
     IdentifierWithName& operator =(const IdentifierWithName& other) = default;
     IdentifierWithName& operator =(IdentifierWithName&& other) = default;
     operator const std::string& () const { return mName; }

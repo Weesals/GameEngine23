@@ -30,7 +30,7 @@ public:
 	void AddRef(int id, int count = 1) { mMaterialSets[id].mReferenceCount += count; }
 	void DeRef(int id, int count = 1) { if ((mMaterialSets[id].mReferenceCount -= count) == 0) Remove(id); }
 	void Remove(int id) {
-		size_t hash = GenericHash(GetMaterials(id));
+		size_t hash = ArrayHash(GetMaterials(id));
 		mMaterialSets.Return(id);
 		mSetIDByHash.erase(mSetIDByHash.find(hash));
 	}
@@ -158,6 +158,8 @@ public:
 
 	// Add an instance to be drawn each frame
 	int AppendInstance(const Mesh* mesh, std::span<const Material*> materials, int sceneId);
+	// Set visibility
+	void SetVisible(int sceneId, bool visible);
 	// Remove an instance from rendering
 	void RemoveInstance(int instanceId);
 
@@ -184,14 +186,14 @@ public:
 };
 class RenderPassList {
 	std::shared_ptr<RetainedScene> mScene;
-	SparseArray<int> mPassIds;
-	std::vector<RangeInt> mPassIdsBySceneId;
+	std::vector<int> mInstancePassIds;
 public:
 	std::vector<RenderPass*> mPasses;
 	RenderPassList(const std::shared_ptr<RetainedScene>& scene)
 		: mScene(scene) { }
 	std::vector<RenderPass*>::iterator begin() { return mPasses.begin(); }
 	std::vector<RenderPass*>::iterator end() { return mPasses.end(); }
+	int GetPassInstanceId(int sceneId, int passId);
 	int AddInstance(const Mesh* mesh, std::span<const Material*> materials, int dataSize);
 	template<class T>
 	bool UpdateInstanceData(int sceneId, const T& tdata) {

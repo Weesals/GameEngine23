@@ -58,9 +58,9 @@ public:
         : mDevices(std::move(devices)) { }
 
     // Just get the first devices size
-    Vector2 GetClientSize() const override
+    Int2 GetResolution() const override
     {
-        return mDevices[0]->GetClientSize();
+        return mDevices[0]->GetResolution();
     }
 
     // Create command buffers for each device
@@ -70,7 +70,11 @@ public:
     }
 
     // Calculate which PSO this draw call would land in
-    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass) override {
+    const PipelineLayout* RequirePipeline(
+        const Shader& vertexShader, const Shader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+        const IdentifierWithName& renderPass
+    ) override {
         return nullptr;
     }
 

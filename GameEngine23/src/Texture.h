@@ -2,10 +2,11 @@
 
 #include <vector>
 #include <span>
+#include <memory>
 
 #include "MathTypes.h"
 
-class TextureBase
+class TextureBase : public std::enable_shared_from_this<TextureBase>
 {
 	int mRevision;
 public:

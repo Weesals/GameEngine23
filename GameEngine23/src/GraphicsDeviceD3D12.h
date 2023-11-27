@@ -60,10 +60,15 @@ public:
     D3DResourceCache& GetResourceCache() { return mCache; }
 
     int GetBackBufferIndex() const { return mBackBufferIndex; }
-    Vector2 GetClientSize() const { return mDevice.GetClientSize(); }
+    Int2 GetResolution() const override { return mDevice.GetResolution(); }
+    void SetResolution(Int2 res) override;
 
     CommandBuffer CreateCommandBuffer() override;
-    const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials, const IdentifierWithName& renderPass) override;
+    const PipelineLayout* RequirePipeline(
+        const Shader& vertexShader, const Shader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+        const IdentifierWithName& renderPass
+    ) override;
     void Present() override;
     void WaitForFrame();
     void WaitForGPU();

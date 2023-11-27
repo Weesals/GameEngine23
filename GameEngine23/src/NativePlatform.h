@@ -17,9 +17,9 @@ public:
 	void Initialize();
 
 	// Use to access platform systems
-	std::shared_ptr<WindowBase>& GetWindow() { return mWindow; }
-	std::shared_ptr<GraphicsDeviceBase>& GetGraphics() { return mGraphics; }
-	std::shared_ptr<Input>& GetInput() { return mInput; }
+	const std::shared_ptr<WindowBase>& GetWindow() const { return mWindow; }
+	const std::shared_ptr<GraphicsDeviceBase>& GetGraphics() const { return mGraphics; }
+	const std::shared_ptr<Input>& GetInput() const { return mInput; }
 
 	// Call per frame to handle other processing
 	int MessagePump();

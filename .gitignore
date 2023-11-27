@@ -396,5 +396,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
 /TestGame/imgui.ini
 /Ignore
+/CSBindings/scripts/ClangSharp*
+/CSBindings/scripts/*.dll

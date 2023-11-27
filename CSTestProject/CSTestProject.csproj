@@ -8,7 +8,12 @@
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
     <RunPostBuildEvent>Always</RunPostBuildEvent>
     <DisableFastUpToDateCheck>True</DisableFastUpToDateCheck>
+    <RootNamespace>Weesals</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Flecs.NET.Release" Version="3.2.9" />
+  </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <ItemGroup>

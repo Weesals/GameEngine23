@@ -19,8 +19,6 @@ protected:
 	int mAllocatedIndices;
 	BufferLayoutPersistent mIndices;
 	SparseIndices mFreeIndices;
-
-	static bool ResizeBuffer(BufferLayout& buffer, int newSizeBytes);
 public:
 	struct CanvasRange {
 		RangeInt mVertexRange;

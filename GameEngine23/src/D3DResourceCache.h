@@ -200,7 +200,11 @@ public:
     D3DBufferWithSRV* RequireD3DBuffer(const Texture& mesh);
     D3DShader* RequireShader(const Shader& shader, const std::string& profile, const IdentifierWithName& renderPass);
     D3DPipelineState* GetOrCreatePipelineState(const Shader& vs, const Shader& ps, size_t hash);
-    D3DPipelineState* RequirePipelineState(std::span<const Material*> materials, std::span<const BufferLayout*> bindings, const IdentifierWithName& renderPass);
+    D3DPipelineState* RequirePipelineState(
+        const Shader& vertexShader, const Shader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+        const IdentifierWithName& renderPass
+    );
     D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
     D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);
 

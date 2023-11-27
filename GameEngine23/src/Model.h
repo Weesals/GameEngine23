@@ -21,6 +21,9 @@ public:
 	std::span<std::shared_ptr<Mesh>> GetMeshes() {
 		return mMeshes;
 	}
+	std::span<const std::shared_ptr<Mesh>> GetMeshes() const {
+		return mMeshes;
+	}
 
 	void Render(CommandBuffer& cmdBuffer, const std::shared_ptr<Material>& material)
 	{

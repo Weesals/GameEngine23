@@ -28,7 +28,7 @@ class D3DGraphicsDevice
     int mDescriptorHandleSizeSRV;
     int mDescriptorHandleSizeDSV;
     // Size of the client rect of the window
-    std::pair<int, int> mClientSize;
+    Int2 mResolution;
 
 public:
     D3DGraphicsDevice(const WindowWin32& window);
@@ -44,6 +44,7 @@ public:
     IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
     ID3D12CommandQueue* GetCmdQueue() const { return mCmdQueue.Get(); }
 
-    Vector2 GetClientSize() const { return Vector2((float)mClientSize.first, (float)mClientSize.second); }
+    Int2 GetResolution() const { return mResolution; }
+    void SetResolution(Int2 res);
+    void ResizeSwapBuffers();
 };
-

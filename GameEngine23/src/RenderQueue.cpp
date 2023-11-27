@@ -5,7 +5,7 @@
 RenderQueue::RenderQueue() {
 	mInstanceBufferLayout = BufferLayoutPersistent((size_t)this, 0, BufferLayout::Usage::Instance, -1);
 	mInstanceBufferLayout.AppendElement(
-		BufferLayout::Element("INSTANCE", BufferFormat::FORMAT_R32_UINT, sizeof(int), sizeof(int), nullptr)
+		BufferLayout::Element("INSTANCE", BufferFormat::FORMAT_R32_UINT, sizeof(int), nullptr)
 	);
 }
 void RenderQueue::Clear()
@@ -60,8 +60,8 @@ void RenderQueue::Render(CommandBuffer& cmdBuffer)
 {
 	// Setup the instance buffer
 	mInstanceBufferLayout.mElements[0].mData = mInstancesBuffer.data();
-	mInstanceBufferLayout.mBuffer.mSize = mInstanceBufferLayout.mElements[0].mItemSize * (int)mInstancesBuffer.size();
-	mInstanceBufferLayout.mBuffer.mRevision++;
+	mInstanceBufferLayout.mSize = mInstanceBufferLayout.mElements[0].GetItemByteSize() * (int)mInstancesBuffer.size();
+	mInstanceBufferLayout.mRevision++;
 	// Submit daw calls
 	for (auto& draw : mDraws) {
 		// The subregion of this draw calls instances
@@ -136,7 +136,7 @@ int MeshDrawInstanced::GetInstanceCount() {
 	return instanceCount;
 }
 int MeshDrawInstanced::AddInstanceElement(const char* name, BufferFormat fmt, int stride) {
-	mInstanceBuffer.AppendElement(BufferLayout::Element(name, fmt, stride, stride, nullptr));
+	mInstanceBuffer.AppendElement(BufferLayout::Element(name, fmt, stride, nullptr));
 	mPassCache.clear();
 	return (int)mInstanceBuffer.GetElements().size() - 1;
 }
@@ -147,7 +147,7 @@ void MeshDrawInstanced::SetInstanceData(void* data, int count, int elementId, bo
 		mInstanceBuffer.CalculateImplicitSize();
 	}
 	if (markDirty)
-		mInstanceBuffer.mBuffer.mRevision++;
+		mInstanceBuffer.mRevision++;
 }
 
 void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, const DrawConfig& config) {
@@ -184,7 +184,7 @@ void MeshDrawInstanced::Draw(CommandBuffer& cmdBuffer, RenderPass& pass, const D
 	for (auto* mat : mMaterials) renMaterials.push_back(mat);
 
 	auto resources = MaterialEvaluator::ResolveResources(cmdBuffer, passCache->mPipeline, renMaterials);
-	auto renBufferPtrs = queue.ImmortalizeBufferLayout(cmdBuffer, mBufferLayout);
+	auto renBufferPtrs = RenderQueue::ImmortalizeBufferLayout(cmdBuffer, mBufferLayout);
 
 	queue.AppendMesh(mMesh->GetName().c_str(), passCache->mPipeline, renBufferPtrs.data(),
 		resources.data(), RangeInt(0, instanceCount));
