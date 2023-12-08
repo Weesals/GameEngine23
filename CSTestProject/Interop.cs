@@ -607,9 +607,9 @@ namespace GameEngine23.Interop
         [return: NativeTypeName("const NativePipeline *")]
         public static extern NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@SAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVShader@@2PEAXUCSIdentifier@@@Z", ExactSpelling = true)]
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@SAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVShader@@2PEAX1UCSIdentifier@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativePipeline *")]
-        public static extern NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSIdentifier renderPass);
+        public static extern NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireFrameData@CSGraphics@@SAPEAXPEAVNativeGraphics@@H@Z", ExactSpelling = true)]
         public static extern void* RequireFrameData(NativeGraphics* graphics, int byteSize);
@@ -747,6 +747,9 @@ namespace GameEngine23.Interop
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGPUBuffer@CSScene@@SAPEAVTexture@@PEAVNativeScene@@@Z", ExactSpelling = true)]
         public static extern NativeTexture* GetGPUBuffer(NativeScene* scene);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGPURevision@CSScene@@SAHPEAVNativeScene@@@Z", ExactSpelling = true)]
+        public static extern int GetGPURevision(NativeScene* scene);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SubmitToGPU@CSScene@@SAXPEAVNativeScene@@PEAVNativeGraphics@@@Z", ExactSpelling = true)]
         public static extern void SubmitToGPU(NativeScene* scene, NativeGraphics* graphics);

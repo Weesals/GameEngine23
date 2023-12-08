@@ -63,12 +63,14 @@ namespace Weesals.Engine {
             GetPassMaterial().SetTexture(name, other.RenderTarget);
         }
 
-        public void SetViewProjection(in Matrix4x4 view, in Matrix4x4 proj) {
+        public bool SetViewProjection(in Matrix4x4 view, in Matrix4x4 proj) {
+            if (View == view && Projection == proj) return false;
             View = view;
             Projection = proj;
             Frustum = new Frustum(view * proj);
             OverrideMaterial.SetValue(RootMaterial.iVMat, view);
             OverrideMaterial.SetValue(RootMaterial.iPMat, proj);
+            return true;
         }
         public void AddInstance(CSInstance instance, Mesh mesh, Span<Material> materials) {
             RetainedRenderer.AppendInstance(mesh, materials, instance.GetInstanceId());
@@ -92,7 +94,7 @@ namespace Weesals.Engine {
             SetTargetDesc(new TextureDesc() { Size = 1024, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, });
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
         }
-        public void UpdateShadowFrustum(RenderPass basePass) {
+        public bool UpdateShadowFrustum(RenderPass basePass) {
             // Create shadow projection based on frustum near/far corners
             var frustum = basePass.GetFrustum();
             Span<Vector3> corners = stackalloc Vector3[8];
@@ -118,12 +120,13 @@ namespace Weesals.Engine {
 
             var lightMin = Vector3.Max(lightFMin, lightTMin);
             var lightMax = Vector3.Min(lightFMax, lightTMax);
+            var lightSize = lightMax - lightMin;
 
             lightViewMatrix.Translation = lightViewMatrix.Translation - (lightMin + lightMax) / 2.0f;
-            var lightSize = lightMax - lightMin;
-            SetViewProjection(
+            var lightProjMatrix = Matrix4x4.CreateOrthographic(lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
+            return SetViewProjection(
                 lightViewMatrix,
-                Matrix4x4.CreateOrthographic(lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f)
+                lightProjMatrix
             );
         }
     }

@@ -92,6 +92,7 @@ namespace Weesals.Engine {
             Size9995, Other
         }
         byte mPacked;
+        public byte GetPacked() { return mPacked; }
         public bool IsInt() { return (mPacked & 0b101) == 0b001; }
         public bool IsIntOrNrm() { return (mPacked & 0b100) == 0b000; }
         public bool IsFloat() { return (Types)(mPacked & 0b111) == Types.Float; }
@@ -289,6 +290,21 @@ namespace Weesals.Engine {
             BufferLayout.size = mBufferAllocCount * mBufferStride;
         }
 
+        unsafe public void CopyRange(int from, int to, int count) {
+            foreach (var element in Elements) {
+                var fromPtr = (byte*)element.mData + from * element.mBufferStride;
+                var toPtr = (byte*)element.mData + to * element.mBufferStride;
+                var byteSize = count * element.mBufferStride;
+                new Span<byte>(fromPtr, byteSize).CopyTo(new Span<byte>(toPtr, byteSize));
+            }
+        }
+        public void InvalidateRange(int from, int count) {
+            foreach (var element in Elements) {
+                var fromPtr = (byte*)element.mData + from * element.mBufferStride;
+                var byteSize = count * element.mBufferStride;
+                new Span<byte>(fromPtr, byteSize).Fill(255);
+            }
+        }
         public void CopyFrom(in CSBufferLayout other) {
             AllocResize(other.mCount);
             BufferLayout.mCount = other.mCount;
@@ -319,6 +335,70 @@ namespace Weesals.Engine {
         public static implicit operator Normalized<T>(T v) { return new Normalized<T>() { Value = v }; }
         public static implicit operator T(Normalized<T> v) { return v.Value; }
     }
+    public struct SColor {
+        public sbyte R, G, B, A;
+        public SColor(Vector4 v) : this(
+            (sbyte)Math.Clamp(127.0f * v.X, 0.0f, 127.0f),
+            (sbyte)Math.Clamp(127.0f * v.Y, 0.0f, 127.0f),
+            (sbyte)Math.Clamp(127.0f * v.Z, 0.0f, 127.0f),
+            (sbyte)Math.Clamp(127.0f * v.W, 0.0f, 127.0f)) { }
+        public SColor(Vector3 v, sbyte a = sbyte.MaxValue) : this(
+            (sbyte)Math.Clamp(127.0f * v.X, 0.0f, 127.0f),
+            (sbyte)Math.Clamp(127.0f * v.Y, 0.0f, 127.0f),
+            (sbyte)Math.Clamp(127.0f * v.Z, 0.0f, 127.0f),
+            a) { }
+        public SColor(sbyte r, sbyte g, sbyte b, sbyte a) { R = r; G = g; B = b; A = a; }
+        public static implicit operator Color(SColor c) {
+            return new Color((byte)Math.Max(0, c.R * 255 / 127), (byte)Math.Max(0, c.G * 255 / 127), (byte)Math.Max(0, c.B * 255 / 127), (byte)Math.Max(0, c.A * 255 / 127));
+        }
+        public static implicit operator SColor(Color c) {
+            return new SColor((sbyte)(c.R * 127 / 255), (sbyte)(c.G * 127 / 255), (sbyte)(c.B * 127 / 255), (sbyte)(c.A * 127 / 255));
+        }
+        public static implicit operator Vector4(SColor c) {
+            return new Vector4(c.R, c.G, c.B, c.A) * (1.0f / 127.0f);
+        }
+        public static implicit operator Vector3(SColor c) {
+            return new Vector3(c.R, c.G, c.B) * (1.0f / 127.0f);
+        }
+    }
+    public struct Half {
+        public ushort Bits;
+        unsafe public Half(float value) {
+            uint valueBits = *(uint*)&value;
+            Bits = (ushort)(
+                ((valueBits >> 16) & 0x8000) |
+                (((valueBits >> 13) & (0x3fc00 | 0x03ff)) - (112 << 10))
+            );
+        }
+        unsafe public static implicit operator float(Half h) {
+            uint valueBits =
+                (((uint)h.Bits << 16) & 0x80000000) |
+                ((((uint)h.Bits << 13) & (0x0f800000 | 0x03ff0000)) + ((uint)112 << 23));
+            return *(float*)&valueBits;
+        }
+        unsafe public static implicit operator Half(float f) { return new Half(f); }
+    }
+    public struct Half2 {
+        public Half X, Y;
+        public Half2(Vector2 v) { X = v.X; Y = v.Y; }
+        public static implicit operator Vector2(Half2 h) { return new Vector2(h.X, h.Y); }
+        public static implicit operator Half2(Vector2 v) { return new Half2(v); }
+        public override string ToString() { return ((Vector2)this).ToString(); }
+    }
+    public struct Half3 {
+        public Half X, Y, Z;
+        public Half3(Vector3 v) { X = v.X; Y = v.Y; Z = v.Z; }
+        public static implicit operator Vector3(Half3 h) { return new Vector3(h.X, h.Y, h.Z); }
+        public static implicit operator Half3(Vector3 v) { return new Half3(v); }
+        public override string ToString() { return ((Vector3)this).ToString(); }
+    }
+    public struct Half4 {
+        public Half X, Y, Z, W;
+        public Half4(Vector4 v) { X = v.X; Y = v.Y; Z = v.Z; }
+        public static implicit operator Vector4(Half4 h) { return new Vector4(h.X, h.Y, h.Z, h.W); }
+        public static implicit operator Half4(Vector4 v) { return new Half4(v); }
+        public override string ToString() { return ((Vector4)this).ToString(); }
+    }
     public unsafe struct ConvertFiller {
         static ConvertFiller() {
             InitializeType<int>();
@@ -333,23 +413,41 @@ namespace Weesals.Engine {
             InitializeType<Short2>();
             InitializeType<UShort2>();
             InitializeType<Color>();
+            InitializeType<SColor>();
             InitializeAlias<Short2, UShort2>();
             ConvertFn<int, float>.mConvert = &ConvertIToF;
             ConvertFn<float, int>.mConvert = &ConvertFToI;
             ConvertFn<uint, float>.mConvert = &ConvertUIToF;
             ConvertFn<float, uint>.mConvert = &ConvertFToUI;
+            ConvertFn<Vector2, Vector3>.mConvert = &ConvertV2ToV3;
             ConvertFn<Vector4, Color>.mConvert = &ConvertV4ToC4;
             ConvertFn<Vector3, Color>.mConvert = &ConvertV3ToC4;
+            ConvertFn<Color, SColor>.mConvert = &ConvertC4ToSC4;
+            ConvertFn<SColor, Color>.mConvert = &ConvertSC4ToC4;
             ConvertFn<Color, Vector4>.mConvert = &ConvertC4ToV4;
             ConvertFn<Color, Vector3>.mConvert = &ConvertC4ToV3;
+            ConvertFn<Vector4, SColor>.mConvert = &ConvertV4ToSC4;
+            ConvertFn<Vector3, SColor>.mConvert = &ConvertV3ToSC4;
+            ConvertFn<SColor, Vector4>.mConvert = &ConvertSC4ToV4;
+            ConvertFn<SColor, Vector3>.mConvert = &ConvertSC4ToV3;
             ConvertFn<Vector2, Short2>.mConvert = &ConvertV2ToS2;
             ConvertFn<Short2, Vector2>.mConvert = &ConvertS2ToV2;
+            ConvertFn<Short2, Vector3>.mConvert = &ConvertS2ToV3;
             ConvertFn<Vector2, UShort2>.mConvert = &ConvertV2ToUS2;
             ConvertFn<UShort2, Vector2>.mConvert = &ConvertUS2ToV2;
             ConvertFn<Vector2, Normalized<Short2>>.mConvert = &ConvertV2ToS2N;
             ConvertFn<Normalized<Short2>, Vector2>.mConvert = &ConvertS2NToV2;
             ConvertFn<Vector2, Normalized<UShort2>>.mConvert = &ConvertV2ToUS2N;
             ConvertFn<Normalized<UShort2>, Vector2>.mConvert = &ConvertUS2NToV2;
+            ConvertFn<Half, float>.mConvert = &ConvertHToF;
+            ConvertFn<float, Half>.mConvert = &ConvertFToH;
+            ConvertFn<Half2, Vector2>.mConvert = &ConvertH2ToV2;
+            ConvertFn<Half2, Vector3>.mConvert = &ConvertH2ToV3;
+            ConvertFn<Vector2, Half2>.mConvert = &ConvertV2ToH2;
+            ConvertFn<Half3, Vector3>.mConvert = &ConvertH3ToV3;
+            ConvertFn<Vector3, Half3>.mConvert = &ConvertV3ToH3;
+            ConvertFn<Half4, Vector4>.mConvert = &ConvertH4ToV4;
+            ConvertFn<Vector4, Half4>.mConvert = &ConvertV4ToH4;
         }
         public ConvertFiller(bool create) { }
         unsafe private static void InitializeType<T>() where T : unmanaged {
@@ -365,22 +463,43 @@ namespace Weesals.Engine {
         private static void ConvertUIToF(void* dest, void* src) { *(float*)dest = *(uint*)src; }
         private static void ConvertFToUI(void* dest, void* src) { *(uint*)dest = (uint)*(float*)src; }
         private static void Convert<T>(void* dest, void* src) where T : unmanaged { *(T*)dest = *(T*)src; }
+        private static void ConvertV2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Vector2*)src, 0.0f); }
         private static void ConvertV4ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector4*)src); }
         private static void ConvertV3ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector3*)src); }
+        private static void ConvertC4ToSC4(void* dest, void* src) { *(SColor*)dest = *(Color*)src; }
+        private static void ConvertSC4ToC4(void* dest, void* src) { *(Color*)dest = *(SColor*)src; }
         private static void ConvertC4ToV4(void* dest, void* src) { *(Vector4*)dest = *(Color*)src; }
         private static void ConvertC4ToV3(void* dest, void* src) { *(Vector3*)dest = *(Color*)src; }
+        private static void ConvertV4ToSC4(void* dest, void* src) { *(SColor*)dest = new Color(*(Vector4*)src); }
+        private static void ConvertV3ToSC4(void* dest, void* src) { *(SColor*)dest = new Color(*(Vector3*)src); }
+        private static void ConvertSC4ToV4(void* dest, void* src) { *(Vector4*)dest = *(SColor*)src; }
+        private static void ConvertSC4ToV3(void* dest, void* src) { *(Vector3*)dest = *(SColor*)src; }
         private static void ConvertV2ToS2(void* dest, void* src) { *(Short2*)dest = new Short2(*(Vector2*)src); }
         private static void ConvertV2ToUS2(void* dest, void* src) { *(UShort2*)dest = new UShort2(*(Vector2*)src); }
         private static void ConvertS2ToV2(void* dest, void* src) { *(Vector2*)dest = (*(Short2*)src).ToVector2(); }
+        private static void ConvertS2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3((*(Short2*)src).ToVector2(), 0.0f); }
         private static void ConvertUS2ToV2(void* dest, void* src) { *(Vector2*)dest = (*(UShort2*)src).ToVector2(); }
         private static void ConvertV2ToS2N(void* dest, void* src) { *(Short2*)dest = new Short2(*(Vector2*)src * short.MaxValue); }
         private static void ConvertV2ToUS2N(void* dest, void* src) { *(UShort2*)dest = new UShort2(*(Vector2*)src * ushort.MaxValue); }
         private static void ConvertS2NToV2(void* dest, void* src) { *(Vector2*)dest = (*(Short2*)src).ToVector2() / short.MaxValue; }
         private static void ConvertUS2NToV2(void* dest, void* src) { *(Vector2*)dest = (*(UShort2*)src).ToVector2() / ushort.MaxValue; }
+        private static void ConvertHToF(void* dest, void* src) { *(float*)dest = *(Half*)src; }
+        private static void ConvertFToH(void* dest, void* src) { *(Half*)dest = *(float*)src; }
+        private static void ConvertH2ToV2(void* dest, void* src) { *(Vector2*)dest = *(Half2*)src; }
+        private static void ConvertH2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Half2*)src, 0.0f); }
+        private static void ConvertV2ToH2(void* dest, void* src) { *(Half2*)dest = *(Vector2*)src; }
+        private static void ConvertH3ToV3(void* dest, void* src) { *(Vector3*)dest = *(Half3*)src; }
+        private static void ConvertV3ToH3(void* dest, void* src) { *(Half3*)dest = *(Vector3*)src; }
+        private static void ConvertH4ToV4(void* dest, void* src) { *(Vector4*)dest = *(Half4*)src; }
+        private static void ConvertV4ToH4(void* dest, void* src) { *(Half4*)dest = *(Vector4*)src; }
     }
     public unsafe struct TypedBufferView<T> where T : unmanaged {
-        delegate*<void*, void*, void> mWriter;
-        delegate*<void*, void*, void> mReader;
+        public unsafe struct ReadWriterPair {
+            public delegate*<void*, void*, void> mWriter;
+            public delegate*<void*, void*, void> mReader;
+        }
+        private static ReadWriterPair[] cachedReadWriters = new ReadWriterPair[256];
+        public ReadWriterPair ReadWriter;
         public void* mData = null;
         public ushort mCount = 0;
         public ushort mStride = 0;
@@ -389,42 +508,65 @@ namespace Weesals.Engine {
             mData = data;
             mStride = (ushort)stride;
             mCount = (ushort)count;
+            ReadWriter = cachedReadWriters[(byte)fmt];
+            if (ReadWriter.mWriter == null) {
+                ReadWriter = cachedReadWriters[(byte)fmt] = FindConverterFor<T>(fmt);
+                Debug.Assert(ReadWriter.mWriter != null,
+                    "Cound not find converter for " + typeof(T).Name + " and " + fmt);
+            }
+        }
+        [Conditional("DEBUG")]
+        public void AssetRequireReader() {
+            Debug.Assert(ReadWriter.mReader != null,
+                "Require a reader for " + typeof(T).Name);
+        }
+        private ReadWriterPair FindConverterFor<View>(BufferFormat fmt) where View : unmanaged {
             var type = BufferFormatType.GetMeta(fmt);
             if (type.IsFloat()) {
                 if (type.GetSize() == BufferFormatType.Sizes.Size32) {
                     switch (type.GetComponentCount()) {
-                        case 1: Initialize<float>(); break;
-                        case 2: Initialize<Vector2>(); break;
-                        case 3: Initialize<Vector3>(); break;
-                        case 4: Initialize<Vector4>(); break;
+                        case 1: return Initialize<View, float>();
+                        case 2: return Initialize<View, Vector2>();
+                        case 3: return Initialize<View, Vector3>();
+                        case 4: return Initialize<View, Vector4>();
+                    }
+                }
+                if (type.GetSize() == BufferFormatType.Sizes.Size16) {
+                    switch (type.GetComponentCount()) {
+                        case 1: return Initialize<View, Half>();
+                        case 2: return Initialize<View, Half2>();
+                        case 3: return Initialize<View, Half3>();
+                        case 4: return Initialize<View, Half4>();
                     }
                 }
             } else {
                 switch (type.GetSize()) {
                     case BufferFormatType.Sizes.Size32: {
                         switch (type.GetComponentCount()) {
-                            case 1: Initialize<int>(); break;
-                            case 2: Initialize<Int2>(); break;
-                            case 4: Initialize<Int4>(); break;
+                            case 1: if (type.IsSigned()) return Initialize<View, int>(); else return Initialize<View, uint>();
+                            case 2: return Initialize<View, Int2>();
+                            case 4: return Initialize<View, Int4>();
                         }
-                    } break;
+                    }
+                    break;
                     case BufferFormatType.Sizes.Size16: {
                         bool nrm = type.IsNormalized();
                         switch (type.GetComponentCount()) {
-                            case 1: if (type.IsSigned()) Initialize<short>(nrm); else Initialize<ushort>(nrm); break;
-                            case 2: if (type.IsSigned()) Initialize<Short2>(nrm); else Initialize<UShort2>(nrm); break;
+                            case 1: if (type.IsSigned()) return Initialize<View, short>(nrm); else return Initialize<View, ushort>(nrm);
+                            case 2: if (type.IsSigned()) return Initialize<View, Short2>(nrm); else return Initialize<View, UShort2>(nrm);
                         }
-                    } break;
+                    }
+                    break;
                     case BufferFormatType.Sizes.Size8: {
                         switch (type.GetComponentCount()) {
-                            case 1: if (type.IsSigned()) Initialize<sbyte>(); else Initialize<byte>(); break;
-                            case 4: Initialize<Color>(); break;
+                            case 1: if (type.IsSigned()) return Initialize<View, sbyte>(); else return Initialize<View, byte>();
+                            case 4: if (type.IsSigned()) return Initialize<View, SColor>(); else return Initialize<View, Color>();
                         }
-                    } break;
+                    }
+                    break;
                 }
             }
-            Debug.Assert(mWriter != null,
-                "Cound not find converter for " + typeof(T).Name + " and " + fmt);
+            return default;
         }
 
         public TypedBufferView(CSBufferElement element, int count)
@@ -433,27 +575,56 @@ namespace Weesals.Engine {
             : this((byte*)element.mData + element.mBufferStride * range.Start, element.mBufferStride, range.Length, element.mFormat)
             { }
 
-        private void Initialize<Raw>() where Raw : unmanaged {
-            mWriter = ConvertFn<T, Raw>.mConvert;
-            mReader = ConvertFn<Raw, T>.mConvert;
+        private ReadWriterPair Initialize<View, Raw>() where View : unmanaged where Raw : unmanaged {
+            return new ReadWriterPair() {
+                mWriter = FindConverterWithFallback<View, Raw>(),
+                mReader = FindConverterWithFallback<Raw, View>(),
+            };
         }
-        private void Initialize<Raw>(bool normalized) where Raw : unmanaged {
-            if (normalized) {
-                mWriter = ConvertFn<T, Normalized<Raw>>.mConvert;
-                mReader = ConvertFn<Normalized<Raw>, T>.mConvert;
-                if (mWriter != null) return;
-            }
-            Initialize<Raw>();
+        private delegate*<void*, void*, void> FindConverterWithFallback<From, To>() where From : unmanaged where To : unmanaged {
+            var converter = ConvertFn<From, To>.mConvert;
+            if (converter != null) return converter;
+            if (typeof(From) == typeof(Vector4)) return FindConverterWithFallback<Vector3, To>();
+            if (typeof(From) == typeof(Vector3)) return FindConverterWithFallback<Vector2, To>();
+            if (typeof(From) == typeof(Vector2)) return FindConverterWithFallback<float, To>();
+            if (typeof(From) == typeof(Half4)) return FindConverterWithFallback<Half3, To>();
+            if (typeof(From) == typeof(Half3)) return FindConverterWithFallback<Half2, To>();
+            if (typeof(From) == typeof(Half2)) return FindConverterWithFallback<Half, To>();
+            if (typeof(From) == typeof(Int4)) return FindConverterWithFallback<Int2, To>();
+            if (typeof(From) == typeof(Int2)) return FindConverterWithFallback<int, To>();
+            if (typeof(From) == typeof(Short2)) return FindConverterWithFallback<short, To>();
+            if (typeof(From) == typeof(UShort2)) return FindConverterWithFallback<ushort, To>();
+            return default;
         }
 
+        private ReadWriterPair Initialize<View, Raw>(bool normalized) where View : unmanaged where Raw : unmanaged {
+            if (normalized) {
+                var pair = new ReadWriterPair() {
+                    mWriter = ConvertFn<View, Normalized<Raw>>.mConvert,
+                    mReader = ConvertFn<Normalized<Raw>, View>.mConvert,
+                };
+                if (pair.mWriter != null) return pair;
+            }
+            return Initialize<View, Raw>();
+        }
+
+        public T this[uint index] {
+            get => this[(int)index];
+            set => this[(int)index] = value;
+        }
         public T this[int index] {
-            get { T value; mReader(&value, (byte*)mData + mStride * index); return value; }
-            set { mWriter((byte*)mData + mStride * index, &value); }
+            get { T value; ReadWriter.mReader(&value, (byte*)mData + mStride * index); return value; }
+            set { ReadWriter.mWriter((byte*)mData + mStride * index, &value); }
         }
         public void Set(Span<T> values) {
             for (int i = 0; i < values.Length; ++i) this[i] = values[i];
         }
-
+        public void Set(T value) {
+            for (int i = 0; i < mCount; ++i) this[i] = value;
+        }
+        public override string ToString() {
+            return "Count = " + mCount;
+        }
     }
     unsafe public class BufferLayoutCollection : IDisposable {
         CSBufferLayout** mBuffers = null;

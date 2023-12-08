@@ -45,6 +45,21 @@ namespace Weesals.UI {
                 + AxisX.toxyz() * (v.X * AxisX.W)
                 + AxisY.toxyz() * (v.Y * AxisY.W);
         }
+        public Vector3 InverseTransformPosition(Vector3 v) {
+            v -= Position;
+            return new Vector3(
+                Vector3.Dot(AxisX.toxyz(), v) / AxisX.toxyz().LengthSquared(),
+                Vector3.Dot(AxisY.toxyz(), v) / AxisY.toxyz().LengthSquared(),
+                Vector3.Dot(AxisZ, v) / AxisZ.LengthSquared()
+            );
+        }
+        public Vector2 InverseTransformPosition2D(Vector2 v) {
+            v -= Position.toxy();
+            return new Vector2(
+                Vector2.Dot(AxisX.toxy(), v) / AxisX.toxyz().LengthSquared(),
+                Vector2.Dot(AxisY.toxy(), v) / AxisY.toxyz().LengthSquared()
+            );
+        }
         public CanvasLayout MinMaxNormalized(float xmin, float ymin, float xmax, float ymax) {
 	        return new CanvasLayout {
 		        AxisX = new Vector4(AxisX.X, AxisX.Y, AxisX.Z, AxisX.W * (xmax - xmin)),
@@ -135,15 +150,22 @@ namespace Weesals.UI {
         public float Depth;
         public Vector2 AnchorMin { get => Anchors.toxy(); set => Anchors.toxy(value); }
         public Vector2 AnchorMax { get => Anchors.tozw(); set => Anchors.tozw(value); }
-        public Vector2 OffsetMin { get => Offsets.toxy(); set => Anchors.toxy(value); }
-        public Vector2 OffsetMax { get => Offsets.tozw(); set => Anchors.tozw(value); }
+        public Vector2 OffsetMin { get => Offsets.toxy(); set => Offsets.toxy(value); }
+        public Vector2 OffsetMax { get => Offsets.tozw(); set => Offsets.tozw(value); }
 
         public void Apply(in CanvasLayout parent, out CanvasLayout layout) {
-            Vector2 size = parent.GetSize();
-            Vector2 invSize = new Vector2(1.0f / size.X, 1.0f / size.Y);
+            Vector2 parentSize = parent.GetSize();
+            Vector2 invSize = new Vector2(1.0f / parentSize.X, 1.0f / parentSize.Y);
             Vector2 posMinN = AnchorMin + OffsetMin * invSize;
             Vector2 posMaxN = AnchorMax + OffsetMax * invSize;
             layout = parent.MinMaxNormalized(posMinN.X, posMinN.Y, posMaxN.X, posMaxN.Y);
+            if (Scale != Vector3.One) {
+                var size = layout.GetSize();
+                var delta = new Vector2(size.X * (Scale.X - 1f), size.Y * (Scale.Y - 1f));
+                layout.Position = layout.TransformPosition2D(delta * -0.5f);
+                layout.AxisX.toxyz(layout.AxisX.toxyz() * Scale.X);
+                layout.AxisY.toxyz(layout.AxisY.toxyz() * Scale.Y);
+            }
         }
 
         public static CanvasTransform MakeDefault() {
@@ -190,6 +212,14 @@ namespace Weesals.UI {
             Anchors = new Vector4(anchorMin.X, anchorMin.Y, anchorMax.X, anchorMax.Y);
             return this;
         }
+        public CanvasTransform WithOffsets(float xmin, float ymin, float xmax, float ymax) {
+            Offsets = new Vector4(xmin, ymin, xmax, ymax);
+            return this;
+        }
+        public CanvasTransform WithAnchors(float xmin, float ymin, float xmax, float ymax) {
+            Anchors = new Vector4(xmin, ymin, xmax, ymax);
+            return this;
+        }
 
         public override bool Equals(object? obj) {
             return obj is CanvasTransform transform && Equals(transform);
@@ -218,6 +248,7 @@ namespace Weesals.UI {
             hash.Add(OffsetMax);
             return hash.ToHashCode();
         }
+
         public static bool operator ==(CanvasTransform left, CanvasTransform right) { return left.Equals(right); }
         public static bool operator !=(CanvasTransform left, CanvasTransform right) { return !(left == right); }
     }

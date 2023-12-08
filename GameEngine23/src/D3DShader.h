@@ -44,13 +44,13 @@ public:
     ShaderReflection mReflection;
 
     // Compile shader and reflect uniform values / buffers
-    void CompileFromFile(const std::wstring& path, const std::string& entry, const std::string& profile)
+    void CompileFromFile(const std::wstring& path, const std::string& entry, const std::string& profile, const D3D_SHADER_MACRO* macros = nullptr)
     {
         ComPtr<ID3D10Blob> compilationErrors = nullptr;
         while (true) {
             auto hr = D3DCompileFromFile(
                 path.c_str(),
-                nullptr,
+                macros,
                 D3D_COMPILE_STANDARD_FILE_INCLUDE,
                 entry.c_str(),
                 profile.c_str(),

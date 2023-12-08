@@ -2,7 +2,8 @@
 
 cbuffer ConstantBuffer : register(b0)
 {
-    matrix Projection;
+    matrix ModelViewProjection;
+    float4 CullRect;
 };
 
 struct VSInput
@@ -26,7 +27,7 @@ PSInput VSMain(VSInput input)
 {
     PSInput result;
     
-    result.position = mul(Projection, float4(input.position.xy, 0.0, 1.0));
+    result.position = mul(ModelViewProjection, float4(input.position.xy, 0.0, 1.0));
     result.position.z = 0.5;
     result.uv = input.uv;
     result.color = input.color;
@@ -40,8 +41,12 @@ PSInput VSMain(VSInput input)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {    
-    float4 t = Texture.Sample(g_sampler, input.uv);
+    half4 t = Texture.Sample(g_sampler, input.uv);
     //t.rg = input.uv;
-    t *= input.color;
+    half4 color = input.color;
+    t.rgb = (color >= 0.0 ? t * color : 1 + (1 - t) * color).rgb;
+    if (any(input.position.xy < CullRect.xy) || any(input.position.xy > CullRect.zw))
+        t.a = 0.0;
+    //t.rg = input.uv;
     return t;
 }

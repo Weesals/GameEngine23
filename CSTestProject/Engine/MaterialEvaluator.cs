@@ -76,7 +76,7 @@ namespace Weesals.Engine {
 		static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
 			foreach (var val in cb.GetValues()) {
 				var data = Material.GetUniformBinaryData(val.mName, materialStack);
-                data.CopyTo(buffer.Slice(val.mOffset));
+                data.Slice(0, val.mSize).CopyTo(buffer.Slice(val.mOffset));
 			}
 		}
         public static MemoryBlock<nint> ResolveResources(CSGraphics graphics, CSPipeline pipeline, List<Material> materialStack) {
@@ -109,15 +109,38 @@ namespace Weesals.Engine {
             r.MergeWith(Material.StateData.Default);
             return r;
         }
+        public static int ResolveMacros(Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, Span<Material> materials) {
+            int count = 0;
+            foreach (var mat in materials) {
+                ref var matmacros = ref mat.GetMacrosRaw();
+                foreach (var itemKV in matmacros.GetItemsRaw()) {
+                    int i = 0;
+                    for (; i < count; ++i) {
+                        if (macros[i].Key == itemKV.Key) break;
+                    }
+                    if (i >= count) {
+                        macros[count] = new KeyValuePair<CSIdentifier, CSIdentifier>(
+                            itemKV.Key,
+                            MemoryMarshal.Cast<byte, CSIdentifier>(matmacros.GetItemData(itemKV.Value))[0]
+                        );
+                        ++count;
+                    }
+                }
+            }
+            return count;
+        }
 
         unsafe public static CSPipeline ResolvePipeline(CSGraphics graphics, List<CSBufferLayout> pbuffLayout, List<Material> materials) {
             return ResolvePipeline(graphics, CollectionsMarshal.AsSpan(pbuffLayout), CollectionsMarshal.AsSpan(materials));
         }
         unsafe public static CSPipeline ResolvePipeline(CSGraphics graphics, Span<CSBufferLayout> pbuffLayout, Span<Material> materials) {
+            var macros = stackalloc KeyValuePair<CSIdentifier, CSIdentifier>[32];
+            int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macros, 32), materials);
             var materialState = ResolveState(materials);
             var pipeline = graphics.RequirePipeline(pbuffLayout,
                 materialState.VertexShader, materialState.PixelShader,
                 &materialState.BlendMode,
+                new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macros, count),
                 materialState.RenderPass
             );
             return pipeline;
@@ -155,7 +178,7 @@ namespace Weesals.Engine {
         List<Value> values = new();
         List<byte> parameterIds = new();
         List<byte> parameterStack = new();
-        byte[] outputData = Array.Empty<byte>();
+        ArrayList<byte> outputData = new();
         int valueCount;
         int dataSize;
 
@@ -164,6 +187,7 @@ namespace Weesals.Engine {
             sources.Clear();
             values.Clear();
             parameterIds.Clear();
+            outputData.Clear();
         }
         unsafe public Span<byte> GetUniformSource(Material material, CSIdentifier name, MaterialCollectorContext context) {
             for (int i = 0; i < values.Count; ++i) {
@@ -210,7 +234,7 @@ namespace Weesals.Engine {
         }
         public Span<byte> GetUniformSourceNull(CSIdentifier name, MaterialCollectorContext context) {
             var material = Material.NullInstance;
-            var valueData = material.GetParametersRaw().GetValueData("NullVec");
+            var valueData = material.GetParametersRaw().GetValueData("NullMat");
             ObserveValue(material, name, valueData);
             return valueData;
         }
@@ -334,8 +358,7 @@ namespace Weesals.Engine {
 		    if (parameterStack.Count != 0) parameterIds.Add((byte)(values.Count - 1));
 	    }
 	    Span<byte> ConsumeTempData(int dataSize) {
-            Array.Resize(ref outputData, outputData.Length + dataSize);
-		    return new Span<byte>(outputData, outputData.Length - dataSize, dataSize);
+            return outputData.Consume(dataSize);
 	    }
 	    void BeginComputed(Material material, CSIdentifier name) {
 		    //if (mParameterIds.capacity() < 8) mParameterIds.reserve(8);

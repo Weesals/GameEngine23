@@ -198,6 +198,11 @@ struct RenderStatistics {
     }
 };
 
+struct MacroValue {
+    Identifier mName;
+    Identifier mValue;
+};
+
 // Base class for a graphics device
 class GraphicsDeviceBase
 {
@@ -219,7 +224,7 @@ public:
     virtual const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        const IdentifierWithName& renderPass
+        std::span<const MacroValue> macros, const IdentifierWithName& renderPass
     ) = 0;
 
     // Rendering is complete; flip the backbuffer

@@ -198,12 +198,12 @@ public:
     D3DRenderSurface* RequireD3DRT(const RenderTarget2D* rt);
     D3DMesh* RequireD3DMesh(const Mesh& mesh);
     D3DBufferWithSRV* RequireD3DBuffer(const Texture& mesh);
-    D3DShader* RequireShader(const Shader& shader, const std::string& profile, const IdentifierWithName& renderPass);
+    D3DShader* RequireShader(const Shader& shader, const std::string& profile, std::span<const MacroValue> macros, const IdentifierWithName& renderPass);
     D3DPipelineState* GetOrCreatePipelineState(const Shader& vs, const Shader& ps, size_t hash);
     D3DPipelineState* RequirePipelineState(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        const IdentifierWithName& renderPass
+        std::span<const MacroValue> macros, const IdentifierWithName& renderPass
     );
     D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
     D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);

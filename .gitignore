@@ -401,3 +401,4 @@ FodyWeavers.xsd
 /Ignore
 /CSBindings/scripts/ClangSharp*
 /CSBindings/scripts/*.dll
+/**/Ignore

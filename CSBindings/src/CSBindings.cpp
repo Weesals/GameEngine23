@@ -405,10 +405,10 @@ const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSp
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
 	NativeShader* vertexShader, NativeShader* pixelShader, void* materialState,
-	CSIdentifier renderPass
+	CSSpan macros, CSIdentifier renderPass
 ) {
-	InplaceVector<BufferLayout, 8> bindingsData;
-	InplaceVector<const BufferLayout*, 8> pobindings;
+	InplaceVector<BufferLayout, 10> bindingsData;
+	InplaceVector<const BufferLayout*, 10> pobindings;
 	for (int m = 0; m < bindings.mSize; ++m) {
 		auto& csbuffer = ((CSBufferLayout*)bindings.mData)[m];
 		BufferLayout buffer(
@@ -421,7 +421,7 @@ const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSp
 	}
 	auto pipeline = graphics->mCmdBuffer.GetGraphics()->RequirePipeline(
 		*(Shader*)vertexShader, *(Shader*)pixelShader, *(MaterialState*)materialState,
-		pobindings, IdentifierWithName(Identifier(renderPass.mId))
+		pobindings, std::span<const MacroValue>((const MacroValue*)macros.mData, macros.mSize), IdentifierWithName(Identifier(renderPass.mId))
 	);
 	return pipeline;
 }
@@ -566,6 +566,9 @@ CSSpan CSScene::GetInstanceData(NativeScene* scene, CSInstance instance) {
 }
 NativeTexture* CSScene::GetGPUBuffer(NativeScene* scene) {
 	return (NativeTexture*)&scene->mScene->GetGPUBuffer();
+}
+int CSScene::GetGPURevision(NativeScene* scene) {
+	return scene->mScene->GetGPUBuffer().GetRevision();
 }
 void CSScene::SubmitToGPU(NativeScene* scene, NativeGraphics* graphics) {
 	auto& cmdBuffer = graphics->mCmdBuffer;

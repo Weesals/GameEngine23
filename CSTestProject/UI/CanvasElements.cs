@@ -14,13 +14,10 @@ namespace Weesals.UI {
     public struct CanvasElement {
         public int ElementId { get; private set; }
         public Material Material { get; private set; }
-		public void Initialize() {
-			ElementId = -1;
-		}
         public bool IsValid() { return ElementId != -1; }
         public void SetMaterial(Material mat) { Material = mat; }
 		public void SetElementId(int id) {
-			Debug.Assert(ElementId == -1, "Element already has an ElementId");
+			Debug.Assert(ElementId == id || ElementId == -1, "Element already has an ElementId");
 			ElementId = id;
 		}
         public void Dispose(Canvas canvas) {
@@ -31,74 +28,254 @@ namespace Weesals.UI {
         }
 		public static readonly CanvasElement Invalid = new CanvasElement() { ElementId = -1, };
     }
+    public struct CanvasBlending {
+        private Color color;
 
-    public struct CanvasImage {
+        public enum BlendModes : byte { Tint, Screen, Overlay };
+        public BlendModes BlendMode { get; private set; }
+        public Color Color { get => color; set { color = value; } }
+        public SColor GetUnifiedBlendColor() {
+            SColor unified = new SColor(127, 127, 127, 127);
+            switch (BlendMode) {
+                case BlendModes.Tint: unified = Color; break;
+                case BlendModes.Screen: unified = new SColor(
+                    (sbyte)Math.Min(0, -128 + Color.R * 128 / 255),
+                    (sbyte)Math.Min(0, -128 + Color.G * 128 / 255),
+                    (sbyte)Math.Min(0, -128 + Color.B * 128 / 255),
+                    (sbyte)Math.Min(0, Color.A * 127 / 255)
+                    ); break;
+                case BlendModes.Overlay: unified = new SColor(
+                    (sbyte)(Color.R),
+                    (sbyte)(Color.G),
+                    (sbyte)(Color.B),
+                    (sbyte)Math.Min(0, Color.A * 127 / 255)
+                    ); break;
+            }
+            return unified;
+        }
+        public void SetUnifiedBlendColor(SColor unified) {
+            switch (BlendMode) {
+                case BlendModes.Tint: Color = unified; break;
+                case BlendModes.Screen: Color = new Color(
+                    (byte)((unified.R + 128) * 255 / 128),
+                    (byte)((unified.G + 128) * 255 / 128),
+                    (byte)((unified.B + 128) * 255 / 128),
+                    (byte)(unified.A * 255 / 127)
+                ); break;
+                case BlendModes.Overlay: Color = new Color(
+                    (byte)unified.R,
+                    (byte)unified.G,
+                    (byte)unified.B,
+                    (byte)(unified.A * 255 / 127)
+                ); break;
+            }
+        }
+        public void SetBlendMode(BlendModes blendMode) {
+            var unified = GetUnifiedBlendColor();
+            BlendMode = blendMode;
+            SetUnifiedBlendColor(unified);
+        }
+        public static readonly CanvasBlending Default = new CanvasBlending() { color = Color.White, BlendMode = BlendModes.Tint, };
+    }
+
+    public interface ICanvasElement {
+        void Initialize(Canvas canvas);
+        void Dispose(Canvas canvas);
+        void UpdateLayout(Canvas canvas, in CanvasLayout layout);
+        void Append(ref CanvasCompositor.Context compositor);
+    }
+    public interface ICanvasTransient {
+        void Initialize(Canvas canvas);
+        void Dispose(Canvas canvas);
+    }
+
+    public struct CanvasImage : ICanvasElement, ICanvasTransient {
         CanvasElement element = CanvasElement.Invalid;
 
-        private Color color;
+        public enum DirtyFlags : byte { None = 0, UV = 1, Color = 2, Position = 4, Indices = 8, All = 0x0f, };
+
+        private CanvasBlending blending;
         private RectF uvrect;
-        private bool invalid;
+        private RectF border;
+        private DirtyFlags dirty;
 
         public CSTexture Texture { get; private set; }
-		public RectF UVRect { get => uvrect; set { uvrect = value; invalid = true; } }
-        public Color Color { get => color; set { color = value; invalid = true; } }
+        public RectF UVRect { get => uvrect; set { uvrect = value; dirty |= DirtyFlags.UV; } }
+        public RectF Border { get => border; set { border = value; dirty |= DirtyFlags.UV; } }
+        public Color Color { get => blending.Color; set { blending.Color = value; dirty |= DirtyFlags.Color; } }
+        public bool IsNinePatch { get; private set; }
+        public bool IsInitialized => element.IsValid();
+        public bool HasDirtyFlags => dirty != DirtyFlags.None;
+        public CanvasBlending.BlendModes BlendMode { get => blending.BlendMode; }
         public CanvasImage() : this(default, new RectF(0f, 0f, 1f, 1f)) { }
         public CanvasImage(CSTexture texture, RectF uvrect) {
             Texture = texture;
             UVRect = uvrect;
-            color = Color.White;
+            Border = new RectF(0f, 0f, 0f, 0f);
+            IsNinePatch = false;
+            blending = CanvasBlending.Default;
         }
-        public void Dispose(Canvas canvas) { element.Dispose(canvas); }
         unsafe public void Initialize(Canvas canvas) {
             Debug.Assert(!element.IsValid());
-            element.Initialize();
+            dirty = DirtyFlags.Indices;
+            SetTexture(Texture);
+        }
+        public void Dispose(Canvas canvas) { element.Dispose(canvas); dirty |= DirtyFlags.Indices; }
+        public void SetTexture(CSTexture texture) {
+            Texture = texture;
             if (Texture.IsValid()) {
                 if (element.Material == null) element.SetMaterial(new Material());
-                element.Material.SetTexture("Texture", Texture);
+                element.Material!.SetTexture("Texture", Texture);
             }
-            var elementId = canvas.Builder.Allocate(4, 6);
-            element.SetElementId(elementId);
-            UpdateIndices(canvas);
-            UpdateVertices(canvas);
         }
+        public void SetSprite(Sprite? sprite) {
+            SetTexture(sprite?.Texture ?? default);
+            var wasDirty = dirty & DirtyFlags.UV;
+            var hash = UVRect.GetHashCode() + Border.GetHashCode();
+            UVRect = sprite?.UVRect ?? new RectF(0f, 0f, 1f, 1f);
+            Border = sprite?.Borders ?? new RectF(0f, 0f, 0f, 0f);
+            bool wasNine = IsNinePatch;
+            IsNinePatch = Border != new RectF(0f, 0f, 0f, 0f);
+            if (wasNine != IsNinePatch) dirty |= DirtyFlags.Indices;
+            if (UVRect.GetHashCode() + Border.GetHashCode() == hash) {
+                dirty = (dirty & ~DirtyFlags.UV) | wasDirty;
+            }
+        }
+        public void SetBlendMode(CanvasBlending.BlendModes mode) {
+            blending.SetBlendMode(mode);
+        }
+
         private void UpdateIndices(Canvas canvas) {
-            var rectVerts = canvas.Builder.MapVertices(element.ElementId);
-            Span<uint> inds = stackalloc uint[] { 0, 1, 2, 1, 3, 2, };
-            rectVerts.GetIndices().Set(inds);
+            var buffers = canvas.Builder.MapVertices(element.ElementId);
+            Span<uint> indices = IsNinePatch
+                ? stackalloc uint[] {
+                    0, 1, 4, 1, 5, 4, 1, 2, 5, 2, 6, 5, 2, 3, 6, 3, 7, 6,
+                    4, 5, 8, 5, 9, 8, 5, 6, 9, 6, 10, 9, 6, 7, 10, 7, 11, 10,
+                    8, 9, 12, 9, 13, 12, 9, 10, 13, 10, 14, 13, 10, 11, 14, 11, 15, 14,
+                }
+                : stackalloc uint[] { 0, 1, 2, 1, 3, 2, };
+            buffers.GetIndices().Set(indices);
+            buffers.MarkIndicesChanged();
         }
-        private void UpdateVertices(Canvas canvas) {
-            var rectVerts = canvas.Builder.MapVertices(element.ElementId);
-            Span<Vector2> uv = stackalloc Vector2[] {
-                UVRect.BottomLeft,
-                UVRect.BottomRight,
-                UVRect.TopLeft,
-                UVRect.TopRight,
-            };
-            rectVerts.GetTexCoords().Set(uv);
-            Span<Color> colors = stackalloc Color[] { Color, Color, Color, Color, };
-            rectVerts.GetColors().Set(colors);
-            invalid = false;
+        public void MarkLayoutDirty() {
+            dirty |= DirtyFlags.Position;
         }
-	    public void UpdateLayout(Canvas canvas, CanvasLayout layout) {
-            if (invalid) UpdateVertices(canvas);
-            var rectVerts = canvas.Builder.MapVertices(element.ElementId);
-		    Span<Vector3> p = stackalloc Vector3[] { new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(1, 1, 0), };
-            foreach (ref var v in p) v = layout.TransformPositionN(v);
-		    rectVerts.GetPositions().Set(p);
-		    rectVerts.MarkChanged();
+        public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
+            var elementId = element.ElementId;
+            if (UnmarkDirty(DirtyFlags.Indices)) {
+                if (IsNinePatch
+                    ? canvas.Builder.Require(ref elementId, 16, 9 * 6)
+                    : canvas.Builder.Require(ref elementId, 4, 6)) {
+                    element.SetElementId(elementId);
+                    dirty |= DirtyFlags.All & ~DirtyFlags.Indices;
+                }
+                UpdateIndices(canvas);
+            }
+
+            var buffers = canvas.Builder.MapVertices(elementId);
+            if (UnmarkDirty(DirtyFlags.Color)) {
+                buffers.GetColors().Set(blending.GetUnifiedBlendColor());
+                buffers.MarkVerticesChanged();
+            }
+            if (UnmarkDirty(DirtyFlags.UV)) {
+                var texcoords = buffers.GetTexCoords();
+                Span<Vector2> corners = IsNinePatch
+                    ? stackalloc Vector2[] { UVRect.Min, UVRect.Lerp(Border.Min), UVRect.Lerp(Border.Max), UVRect.Max, }
+                    : stackalloc Vector2[] { UVRect.Min, UVRect.Max, };
+                for (int y = 0; y < corners.Length; ++y) {
+                    int yI = y * corners.Length;
+                    for (int x = 0; x < corners.Length; ++x) texcoords[yI + x] = new Vector2(corners[x].X, corners[corners.Length - y - 1].Y);
+                }
+                buffers.MarkVerticesChanged();
+            }
+            if (UnmarkDirty(DirtyFlags.Position)) {
+                Span<Vector2> p = IsNinePatch
+                    ? stackalloc Vector2[] { new Vector2(0, 0), Vector2.Zero, Vector2.Zero, layout.GetSize(), }
+                    : stackalloc Vector2[] { new Vector2(0, 0), layout.GetSize(), };
+                if (IsNinePatch && Texture.IsValid()) {
+                    var spriteSize = (Vector2)Texture.GetSize() * UVRect.Size;
+                    p[1] = Border.Min * spriteSize;
+                    p[2] = p[3] - (Vector2.One - Border.Max) * spriteSize;
+                }
+                var positions = buffers.GetPositions();
+                for (int y = 0; y < p.Length; ++y) {
+                    int yI = y * p.Length;
+                    for (int x = 0; x < p.Length; ++x) {
+                        positions[yI + x] = layout.TransformPosition2D(new Vector2(p[x].X, p[y].Y));
+                    }
+                }
+                buffers.MarkVerticesChanged();
+            }
 	    }
+        private bool UnmarkDirty(DirtyFlags flag) {
+            if ((dirty & flag) == 0) return false;
+            dirty &= ~flag;
+            return true;
+        }
+
         public void Append(ref CanvasCompositor.Context compositor) {
             compositor.Append(element);
         }
+
+        public void PreserveAspect(ref CanvasLayout layout, Vector2 imageAnchor) {
+            var size = layout.GetSize();
+            var imgSize = (Vector2)Texture.GetSize() * UVRect.Size;
+            var ratio = new Vector2(size.X * imgSize.Y, size.Y * imgSize.X);
+            if (ratio.X != ratio.Y) {
+                var osize = size;
+                if (ratio.X > ratio.Y) {
+                    size.X = ratio.Y / imgSize.Y;
+                    layout.Position += layout.AxisX.toxyz() * ((osize.X - size.X) * imageAnchor.X);
+                } else {
+                    size.Y = ratio.X / imgSize.X;
+                    layout.Position += layout.AxisY.toxyz() * ((osize.Y - size.Y) * imageAnchor.Y);
+                }
+                layout.SetSize(size);
+            }
+        }
     }
-    public struct CanvasText {
+    public enum TextAlignment { Left, Centre, Right, };
+    public class TextDisplayParameters {
+        public Vector4 FaceColor;
+        public float FaceDilate;
+        public Vector4 OutlineColor;
+        public float OutlineWidth;
+        public float OutlineSoftness;
+        public Vector4 UnderlayColor;
+        public Vector2 UnderlayOffset;
+        public float UnderlayDilate;
+        public float UnderlaySoftness;
+        public Vector4 GetDilation() {
+            var dilateFactor = 256.0f / 20.0f;
+            var fixedDilate = FaceDilate / 2.0f * dilateFactor;
+            var oldilate = (OutlineWidth / 2.0f + OutlineSoftness / 2.0f) * dilateFactor;
+            var uldilate = (UnderlayDilate + UnderlaySoftness / 2.0f) * dilateFactor;
+            return new Vector4(
+                fixedDilate + Math.Max(oldilate, uldilate - UnderlayOffset.X),
+                fixedDilate + Math.Max(oldilate, uldilate - UnderlayOffset.Y),
+                fixedDilate + Math.Max(oldilate, uldilate + UnderlayOffset.X),
+                fixedDilate + Math.Max(oldilate, uldilate + UnderlayOffset.Y)
+            );
+        }
+        public static TextDisplayParameters Flat = new() { FaceColor = Vector4.One, };
+        public static TextDisplayParameters Default = new() {
+            FaceColor = Vector4.One,
+            FaceDilate = 0.2f,
+            OutlineColor = new Vector4(0f, 0f, 0f, 0.5f),
+            OutlineWidth = 0.2f,
+            UnderlayColor = new Vector4(0f, 0f, 0f, 0.8f),
+            UnderlayOffset = new Vector2(2.0f, 1.0f),
+            UnderlaySoftness = 0.3f,
+        };
+    }
+    public struct CanvasText : ICanvasElement {
         CanvasElement element = CanvasElement.Invalid;
 
         public struct GlyphStyle {
             public float mFontSize;
             public Color mColor;
             public GlyphStyle(float size, Color color) { mFontSize = size; mColor = color; }
-            public static readonly GlyphStyle Default = new GlyphStyle(24, Color.Black);
+            public static readonly GlyphStyle Default = new GlyphStyle(24, Color.White);
         };
 		public struct GlyphPlacement {
             public ushort mGlyphId;
@@ -114,11 +291,19 @@ namespace Weesals.UI {
         public string Text { get => text; set { SetText(value); } }
 
         public CSFont font;
-        public bool isInvalid;
+        public bool dirty;
         public GlyphStyle defaultStyle = GlyphStyle.Default;
+        TextAlignment alignment = TextAlignment.Centre;
         List<GlyphStyle> styles;
         List<GlyphPlacement> glyphPlacements;
         List<GlyphLayout> glyphLayout;
+        TextDisplayParameters displayParameters;
+
+        public Color Color { get => defaultStyle.mColor; set { defaultStyle.mColor = value; dirty = true; } }
+        public float FontSize { get => defaultStyle.mFontSize; set { defaultStyle.mFontSize = value; dirty = true; } }
+        public CSFont Font { get => font; set { SetFont(value); dirty = true; } }
+        public TextAlignment Alignment { get => alignment; set { alignment = value; dirty = true; } }
+        public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty = true; } }
 
         public CanvasText() : this("") { }
         public CanvasText(string txt) {
@@ -135,24 +320,32 @@ namespace Weesals.UI {
 
         private void SetText(string value) {
             text = value;
-            isInvalid = true;
+            dirty = true;
         }
 		public void SetFont(CSFont _font) {
             font = _font;
-			isInvalid = true;
+			dirty = true;
             if (element.Material == null) element.SetMaterial(new Material("./assets/text.hlsl"));
-            element.Material.SetTexture("Texture", font.GetTexture());
-        }
-        public void SetFontSize(float size) {
-            defaultStyle.mFontSize = size;
-            isInvalid = true;
+            element.Material!.SetTexture("Texture", font.GetTexture());
+            var textParams = displayParameters ?? TextDisplayParameters.Default;
+            element.Material.SetValue("_FaceColor", textParams.FaceColor);
+            element.Material.SetValue("_FaceDilate", textParams.FaceDilate);
+            var enableOutline = textParams.OutlineColor.W > 0.0f;
+            var enableUnderlay = textParams.UnderlayColor.W > 0.0f;
+            if (enableOutline) {
+                element.Material.SetValue("_OutlineColor", textParams.OutlineColor);
+                element.Material.SetValue("_OutlineWidth", textParams.OutlineWidth);
+                element.Material.SetMacro("OUTLINE_ON", "1");
+            }
+            if (enableUnderlay) {
+                element.Material.SetValue("_UnderlayColor", textParams.UnderlayColor);
+                element.Material.SetValue("_UnderlayOffset", textParams.UnderlayOffset / 256.0f);
+                element.Material.SetValue("_UnderlaySoftness", textParams.UnderlaySoftness);
+                element.Material.SetMacro("UNDERLAY_ON", "1");
+            }
         }
         public void SetFont(CSFont _font, float fontSize) {
-            SetFont(_font); SetFontSize(fontSize);
-        }
-        public void SetColor(Color color) {
-            defaultStyle.mColor = color;
-            isInvalid = true;
+            SetFont(_font); FontSize = fontSize;
         }
 
         bool CompareConsume(string str, ref int c, string key) {
@@ -161,12 +354,13 @@ namespace Weesals.UI {
 			return true;
 		}
 		void UpdateGlyphPlacement() {
+            if (!font.IsValid()) return;
             float lineHeight = (float)font.GetLineHeight();
             glyphPlacements.Clear();
             styles.Clear();
             styles.Add(defaultStyle);
-            List<Color> colorStack = new();
-            List<float> sizeStack = new();
+            using PooledList<Color> colorStack = new();
+            using PooledList<float> sizeStack = new();
             int activeStyle = 0;
             for (int c = 0; c < text.Length; ++c) {
                 var chr = text[c];
@@ -218,8 +412,8 @@ namespace Weesals.UI {
 
                 if (activeStyle == -1) {
                     var tstyle = defaultStyle;
-                    if (colorStack.Count == 0) tstyle.mColor = colorStack.Last();
-                    if (sizeStack.Count == 0) tstyle.mFontSize = sizeStack.Last();
+                    if (colorStack.Count == 0) tstyle.mColor = colorStack[^1];
+                    if (sizeStack.Count == 0) tstyle.mFontSize = sizeStack[^1];
                     activeStyle = (int)styles.IndexOf(tstyle);
                     if (activeStyle == -1) { activeStyle = styles.Count; styles.Add(tstyle); }
                 }
@@ -262,13 +456,18 @@ namespace Weesals.UI {
 				size = Vector2.Max(size, new Vector2(pos.X + glyphSize2.X, pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
                 pos.X += placement.mAdvance;
 			}
-			var offset = (layout.GetSize() - size) / 2.0f;
-			for (int l = 0; l < glyphLayout.Count; ++l) {
-				var tlayout = glyphLayout[l];
-                tlayout.mLocalPosition += offset;
-				glyphLayout[l] = tlayout;
+            var sizeDelta = layout.GetSize() - size;
+            var offset = new Vector2(0f, sizeDelta.Y / 2.0f);
+            switch (alignment) {
+                case TextAlignment.Centre: offset.X = sizeDelta.X * 0.5f; break;
+                case TextAlignment.Right: offset.X = sizeDelta.X * 1.0f; break;
             }
-		}
+            for (int l = 0; l < glyphLayout.Count; ++l) {
+                var tlayout = glyphLayout[l];
+                tlayout.mLocalPosition += offset;
+                glyphLayout[l] = tlayout;
+            }
+        }
         public float GetPreferredWidth() {
             if (glyphPlacements.Count == 0) UpdateGlyphPlacement();
             var posX = 0.0f;
@@ -281,53 +480,52 @@ namespace Weesals.UI {
         public float GetPreferredHeight() {
 			return defaultStyle.mFontSize;
         }
-        public void UpdateLayout(Canvas canvas, CanvasLayout layout) {
+        public void MarkLayoutDirty() {
+            dirty = true;
+        }
+        public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
+            if (!dirty) return;
             UpdateGlyphPlacement();
 			UpdateGlyphLayout(layout);
 
 			var elementId = element.ElementId;
 
 			int vcount = (int)glyphLayout.Count * 4;
-			var mBuilder = canvas.Builder;
-            if (isInvalid || elementId == -1 || mBuilder.MapVertices(elementId).GetVertexCount() < vcount) {
-				isInvalid = false;
-                if (elementId != -1 && mBuilder.MapVertices(elementId).GetVertexCount() != vcount) {
-                    element.Dispose(canvas);
-                    elementId = -1;
+            int icount = (int)glyphLayout.Count * 6;
+            var mBuilder = canvas.Builder;
+            if (mBuilder.Require(ref elementId, vcount, icount)) {
+                element.SetElementId(elementId);
+                var tbuffers = mBuilder.MapVertices(elementId);
+				var indices = tbuffers.GetIndices();
+				for (int v = 0, i = 0; i < indices.mCount; i += 6, v += 4) {
+					indices[i + 0] = (uint)(v + 0);
+					indices[i + 1] = (uint)(v + 1);
+					indices[i + 2] = (uint)(v + 2);
+					indices[i + 3] = (uint)(v + 1);
+					indices[i + 4] = (uint)(v + 3);
+					indices[i + 5] = (uint)(v + 2);
 				}
-				if (elementId == -1) {
-                    elementId = mBuilder.Allocate(vcount, vcount * 6 / 4);
-                    var rectVerts = mBuilder.MapVertices(elementId);
-					var inds = rectVerts.GetIndices();
-					for (int v = 0, i = 0; i < inds.mCount; i += 6, v += 4) {
-						inds[i + 0] = (uint)(v + 0);
-						inds[i + 1] = (uint)(v + 1);
-						inds[i + 2] = (uint)(v + 2);
-						inds[i + 3] = (uint)(v + 1);
-						inds[i + 4] = (uint)(v + 3);
-						inds[i + 5] = (uint)(v + 2);
-					}
-				}
-				element.SetElementId(elementId);
+                tbuffers.MarkIndicesChanged();
             }
-			var textVerts = mBuilder.MapVertices(elementId);
-            var positions = textVerts.GetPositions();
-            var uvs = textVerts.GetTexCoords();
-            var colors = textVerts.GetColors();
+			var buffers = mBuilder.MapVertices(elementId);
+            var positions = buffers.GetPositions();
+            var uvs = buffers.GetTexCoords();
+            var colors = buffers.GetColors();
             var atlasTexelSize = 1.0f / font.GetTexture().GetSize().X;
             var lineHeight = (float)font.GetLineHeight();
 			int vindex = 0;
-			for (int c = 0; c < glyphLayout.Count; ++c) {
+            var dilate = (displayParameters ?? TextDisplayParameters.Default).GetDilation();
+            for (int c = 0; c < glyphLayout.Count; ++c) {
                 var gplacement = glyphPlacements[c];
                 var glayout = glyphLayout[c];
                 var glyph = font.GetGlyph(gplacement.mGlyphId);
 				var style = styles[gplacement.mStyleId];
 				var scale = style.mFontSize / lineHeight;
                 glayout.mVertexOffset = vindex;
-                var uv_1 = (Vector2)(glyph.mAtlasOffset) * atlasTexelSize;
-                var uv_2 = (Vector2)(glyph.mAtlasOffset + glyph.mSize) * atlasTexelSize;
-                var size2 = (Vector2)glyph.mSize * scale;
-                var glyphOffMin = (Vector2)glyph.mOffset - new Vector2((float)glyph.mAdvance, lineHeight) / 2.0f;
+                var uv_1 = ((Vector2)glyph.mAtlasOffset - dilate.toxy()) * atlasTexelSize;
+                var uv_2 = ((Vector2)(glyph.mAtlasOffset + glyph.mSize) + dilate.tozw()) * atlasTexelSize;
+                var size2 = ((Vector2)glyph.mSize + (dilate.toxy() + dilate.tozw())) * scale;
+                var glyphOffMin = (Vector2)glyph.mOffset - new Vector2((float)glyph.mAdvance, lineHeight) / 2.0f - dilate.toxy();
                 var glyphPos0 = layout.TransformPosition2D(glayout.mLocalPosition + glyphOffMin * scale);
                 var glyphDeltaX = layout.AxisX.toxyz() * size2.X;
                 var glyphDeltaY = layout.AxisY.toxyz() * size2.Y;
@@ -345,30 +543,148 @@ namespace Weesals.UI {
 				positions[vindex++] = glyphPos0 + glyphDeltaY + glyphDeltaX;
 			}
 			for (; vindex < positions.mCount; ++vindex) positions[vindex] = default;
-			textVerts.MarkChanged();
+			buffers.MarkVerticesChanged();
+            dirty = false;
 		}
 		public void Append(ref CanvasCompositor.Context compositor) {
 			compositor.Append(element);
         }
     }
 
+    public struct CanvasSelection : ICanvasElement, ICanvasTransient {
+        DateTime beginTime;
+        CanvasImage frame = new CanvasImage();
+        public bool IsDirty { get; private set; }
+        public CanvasSelection() { }
+        public void Initialize(Canvas canvas) {
+            beginTime = DateTime.UtcNow;
+            frame.Initialize(canvas);
+            frame.SetSprite(Resources.TryLoadSprite("ButtonFrame"));
+            IsDirty = true;
+        }
+        public void Dispose(Canvas canvas) {
+            frame.Dispose(canvas);
+        }
+        public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
+            frame.MarkLayoutDirty();
+            var tlayout = layout;
+            var tsince = DateTime.UtcNow - beginTime;
+            var scale = Easing.BubbleIn(0.3f).WithFromTo(0.5f, 1.0f).Evaluate((float)tsince.TotalSeconds);
+            var smin = 0.5f - 0.5f * scale;
+            var smax = 0.5f + 0.5f * scale;
+            tlayout = tlayout.MinMaxNormalized(smin, smin, smax, smax);
+            frame.UpdateLayout(canvas, tlayout);
+            if (tsince > TimeSpan.FromSeconds(0.3f)) IsDirty = false;
+        }
+        public void Append(ref CanvasCompositor.Context compositor) {
+            frame.Append(ref compositor);
+        }
+    }
+
     public class CanvasCompositor : IDisposable {
+        public class TransientElementCache {
+            public interface IElementList { void Reset(Canvas canvas); }
+            public struct ItemContainer<T> where T : ICanvasTransient, new() {
+                public T Item;
+                public LinkedListNode<Node> Context;
+            }
+            public class ElementList<T> : ArrayList<ItemContainer<T>>, IElementList where T : ICanvasTransient, new() {
+                public int Iterator;
+                public void Reset(Canvas canvas) {
+                    for (int i = Iterator; i < Count; ++i) this[i].Item.Dispose(canvas);
+                    //this.RemoveRange(Iterator, Count - Iterator);
+                    Iterator = 0;
+                }
+                public ref T RequireItem(LinkedListNode<Node> context, Canvas canvas) {
+                    if (Iterator >= Count) {
+                        var item = new T();
+                        item.Initialize(canvas);
+                        Add(new ItemContainer<T>() { Item = item, Context = context, });
+                    } else {
+                        int i = Iterator;
+                        int end = Math.Min(Count, Iterator + 5);
+                        for (; i < end; ++i) {
+                            if (this[i].Context == context) break;
+                        }
+                        if (i != end) {
+                            if (i != Iterator) {
+                                var t = this[Iterator];
+                                this[Iterator] = this[i];
+                                this[i] = t;
+                            }
+                        } else {
+                            ref var item = ref this[Iterator];
+                            item.Context = context;
+                            item.Item.Dispose(canvas);
+                            item.Item.Initialize(canvas);
+                        }
+                    }
+                    return ref this[Iterator++].Item;
+                }
+            }
+            Dictionary<Type, IElementList> typedElements = new();
+            public void Reset(Canvas canvas) {
+                foreach (var item in typedElements.Values) item.Reset(canvas);
+            }
+            public ElementList<T> Require<T>() where T : ICanvasTransient, new() {
+                if (!typedElements.TryGetValue(typeof(T), out var list)) {
+                    list = new ElementList<T>();
+                    typedElements.Add(typeof(T), list);
+                }
+                return (ElementList<T>)list;
+            }
+        }
         public struct Node {
             public object? mContext;
             public LinkedListNode<Node>? mParent;
 		};
         public struct Item {
             public LinkedListNode<Node> mNode;
-            public int mVertexRange;
+            public int mElementId;
+            public int mBatchId;
+            public bool mTransient;
 		};
+        public struct BatchElement {
+            public RangeInt IndexRange;
+            public RectF MeshBounds;
+        }
         public struct Batch {
-			public Material mMaterial;
-            public RangeInt mIndexRange;
+			public Material[] Materials;
+            public int MaterialHash;
+            public int mIndexCount;
+            public RangeInt mIndexAlloc;
+            public RangeInt ElementRange;
+            public RectF MeshBounds;
 		};
+        public struct ClippingRect {
+            public CanvasLayout Layout;
+        }
+        public struct ClippingRef : IDisposable {
+            private readonly CanvasCompositor compositor;
+            public ClippingRef(CanvasCompositor _compositor) { compositor = _compositor; }
+            public void Dispose() { compositor.clippingRects.RemoveAt(compositor.clippingRects.Count - 1); }
+        }
+        public struct TransformerRef : IDisposable {
+            private readonly CanvasCompositor compositor;
+            public TransformerRef(CanvasCompositor _compositor) { compositor = _compositor; }
+            public void Dispose() { compositor.transformers.RemoveAt(compositor.transformers.Count - 1); }
+        }
+        public struct MaterialRef : IDisposable {
+            private readonly CanvasCompositor compositor;
+            public MaterialRef(CanvasCompositor _compositor) { compositor = _compositor; }
+            public void Dispose() { compositor.materialStack.RemoveAt(compositor.materialStack.Count - 1); compositor.RecomputeMaterialStackHash(); }
+        }
         LinkedList<Node> mNodes = new();
         LinkedList<Item> mItems = new();
-		List<Batch> mBatches = new();
-		BufferLayoutPersistent mIndices;
+        SparseArray<BatchElement> batchElements = new();
+        ArrayList<Batch> mBatches = new();
+        ArrayList<Matrix3x2> transformers = new();
+        ArrayList<ClippingRect> clippingRects = new();
+        ArrayList<Material> materialStack = new();
+        int matStackHash = 0;
+        BufferLayoutPersistent mIndices;
+        SparseIndices mUnusedIndices = new();
+        TransientElementCache transientCache = new();
         CanvasMeshBuffer mBuilder;
         public CanvasCompositor(CanvasMeshBuffer builder) {
 			mBuilder = builder;
@@ -378,70 +694,210 @@ namespace Weesals.UI {
         public void Dispose() {
             mIndices.Dispose();
         }
+        public void Clear() {
+            batchElements.Clear();
+            mBatches.Clear();
+            mIndices.Clear();
+            mUnusedIndices.Clear();
+        }
+        public TransformerRef PushTransformer(Matrix3x2 transform) {
+            transformers.Add(transform);
+            return new TransformerRef(this);
+        }
+        public ClippingRef PushClippingRect(CanvasLayout layout) {
+            clippingRects.Add(new ClippingRect() { Layout = layout, });
+            return new ClippingRef(this);
+        }
+        public MaterialRef PushMaterial(Material material) {
+            materialStack.Add(material);
+            RecomputeMaterialStackHash();
+            return new MaterialRef(this);
+        }
+        private void RecomputeMaterialStackHash() {
+            matStackHash = 0;
+            foreach (var mat in materialStack) matStackHash = HashCode.Combine(mat.GetHashCode(), matStackHash);
+        }
+
         public BufferLayoutPersistent GetIndices() { return mIndices; }
-		public void AppendElementData(int elementId, Material material) {
+        private RectF ComputeElementBounds(int elementId) {
+            var verts = mBuilder.MapVertices(elementId);
+            var vpositions = verts.GetPositions2D();
+            vpositions.AssetRequireReader();
+            Vector2 boundsMin = vpositions[0];
+            Vector2 boundsMax = boundsMin;
+            for (int i = 1; i < vpositions.mCount; ++i) {
+                var pos = vpositions[i];
+                boundsMin = Vector2.Min(boundsMin, pos);
+                boundsMax = Vector2.Max(boundsMax, pos);
+            }
+            verts.VertexBounds = new RectF(boundsMin, boundsMax - boundsMin);
+            return verts.VertexBounds;
+        }
+        private bool GetOverlaps(Batch batch, int elementId, RectF elBounds) {
+            var vertices = mBuilder.GetPositions();
+            var batchIndices = new TypedBufferView<uint>(mIndices.Elements[0], batch.mIndexAlloc);
+            foreach (var el in batchElements.Slice(batch.ElementRange)) {
+                if (!el.MeshBounds.Overlaps(elBounds)) continue;
+                var elVertices = mBuilder.MapVertices(elementId);
+                var elIndices = elVertices.GetIndices();
+                for (int i = 0; i < el.IndexRange.Length; i += 3) {
+                    int i1 = el.IndexRange.Start + i;
+                    var t0v0 = vertices[batchIndices[i1 + 0]].toxy();
+                    var t0v1 = vertices[batchIndices[i1 + 1]].toxy();
+                    var t0v2 = vertices[batchIndices[i1 + 2]].toxy();
+                    for (int i2 = 0; i2 < elIndices.mCount; i2 += 3) {
+                        var t1v0 = vertices[(uint)elVertices.VertexOffset + elIndices[i2 + 0]].toxy();
+                        var t1v1 = vertices[(uint)elVertices.VertexOffset + elIndices[i2 + 1]].toxy();
+                        var t1v2 = vertices[(uint)elVertices.VertexOffset + elIndices[i2 + 2]].toxy();
+                        if (Geometry.GetTrianglesOverlap(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2)) return true;
+                    }
+                }
+            }
+            return false;
+        }
+        private int RequireBatchForElement(int elementId, Material material, RectF bounds) {
+            var matHash = (material?.GetHashCode() ?? 0);
+            matHash += matStackHash;
+            for (int batchId = mBatches.Count - 1; batchId >= 0; --batchId) {
+                var batch = mBatches[batchId];
+                // If materials match, use this batch
+                if (batch.MaterialHash == matHash) {
+                    // Avoid huge batches (expensive to overlap query, no real processing savings)
+                    if (batch.mIndexAlloc.Length < 10 * 1024 * 3) return batchId;
+                }
+                // Cant merge with anything under batch 0
+                if (batchId == 0) break;
+                if (!batch.MeshBounds.Overlaps(bounds)) continue;
+                if (GetOverlaps(batch, elementId, bounds)) break;
+            }
+            var materials = new Material[(material != null ? 1 : 0) + materialStack.Count];
+            materialStack.CopyTo(materials);
+            if (material != null) materials[^1] = material;
+            mBatches.Add(new Batch {
+                Materials = materials,
+                MaterialHash = matHash,
+                mIndexAlloc = default,
+                MeshBounds = bounds,
+            });
+            return mBatches.Count - 1;
+        }
+        public void AppendElementData(int elementId, Material material) {
 			var verts = mBuilder.MapVertices(elementId);
             var inds = verts.GetIndices();
-			if (mIndices.BufferCapacityCount < mIndices.Count + inds.mCount) {
-				mIndices.AllocResize(
-					Math.Max(
-						mIndices.BufferCapacityCount + 2048,
-						mIndices.Count + inds.mCount
-					)
-				);
-			}
-			int istart = mIndices.Count;
-			int icount = inds.mCount;
-			if (mBatches.Count == 0 || mBatches[^1].mMaterial != material) {
-				mBatches.Add(new Batch {
-					mMaterial = material,
-					mIndexRange = new RangeInt(istart, 0)
-				});
-			}
-			var outInds = new TypedBufferView<uint>(mIndices.Elements[0], new RangeInt(istart, icount));
-			for (int i = 0; i < inds.mCount; ++i) {
-				outInds[i] = (uint)(inds[i] + verts.VertexOffset);
-			}
-			mIndices.BufferLayout.mCount += icount;
-			var batch = mBatches[^1];
-            batch.mIndexRange.Length += icount;
-			mBatches[^1] = batch;
+            if (inds.mCount == 0) return;
+
+            // Determine valid batch to insert into
+            var bounds = verts.VertexBounds;
+            if (bounds.Width == -1f) bounds = ComputeElementBounds(elementId);
+            int batchId = RequireBatchForElement(elementId, material, bounds);
+            if (clippingRects.Count > 0) {
+                var top = clippingRects[^1];
+                var localBounds = bounds;
+                localBounds.X -= top.Layout.Position.X;
+                localBounds.Y -= top.Layout.Position.Y;
+                if (localBounds.Max.X <= 0 || localBounds.Max.Y <= 0 ||
+                    localBounds.Min.X >= top.Layout.GetWidth() || localBounds.Min.Y >= top.Layout.GetHeight()) return;
+            }
+
+            ref var batch = ref mBatches[batchId];
+            var oldRange = batch.mIndexAlloc;
+            var newICount = batch.mIndexCount + inds.mCount;
+            if (newICount > batch.mIndexAlloc.Length) {
+                if (batch.mIndexAlloc.Length > 0 && batch.mIndexAlloc.End == mIndices.Count) {
+                    // We can directly consume at the end of the array (mIndices will be resized below)
+                    batch.mIndexAlloc.Length += inds.mCount;
+                } else {
+                    int reqCount = oldRange.Length + inds.mCount;
+                    reqCount += Math.Max(reqCount / 2, 128);
+                    // Try to use an existing block
+                    batch.mIndexAlloc = mUnusedIndices.Allocate(reqCount);
+                    // Otherwise allocate a new block at the end of mIndices
+                    if (batch.mIndexAlloc.Start == -1) {
+                        batch.mIndexAlloc = new RangeInt(mIndices.Count, reqCount);
+                    }
+                }
+            }
+            // Resize index buffer to contain index range
+            mIndices.BufferLayout.mCount = Math.Max(mIndices.BufferLayout.mCount, batch.mIndexAlloc.End);
+            if (mIndices.BufferCapacityCount < mIndices.BufferLayout.mCount) {
+                int resize = Math.Max(mIndices.BufferCapacityCount + 2048, mIndices.BufferLayout.mCount);
+                mIndices.AllocResize(resize);
+            }
+            // If batch was moved, copy data
+            if (batch.mIndexAlloc.Start != oldRange.Start) {
+                mIndices.CopyRange(oldRange.Start, batch.mIndexAlloc.Start, batch.mIndexCount);
+                mIndices.InvalidateRange(oldRange.Start, oldRange.Length);
+                mUnusedIndices.Return(ref oldRange);
+                mIndices.BufferLayout.mCount -= mUnusedIndices.Compact(mIndices.BufferLayout.mCount);
+            }
+            // Write the index values
+            var subRegionIndRange = new RangeInt(batch.mIndexCount, inds.mCount);
+            var elIndexRange = new RangeInt(batch.mIndexAlloc.Start + batch.mIndexCount, inds.mCount);
+            var elIndices = new TypedBufferView<uint>(mIndices.Elements[0], elIndexRange);
+			for (int i = 0; i < inds.mCount; ++i) elIndices[i] = (uint)(inds[i] + verts.VertexOffset);
+            batch.MeshBounds = batch.MeshBounds.ExpandToInclude(bounds);
+
+            batch.mIndexCount = newICount;
+
+            // Track sub-regions for efficient overlap queries
+            // Special case to append to an existing region
+            bool combine = false;
+            if (batch.ElementRange.Length > 0) {
+                ref var lastEl = ref batchElements[batch.ElementRange.End - 1];
+                Debug.Assert(lastEl.IndexRange.End == subRegionIndRange.Start);
+                var combinedBounds = lastEl.MeshBounds.ExpandToInclude(bounds);
+                var origArea = lastEl.MeshBounds.Area;
+                var combinedArea = combinedBounds.Area;
+                if (combinedArea < MathF.Max(origArea * 1.2f, 50f * 50f)) {
+                    lastEl.MeshBounds = combinedBounds;
+                    lastEl.IndexRange.Length += subRegionIndRange.Length;
+                    combine = true;
+                }
+            }
+            if (!combine) {
+                Debug.Assert(subRegionIndRange.End <= batch.mIndexCount);
+                batchElements.Append(ref batch.ElementRange, new BatchElement() {
+                    MeshBounds = bounds,
+                    IndexRange = subRegionIndRange,
+                });
+            }
         }
         public struct Builder {
 			public CanvasCompositor mCompositor;
             public LinkedListNode<Node>? mChildBefore;
             public LinkedListNode<Item>? mItem;
-            public int mIndex;
-			public int mBatch;
             public Builder(CanvasCompositor compositor, LinkedListNode<Node>? childBefore, LinkedListNode<Item>? item) {
 				mCompositor = compositor;
                 mChildBefore = childBefore;
                 mItem = item;
-				mIndex = 0;
-				mBatch = 0;
             }
 			// A where of null = at the end of the list
             private LinkedListNode<T> InsertBefore<T>(LinkedList<T> list, LinkedListNode<T>? where, T item) {
 				if (where == null) return list.AddLast(item);
 				else return list.AddBefore(where, item);
             }
-            public void AppendItem(LinkedListNode<Node> node, CanvasElement element) {
-				if (mItem != null && mItem.ValueRef.mNode == node) {
-                    mItem.ValueRef.mVertexRange = element.ElementId;
-					mItem = mItem.Next;
+            public void AppendItem(LinkedListNode<Node> node, CanvasElement element, bool transient) {
+                if (!transient) {
+                    while (mItem != null && mItem.ValueRef.mNode == node && mItem.ValueRef.mTransient) {
+                        var remove = mItem;
+                        mCompositor.mBuilder.Deallocate(remove.ValueRef.mElementId);
+                        mCompositor.mItems.Remove(remove);
+                        mItem = mItem.Next;
+                    }
+                }
+                if (mItem != null && mItem.ValueRef.mNode == node && mItem.ValueRef.mTransient == transient) {
+                    mItem.ValueRef.mElementId = element.ElementId;
+                    mItem = mItem.Next;
 				}
 				else {
 					InsertBefore(mCompositor.mItems, mItem, new Item{
 						mNode = node,
-						mVertexRange = element.ElementId,
-					});
-					// Clear all future indices
-					mCompositor.mIndices.BufferLayout.mCount = mIndex;
+						mElementId = element.ElementId,
+                        mTransient = transient,
+                        //mBatchId = batchId,
+                    });
 				}
-				if (mIndex >= mCompositor.mIndices.Count)
-					mCompositor.AppendElementData(element.ElementId, element.Material);
-				var verts = mCompositor.mBuilder.MapVertices(element.ElementId);
-				mIndex += verts.GetIndexCount();
+		        mCompositor.AppendElementData(element.ElementId, element.Material);
 			}
             public LinkedListNode<Node> InsertChild(LinkedListNode<Node> parent, object context) {
 				var next = mChildBefore; next = next!.Next;
@@ -460,15 +916,16 @@ namespace Weesals.UI {
             // Removes anything from this point onward with the specified node as a parent
             public bool ClearChildrenRecursive(LinkedListNode<Node> node) {
                 for (; ; ) {
-                    var item = mItem;
-                    if (item == null) break;
 					// Remove direct child items
-					if (item.ValueRef.mNode == node) {
-						mItem = item.Next;
+					while (mItem != null && mItem.ValueRef.mNode == node) {
+                        var item = mItem;
+                        mItem = item.Next;
+                        if (item.ValueRef.mTransient) {
+                            mCompositor.mBuilder.Deallocate(item.ValueRef.mElementId);
+                        }
                         mCompositor.mItems.Remove(item);
-						continue;
                     }
-                    var child = mChildBefore; child = child!.Next;
+                    var child = mChildBefore!.Next;
                     if (child == null || child.ValueRef.mParent != node) break;
                     // Recursively remove child nodes
                     if (ClearChildrenRecursive(child)) {
@@ -483,16 +940,19 @@ namespace Weesals.UI {
         public ref struct Context {
 			ref Builder mBuilder;
             public LinkedListNode<Node> mNode;
+            private int transientId;
             public Context(ref Builder builder, LinkedListNode<Node> node) {
                 mBuilder = ref builder;
 				mNode = node;
+                transientId = -1;
             }
             public CanvasCompositor GetCompositor() { return mBuilder.mCompositor; }
-            public LinkedList<Node> GetNodes() { return mBuilder.mCompositor.mNodes; }
-            public LinkedList<Item> GetItems() { return mBuilder.mCompositor.mItems; }
             public void Append(CanvasElement element) {
-				mBuilder.AppendItem(mNode, element);
-			}
+                Debug.Assert(transientId == -1 || transientId == element.ElementId,
+                    "Expected transient ID. Append must appear directly after CreateTransient<>");
+				mBuilder.AppendItem(mNode, element, transientId != -1);
+                transientId = -1;
+            }
             public Context InsertChild(object element) {
 				return new Context(ref mBuilder, mBuilder.InsertChild(mNode, element));
 			}
@@ -500,9 +960,39 @@ namespace Weesals.UI {
 				if (mBuilder.mItem != null)
 					mBuilder.ClearChildrenRecursive(mNode);
 			}
-		}
-		public Builder CreateBuilder() {
-			if (mNodes.Count == 0) {
+            public ref T CreateTransient<T>(Canvas canvas) where T : ICanvasTransient, new() {
+                return ref mBuilder.mCompositor.RequireTransient<T>(mNode, canvas);
+                /*var item = new T();
+                var itemNode = mBuilder.mItem;
+                var elementId =
+                    itemNode != null && itemNode.ValueRef.mTransient ? itemNode.ValueRef.mElementId
+                    : mBuilder.mCompositor.mBuilder.Allocate(0, 0);
+                item.InitializeTransient(canvas, elementId);
+                transientId = elementId;
+                return item;*/
+            }
+
+            public CanvasCompositor.TransformerRef PushTransformer(Matrix3x2 transform) {
+                return mBuilder.mCompositor.PushTransformer(transform);
+            }
+            public CanvasCompositor.ClippingRef PushClippingArea(CanvasLayout rect) {
+                return mBuilder.mCompositor.PushClippingRect(rect);
+            }
+            public CanvasCompositor.MaterialRef PushMaterial(Material material) {
+                return mBuilder.mCompositor.PushMaterial(material);
+            }
+        }
+
+        private ref T RequireTransient<T>(LinkedListNode<Node> context, Canvas canvas) where T : ICanvasTransient, new() {
+            var list = transientCache.Require<T>();
+            return ref list.RequireItem(context, canvas);
+        }
+
+        public Builder CreateBuilder(Canvas canvas) {
+            transientCache.Reset(canvas);
+            mIndices.BufferLayout.revision++;
+            Clear();
+            if (mNodes.Count == 0) {
 				mNodes.AddFirst(new Node{ mContext = null, mParent = null, });
 			}
 			return new Builder(this, mNodes.First, mItems.First);
@@ -516,12 +1006,13 @@ namespace Weesals.UI {
 			var vertices = mBuilder.GetVertices();
             var bindingsPtr = stackalloc CSBufferLayout[2];
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
-			bindings[0] = mIndices.BufferLayout;
+            bindings[0] = mIndices.BufferLayout;
             bindings[1] = vertices.BufferLayout;
             using var materials = new PooledList<Material>(2);
             foreach (var batch in mBatches) {
                 materials.Clear();
-                if (batch.mMaterial != null) materials.Add(batch.mMaterial);
+                foreach (var mat in batch.Materials)
+                    materials.Add(mat);
                 materials.Add(material);
                 var pso = MaterialEvaluator.ResolvePipeline(
                     graphics,
@@ -533,10 +1024,9 @@ namespace Weesals.UI {
 					pso,
 					materials
 				);
-                var drawConfig = new CSDrawConfig(batch.mIndexRange.Start, batch.mIndexRange.Length);
+                var drawConfig = new CSDrawConfig(batch.mIndexAlloc.Start, batch.mIndexCount);
                 graphics.Draw(pso, bindings, resources, drawConfig);
             }
 	    }
-    };
-
+    }
 }

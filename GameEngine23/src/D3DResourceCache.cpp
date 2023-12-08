@@ -98,7 +98,7 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     }
     ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mRootSignature.mRootSignature)));
 }
-D3DShader* D3DResourceCache::RequireShader(const Shader& shader, const std::string& profile, const IdentifierWithName& renderPass)
+D3DShader* D3DResourceCache::RequireShader(const Shader& shader, const std::string& profile, std::span<const MacroValue> macros, const IdentifierWithName& renderPass)
 {
     auto pathId = shader.GetIdentifier();
     auto entryPointId = Identifier::RequireStringId(shader.GetEntryPoint()) + ((int)renderPass * 1234);
@@ -119,7 +119,16 @@ D3DShader* D3DResourceCache::RequireShader(const Shader& shader, const std::stri
             }
             if (!valid) return nullptr;
         }
-        d3dshader->CompileFromFile(shader.GetPath(), entryFn, profile.c_str());
+        D3D_SHADER_MACRO d3dMacros[64];
+        auto count = std::min(macros.size(), _countof(d3dMacros) - 1);
+        for (int m = 0; m < count; ++m) {
+            d3dMacros[m] = D3D_SHADER_MACRO{
+                .Name = macros[m].mName.GetName().c_str(),
+                .Definition = macros[m].mValue.GetName().c_str(),
+            };
+        }
+        d3dMacros[count] = { };
+        d3dshader->CompileFromFile(shader.GetPath(), entryFn, profile.c_str(), d3dMacros);
     }
     return d3dshader;
 }
@@ -430,7 +439,7 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
                     };
                     cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
                     WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), binding.mSize, //binding.mCount * itemSize,
-                        [&](auto* data) {
+                        [&](uint8_t* data) {
                             // Fast path
                             if (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize) {
                                 memcpy(data, (uint8_t*)binding.GetElements()[0].mData, binding.mSize);
@@ -440,8 +449,12 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
                             int toffset = 0;
                             for (auto& element : binding.GetElements()) {
                                 auto elItemSize = element.GetItemByteSize();
+                                auto* dstData = data + toffset;
+                                auto* srcData = (uint8_t*)element.mData;
                                 for (int s = 0; s < count; ++s) {   //binding.mCount
-                                    memcpy(data + s * itemSize + toffset, (uint8_t*)element.mData + element.mBufferStride * s, elItemSize);
+                                    memcpy(dstData, srcData, elItemSize);
+                                    dstData += itemSize;
+                                    srcData += element.mBufferStride;
                                 }
                                 toffset += elItemSize;
                             }
@@ -466,7 +479,7 @@ void D3DResourceCache::SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameI
 D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
     const Shader& vertexShader, const Shader& pixelShader,
     const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-    const IdentifierWithName& renderPass
+    std::span<const MacroValue> macros, const IdentifierWithName& renderPass
 )
 {
     // Find (or create) a pipeline that matches these requirements
@@ -479,7 +492,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         // TODO: Append binding layout hash
     }
     hash = AppendHash(std::make_pair(vertexShader.GetIdentifier(), pixelShader.GetIdentifier()), hash);
-    hash = AppendHash((int)renderPass, hash);
+    for (auto macro : macros) hash = AppendHash(macro, hash);
     auto pipelineState = GetOrCreatePipelineState(vertexShader, pixelShader, hash);
     while (pipelineState->mHash != hash)
     {
@@ -489,8 +502,8 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         auto device = mD3D12.GetD3DDevice();
 
         // Make sure shaders are compiled
-        auto vShader = RequireShader(vertexShader, StrVSProfile, renderPass);
-        auto pShader = RequireShader(pixelShader, StrPSProfile, renderPass);
+        auto vShader = RequireShader(vertexShader, StrVSProfile, macros, renderPass);
+        auto pShader = RequireShader(pixelShader, StrPSProfile, macros, renderPass);
         if (vShader == nullptr || pShader == nullptr) break;
         if (vShader->mShader == nullptr || pShader->mShader == nullptr) break;
 

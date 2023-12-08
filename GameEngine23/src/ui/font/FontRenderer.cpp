@@ -52,7 +52,7 @@ public:
     virtual bool Load(const std::string& path, std::string_view glyphs) override {
         FT_Face mFace;
         if (FT_New_Face(mRenderer->GetLibrary(), path.c_str(), 0, &mFace)) return false;
-        mLineHeight = 40;
+        mLineHeight = 27;
         FT_Set_Pixel_Sizes(mFace, 0, mLineHeight);
 
         mTexture = std::make_shared<Texture>();
@@ -118,7 +118,7 @@ public:
             return g1.mGlyph.mSize.y > g2.mGlyph.mSize.y;
         });
         int lineHeight = 0;
-        int padding = 2;
+        int padding = 9;
         Int2 pos = Int2(padding, padding);
         for (auto& entry : entries) {
             int endX = pos.x + entry.mGlyph.mSize.x + padding;
@@ -145,7 +145,7 @@ public:
         for (int t = 0; t < 1; ++t) {
             DistanceFieldGenerator dfgen;
             dfgen.Generate(texdata, mTexture->GetSize());
-            dfgen.ApplyDistances(texdata, mTexture->GetSize());
+            dfgen.ApplyDistances(texdata, mTexture->GetSize(), 20.0f);
         }
         mTexture->MarkChanged();
 

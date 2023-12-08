@@ -415,18 +415,20 @@ namespace GameEngine23.Interop {
                 return (nint)RequireConstantBuffer(mGraphics, new CSSpan(dataPtr, data.Length));
             }
         }
-        unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSIdentifier renderPass) {
-            var usbindings = stackalloc CSBufferLayout[bindings.Length];
-            for (int b = 0; b < bindings.Length; ++b) {
-                usbindings[b] = bindings[b];
+        unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass) {
+            //var usbindings = stackalloc CSBufferLayout[bindings.Length];
+            //for (int b = 0; b < bindings.Length; ++b) usbindings[b] = bindings[b];
+            fixed (CSBufferLayout* usbindings = bindings)
+            fixed (KeyValuePair<CSIdentifier, CSIdentifier>* usmacros = macros) {
+                return new CSPipeline(RequirePipeline(
+                    mGraphics,
+                    new CSSpan(usbindings, bindings.Length),
+                    vertexShader, pixelShader,
+                    materialState,
+                    new CSSpan(usmacros, macros.Length),
+                    renderPass
+                ));
             }
-            return new CSPipeline(RequirePipeline(
-                mGraphics,
-                new CSSpan(usbindings, bindings.Length),
-                vertexShader, pixelShader,
-                materialState,
-                renderPass
-            ));
         }
         unsafe public CSPipeline RequirePipeline(List<CSBufferLayout> bindings, List<CSMaterial> materials, CSIdentifier renderPass) {
             return RequirePipeline(CollectionsMarshal.AsSpan(bindings), CollectionsMarshal.AsSpan(materials), renderPass);
@@ -499,6 +501,7 @@ namespace GameEngine23.Interop {
     public partial struct CSScene {
         unsafe public void Dispose() { Dispose(mScene); mScene = null; }
         unsafe public CSTexture GetGPUBuffer() { return new CSTexture(GetGPUBuffer(mScene)); }
+        unsafe public int GetGPURevision() { return GetGPURevision(mScene); }
         unsafe public CSMaterial GetRootMaterial() { return new CSMaterial(GetRootMaterial(mScene)); }
         unsafe public CSInstance CreateInstance() { return new CSInstance(CreateInstance(mScene)); }
         unsafe public void UpdateInstanceData(CSInstance instance, void* data, int dataLen) { UpdateInstanceData(mScene, instance, (byte*)data, dataLen); }
@@ -531,7 +534,7 @@ namespace GameEngine23.Interop {
 
 
 
-    public struct BlendMode {
+    public struct BlendMode : IEquatable<BlendMode> {
         public enum BlendArg : byte { Zero, One, SrcColor, SrcInvColor, SrcAlpha, SrcInvAlpha, DestColor, DestInvColor, DestAlpha, DestInvAlpha, };
         public enum BlendOp : byte { Add, Sub, RevSub, Min, Max, };
         public BlendArg mSrcAlphaBlend;
@@ -550,15 +553,33 @@ namespace GameEngine23.Interop {
         }
         public static BlendMode MakeOpaque() { return new BlendMode(BlendArg.One, BlendArg.Zero, BlendArg.One, BlendArg.Zero, BlendOp.Add, BlendOp.Add); }
         public static BlendMode MakeAlphaBlend() { return new BlendMode(BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
+
+        public override bool Equals(object? obj) { return obj is BlendMode mode && Equals(mode); }
+        public bool Equals(BlendMode other) {
+            return mSrcAlphaBlend == other.mSrcAlphaBlend && mDestAlphaBlend == other.mDestAlphaBlend &&
+                   mSrcColorBlend == other.mSrcColorBlend && mDestColorBlend == other.mDestColorBlend &&
+                   mBlendAlphaOp == other.mBlendAlphaOp && mBlendColorOp == other.mBlendColorOp;
+        }
+        public override int GetHashCode() {
+            return HashCode.Combine(mSrcAlphaBlend, mDestAlphaBlend, mSrcColorBlend, mDestColorBlend, mBlendAlphaOp, mBlendColorOp);
+        }
+        public static bool operator ==(BlendMode left, BlendMode right) { return left.Equals(right); }
+        public static bool operator !=(BlendMode left, BlendMode right) { return !(left == right); }
     }
-    public struct RasterMode {
+    public struct RasterMode : IEquatable<RasterMode> {
         public enum CullModes : byte { None = 1, Front = 2, Back = 3, };
         public CullModes mCullMode;
         public RasterMode(CullModes mode = CullModes.Back) { mCullMode = mode; }
         public RasterMode SetCull(CullModes mode) { mCullMode = mode; return this; }
         public static RasterMode MakeDefault() { return new RasterMode() { mCullMode = CullModes.Back, }; }
+
+        public override bool Equals(object? obj) { return obj is RasterMode mode && Equals(mode); }
+        public bool Equals(RasterMode other) { return mCullMode == other.mCullMode; }
+        public override int GetHashCode() { return HashCode.Combine(mCullMode); }
+        public static bool operator ==(RasterMode left, RasterMode right) { return left.Equals(right); }
+        public static bool operator !=(RasterMode left, RasterMode right) { return !(left == right); }
     }
-    public struct DepthMode {
+    public struct DepthMode : IEquatable<DepthMode> {
         public enum Comparisons : byte { Never = 1, Less, Equal, LEqual, Greater, NEqual, GEqual, Always, };
         public Comparisons mComparison;
         public bool mWriteEnable;
@@ -569,6 +590,12 @@ namespace GameEngine23.Interop {
         public static DepthMode MakeOff() { return new DepthMode(Comparisons.Always, false); }
         public static DepthMode MakeReadOnly(Comparisons comparison = Comparisons.LEqual) { return new DepthMode(comparison, false); }
         public static DepthMode MakeDefault(Comparisons comparison = Comparisons.LEqual) { return new DepthMode(comparison, true); }
+
+        public override bool Equals(object? obj) { return obj is DepthMode mode && Equals(mode); }
+        public bool Equals(DepthMode other) { return mComparison == other.mComparison && mWriteEnable == other.mWriteEnable; }
+        public override int GetHashCode() { return HashCode.Combine(mComparison, mWriteEnable); }
+        public static bool operator ==(DepthMode left, DepthMode right) { return left.Equals(right); }
+        public static bool operator !=(DepthMode left, DepthMode right) { return !(left == right); }
     }
     public partial struct CSDrawConfig {
         public static CSDrawConfig MakeDefault() { return new CSDrawConfig(0, -1); }

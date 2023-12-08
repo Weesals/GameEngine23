@@ -53,5 +53,5 @@ const PipelineLayout* GraphicsDeviceBase::RequirePipeline(std::span<const Buffer
     const auto& sourcePS = *getter.MaterialGet<Shader*>([](const Material* mat, Shader*& out) { out = mat->GetPixelShader().get(); return out != nullptr; });
     const auto& materialState = materials.back()->GetMaterialState();
 
-    return RequirePipeline(sourceVS, sourcePS, materialState, bindings, renderQueue);
+    return RequirePipeline(sourceVS, sourcePS, materialState, bindings, std::span<const MacroValue>(), renderQueue);
 }

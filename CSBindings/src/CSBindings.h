@@ -268,7 +268,7 @@ public:
 	static void SetResolution(const NativeGraphics* graphics, Int2 res);
 	static void SetRenderTarget(NativeGraphics* graphics, const NativeRenderTarget* target);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials);
-	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSIdentifier renderPass);
+	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static CSSpan ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bindings);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
@@ -321,6 +321,7 @@ public:
 	static void UpdateInstanceData(NativeScene* scene, CSInstance instance, const uint8_t* data, int dataLen);
 	static CSSpan GetInstanceData(NativeScene* scene, CSInstance instance);
 	static NativeTexture* GetGPUBuffer(NativeScene* scene);
+	static int GetGPURevision(NativeScene* scene);
 	static void SubmitToGPU(NativeScene* scene, NativeGraphics* graphics);
 	static NativeRenderPass* GetBasePass(NativeScene* scene);
 	static NativeRenderPass* GetShadowPass(NativeScene* scene);

@@ -27,5 +27,9 @@ namespace Weesals.Engine {
         }
         public Vector3 GetPoint(float d) { return Origin + Direction * d; }
 	    public Ray Normalize() { return new Ray(Origin, Vector3.Normalize(Direction)); }
+
+        public override string ToString() {
+            return $"<{Origin} <> {Direction}>";
+        }
     }
 }

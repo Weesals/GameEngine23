@@ -1,10 +1,14 @@
 ﻿using GameEngine23.Interop;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.XPath;
 using Weesals.Engine;
 using Weesals.UI;
 
@@ -45,11 +49,9 @@ namespace Weesals.Editor {
         }
         protected override void NotifyTransformChanged() {
             base.NotifyTransformChanged();
-            var layout = mLayoutCache;
-            var tabHeader = layout.SliceTop(TitleText.GetPreferredHeight() + 5).Inset(1);
-            TitleBG.UpdateLayout(Canvas, tabHeader);
-            TitleText.UpdateLayout(Canvas, tabHeader);
-            if (EnableBackground) PanelBG.UpdateLayout(Canvas, layout.Inset(1));
+            TitleBG.MarkLayoutDirty();
+            TitleText.MarkLayoutDirty();
+            PanelBG.MarkLayoutDirty();
         }
         public override void UpdateChildLayouts() {
             if (mChildren.Count == 0) return;
@@ -59,30 +61,16 @@ namespace Weesals.Editor {
             }
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
+            var layout = mLayoutCache;
+            var tabHeader = layout.SliceTop(TitleText.GetPreferredHeight() + 5).Inset(1);
+            TitleBG.UpdateLayout(Canvas, tabHeader);
+            TitleText.UpdateLayout(Canvas, tabHeader);
+            if (EnableBackground) PanelBG.UpdateLayout(Canvas, layout.Inset(1));
+
             TitleBG.Append(ref composer);
             TitleText.Append(ref composer);
             if (EnableBackground) PanelBG.Append(ref composer);
             base.Compose(ref composer);
-        }
-    }
-    public class UIInspector : TabbedWindow {
-        public UIInspector(Editor editor) : base(editor, "Inspector") {
-        }
-    }
-    public class UIGameView : TabbedWindow {
-        public UIGameView(Editor editor) : base(editor, "Game") {
-            EnableBackground = false;
-        }
-
-        public RectI GetGameViewportRect() {
-            var gameLayout = GetContentsLayout();
-            return new RectI(
-                (int)gameLayout.Position.X, (int)gameLayout.Position.Y,
-                (int)gameLayout.GetWidth(), (int)gameLayout.GetHeight());
-        }
-    }
-    public class UIProjectView : TabbedWindow {
-        public UIProjectView(Editor editor) : base(editor, "Project") {
         }
     }
 
@@ -93,13 +81,16 @@ namespace Weesals.Editor {
         public UIGameView GameView;
         public UIProjectView ProjectView;
 
+        private EventSystem eventSystem;
         public Canvas Canvas;
+        public bool RequireRepaint;
 
         public EditorWindow() {
             Editor = new();
             Editor.DefaultFont = CSResources.LoadFont("./assets/Roboto-Regular.ttf");
 
             Canvas = new();
+            eventSystem = new EventSystem(Canvas);
             var flex = new FlexLayout();
             Inspector = new(Editor) { };
             GameView = new(Editor) { };
@@ -111,8 +102,11 @@ namespace Weesals.Editor {
             Canvas.AppendChild(flex);
         }
 
-        public void UpdateLayout(Int2 size) {
+        public void Update(float dt, Int2 size) {
+            eventSystem.Update(dt);
             Canvas.SetSize(size);
+            Canvas.Update(dt);
+            Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics) {
             Canvas.Render(graphics, Canvas.Material);

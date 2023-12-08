@@ -16,9 +16,13 @@ namespace Weesals.Utility {
     }
 
     public struct SparseIndices {
-        public List<RangeInt> Ranges;
-        public SparseIndices(bool create) {
-            Ranges = new();
+        private List<RangeInt> Ranges = new();
+
+        public SparseIndices() { }
+        public int GetSumCount() {
+            int count = 0;
+            foreach (var range in Ranges) count += range.Length;
+            return count;
         }
         public int Allocate(RangeInt range) {
             int count = 0;
@@ -61,6 +65,25 @@ namespace Weesals.Utility {
             }
             return new RangeInt(-1, -1);
         }
+        public bool TryAllocateAt(int from, int count) {
+            int min = 0, max = Ranges.Count - 1;
+            while (min < max) {
+                var mid = (min + max) / 2;
+                if (Ranges[mid].Start < from) min = mid + 1;
+                else max = mid;
+            }
+            if (min < Ranges.Count && Ranges[min].Start == from) {
+                var range = Ranges[min];
+                if (range.Length >= count) {
+                    range.Length -= count;
+                    range.Start += count;
+                    if (range.Length == 0) Ranges.RemoveAt(min);
+                    else Ranges[min] = range;
+                    return true;
+                }
+            }
+            return false;
+        }
         public void Return(ref RangeInt range) {
             Return(range.Start, range.Length);
             range = default;
@@ -73,31 +96,29 @@ namespace Weesals.Utility {
         }
         public void ReturnRange(RangeInt range) {
             if (Ranges.Count == 0) { Ranges.Add(range); return; }
-            int end = range.Start + range.Length;
-            int index = Ranges.Count - 1;
-            for (; index >= 0; index--) {
-                var block = Ranges[index];
-                // Merge at end of block
-                if (block.End == range.Start) {
-                    block.Length += range.Length;
-                    Ranges[index] = block;
-                    AttemptMerge(index);
-                    return;
-                }
-                // Merge at start of block
-                if (block.Start == range.End) {
-                    block.Start -= range.Length; block.Length += range.Length;
-                    Ranges[index] = block;
-                    AttemptMerge(index - 1);
-                    return;
-                }
-                // Block is prior to new range, insert new range
-                if (block.Start <= end) break;
+            int min = 0, max = Ranges.Count;
+            while (min < max) {
+                var mid = (min + max) / 2;
+                if (Ranges[mid].Start < range.End) min = mid + 1;
+                else max = mid;
             }
-            ++index;
-            Ranges.Insert(index, range);
+            // Merge at end of block
+            if (min > 0 && Ranges[min - 1].End == range.Start) {
+                var block = Ranges[min - 1];
+                block.Length += range.Length;
+                Ranges[min - 1] = block;
+                AttemptMerge(min - 1);
+                return;
+            }
+            if (min < Ranges.Count && Ranges[min].Start == range.End) {
+                var block = Ranges[min];
+                block.Start -= range.Length; block.Length += range.Length;
+                Ranges[min] = block;
+                return;
+            }
+            Ranges.Insert(min, range);
         }
-        public bool AttemptMerge(int index) {
+        private bool AttemptMerge(int index) {
             if (index < 0 || index >= Ranges.Count - 1) return false;
             var p0 = Ranges[index];
             var p1 = Ranges[index + 1];
@@ -107,6 +128,7 @@ namespace Weesals.Utility {
             Ranges.RemoveAt(index + 1);
             return true;
         }
+        // Returns the number of removed items
         public int Compact(int from) {
             if (Ranges.Count == 0) return 0;
             var back = Ranges[^1];
@@ -151,7 +173,7 @@ namespace Weesals.Utility {
     }
 
     public class SparseArray<T> : IEnumerable<T> {
-        public SparseIndices Unused = new(true);
+        public SparseIndices Unused = new();
         public T[] Items;
         public int Capacity => Items.Length;
 
@@ -206,12 +228,29 @@ namespace Weesals.Utility {
             range = default;
         }
         public void Reallocate(ref RangeInt range, int newLength) {
-            var nrange = Allocate(newLength);
-            if (range.Length > 0) {
-                Array.Copy(Items, range.Start, Items, nrange.Start, Math.Min(range.Length, nrange.Length));
-                Return(ref range);
+            if (newLength > range.Length) {
+                if (Unused.TryAllocateAt(range.End, newLength - range.Length)) {
+                    range.Length = newLength;
+                    return;
+                } else {
+                    var nrange = Allocate(newLength);
+                    if (range.Length > 0) {
+                        Array.Copy(Items, range.Start, Items, nrange.Start, range.Length);
+                        Return(ref range);
+                    }
+                    range = nrange;
+                }
             }
-            range = nrange;
+            if (newLength < range.Length) {
+                Unused.Return(range.Start + newLength, range.Length - newLength);
+                range.Length = newLength;
+            }
+        }
+        public int Append(ref RangeInt range, T value) {
+            Reallocate(ref range, range.Length + 1);
+            int index = range.End - 1;
+            Items[index] = value;
+            return index;
         }
         public void Return(int start, int count = 1) {
             Unused.Return(start, count);
@@ -219,11 +258,11 @@ namespace Weesals.Utility {
 
         public void Clear() {
             Unused.Clear();
-            Unused.Return(0, Capacity);
+            if (Capacity > 0) Unused.Return(0, Capacity);
         }
 
         public ArraySegment<T> Slice(RangeInt range) {
-            if (range.Length == 0) return default;
+            if (range.Length == 0) return new ArraySegment<T>(Items, 0, 0);
             return new ArraySegment<T>(Items, range.Start, range.Length);
         }
         public ArraySegment<T> Slice(int pointStart, int pointCount) {
@@ -249,6 +288,10 @@ namespace Weesals.Utility {
                 Array.Resize(ref Items, newSize);
                 Unused.Return(oldSize, newSize - oldSize);
             }
+        }
+
+        public override string ToString() {
+            return $"Array<{Capacity - Unused.GetSumCount()}, Capacity={Capacity}>";
         }
 
         public struct Enumerator : IEnumerator<T> {

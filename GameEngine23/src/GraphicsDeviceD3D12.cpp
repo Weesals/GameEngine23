@@ -459,12 +459,12 @@ CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
 const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
     const Shader& vertexShader, const Shader& pixelShader,
     const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-    const IdentifierWithName& renderPass
+    std::span<const MacroValue> macros, const IdentifierWithName& renderPass
 )
 {
     CheckDeviceState();
 
-    auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, renderPass);
+    auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, macros, renderPass);
     if (pipelineState->mLayout == nullptr)
     {
         pipelineState->mLayout = std::make_unique<PipelineLayout>();

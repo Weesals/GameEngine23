@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine;
 
 namespace Weesals.Utility {
     public class ArrayList<T> {
@@ -13,6 +14,7 @@ namespace Weesals.Utility {
         public int Count;
 
         public ref T this[int index] => ref Buffer[index];
+        public ref T this[Index index] => ref Buffer[index.GetOffset(Count)];
 
         public void Add(T value) {
             if (Count >= Buffer.Length) {
@@ -21,8 +23,19 @@ namespace Weesals.Utility {
             Buffer[Count] = value;
             ++Count;
         }
+        public void RemoveAt(int index) {
+            var toMove = Count - index - 1;
+            if (toMove > 0) Array.Copy(Buffer, index + 1, Buffer, index, toMove);
+            --Count;
+        }
+        public void Reserve(int count) {
+            if (Buffer.Length < count) Array.Resize(ref Buffer, count);
+        }
+        public bool CanConsume(int count) {
+            return Count + count <= Buffer.Length;
+        }
         public Span<T> Consume(int count) {
-            if (Count + count > Buffer.Length) {
+            if (!CanConsume(count)) {
                 Reserve(Math.Max(Buffer.Length * 2, Math.Max(16, Count + count)));
             }
             Count += count;
@@ -35,12 +48,16 @@ namespace Weesals.Utility {
         public Span<T> AsSpan() {
             return new Span<T>(Buffer, 0, Count);
         }
-
-        public void Reserve(int count) {
-            if (Buffer.Length < count) Array.Resize(ref Buffer, count);
+        public Span<T> AsSpan(int start, int count) {
+            return new Span<T>(Buffer, start, count);
         }
+        public void CopyTo(T[] destination) {
+            Array.Copy(Buffer, destination, Count);
+        }
+
+        public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
     }
-    unsafe public struct MemoryBlock<T> : IEnumerable<T> where T : unmanaged{
+    unsafe public struct MemoryBlock<T> where T : unmanaged{
         public T* Data;
         public int Length;
         public bool IsEmpty => Length == 0;
@@ -61,28 +78,7 @@ namespace Weesals.Utility {
             return new MemoryBlock<O>((O*)Data, Length * sizeof(T) / sizeof(O));
         }
 
-        public IEnumerator<T> GetEnumerator() { return new Enumerator(this); }
-        IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
-
-        public struct Enumerator : IEnumerator<T> {
-            public T* Data;
-            public T* End;
-            public T Current => *Data;
-            object IEnumerator.Current => *Data;
-            public Enumerator(MemoryBlock<T> array) {
-                Data = array.Data - 1;
-                End = array.Data + array.Length;
-            }
-            public void Dispose() { }
-            public bool MoveNext() {
-                Data++;
-                if (Data >= End) return false;
-                return true;
-            }
-            public void Reset() {
-                throw new NotImplementedException();
-            }
-        }
+        public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
 
         public static implicit operator Span<T>(MemoryBlock<T> block) { return block.AsSpan(); }
         public static implicit operator CSSpan(MemoryBlock<T> block) { return new CSSpan(block.Data, block.Length); }
@@ -104,11 +100,15 @@ namespace Weesals.Utility {
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
         public void Dispose() { ArrayPool<T>.Shared.Return(Data); }
         public static implicit operator Span<T>(PooledArray<T> pool) { return pool.AsSpan(); }
+        public ArraySegment<T>.Enumerator GetEnumerator() {
+            return new ArraySegment<T>(Data, 0, Count).GetEnumerator();
+        }
     }
     public struct PooledList<T> : IDisposable {
         public T[] Data;
         public int Count;
-        public PooledList(int capacity = 4) {
+        public PooledList() : this(4) { }
+        public PooledList(int capacity) {
             Data = ArrayPool<T>.Shared.Rent(capacity);
             Count = 0;
         }
@@ -128,7 +128,7 @@ namespace Weesals.Utility {
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
         public void Dispose() { ArrayPool<T>.Shared.Return(Data); }
-
+        public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }
 

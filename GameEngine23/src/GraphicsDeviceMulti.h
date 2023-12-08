@@ -73,7 +73,7 @@ public:
     const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        const IdentifierWithName& renderPass
+        std::span<const MacroValue> macros, const IdentifierWithName& renderPass
     ) override {
         return nullptr;
     }

@@ -29,10 +29,11 @@ namespace Weesals.Engine {
             public int Count;
             public static readonly Item Default = new Item() { ByteOffset = -1, };
         }
-        private SortedList<CSIdentifier, Item> Items;
-        private byte[] Data;
+        private SortedList<CSIdentifier, Item> Items = new();
+        private byte[] Data = Array.Empty<byte>();
         private int dataConsumed;
-        public Parameters(bool dummy) { Items = new(); Data = Array.Empty<byte>(); }
+        public IList<CSIdentifier> ParamterNames => Items.Keys;
+        public Parameters() { }
         unsafe public Span<byte> SetValue<T>(CSIdentifier identifier, Span<T> data) where T : unmanaged {
             if (!Items.TryGetValue(identifier, out var item)) {
                 item = new Item() { ByteOffset = -1, };
@@ -57,6 +58,9 @@ namespace Weesals.Engine {
             if (!Items.TryGetValue(identifier, out var item)) return Item.Default;
             return item;
         }
+        unsafe public Span<byte> GetItemData(Item item) {
+            return Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
+        }
         unsafe public Span<byte> GetValueData(CSIdentifier identifier) {
             if (!Items.TryGetValue(identifier, out var item)) return default;
             return Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
@@ -72,6 +76,20 @@ namespace Weesals.Engine {
         }
         public Span<byte> GetDataRaw() {
 	        return Data;
+        }
+        public ICollection<KeyValuePair<CSIdentifier, Item>> GetItemsRaw() {
+            return Items;
+        }
+        public override int GetHashCode() {
+            int hash = 0;
+            foreach (var itemKV in Items) {
+                var item = itemKV.Value;
+                var data = Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
+                int dataHash = 0;
+                for (int i = 0; i < data.Length; ++i) dataHash = dataHash * 53 + data[i];
+                hash += HashCode.Combine(itemKV.Key, dataHash);
+            }
+            return hash;
         }
     }
 
@@ -132,7 +150,7 @@ namespace Weesals.Engine {
         }
     }
     public class Material {
-        public struct StateData {
+        public struct StateData : IEquatable<StateData> {
             public enum Flags : byte {
                 RenderPass = 0x01, Blend = 0x02, Raster = 0x04, Depth = 0x08,
                 VertexShader = 0x10, PixelShader = 0x20,
@@ -166,6 +184,16 @@ namespace Weesals.Engine {
                 if ((newFlags & Flags.PixelShader) != 0) PixelShader = other.PixelShader;
                 Valid |= newFlags;
             }
+
+            public bool Equals(StateData other) {
+                return RenderPass == other.RenderPass && BlendMode == other.BlendMode &&
+                    RasterMode == other.RasterMode && DepthMode == other.DepthMode &&
+                    VertexShader == other.VertexShader && PixelShader == other.PixelShader;
+            }
+            public override int GetHashCode() {
+                return HashCode.Combine(RenderPass, BlendMode, RasterMode, DepthMode, VertexShader, PixelShader);
+            }
+
             public static readonly StateData Default = new StateData() {
                 Valid = Flags.Blend | Flags.Raster | Flags.Depth,
                 BlendMode = BlendMode.MakeOpaque(),
@@ -176,7 +204,8 @@ namespace Weesals.Engine {
         public StateData State;
 
         // Parameters to be set
-        Parameters Parameters = new Parameters(true);
+        Parameters Parameters = new();
+        Parameters Macros = new();
 
         // Parameters are inherited from parent materials
         internal List<Material> InheritParameters = new();
@@ -186,20 +215,23 @@ namespace Weesals.Engine {
 
         // Incremented whenever data within this material changes
         int mRevision = 0;
+        int hashCache = 0;
 
         // Whenever a change is made that requires this material to be re-uploaded
         // (or computed parameters to recompute)
         void MarkChanged() {
             mRevision++;
+            hashCache = 0;
         }
 
         public Material() { }
-        public Material(string path) : this(ShaderBase.FromPath(path, "VSMain"), ShaderBase.FromPath(path, "PSMain")) { }
+        public Material(string path) : this(Resources.LoadShader(path, "VSMain"), Resources.LoadShader(path, "PSMain")) { }
         public Material(ShaderBase vert, ShaderBase pix) {
             SetVertexShader(vert);
             SetPixelShader(pix);
         }
-        public Parameters GetParametersRaw() { return Parameters; }
+        public ref Parameters GetParametersRaw() { return ref Parameters; }
+        public ref Parameters GetMacrosRaw() { return ref Macros; }
 
         public void SetRenderPassOverride(CSIdentifier pass) { State.RenderPass = pass; State.SetFlag(StateData.Flags.RenderPass, State.RenderPass.IsValid()); }
         public CSIdentifier GetRenderPassOverride() { return State.RenderPass; }
@@ -224,6 +256,12 @@ namespace Weesals.Engine {
         public void SetDepthMode(DepthMode mode) { State.DepthMode = mode; State.Valid |= StateData.Flags.Depth; }
         public DepthMode GetDepthMode() { return State.DepthMode; }
 
+        // Configure shader feature set
+        public void SetMacro(CSIdentifier name, CSIdentifier v) {
+            Macros.SetValue(name, new Span<CSIdentifier>(ref v));
+            MarkChanged();
+        }
+
         public Span<byte> SetValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
             var r = Parameters.SetValue(name, v);
             MarkChanged();
@@ -243,6 +281,7 @@ namespace Weesals.Engine {
 
         public void SetComputedUniform<T>(CSIdentifier name, ComputedParameter<T>.Getter lambda) where T : unmanaged {
             ComputedParameters.Add(name, new ComputedParameter<T>(name, lambda));
+            MarkChanged();
         }
         public int FindComputedIndex(CSIdentifier name) {
             var index = ComputedParameters.IndexOfKey(name);
@@ -257,9 +296,11 @@ namespace Weesals.Engine {
         // properties from
         public void InheritProperties(Material other) {
             InheritParameters.Add(other);
+            MarkChanged();
         }
         public void RemoveInheritance(Material other) {
             InheritParameters.Remove(other);
+            MarkChanged();
         }
 
         // Get the binary data for a specific parameter
@@ -299,12 +340,28 @@ namespace Weesals.Engine {
             }
         }
 
-        public static Material NullInstance = new();
-        static Material() {
-            NullInstance.SetValue("NullVec", Vector4.Zero);
+        public override string ToString() {
+            var builder = new StringBuilder();
+            foreach (var parameter in Parameters.ParamterNames) {
+                builder.Append(parameter.GetName() + ",");
+            }
+            return builder.ToString();
         }
+        public override int GetHashCode() {
+            if (hashCache == 0) hashCache = HashCode.Combine(State.GetHashCode(), Parameters.GetHashCode());
+            return hashCache;
+        }
+
+        public static NullMaterial NullInstance = new();
     }
 
+    public class NullMaterial : Material {
+        public static readonly CSIdentifier iNullMat = "NullMat";
+        public NullMaterial() {
+            SetValue(iNullMat, default(Matrix4x4));
+        }
+        public Span<byte> GetNullMat() { return GetParametersRaw().GetValueData(iNullMat); }
+    }
 
     public class RootMaterial : Material {
         public static CSIdentifier iMMat = "Model";

@@ -56,5 +56,75 @@ namespace Weesals.Utility {
             t = entry;
             return entry <= exit;
         }
+
+        private static bool IsPointInsideTriangle(Vector2 pa, Vector2 pb, Vector2 pc, Vector2 p0, Vector2 p1, Vector2 p2) {
+            float dXa = pa.X - p2.X;
+            float dYa = pa.Y - p2.Y;
+            float dXb = pb.X - p2.X;
+            float dYb = pb.Y - p2.Y;
+            float dXc = pc.X - p2.X;
+            float dYc = pc.Y - p2.Y;
+
+            float dX21 = p2.X - p1.X;
+            float dY12 = p1.Y - p2.Y;
+            float D = dY12 * (p0.X - p2.X) + dX21 * (p0.Y - p2.Y);
+            float sa = dY12 * dXa + dX21 * dYa;
+            float sb = dY12 * dXb + dX21 * dYb;
+            float sc = dY12 * dXc + dX21 * dYc;
+            float ta = (p2.Y - p0.Y) * dXa + (p0.X - p2.X) * dYa;
+            float tb = (p2.Y - p0.Y) * dXb + (p0.X - p2.X) * dYb;
+            float tc = (p2.Y - p0.Y) * dXc + (p0.X - p2.X) * dYc;
+
+            if (D < 0) {
+                return ((sa >= 0 && sb >= 0 && sc >= 0) ||
+                        (ta >= 0 && tb >= 0 && tc >= 0) ||
+                        (sa + ta <= D && sb + tb <= D && sc + tc <= D));
+            }
+
+            return ((sa <= 0 && sb <= 0 && sc <= 0) ||
+                    (ta <= 0 && tb <= 0 && tc <= 0) ||
+                    (sa + ta >= D && sb + tb >= D && sc + tc >= D));
+        }
+
+        private static bool cross2(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 t1v0, Vector2 t1v1, Vector2 t1v2) {
+            var da = p0 - t1v2;
+            var db = p1 - t1v2;
+            var dc = p2 - t1v2;
+            var dX12 = t1v1.X - t1v2.X;
+            var dY12 = t1v1.Y - t1v2.Y;
+            var t1_21 = t1v0 - t1v2;
+            var D = dY12 * t1_21.X - dX12 * t1_21.Y;
+            var sa = dY12 * da.X - dX12 * da.Y;
+            var sb = dY12 * db.X - dX12 * db.Y;
+            var sc = dY12 * dc.X - dX12 * dc.Y;
+            var ta = t1_21.X * da.Y - t1_21.Y * da.X;
+            var tb = t1_21.X * db.Y - t1_21.Y * db.X;
+            var tc = t1_21.X * dc.Y - t1_21.Y * dc.X;
+            if (D < 0) return ((sa >= 0 && sb >= 0 && sc >= 0) ||
+                               (ta >= 0 && tb >= 0 && tc >= 0) ||
+                               (sa + ta <= D && sb + tb <= D && sc + tc <= D));
+            return ((sa <= 0 && sb <= 0 && sc <= 0) ||
+                    (ta <= 0 && tb <= 0 && tc <= 0) ||
+                    (sa + ta >= D && sb + tb >= D && sc + tc >= D));
+        }
+        public static bool GetTrianglesOverlap(Vector2 t0v0, Vector2 t0v1, Vector2 t0v2, Vector2 t1v0, Vector2 t1v1, Vector2 t1v2) {
+            /*return IsPointInsideTriangle(t0v0, t1v0, t1v1, t1v2)
+                || IsPointInsideTriangle(t0v1, t1v0, t1v1, t1v2)
+                || IsPointInsideTriangle(t0v2, t1v0, t1v1, t1v2)
+                || IsPointInsideTriangle(t1v0, t0v0, t0v1, t0v2)
+                || IsPointInsideTriangle(t1v1, t0v0, t0v1, t0v2)
+                || IsPointInsideTriangle(t1v2, t0v0, t0v1, t0v2);*/
+            return !(IsPointInsideTriangle(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2) ||
+                     IsPointInsideTriangle(t1v0, t1v1, t1v2, t0v0, t0v1, t0v2));
+        }
+        private static float Cross(Vector2 v1, Vector2 v2) {
+            return v1.X * v2.Y - v1.Y * v2.X;
+        }
+        private static bool IsPointInsideTriangle(Vector2 pnt, Vector2 t1v0, Vector2 t1v1, Vector2 t1v2) {
+            t1v0 -= pnt;
+            t1v1 -= pnt;
+            t1v2 -= pnt;
+            return Cross(t1v0, t1v1) > 0f && Cross(t1v1, t1v2) > 0f && Cross(t1v2, t1v0) > 0f;
+        }
     }
 }
