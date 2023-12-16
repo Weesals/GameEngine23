@@ -105,6 +105,7 @@ D3DShader* D3DResourceCache::RequireShader(const Shader& shader, const std::stri
 {
     auto pathId = shader.GetIdentifier();
     auto entryPointId = Identifier::RequireStringId(shader.GetEntryPoint()) + ((int)renderPass * 1234);
+    for (auto& macro : macros) entryPointId += (macro.mName.mId << 4) * (macro.mValue + 1234);
     bool wasCreated = false;
     auto* d3dshader = GetOrCreate(shaderMapping, ShaderKey{ pathId, entryPointId }, wasCreated);
     if (wasCreated) {

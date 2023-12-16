@@ -55,7 +55,6 @@ namespace Weesals.Game {
             public List<CSInstance> Meshes = new();
         }
         private WorldObject testObject;
-        private WorldObject transObject;
 
         public Play(Scene scene) {
             Scene = scene;
@@ -101,16 +100,6 @@ namespace Weesals.Game {
                 unsafe { Scene.UpdateInstanceData(instance, &mat, sizeof(Matrix4x4)); }
                 testObject.Meshes.Add(instance);
                 passes.AddInstance(instance, mesh);
-            };
-
-            transObject = new();
-            var material = new Material("./assets/transparent.hlsl");
-            foreach (var mesh in model.Meshes) {
-                var instance = scene.CreateInstance();
-                var mat = Matrix4x4.CreateRotationY(3.14f);
-                unsafe { Scene.UpdateInstanceData(instance, &mat, sizeof(Matrix4x4)); }
-                transObject.Meshes.Add(instance);
-                passes.AddInstance(instance, mesh, material, RenderTag.Transparent);
             };
 
             Canvas = new Canvas();
@@ -188,6 +177,7 @@ namespace Weesals.Game {
                     transPass.UpdateShadowParameters(shadowPass);
                     transPass.Bind(graphics, ref context);
                     graphics.SetViewport(GameViewport);
+                    RenderBasePass(graphics, transPass);
                     transPass.Render(graphics);
                     Canvas.Render(graphics, Canvas.Material);
                 })
@@ -197,7 +187,7 @@ namespace Weesals.Game {
             renderGraph.Execute(transPass, graphics);
         }
 
-        private void RenderBasePass(CSGraphics graphics, BasePass pass) {
+        private void RenderBasePass(CSGraphics graphics, ScenePass pass) {
             landscapeRenderer.Render(graphics, pass);
         }
 

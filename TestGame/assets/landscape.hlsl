@@ -5,48 +5,25 @@
 #include "include/common.hlsl"
 #include "include/lighting.hlsl"
 #include "include/noise.hlsl"
+#include "include/landscapecommon.hlsl"
 
 cbuffer ConstantBuffer : register(b1) {
     matrix Model;
     matrix ModelView;
     matrix ModelViewProjection;
 }
-cbuffer LandscapeBuffer : register(b2) {
-    float4 _LandscapeSizing;
-    float4 _LandscapeScaling;
-    // x:Scale y:UVScrollY z:Metallic w:Smoothness
-    half4 _LandscapeLayerData1[32];
-    // x:HeightBlend
-    half4 _LandscapeLayerData2[32];
-};
 
 SamplerState BilinearSampler : register(s0);
 SamplerState AnisotropicSampler : register(s3);
-Texture2D<float4> HeightMap : register(t0);
-Texture2D<float4> ControlMap : register(t1);
-Texture2DArray<float4> BaseMaps : register(t2);
-Texture2DArray<float4> BumpMaps : register(t3);
+#if EDGE
+    Texture2D<float4> EdgeTex : register(t2);
+#else
+    Texture2DArray<float4> BaseMaps : register(t2);
+    Texture2DArray<float4> BumpMaps : register(t3);
+#endif
 Texture2D<float4> ShadowMap : register(t4);
 SamplerComparisonState ShadowSampler : register(s2);
 
-
-struct Triangle {
-    half2 P0, P1, P2;
-    half3 BC;
-};
-Triangle ComputeTriangle(half2 pos) {
-    half2 quadPos = round(pos / 2) * 2;
-    half2 quadBC = abs(pos - quadPos);
-    Triangle t;
-    half4 rect = half4(quadPos.xy, quadPos.xy + (pos > quadPos ? 1 : -1));
-    t.P0 = rect.xy;
-    t.P2 = rect.zw;
-    t.P1 = quadBC.x < quadBC.y ? rect.xw : rect.zy;
-    t.BC.z = min(quadBC.x, quadBC.y);
-    t.BC.y = abs(quadBC.x - quadBC.y);
-    t.BC.x = 1 - (t.BC.y + t.BC.z);
-    return t;
-}
 
 struct SampleContext {
     Texture2DArray<float4> BaseMaps;
@@ -117,6 +94,9 @@ struct PSInput {
     float3 normal : NORMAL;
     float3 localPos : TEXCOORD0;
     float3 viewPos : TEXCOORD1;
+#if EDGE
+    float3 uv : TEXCOORD2;
+#endif
 };
 
 PSInput VSMain(VSInput input) {
@@ -125,34 +105,28 @@ PSInput VSMain(VSInput input) {
 
     float3 worldPos = input.position.xyz;
     float3 worldNrm = input.normal.xyz;
-    // Each instance has its own offset
-    //worldPos.xz += Offsets[input.instanceId];
-    worldPos.xz += input.offset;
-
-#if defined(VULKAN)
-    // Textures are not currently supported in Vulkan
-    // so use this noise instead
-    float2 dd;
-    worldPos.y += SimplexNoise(worldPos.xz / Scale, dd);
-    worldNrm.xz -= dd / Scale;
-    worldNrm = normalize(worldNrm);
-#else
+    TransformLandscapeVertex(worldPos, worldNrm, input.offset);
+    
     // Sample from the heightmap and offset the vertex
     float4 hcell = HeightMap.Load(int3(worldPos.xz, 0), 0);
-    worldPos.y += _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
+    float terrainHeight = _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
+    worldPos.y += terrainHeight;
+#if EDGE
+    if (input.position.y > 0.5) worldPos.y = -5;
+    result.uv = float3(
+        float2(input.position.x, worldPos.y) * 0.1,
+        terrainHeight
+    );
+#else
     worldNrm.xz = hcell.yz * 2.0 - 1.0;
     worldNrm.y = sqrt(1.0 - dot(worldNrm.xz, worldNrm.xz));
 #endif
-    
+
     result.localPos = worldPos;
     result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
     result.viewPos = mul(ModelView, float4(worldPos, 1.0)).xyz;
     result.normal = mul(Model, float4(worldNrm, 0.0)).xyz;
         
-#if defined(VULKAN)
-    result.position.y = -result.position.y;
-#endif
-
     return result;
 }
 
@@ -178,6 +152,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float3 Specular = 0.06;
     float Roughness = 0.7;
     float Metallic = 0.0;
+    float3 Albedo = 0.0;
     
     float4 shadowVPos = mul(ShadowIVViewProjection, float4(input.viewPos, 1.0));
     shadowVPos.xyz /= shadowVPos.w;
@@ -218,6 +193,10 @@ float4 PSMain(PSInput input) : SV_TARGET {
     }
 #endif
     
+#if EDGE
+    Albedo = EdgeTex.Sample(BilinearSampler, input.uv.xy);
+    Albedo = lerp(Albedo, 1, pow(1 - saturate(input.uv.z - input.localPos.y), 4) * 0.25);
+#else
     SampleContext context = { BaseMaps, BumpMaps, input.localPos };
     Triangle tri = ComputeTriangle(context.WorldPos.xz);
     ControlPoint c0 = SampleControlMap(tri.P0);
@@ -229,7 +208,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
     half3 bc = tri.BC;
     bc = ApplyHeightBlend(bc, half3(t0.Height, t1.Height, t2.Height));
-    float3 Albedo = t0.Albedo * bc.x + t1.Albedo * bc.y + t2.Albedo * bc.z;
+    Albedo = t0.Albedo * bc.x + t1.Albedo * bc.y + t2.Albedo * bc.z;
     float3 Normal = t0.Normal * bc.x + t1.Normal * bc.y + t2.Normal * bc.z;
     
     float3 tangent, binormal;
@@ -239,6 +218,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     //if (Time % 5 < 2) return float4(input.normal.yyy * 0.5 + 0.5, 1.0);
     //if (Time % 5 < 3) return float4(input.normal.zzz * 0.5 + 0.5, 1.0);
     //return float4(input.normal.xzy * 0.5 + 0.5, 1.0);
+#endif
     
     input.normal = mul((float3x3)View, input.normal);
     

@@ -14,6 +14,9 @@ namespace Weesals.Landscape {
     public interface IHeightmapReader : ILandscapeReader {
         public int GetHeightAt(Int2 pnt);
     }
+    public interface IValidCellReader : ILandscapeReader {
+        public bool GetIsCellValid(Int2 pnt);
+    }
     public interface IControlMapReader : ILandscapeReader {
     }
 
@@ -125,11 +128,14 @@ namespace Weesals.Landscape {
         public struct WaterCell {
             public byte Data;
             public bool IsInvalid => Data == 0;
+            public bool IsValid => Data != 0;
             public short Height {
                 get => (short)((Data - 127) << 6);
                 set => Data = (byte)Math.Clamp((value >> 6) + 127, 0, 255);
             }
             public override string ToString() { return Data.ToString(); }
+            public static int DataToHeight(int data) { return ((data - 127) << 6); }
+            public static int HeightToData(int height) { return Math.Clamp((height >> 6) + 127, 0, 255); }
             public static WaterCell Default = new();
         }
 
@@ -169,7 +175,7 @@ namespace Weesals.Landscape {
             public ref ControlCell this[int p] => ref Reader[p];
             public ref ControlCell this[Int2 p] => ref Reader[p];
         }
-        public struct WaterMapReadOnly : IHeightmapReader {
+        public struct WaterMapReadOnly : IHeightmapReader, IValidCellReader {
             internal DataReader<WaterCell> Reader;
             public Int2 Size => Reader.Size;
             public SizingData Sizing => Reader.mSizing;
@@ -181,6 +187,9 @@ namespace Weesals.Landscape {
             public int GetHeightAt(Int2 pnt) {
                 if ((uint)pnt.X >= Reader.Size.X || (uint)pnt.Y >= Reader.Size.Y) return 0;
                 return Reader[pnt].Height;
+            }
+            public bool GetIsCellValid(Int2 pnt) {
+                return Reader[pnt].IsValid;
             }
         }
 

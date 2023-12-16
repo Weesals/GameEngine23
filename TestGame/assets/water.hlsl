@@ -39,47 +39,24 @@
 #include "include/common.hlsl"
 #include "include/lighting.hlsl"
 #include "include/noise.hlsl"
+#include "include/landscapecommon.hlsl"
 
 cbuffer ConstantBuffer : register(b1) {
     matrix Model;
     matrix ModelView;
     matrix ModelViewProjection;
+    matrix InvModelViewProjection;
+    matrix Projection;
 }
-cbuffer LandscapeBuffer : register(b2) {
-    float4 _LandscapeSizing;
-    float4 _LandscapeScaling;
-    // x:Scale y:UVScrollY z:Metallic w:Smoothness
-    half4 _LandscapeLayerData1[32];
-    // x:HeightBlend
-    half4 _LandscapeLayerData2[32];
-};
 
 SamplerState BilinearSampler : register(s0);
 SamplerState AnisotropicSampler : register(s3);
-Texture2D<float4> HeightMap : register(t0);
 Texture2D<float4> NoiseTex : register(t1);
 Texture2D<float4> FoamTex : register(t2);
 Texture2D<float4> ShadowMap : register(t4);
+Texture2D<float4> SceneDepth : register(t5);
 SamplerComparisonState ShadowSampler : register(s2);
 
-
-struct Triangle {
-    half2 P0, P1, P2;
-    half3 BC;
-};
-Triangle ComputeTriangle(half2 pos) {
-    half2 quadPos = round(pos / 2) * 2;
-    half2 quadBC = abs(pos - quadPos);
-    Triangle t;
-    half4 rect = half4(quadPos.xy, quadPos.xy + (pos > quadPos ? 1 : -1));
-    t.P0 = rect.xy;
-    t.P2 = rect.zw;
-    t.P1 = quadBC.x < quadBC.y ? rect.xw : rect.zy;
-    t.BC.z = min(quadBC.x, quadBC.y);
-    t.BC.y = abs(quadBC.x - quadBC.y);
-    t.BC.x = 1 - (t.BC.y + t.BC.z);
-    return t;
-}
 
 
 struct VSInput {
@@ -94,6 +71,7 @@ struct PSInput {
     float3 worldPos : TEXCOORD0;
     float4 waterPos : TEXCOORD1;
     float3 viewPos : TEXCOORD2;
+    float3 viewDirWS : TEXCOORD3;
 };
 
 PSInput VSMain(VSInput input) {
@@ -102,21 +80,31 @@ PSInput VSMain(VSInput input) {
 
     float3 worldPos = input.position.xyz;
     float3 worldNrm = float3(0, 1, 0);
-    // Each instance has its own offset
-    //worldPos.xz += Offsets[input.instanceId];
-    worldPos.xz += input.offset;
+    TransformLandscapeVertex(worldPos, worldNrm, input.offset);
 
     // Sample from the heightmap and offset the vertex
     float4 hcell = HeightMap.Load(int3(worldPos.xz, 0), 0);
     float terrainHeight = _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
     float waterHeight = (hcell.a * 255 - 127) * 8 / 128;
     worldPos.y += waterHeight;
+    if (hcell.a == 0) worldPos.y = 0.0f / 0.0f;
     
+#if EDGE
+    if (input.position.y > 0.5) worldPos.y = terrainHeight;
+#endif
+
     result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
     result.normal = mul(Model, float4(worldNrm, 0.0)).xyz;
     result.worldPos = mul(Model, float4(worldPos, 1.0)).xyz;
     result.waterPos = float4(worldPos, waterHeight - terrainHeight);
     result.viewPos = mul(ModelView, float4(worldPos, 1.0)).xyz;
+    
+    float4 vCamPos4 = result.position;
+    vCamPos4.xyz /= vCamPos4.w;
+    vCamPos4.z = 0.0;
+    float4 camPos = mul(InvModelViewProjection, vCamPos4);
+    camPos.xyz /= camPos.w;
+    result.viewDirWS = result.worldPos - camPos.xyz;
         
 #if defined(VULKAN)
     result.position.y = -result.position.y;
@@ -145,7 +133,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float3 positionWS = input.worldPos.xyz;
     float3 normalWS = input.normal;
     float2 refrUV = normalizedScreenSpaceUV;
-    float3 viewDir = -viewDirectionWS;
+    float3 viewDir = normalize(input.viewDirWS);
     float waterHeight = positionWS.y;
     float waterDepth = input.waterPos.w;
     
@@ -177,8 +165,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
     half4 color = 1;
     
-    float opticalDepth = max(0, input.waterPos.w);
-
+    float opticalDepth = max(0, SceneDepth[input.position.xy].r - input.position.z) / (Projection._33 - 1);
     transmittance = exp2(opticalDepth * ExtinctCoefs);
 
     half3 scatterLum = (ScatterCoefs / ExtinctCoefs) * mainLightColor;
@@ -191,7 +178,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     half3 viewRefl = reflect(viewDir, normal);
     half3 ambientRefl = SkyColor;
 
-    float2 cloudUV = (positionWS + viewRefl / viewRefl.y * 2).xz / 40;
+    float2 cloudUV = (positionWS + viewRefl / viewRefl.y * 50).xz / 40;
     cloudUV.x -= 0.01 * Time;
     float cloud = NoiseTex.Sample(BilinearSampler, cloudUV).r;
     cloud = sqrt(saturate(cloud * 5 - 2.5));

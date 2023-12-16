@@ -101,11 +101,27 @@ namespace Weesals.Engine {
                 var el = mInstanceBuffer.Elements[elementId];
                 Unsafe.CopyBlock(el.mData, data, (uint)(count * BufferFormatType.GetMeta(el.mFormat).GetByteSize()));
                 mInstanceBuffer.BufferLayout.revision++;
-                if (mBufferLayout.Count > 0)
-                    mBufferLayout[^1] = mInstanceBuffer.BufferLayout;
+                if (mBufferLayout.Count > 0) mBufferLayout[^1] = mInstanceBuffer.BufferLayout;
             }
         }
-		new unsafe public void Draw(CSGraphics graphics, CSDrawConfig config) {
+        unsafe public void SetInstanceData(void* data, int count, int elementId, int hash) {
+            bool dirty = mInstanceBuffer.BufferLayout.revision != hash;
+            if (mInstanceBuffer.Count != count) {
+                if (mInstanceBuffer.BufferCapacityCount < count) {
+                    mInstanceBuffer.AllocResize(count);
+                }
+                mInstanceBuffer.BufferLayout.mCount = count;
+                mInstanceBuffer.CalculateImplicitSize();
+                dirty = true;
+            }
+            if (dirty) {
+                var el = mInstanceBuffer.Elements[elementId];
+                Unsafe.CopyBlock(el.mData, data, (uint)(count * BufferFormatType.GetMeta(el.mFormat).GetByteSize()));
+                mInstanceBuffer.BufferLayout.revision = hash;
+                if (mBufferLayout.Count > 0) mBufferLayout[^1] = mInstanceBuffer.BufferLayout;
+            }
+        }
+        new unsafe public void Draw(CSGraphics graphics, CSDrawConfig config) {
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
             var passCache = GetPassCache(graphics);

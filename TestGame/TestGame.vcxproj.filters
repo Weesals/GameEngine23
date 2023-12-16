@@ -197,6 +197,8 @@
     <Image Include="assets\T_Book.png" />
     <Image Include="assets\Noise.jpg" />
     <Image Include="assets\FoamMask.jpg" />
+    <Image Include="D:\Projects\Unity\ProjectVelites\Assets\Content\Terrain\WorldsEdge.jpg" />
+    <Image Include="assets\T_WorldsEdge.jpg" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\SM_Deer.fbx">

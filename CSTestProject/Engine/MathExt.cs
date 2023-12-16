@@ -85,6 +85,7 @@ namespace Weesals.Engine {
 	    public int X, Y;
         public int LengthSquared => (X * X + Y * Y);
         public float Length => MathF.Sqrt(LengthSquared);
+        public Int2 YX => new Int2(Y, X);
         public Int2(int v) : this(v, v) { }
         public Int2(int _x, int _y) { X = _x; Y = _y; }
 	    public Int2(Vector2 o) { X = ((int)o.X); Y = ((int)o.Y); }
@@ -309,6 +310,7 @@ namespace Weesals.Engine {
         public int Bottom => Y + Height;
         public int Right => X + Width;
         public RectI(int x, int y, int width, int height) { X = x; Y = y; Width = width; Height = height; }
+        public RectI(Int2 pos, Int2 size) { X = pos.X; Y = pos.Y; Width = size.X; Height = size.Y; }
         public static RectI operator +(RectI r, Int2 o) { r.X += o.X; r.Y += o.Y; return r; }
         public static RectI operator -(RectI r, Int2 o) { r.X -= o.X; r.Y -= o.Y; return r; }
         public static RectI operator *(RectI r, Int2 o) { r.X *= o.X; r.Y *= o.Y; r.Width *= o.X; r.Height *= o.Y; return r; }
@@ -320,6 +322,11 @@ namespace Weesals.Engine {
         public RectI ExpandToInclude(Int2 pnt) { return FromMinMax(Int2.Min(Min, pnt), Int2.Max(Max, pnt)); }
         public RectI ExpandToInclude(RectI other) { return FromMinMax(Int2.Min(Min, other.Min), Int2.Max(Max, other.Max)); }
         public RectI ClampToBounds(RectI bounds) { return FromMinMax(Int2.Max(Min, bounds.Min), Int2.Min(Max, bounds.Max)); }
+        public bool Overlaps(RectF other) { return X < other.Right && Y < other.Bottom && Right > other.X && Bottom > other.Y; }
+        public RectI Inset(int v) { return Inset(new Int2(v, v)); }
+        public RectI Inset(Int2 v) { return new RectI(Min + v, Size - v * 2); }
+        public RectI Expand(int v) { return Expand(new Int2(v, v)); }
+        public RectI Expand(Int2 v) { return new RectI(Min - v, Size + v * 2); }
 
         public override bool Equals(object? obj) { return obj is RectI i && Equals(i); }
         public bool Equals(RectI other) { return X == other.X && Y == other.Y && Width == other.Width && Height == other.Height; }

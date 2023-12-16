@@ -443,6 +443,8 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <DeploymentContent Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</DeploymentContent>
     </Image>
+    <Image Include="assets\T_WorldsEdge.jpg" />
+    <Image Include="D:\Projects\Unity\ProjectVelites\Assets\Content\Terrain\WorldsEdge.jpg" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\SM_ArcheryRange.fbx">
