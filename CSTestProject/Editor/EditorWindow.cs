@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
@@ -91,6 +90,7 @@ namespace Weesals.Editor {
 
             Canvas = new();
             eventSystem = new EventSystem(Canvas);
+            eventSystem.SetInput(Core.ActiveInstance.GetInput());
             var flex = new FlexLayout();
             Inspector = new(Editor) { };
             GameView = new(Editor) { };
@@ -102,9 +102,15 @@ namespace Weesals.Editor {
             Canvas.AppendChild(flex);
         }
 
+        public void ActivateLandscapeTools() {
+            Inspector.LandscapeTools.Initialize(GameView);
+            Inspector.AppendChild(Inspector.LandscapeTools);
+            GameView.AppendChild(Inspector.LandscapeTools.InputDispatcher);
+        }
+
         public void Update(float dt, Int2 size) {
-            eventSystem.Update(dt);
             Canvas.SetSize(size);
+            eventSystem.Update(dt);
             Canvas.Update(dt);
             Canvas.RequireComposed();
         }

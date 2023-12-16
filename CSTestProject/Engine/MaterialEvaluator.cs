@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -76,7 +75,9 @@ namespace Weesals.Engine {
 		static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
 			foreach (var val in cb.GetValues()) {
 				var data = Material.GetUniformBinaryData(val.mName, materialStack);
-                data.Slice(0, val.mSize).CopyTo(buffer.Slice(val.mOffset));
+                if (data.Length > val.mSize)
+                    data = data.Slice(0, val.mSize);
+                data.CopyTo(buffer.Slice(val.mOffset));
 			}
 		}
         public static MemoryBlock<nint> ResolveResources(CSGraphics graphics, CSPipeline pipeline, List<Material> materialStack) {
@@ -156,7 +157,7 @@ namespace Weesals.Engine {
 
         public Span<byte> GetUniformSource(CSIdentifier name) {
             foreach (var mat in Materials) {
-                var data = Collector.GetUniformSource(mat, name, this);
+                var data = Collector.GetUniformSource(mat, name, ref this);
                 if (!data.IsEmpty) return data;
             }
             return Collector.GetUniformSourceNull(name, this);
@@ -189,7 +190,7 @@ namespace Weesals.Engine {
             parameterIds.Clear();
             outputData.Clear();
         }
-        unsafe public Span<byte> GetUniformSource(Material material, CSIdentifier name, MaterialCollectorContext context) {
+        unsafe public Span<byte> GetUniformSource(Material material, CSIdentifier name, scoped ref MaterialCollectorContext context) {
             for (int i = 0; i < values.Count; ++i) {
                 var value = values[i];
                 if (value.Name != name) continue;
@@ -303,7 +304,7 @@ namespace Weesals.Engine {
             Clear();
         }
 	    // At this point, the parameter definitely does not yet exist in our list
-	    unsafe Span<byte> GetUniformSourceIntl(Material material, CSIdentifier name, ref MaterialCollectorContext context) {
+	    unsafe Span<byte> GetUniformSourceIntl(Material material, CSIdentifier name, scoped ref MaterialCollectorContext context) {
             var computedI = material.FindComputedIndex(name);
 		    if (computedI != -1) {
 			    BeginComputed(material, name);

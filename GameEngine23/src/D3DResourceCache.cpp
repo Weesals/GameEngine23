@@ -4,6 +4,8 @@
 #include <cassert>
 #include <fstream>
 
+#define BufferAlignment 15
+
 // From DirectXTK wiki
 inline void ThrowIfFailed(HRESULT hr)
 {
@@ -59,7 +61,7 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     auto mD3DDevice = mD3D12.GetD3DDevice();
 
     mRootSignature.mNumConstantBuffers = 4;
-    mRootSignature.mNumResources = 4;
+    mRootSignature.mNumResources = 6;
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
     // This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned will not be greater than this.
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
@@ -81,6 +83,7 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
         CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
         CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_POINT),
         CD3DX12_STATIC_SAMPLER_DESC(2, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 0, 16, D3D12_COMPARISON_FUNC_LESS_EQUAL),
+        CD3DX12_STATIC_SAMPLER_DESC(3, D3D12_FILTER_ANISOTROPIC),
     };
     rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -182,7 +185,7 @@ void D3DResourceCache::RequireD3DBuffer(D3DBufferWithSRV* d3dBuf, const Graphics
 // the frame completes rendering
 ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(int uploadSize)
 {
-    uploadSize = (uploadSize + 255) & (~255);
+    uploadSize = (uploadSize + BufferAlignment) & (~BufferAlignment);
     auto& uploadBufferItem = mUploadBufferCache.RequireItem(uploadSize,
         [&](auto& item) // Allocate a new item
         {
@@ -272,8 +275,8 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
     {
         // Create the texture resource
         auto texHeapType = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto textureDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, size.x, size.y, 1, 1);
-        textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        auto textureDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, size.x, size.y, tex.GetArrayCount(), tex.GetMipCount());
+        //textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         ThrowIfFailed(device->CreateCommittedResource(
             &texHeapType,
             D3D12_HEAP_FLAG_NONE,
@@ -288,8 +291,15 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Format = textureDesc.Format;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
+        if (tex.GetArrayCount() > 1) {
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+            srvDesc.Texture2DArray.MipLevels = textureDesc.MipLevels;
+            srvDesc.Texture2DArray.ArraySize = tex.GetArrayCount();
+        }
+        else {
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+            srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
+        }
 
         // Get the CPU handle to the descriptor in the heap
         auto descriptorSize = mD3D12.GetDescriptorHandleSizeSRV();
@@ -302,18 +312,34 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
     auto uploadSize = (GetRequiredIntermediateSize(d3dTex->mBuffer.Get(), 0, 1) + D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1) & ~(D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1);
 
     // Update the texture data
-    auto srcData = tex.GetData();
-    D3D12_SUBRESOURCE_DATA textureData = {};
-    textureData.pData = reinterpret_cast<const UINT8*>(srcData.data());
-    textureData.RowPitch = 4 * size.x;
-    textureData.SlicePitch = textureData.RowPitch * size.y;
-    auto uploadBuffer = AllocateUploadBuffer((int)uploadSize);
-    UpdateSubresources<1>(cmdList, d3dTex->mBuffer.Get(), uploadBuffer, 0, 0, 1, &textureData);
-    mStatistics.BufferWrite(4 * size.x * size.y);
+    /*WriteBuffer(cmdList, *this, d3dTex->mBuffer.Get(), srcData.size(), [&](uint8_t* data) {
+        memcpy(data, srcData.data(), srcData.size());
+    });*/
+    for (int i = 0; i < tex.GetArrayCount(); ++i)
+    {
+        // Put the texture back in normal mode
+        auto beginWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, i);
+        //cmdList->ResourceBarrier(1, &beginWrite);
 
-    // Put the texture back in normal mode
-    auto endWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON);
-    cmdList->ResourceBarrier(1, &endWrite);
+        for (int m = 0; m < tex.GetMipCount(); ++m)
+        {
+            auto res = tex.GetMipResolution(size, tex.GetBufferFormat(), m);
+            auto srcData = tex.GetData(m, i);
+            D3D12_SUBRESOURCE_DATA textureData = {};
+            textureData.pData = reinterpret_cast<const UINT8*>(srcData.data());
+            textureData.RowPitch = 4 * res.x;
+            textureData.SlicePitch = textureData.RowPitch * res.y;
+            auto uploadBuffer = AllocateUploadBuffer((int)uploadSize);
+            UpdateSubresources<1>(cmdList, d3dTex->mBuffer.Get(), uploadBuffer, 0,
+                D3D12CalcSubresource(m, i, 0, tex.GetMipCount(), tex.GetArrayCount()), 1,
+                &textureData);
+            mStatistics.BufferWrite(4 * res.x * res.y);//*/
+        }
+
+        // Put the texture back in normal mode
+        auto endWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON, i);
+        cmdList->ResourceBarrier(1, &endWrite);
+    }
 
     d3dTex->mRevision = tex.GetRevision();
 }
@@ -401,8 +427,9 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
     D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount)
 {
     auto RequireBuffer = [&](const BufferLayout& binding, D3DBinding& d3dBin) {
-        if (d3dBin.mBuffer == nullptr || d3dBin.mSize < binding.mSize) {
-            d3dBin.mSize = binding.mSize;
+        int size = (binding.mSize + BufferAlignment) & ~BufferAlignment;
+        if (d3dBin.mBuffer == nullptr || d3dBin.mSize < size) {
+            d3dBin.mSize = size;
             CreateBuffer(d3dBin.mBuffer, d3dBin.mSize);
             d3dBin.mBuffer->SetName(
                 binding.mUsage == BufferLayout::Usage::Vertex ? L"VertexBuffer" :
@@ -438,7 +465,8 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
                         CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), state, D3D12_RESOURCE_STATE_COPY_DEST),
                     };
                     cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
-                    WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), binding.mSize, //binding.mCount * itemSize,
+                    int size = (binding.mSize + BufferAlignment) & ~BufferAlignment;
+                    WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), size, //binding.mCount * itemSize,
                         [&](uint8_t* data) {
                             // Fast path
                             if (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize) {

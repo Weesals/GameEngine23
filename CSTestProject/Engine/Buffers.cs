@@ -1,10 +1,10 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -230,11 +230,13 @@ namespace Weesals.Engine {
         public int BufferCapacityCount => mBufferAllocCount;
         public int BufferStride => mBufferStride;
         public Span<CSBufferElement> Elements => new(BufferLayout.mElements, BufferLayout.mElementCount);
-        public BufferLayoutPersistent(int size, Usages usage, int count) {
+        public BufferLayoutPersistent(Usages usage) {
             BufferLayout.identifier = MakeId();
-            BufferLayout.size = size;
             BufferLayout.mUsage = (byte)usage;
-            BufferLayout.mCount = count;
+        }
+        public void MarkInvalid() {
+            BufferLayout.mCount = -1;
+            mBufferAllocCount = -1;
         }
         public void Dispose() {
             if (BufferLayout.mElements != null)
@@ -246,7 +248,7 @@ namespace Weesals.Engine {
                 mElementAllocCount += 4;
                 BufferLayout.mElements = (CSBufferElement*)Marshal.ReAllocHGlobal((nint)BufferLayout.mElements, sizeof(CSBufferElement) * mElementAllocCount);
             }
-            if (allocateData) {
+            if (allocateData && mBufferAllocCount > 0) {
                 element.mData = Marshal.ReAllocHGlobal((nint)element.mData, element.mBufferStride * mBufferAllocCount).ToPointer();
             }
             BufferLayout.mElements[ElementCount] = element;
@@ -268,8 +270,8 @@ namespace Weesals.Engine {
             var oldStride = el.mBufferStride;
             el.mFormat = fmt;
             el.mBufferStride = (ushort)BufferFormatType.GetMeta(fmt).GetByteSize();
-            if (el.mBufferStride != oldStride) {
-                mBufferStride += el.mBufferStride - oldStride;
+            mBufferStride += el.mBufferStride - oldStride;
+            if (el.mBufferStride != oldStride && mBufferAllocCount > 0) {
                 el.mData = Marshal.ReAllocHGlobal((nint)el.mData, el.mBufferStride * mBufferAllocCount).ToPointer();
             }
             CalculateImplicitSize();
@@ -403,7 +405,6 @@ namespace Weesals.Engine {
         static ConvertFiller() {
             InitializeType<int>();
             InitializeAlias<int, uint>();
-            InitializeType<uint>();
             InitializeType<short>();
             InitializeType<ushort>();
             InitializeType<float>();
@@ -411,14 +412,18 @@ namespace Weesals.Engine {
             InitializeType<Vector3>();
             InitializeType<Vector4>();
             InitializeType<Short2>();
-            InitializeType<UShort2>();
             InitializeType<Color>();
             InitializeType<SColor>();
             InitializeAlias<Short2, UShort2>();
+            InitializeAlias<ushort, short>();
             ConvertFn<int, float>.mConvert = &ConvertIToF;
             ConvertFn<float, int>.mConvert = &ConvertFToI;
             ConvertFn<uint, float>.mConvert = &ConvertUIToF;
             ConvertFn<float, uint>.mConvert = &ConvertFToUI;
+            ConvertFn<uint, ushort>.mConvert = &ConvertUIToUS;
+            ConvertFn<ushort, uint>.mConvert = &ConvertUSToUI;
+            ConvertFn<int, ushort>.mConvert = &ConvertUIToUS;
+            ConvertFn<ushort, int>.mConvert = &ConvertUSToUI;
             ConvertFn<Vector2, Vector3>.mConvert = &ConvertV2ToV3;
             ConvertFn<Vector4, Color>.mConvert = &ConvertV4ToC4;
             ConvertFn<Vector3, Color>.mConvert = &ConvertV3ToC4;
@@ -457,46 +462,54 @@ namespace Weesals.Engine {
             Debug.Assert(sizeof(T1) == sizeof(T2));
             ConvertFn<T1, T2>.mConvert = &Convert<T1>;
             ConvertFn<T2, T1>.mConvert = &Convert<T1>;
+            ConvertFn<T2, T2>.mConvert = &Convert<T1>;
         }
-        private static void ConvertIToF(void* dest, void* src) { *(float*)dest = *(int*)src; }
-        private static void ConvertFToI(void* dest, void* src) { *(int*)dest = (int)*(float*)src; }
-        private static void ConvertUIToF(void* dest, void* src) { *(float*)dest = *(uint*)src; }
-        private static void ConvertFToUI(void* dest, void* src) { *(uint*)dest = (uint)*(float*)src; }
-        private static void Convert<T>(void* dest, void* src) where T : unmanaged { *(T*)dest = *(T*)src; }
-        private static void ConvertV2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Vector2*)src, 0.0f); }
-        private static void ConvertV4ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector4*)src); }
-        private static void ConvertV3ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector3*)src); }
-        private static void ConvertC4ToSC4(void* dest, void* src) { *(SColor*)dest = *(Color*)src; }
-        private static void ConvertSC4ToC4(void* dest, void* src) { *(Color*)dest = *(SColor*)src; }
-        private static void ConvertC4ToV4(void* dest, void* src) { *(Vector4*)dest = *(Color*)src; }
-        private static void ConvertC4ToV3(void* dest, void* src) { *(Vector3*)dest = *(Color*)src; }
-        private static void ConvertV4ToSC4(void* dest, void* src) { *(SColor*)dest = new Color(*(Vector4*)src); }
-        private static void ConvertV3ToSC4(void* dest, void* src) { *(SColor*)dest = new Color(*(Vector3*)src); }
-        private static void ConvertSC4ToV4(void* dest, void* src) { *(Vector4*)dest = *(SColor*)src; }
-        private static void ConvertSC4ToV3(void* dest, void* src) { *(Vector3*)dest = *(SColor*)src; }
-        private static void ConvertV2ToS2(void* dest, void* src) { *(Short2*)dest = new Short2(*(Vector2*)src); }
-        private static void ConvertV2ToUS2(void* dest, void* src) { *(UShort2*)dest = new UShort2(*(Vector2*)src); }
-        private static void ConvertS2ToV2(void* dest, void* src) { *(Vector2*)dest = (*(Short2*)src).ToVector2(); }
-        private static void ConvertS2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3((*(Short2*)src).ToVector2(), 0.0f); }
-        private static void ConvertUS2ToV2(void* dest, void* src) { *(Vector2*)dest = (*(UShort2*)src).ToVector2(); }
-        private static void ConvertV2ToS2N(void* dest, void* src) { *(Short2*)dest = new Short2(*(Vector2*)src * short.MaxValue); }
-        private static void ConvertV2ToUS2N(void* dest, void* src) { *(UShort2*)dest = new UShort2(*(Vector2*)src * ushort.MaxValue); }
-        private static void ConvertS2NToV2(void* dest, void* src) { *(Vector2*)dest = (*(Short2*)src).ToVector2() / short.MaxValue; }
-        private static void ConvertUS2NToV2(void* dest, void* src) { *(Vector2*)dest = (*(UShort2*)src).ToVector2() / ushort.MaxValue; }
-        private static void ConvertHToF(void* dest, void* src) { *(float*)dest = *(Half*)src; }
-        private static void ConvertFToH(void* dest, void* src) { *(Half*)dest = *(float*)src; }
-        private static void ConvertH2ToV2(void* dest, void* src) { *(Vector2*)dest = *(Half2*)src; }
-        private static void ConvertH2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Half2*)src, 0.0f); }
-        private static void ConvertV2ToH2(void* dest, void* src) { *(Half2*)dest = *(Vector2*)src; }
-        private static void ConvertH3ToV3(void* dest, void* src) { *(Vector3*)dest = *(Half3*)src; }
-        private static void ConvertV3ToH3(void* dest, void* src) { *(Half3*)dest = *(Vector3*)src; }
-        private static void ConvertH4ToV4(void* dest, void* src) { *(Vector4*)dest = *(Half4*)src; }
-        private static void ConvertV4ToH4(void* dest, void* src) { *(Half4*)dest = *(Vector4*)src; }
+        public static void ConvertIToF(void* dest, void* src) { *(float*)dest = *(int*)src; }
+        public static void ConvertFToI(void* dest, void* src) { *(int*)dest = (int)*(float*)src; }
+        public static void ConvertUIToF(void* dest, void* src) { *(float*)dest = *(uint*)src; }
+        public static void ConvertFToUI(void* dest, void* src) { *(uint*)dest = (uint)*(float*)src; }
+        public static void ConvertUSToUI(void* dest, void* src) { *(uint*)dest = *(ushort*)src; }
+        public static void ConvertUIToUS(void* dest, void* src) { *(ushort*)dest = (ushort)*(int*)src; }
+        public static void Convert<T>(void* dest, void* src) where T : unmanaged { *(T*)dest = *(T*)src; }
+        public static void ConvertV2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Vector2*)src, 0.0f); }
+        public static void ConvertV4ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector4*)src); }
+        public static void ConvertV3ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector3*)src); }
+        public static void ConvertC4ToSC4(void* dest, void* src) { *(SColor*)dest = *(Color*)src; }
+        public static void ConvertSC4ToC4(void* dest, void* src) { *(Color*)dest = *(SColor*)src; }
+        public static void ConvertC4ToV4(void* dest, void* src) { *(Vector4*)dest = *(Color*)src; }
+        public static void ConvertC4ToV3(void* dest, void* src) { *(Vector3*)dest = *(Color*)src; }
+        public static void ConvertV4ToSC4(void* dest, void* src) { *(SColor*)dest = new Color(*(Vector4*)src); }
+        public static void ConvertV3ToSC4(void* dest, void* src) { *(SColor*)dest = new Color(*(Vector3*)src); }
+        public static void ConvertSC4ToV4(void* dest, void* src) { *(Vector4*)dest = *(SColor*)src; }
+        public static void ConvertSC4ToV3(void* dest, void* src) { *(Vector3*)dest = *(SColor*)src; }
+        public static void ConvertV2ToS2(void* dest, void* src) { *(Short2*)dest = new Short2(*(Vector2*)src); }
+        public static void ConvertV2ToUS2(void* dest, void* src) { *(UShort2*)dest = new UShort2(*(Vector2*)src); }
+        public static void ConvertS2ToV2(void* dest, void* src) { *(Vector2*)dest = (*(Short2*)src).ToVector2(); }
+        public static void ConvertS2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3((*(Short2*)src).ToVector2(), 0.0f); }
+        public static void ConvertUS2ToV2(void* dest, void* src) { *(Vector2*)dest = (*(UShort2*)src).ToVector2(); }
+        public static void ConvertV2ToS2N(void* dest, void* src) { *(Short2*)dest = new Short2(*(Vector2*)src * short.MaxValue); }
+        public static void ConvertV2ToUS2N(void* dest, void* src) { *(UShort2*)dest = new UShort2(*(Vector2*)src * ushort.MaxValue); }
+        public static void ConvertS2NToV2(void* dest, void* src) { *(Vector2*)dest = (*(Short2*)src).ToVector2() / short.MaxValue; }
+        public static void ConvertUS2NToV2(void* dest, void* src) { *(Vector2*)dest = (*(UShort2*)src).ToVector2() / ushort.MaxValue; }
+        public static void ConvertHToF(void* dest, void* src) { *(float*)dest = *(Half*)src; }
+        public static void ConvertFToH(void* dest, void* src) { *(Half*)dest = *(float*)src; }
+        public static void ConvertH2ToV2(void* dest, void* src) { *(Vector2*)dest = *(Half2*)src; }
+        public static void ConvertH2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Half2*)src, 0.0f); }
+        public static void ConvertV2ToH2(void* dest, void* src) { *(Half2*)dest = *(Vector2*)src; }
+        public static void ConvertH3ToV3(void* dest, void* src) { *(Vector3*)dest = *(Half3*)src; }
+        public static void ConvertV3ToH3(void* dest, void* src) { *(Half3*)dest = *(Vector3*)src; }
+        public static void ConvertH4ToV4(void* dest, void* src) { *(Vector4*)dest = *(Half4*)src; }
+        public static void ConvertV4ToH4(void* dest, void* src) { *(Half4*)dest = *(Vector4*)src; }
     }
     public unsafe struct TypedBufferView<T> where T : unmanaged {
+        static ConvertFiller filler = new ConvertFiller(true);
         public unsafe struct ReadWriterPair {
             public delegate*<void*, void*, void> mWriter;
             public delegate*<void*, void*, void> mReader;
+#pragma warning disable CS8909 // Do not compare function pointer values
+            public readonly bool IsPassthroughWriter => mWriter == ConvertFn<T, T>.mConvert;
+            public readonly bool IsPassthroughReader => mReader == ConvertFn<T, T>.mConvert;
+#pragma warning restore CS8909 // Do not compare function pointer values
         }
         private static ReadWriterPair[] cachedReadWriters = new ReadWriterPair[256];
         public ReadWriterPair ReadWriter;
@@ -504,7 +517,6 @@ namespace Weesals.Engine {
         public ushort mCount = 0;
         public ushort mStride = 0;
         public TypedBufferView(void* data, int stride, int count, BufferFormat fmt) {
-            var filler = new ConvertFiller(true);
             mData = data;
             mStride = (ushort)stride;
             mCount = (ushort)count;
@@ -624,6 +636,28 @@ namespace Weesals.Engine {
         }
         public override string ToString() {
             return "Count = " + mCount;
+        }
+
+        public void CopyTo(TypedBufferView<T> destination) {
+            if (destination.ReadWriter.IsPassthroughWriter) {
+                if (mStride == destination.mStride && mStride == sizeof(T) && ReadWriter.IsPassthroughReader) {
+                    // Data is packed tightly, can memcpy
+                    int dataSize = mCount * mStride;
+                    new Span<byte>(mData, dataSize).CopyTo(new Span<byte>(destination.mData, dataSize));
+                } else {
+                    // Identity writer; can directly read into dest buffer
+                    byte* srcData = (byte*)mData;
+                    byte* dstData = (byte*)destination.mData;
+                    for (int i = 0; i < mCount; ++i) {
+                        ReadWriter.mReader(dstData, srcData);
+                        srcData += mStride;
+                        dstData += destination.mStride;
+                    }
+                }
+            } else {
+                // Require type conversion
+                for (int i = 0; i < mCount; ++i) destination[i] = this[i];
+            }
         }
     }
     unsafe public class BufferLayoutCollection : IDisposable {

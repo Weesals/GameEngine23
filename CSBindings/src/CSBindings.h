@@ -113,7 +113,13 @@ public:
 	}
 	static void SetSize(NativeTexture* tex, Int2 size);
 	static Int2C GetSize(NativeTexture* tex);
-	static CSSpan GetTextureData(NativeTexture* tex);
+	static void SetFormat(NativeTexture* tex, BufferFormat fmt);
+	static BufferFormat GetFormat(NativeTexture* tex);
+	static void SetMipCount(NativeTexture* tex, int count);
+	static int GetMipCount(NativeTexture* tex);
+	static void SetArrayCount(NativeTexture* tex, int count);
+	static int GetArrayCount(NativeTexture* tex);
+	static CSSpan GetTextureData(NativeTexture* tex, int mip, int slice);
 	static void MarkChanged(NativeTexture* tex);
 	static NativeTexture* _Create();
 	static void Dispose(NativeTexture* tex);
@@ -230,6 +236,7 @@ struct CSConstantBufferData {
 class __declspec(dllexport) CSConstantBuffer {
 	CSConstantBufferData* mConstantBuffer;
 public:
+	CSConstantBuffer(CSConstantBufferData* data) : mConstantBuffer(data) { }
 	static CSSpan GetValues(const CSConstantBufferData* cb);
 };
 class __declspec(dllexport) CSResourceBinding {
@@ -266,7 +273,7 @@ public:
 	static void Dispose(NativeGraphics* graphics);
 	static Int2C GetResolution(const NativeGraphics* graphics);
 	static void SetResolution(const NativeGraphics* graphics, Int2 res);
-	static void SetRenderTarget(NativeGraphics* graphics, const NativeRenderTarget* target);
+	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, const NativeRenderTarget* depthTarget);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
@@ -349,7 +356,6 @@ public:
 };
 
 class __declspec(dllexport) CSResources {
-	void* MakeUnsafe;
 public:
 	static NativeShader* LoadShader(CSString path, CSString entryPoint);
 	static NativeModel* LoadModel(CSString path);

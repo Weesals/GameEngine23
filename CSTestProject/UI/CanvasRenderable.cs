@@ -37,15 +37,28 @@ namespace Weesals.UI {
 
     // An item that forms a part of the UI
     public class CanvasRenderable : IWithParent<CanvasRenderable> {
-        public enum DirtyFlags { None = 0, Layout = 1, Children = 2, Compose = 4, };
+        public enum DirtyFlags : byte { None = 0, Transform = 1, Layout = 2, Children = 4, Compose = 8, };
+        public enum StateFlags : byte { None = 0, HasCullParent = 1, HasCustomTransformApplier = 2, };
+
+        public ref struct TransformerContext {
+            public ref CanvasLayout Layout;
+            public bool IsComplete;
+            public TransformerContext(ref CanvasLayout layout) { Layout = ref layout; IsComplete = false; }
+        }
+        public interface ICustomTransformer {
+            void Apply(CanvasRenderable renderable, ref TransformerContext context);
+        }
 
         protected CanvasBinding mBinding;
-        protected List<CanvasRenderable> mChildren = new();
         protected CanvasTransform mTransform = CanvasTransform.MakeDefault();
         protected CanvasLayout mLayoutCache;
         protected HittestGrid.Binding hitBinding;
+        protected List<CanvasRenderable> mChildren = new();
+        protected List<ICustomTransformer>? customTransformers;
         protected int mOrderId = -1;
         protected DirtyFlags dirtyFlags;
+        protected StateFlags stateFlags;
+
         public Canvas Canvas => mBinding.mCanvas;
         public CanvasRenderable? Parent => mBinding.mParent;
         public IReadOnlyList<CanvasRenderable> Children => mChildren;
@@ -63,8 +76,12 @@ namespace Weesals.UI {
                 int orderId = mOrderId;
                 foreach (var child in mChildren) { orderId += step; child.mOrderId = orderId; }
                 foreach (var child in mChildren) if (child.Parent == null) child.Initialise(new CanvasBinding(this));
+                stateFlags = StateFlags.None;
+                if (FindParent<IHitTestGroup>() != null) stateFlags |= StateFlags.HasCullParent;
+                if (this is ICustomTransformer) stateFlags |= StateFlags.HasCustomTransformApplier;
                 MarkComposeDirty();
             }
+            MarkTransformDirty();
         }
         public virtual void Uninitialise(CanvasBinding binding) {
             if (mBinding.mCanvas != null) {
@@ -81,9 +98,13 @@ namespace Weesals.UI {
                 hitBinding = default;
             } else {
                 if (Canvas != null)
-                    Canvas.HittestGrid.UpdateItem(this, ref hitBinding, default);
+                    Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, new RectI(0, 0, -10000, -10000));
                 hitBinding = HittestGrid.Binding.Disabled;
             }
+        }
+        public void SetCustomTransformEnabled(bool enable) {
+            if (enable && this is ICustomTransformer) stateFlags |= StateFlags.HasCustomTransformApplier;
+            else stateFlags &= ~StateFlags.HasCustomTransformApplier;
         }
         public virtual void AppendChild(CanvasRenderable child) {
             InsertChild(mChildren.Count, child);
@@ -129,7 +150,24 @@ namespace Weesals.UI {
         }
         public void SetTransform(in CanvasTransform transform) {
             mTransform = transform;
+            MarkTransformDirty();
             if (Parent != null) Parent.MarkChildrenDirty();
+        }
+        public void UpdateLayout(in CanvasLayout parent) {
+            ClearDirtyFlag(DirtyFlags.Transform);
+            int oldHash = mLayoutCache.GetHashCode();
+            mTransform.Apply(parent, out mLayoutCache);
+            if ((stateFlags & StateFlags.HasCustomTransformApplier) != 0) {
+                TransformerContext context = new(ref mLayoutCache);
+                ((ICustomTransformer)this).Apply(this, ref context);
+                if (!context.IsComplete) MarkTransformDirty();
+            }
+            if (oldHash != mLayoutCache.GetHashCode()) {
+                MarkLayoutDirty();
+                MarkChildrenDirty();
+                MarkComposeDirty();
+                NotifyTransformChanged();
+            }
         }
         public void RequireLayout() {
             if (HasDirtyFlag(DirtyFlags.Children)) {
@@ -137,16 +175,6 @@ namespace Weesals.UI {
                 UpdateChildLayouts();
             }
             foreach (var child in mChildren) child.RequireLayout();
-        }
-        public void UpdateLayout(in CanvasLayout parent) {
-            ClearDirtyFlag(DirtyFlags.Layout);
-            int oldHash = mLayoutCache.GetHashCode();
-            mTransform.Apply(parent, out mLayoutCache);
-            if (oldHash != mLayoutCache.GetHashCode()) {
-                MarkChildrenDirty();
-                MarkComposeDirty();
-                NotifyTransformChanged();
-            }
         }
         public virtual void UpdateChildLayouts() {
             foreach (var child in mChildren) {
@@ -169,7 +197,6 @@ namespace Weesals.UI {
             return null;
         }
         protected virtual void NotifyTransformChanged() {
-            MarkLayoutDirty();
             if (hitBinding.IsEnabled) {
                 var p0 = mLayoutCache.TransformPosition2DN(new Vector2(0.0f, 0.0f));
                 var p1 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 0.0f));
@@ -179,8 +206,13 @@ namespace Weesals.UI {
                 bounds = bounds.ExpandToInclude(new Int2((int)p1.X, (int)p1.Y));
                 bounds = bounds.ExpandToInclude(new Int2((int)p2.X, (int)p2.Y));
                 bounds = bounds.ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
-                Canvas.HittestGrid.UpdateItem(this, ref hitBinding, bounds);
+                Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, bounds);
             }
+        }
+        protected void MarkTransformDirty() {
+            dirtyFlags |= DirtyFlags.Transform;
+            if (Parent != null) Parent.dirtyFlags |= DirtyFlags.Children;
+            if (Canvas != null && Canvas != this) Canvas.MarkChildrenDirty();
         }
         protected void MarkLayoutDirty() {
             dirtyFlags |= DirtyFlags.Layout;
@@ -188,7 +220,7 @@ namespace Weesals.UI {
         }
         protected void MarkChildrenDirty() {
             dirtyFlags |= DirtyFlags.Children;
-            if (Canvas != null && Canvas != this) Canvas.MarkLayoutDirty();
+            if (Canvas != null && Canvas != this) Canvas.MarkChildrenDirty();
         }
         protected void MarkComposeDirty() {
             dirtyFlags |= DirtyFlags.Compose;
@@ -201,10 +233,14 @@ namespace Weesals.UI {
             dirtyFlags &= ~flag;
         }
 
-        public bool HitTest(Int2 pos) {
+        public bool HitTest(Vector2 pos) {
             var lpos = mLayoutCache.InverseTransformPosition2D(pos);
             if (lpos.X < 0f || lpos.Y < 0f || lpos.X >= mLayoutCache.GetWidth() || lpos.Y >= mLayoutCache.GetHeight()) return false;
             if (this is IHitTest hittest && !hittest.HitTest(pos)) return false;
+            if ((stateFlags & StateFlags.HasCullParent) != 0) {
+                var cullParent = FindParent<IHitTestGroup>()!;
+                if (!cullParent.HitTest(pos)) return false;
+            }
             return true;
         }
 

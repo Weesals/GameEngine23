@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -62,11 +61,11 @@ namespace Weesals.UI {
         public int VertexRevision => mVertices.BufferLayout.revision;
 
         public CanvasMeshBuffer() {
-            mVertices = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Vertex, 0);
+            mVertices = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Vertex);
             mPositionEl = mVertices.AppendElement(new CSBufferElement("POSITION", BufferFormat.FORMAT_R32G32_FLOAT));
             mTexCoordEl = mVertices.AppendElement(new CSBufferElement("TEXCOORD", BufferFormat.FORMAT_R16G16_UNORM));
             mColorEl = mVertices.AppendElement(new CSBufferElement("COLOR", BufferFormat.FORMAT_R8G8B8A8_SNORM));
-            mIndices = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Index, 0);
+            mIndices = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Index);
             mIndices.AppendElement(new CSBufferElement("INDEX", BufferFormat.FORMAT_R32_UINT));
             mFreeVertices = new();
             mFreeIndices = new();
@@ -76,6 +75,9 @@ namespace Weesals.UI {
             mVertices.Dispose();
         }
 
+        public TypedBufferView<T> GetPositions<T>() where T : unmanaged {
+            return new TypedBufferView<T>(mVertices.Elements[mPositionEl], new RangeInt(0, mVertices.Count));
+        }
         public TypedBufferView<Vector3> GetPositions() {
             return new TypedBufferView<Vector3>(mVertices.Elements[mPositionEl], new RangeInt(0, mVertices.Count));
         }
@@ -114,7 +116,7 @@ namespace Weesals.UI {
             if (range.Start >= 0) return range;
             items.BufferLayout.mCount -= unused.Compact(items.Count);
             range = new RangeInt(items.Count, count);
-            if (range.End * items.BufferStride >= items.BufferLayout.size) {
+            if (range.End >= items.BufferCapacityCount) {
                 int newSize = items.BufferCapacityCount + 1024;
                 newSize = Math.Max(newSize, range.End);
                 if (!items.AllocResize(newSize)) return default;
@@ -154,6 +156,9 @@ namespace Weesals.UI {
         }
         public CanvasVertices MapVertices(int id) {
             return new CanvasVertices(this, ref Ranges[id]);
+        }
+        public TypedBufferView<uint> MapIndices(int id) {
+            return GetIndices(Ranges[id].mIndexRange);
         }
         public bool Require(ref int elementId, int vcount, int icount) {
             if (elementId == -1) {

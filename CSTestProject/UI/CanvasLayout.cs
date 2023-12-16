@@ -111,6 +111,17 @@ namespace Weesals.UI {
 		        Position = pos,
 	        };
         }
+        public CanvasLayout Scale(float scale) {
+            var offset = (1f - scale) / 2.0f;
+            return new CanvasLayout {
+                AxisX = new Vector4(AxisX.toxyz() * scale, AxisX.W),
+                AxisY = new Vector4(AxisY.toxyz() * scale, AxisY.W),
+                AxisZ = AxisZ,
+                Position = Position
+                + AxisX.toxyz() * (offset * AxisX.W)
+                + AxisY.toxyz() * (offset * AxisY.W),
+            };
+        }
         public CanvasLayout Inset(float amount) {
             return new CanvasLayout {
                 AxisX = new Vector4(AxisX.toxyz(), AxisX.W - amount * 2),

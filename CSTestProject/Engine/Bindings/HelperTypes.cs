@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 
-namespace GameEngine23.Interop {
+namespace Weesals.Engine {
     /// <summary>Defines the type of a member as it was used in the native signature.</summary>
     [AttributeUsage(AttributeTargets.Struct | AttributeTargets.Enum | AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter | AttributeTargets.ReturnValue, AllowMultiple = false, Inherited = true)]
     [Conditional("DEBUG")]

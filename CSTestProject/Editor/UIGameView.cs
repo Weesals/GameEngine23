@@ -4,10 +4,20 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Landscape;
 using Weesals.UI;
 
 namespace Weesals.Editor {
-    public class UIGameView : TabbedWindow, IDropTarget {
+    public class UIGameView : TabbedWindow, IDropTarget, INestedEventSystem {
+
+        public EventSystem? EventSystem;
+        EventSystem? INestedEventSystem.EventSystem => EventSystem;
+        CanvasLayout INestedEventSystem.GetComputedLayout() { return GetContentsLayout(); }
+
+        // TODO: Remove these, get them dynamically
+        public Camera? Camera;
+        public LandscapeData? Landscape;
+
         public UIGameView(Editor editor) : base(editor, "Game") {
             EnableBackground = false;
         }
@@ -22,10 +32,11 @@ namespace Weesals.Editor {
         public bool InitializePotentialDrop(PointerEvent events, CanvasRenderable source) {
             return true;
         }
-        public void UninitialzePotentialDrop(CanvasRenderable source) {
+        public void UninitializePotentialDrop(CanvasRenderable source) {
         }
         public void ReceiveDrop(CanvasRenderable item) {
             Console.WriteLine("Received " + item);
         }
+
     }
 }

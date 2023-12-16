@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -40,18 +39,18 @@ namespace Weesals.UI {
     public class Canvas : CanvasRenderable, IDisposable {
         public CanvasMeshBuffer Builder { get; private set; }
         public CanvasCompositor Compositor { get; private set; }
-        public HittestGrid HittestGrid { get; private set; }
+        public HittestGrid HitTestGrid { get; private set; }
         public TweenManager Tweens { get; private set; }
         public Material Material;
         private Int2 mSize;
-        public ISelectionGroup SelectionGroup;
+        public ISelectionGroup? SelectionGroup;
 
         public int Revision => Builder.VertexRevision + Compositor.GetIndices().BufferLayout.revision;
 
         unsafe public Canvas() {
             Builder = new();
             Compositor = new(Builder);
-            HittestGrid = new(new Int2(8, 8));
+            HitTestGrid = new(new Int2(8, 8));
             Tweens = new();
             Initialise(new CanvasBinding(this));
             Material = new Material("./assets/ui.hlsl");
@@ -78,7 +77,7 @@ namespace Weesals.UI {
             Compositor.Dispose();
         }
         public void SetSize(Int2 size) {
-            HittestGrid.SetResolution(size);
+            HitTestGrid.SetResolution(size);
             if (mSize != size) {
                 mSize = size;
                 Material.SetValue("Projection", Matrix4x4.CreateOrthographicOffCenter(0.0f, (float)mSize.X, (float)mSize.Y, 0.0f, 0.0f, 500.0f));
@@ -86,8 +85,7 @@ namespace Weesals.UI {
             }
         }
         public void RequireComposed() {
-            if (HasDirtyFlag(DirtyFlags.Layout)) {
-                ClearDirtyFlag(DirtyFlags.Layout);
+            if (HasDirtyFlag(DirtyFlags.Children)) {
                 RequireLayout();
             }
             if (HasDirtyFlag(DirtyFlags.Compose)) {
@@ -95,6 +93,7 @@ namespace Weesals.UI {
                 var builder = Compositor.CreateBuilder(this);
                 var compositor = Compositor.CreateRoot(ref builder);
                 Compose(ref compositor);
+                Compositor.EndBuild(builder);
             }
         }
         public Int2 GetSize() {

@@ -73,11 +73,20 @@ public:
         mCmdList->RSSetScissorRects(1, &scissorRect);
         mViewportRect = rect;
     }
-    virtual void SetRenderTarget(const RenderTarget2D* target) override {
-        if (target == nullptr) {
-            SetD3DRenderTarget(&mDevice->GetBackBuffer(), nullptr);
-            return;
+    virtual void SetRenderTargets(std::span<const RenderTarget2D*> colorTargets, const RenderTarget2D* depthTarget) override {
+        InplaceVector<const D3DResourceCache::D3DRenderSurface*, 16> d3dColorTargets;
+        const D3DResourceCache::D3DRenderSurface* d3dDepthTarget = nullptr;
+        for (int t = 0; t < colorTargets.size(); ++t) {
+            auto target = colorTargets[t];
+            auto d3dRt = RequireInitializedRT(target);
+            if (target == nullptr) d3dRt = &mDevice->GetBackBuffer();
+            d3dColorTargets.push_back(d3dRt);
         }
+        if (colorTargets.empty() && depthTarget == nullptr) d3dColorTargets.push_back(&mDevice->GetBackBuffer());
+        if (depthTarget != nullptr) d3dDepthTarget = RequireInitializedRT(depthTarget);
+        SetD3DRenderTarget(d3dColorTargets, d3dDepthTarget);
+    }
+    const D3DResourceCache::D3DRenderSurface* RequireInitializedRT(const RenderTarget2D* target) {
         auto d3dRt = target != nullptr ? mDevice->GetResourceCache().RequireD3DRT(target) : nullptr;
         if (d3dRt != nullptr && d3dRt->mBuffer == nullptr) {
             auto& cache = mDevice->GetResourceCache();
@@ -95,7 +104,7 @@ public:
             if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
 
             // Create a shader resource view (SRV) for the texture
-            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {.Format = viewFmt, .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D};
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = { .Format = viewFmt, .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D };
             srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
             srvDesc.Texture2D.MipLevels = 1;
             CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mDevice->GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), cache.mCBOffset);
@@ -103,12 +112,7 @@ public:
             d3dRt->mSRVOffset = cache.mCBOffset;
             cache.mCBOffset += mDevice->GetDevice().GetDescriptorHandleSizeSRV();
         }
-        if (BufferFormatType::GetIsDepthBuffer(target->GetFormat())) {
-            SetD3DRenderTarget({ }, d3dRt);
-        }
-        else {
-            SetD3DRenderTarget({ d3dRt }, nullptr);
-        }
+        return d3dRt;
     }
     void AllocateRenderTarget(D3DResourceCache::D3DRenderSurface* surface, Int2 size, BufferFormat fmt) {
         auto& cache = mDevice->GetResourceCache();
@@ -312,7 +316,9 @@ public:
                 if (auto rt = dynamic_cast<RenderTarget2D*>(textureBase)) {
                     auto surface = cache.RequireD3DRT(rt);
                     InplaceVector<D3D12_RESOURCE_BARRIER, 2> barriers;
-                    surface->RequireState(barriers, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                    D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+                    if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
+                    surface->RequireState(barriers, barrierState);
                     buffer = surface;
                     if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
                 } else {

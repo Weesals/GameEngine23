@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace GameEngine23.Interop
+namespace Weesals.Engine
 {
     public partial struct NativeMesh
     {
@@ -229,8 +229,27 @@ namespace GameEngine23.Interop
         [return: NativeTypeName("Int2C")]
         public static extern Weesals.Engine.Int2 GetSize(NativeTexture* tex);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetTextureData@CSTexture@@SA?AUCSSpan@@PEAVTexture@@@Z", ExactSpelling = true)]
-        public static extern CSSpan GetTextureData(NativeTexture* tex);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetFormat@CSTexture@@SAXPEAVTexture@@W4BufferFormat@@@Z", ExactSpelling = true)]
+        public static extern void SetFormat(NativeTexture* tex, [NativeTypeName("BufferFormat")] Weesals.Engine.BufferFormat fmt);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetFormat@CSTexture@@SA?AW4BufferFormat@@PEAVTexture@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("BufferFormat")]
+        public static extern Weesals.Engine.BufferFormat GetFormat(NativeTexture* tex);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetMipCount@CSTexture@@SAXPEAVTexture@@H@Z", ExactSpelling = true)]
+        public static extern void SetMipCount(NativeTexture* tex, int count);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetMipCount@CSTexture@@SAHPEAVTexture@@@Z", ExactSpelling = true)]
+        public static extern int GetMipCount(NativeTexture* tex);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetArrayCount@CSTexture@@SAXPEAVTexture@@H@Z", ExactSpelling = true)]
+        public static extern void SetArrayCount(NativeTexture* tex, int count);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetArrayCount@CSTexture@@SAHPEAVTexture@@@Z", ExactSpelling = true)]
+        public static extern int GetArrayCount(NativeTexture* tex);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetTextureData@CSTexture@@SA?AUCSSpan@@PEAVTexture@@HH@Z", ExactSpelling = true)]
+        public static extern CSSpan GetTextureData(NativeTexture* tex, int mip, int slice);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?MarkChanged@CSTexture@@SAXPEAVTexture@@@Z", ExactSpelling = true)]
         public static extern void MarkChanged(NativeTexture* tex);
@@ -517,6 +536,11 @@ namespace GameEngine23.Interop
     {
         private CSConstantBufferData* mConstantBuffer;
 
+        public CSConstantBuffer(CSConstantBufferData* data)
+        {
+            mConstantBuffer = data;
+        }
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetValues@CSConstantBuffer@@SA?AUCSSpan@@PEBUCSConstantBufferData@@@Z", ExactSpelling = true)]
         public static extern CSSpan GetValues([NativeTypeName("const CSConstantBufferData *")] CSConstantBufferData* cb);
     }
@@ -600,8 +624,8 @@ namespace GameEngine23.Interop
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetResolution@CSGraphics@@SAXPEBVNativeGraphics@@UInt2@@@Z", ExactSpelling = true)]
         public static extern void SetResolution([NativeTypeName("const NativeGraphics *")] NativeGraphics* graphics, [NativeTypeName("Int2")] Weesals.Engine.Int2 res);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetRenderTarget@CSGraphics@@SAXPEAVNativeGraphics@@PEBVRenderTarget2D@@@Z", ExactSpelling = true)]
-        public static extern void SetRenderTarget(NativeGraphics* graphics, [NativeTypeName("const NativeRenderTarget *")] NativeRenderTarget* target);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetRenderTargets@CSGraphics@@SAXPEAVNativeGraphics@@UCSSpan@@PEBVRenderTarget2D@@@Z", ExactSpelling = true)]
+        public static extern void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, [NativeTypeName("const NativeRenderTarget *")] NativeRenderTarget* depthTarget);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@SAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@1@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativePipeline *")]
@@ -811,7 +835,6 @@ namespace GameEngine23.Interop
 
     public unsafe partial struct CSResources
     {
-        private void* MakeUnsafe;
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?LoadShader@CSResources@@SAPEAVShader@@UCSString@@0@Z", ExactSpelling = true)]
         public static extern NativeShader* LoadShader(CSString path, CSString entryPoint);

@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 using Weesals.Engine;
 using Weesals.Utility;
 
-namespace GameEngine23.Interop {
+namespace Weesals.Engine {
     public partial struct Bool {
         public static implicit operator bool(Bool b) { return b.mValue != 0; }
     }
@@ -141,10 +141,17 @@ namespace GameEngine23.Interop {
     }
     public partial struct CSTexture : IEquatable<CSTexture> {
         unsafe public bool IsValid() { return mTexture != null; }
-        unsafe public void SetSize(Int2 size) { SetSize(mTexture, size); }
+        unsafe public CSTexture SetSize(Int2 size) { SetSize(mTexture, size); return this; }
         unsafe public Int2 GetSize() { return GetSize(mTexture); }
-        unsafe public CSSpan GetTextureData() { return GetTextureData(mTexture); }
+        unsafe public CSTexture SetFormat(BufferFormat fmt) { SetFormat(mTexture, fmt); return this; }
+        unsafe public BufferFormat GetFormat() { return GetFormat(mTexture); }
+        unsafe public CSTexture SetMipCount(int count) { SetMipCount(mTexture, count); return this; }
+        unsafe public int GetMipCount() { return GetMipCount(mTexture); }
+        unsafe public CSTexture SetArrayCount(int count) { SetArrayCount(mTexture, count); return this; }
+        unsafe public int GetArrayCount() { return GetArrayCount(mTexture); }
+        unsafe public MemoryBlock<byte> GetTextureData(int mip = 0, int slice = 0) { var data = GetTextureData(mTexture, mip, slice); return new MemoryBlock<byte>((byte*)data.mData, data.mSize); }
         unsafe public void MarkChanged() { MarkChanged(mTexture); }
+        unsafe public void Dispose() { Dispose(mTexture); mTexture = null; }
 
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSTexture other) { return mTexture == other.mTexture; }
@@ -153,6 +160,12 @@ namespace GameEngine23.Interop {
         unsafe public static bool operator !=(CSTexture left, CSTexture right) { return left.mTexture != right.mTexture; }
 
         unsafe public static CSTexture Create() { return new CSTexture(_Create()); }
+        unsafe public static CSTexture Create(int sizeX, int sizeY, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
+            var tex = new CSTexture(_Create());
+            tex.SetSize(new Int2(sizeX, sizeY));
+            //tex.SetFormat(fmt);
+            return tex;
+        }
     }
     public partial struct CSRenderTarget : IEquatable<CSRenderTarget> {
         unsafe public bool IsValid() { return mRenderTarget != null; }
@@ -164,6 +177,7 @@ namespace GameEngine23.Interop {
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }
         unsafe public override int GetHashCode() { return HashCode.Combine((ulong)mRenderTarget); }
+        unsafe public override string ToString() { return $"RT{(nint)mRenderTarget}"; }
         unsafe public static bool operator ==(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget == right.mRenderTarget; }
         unsafe public static bool operator !=(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget != right.mRenderTarget; }
 
@@ -373,6 +387,7 @@ namespace GameEngine23.Interop {
         }
     }
     public partial struct CSInput {
+        unsafe public bool IsValid() { return mPlatform != null; }
         unsafe public CSSpanSPtr<CSPointer> GetPointers() { return new CSSpanSPtr<CSPointer>(GetPointers(null, mPlatform)); }
         unsafe public bool GetKeyDown(char key) { return GetKeyDown(null, mPlatform, (sbyte)key); }
         unsafe public bool GetKeyPressed(char key) { return GetKeyPressed(null, mPlatform, (sbyte)key); }
@@ -403,7 +418,11 @@ namespace GameEngine23.Interop {
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
         unsafe public Int2 GetResolution() { return GetResolution(mGraphics); }
-        unsafe public void SetRenderTarget(CSRenderTarget target) { SetRenderTarget(mGraphics, target.mRenderTarget); }
+        unsafe public void SetRenderTargets(Span<CSRenderTarget> targets, CSRenderTarget depth) {
+            var nativeTargets = stackalloc NativeRenderTarget*[targets.Length];
+            for (int i = 0; i < targets.Length; ++i) nativeTargets[i] = targets[i].mRenderTarget;
+            SetRenderTargets(mGraphics, new CSSpan(nativeTargets, targets.Length), depth.mRenderTarget);
+        }
         unsafe public bool IsTombstoned() { return IsTombstoned(mGraphics) != 0; }
         unsafe public void SetResolution(Int2 res) { SetResolution(mGraphics, res); }
         unsafe public void Reset() { Reset(mGraphics); }
@@ -433,7 +452,7 @@ namespace GameEngine23.Interop {
         unsafe public CSPipeline RequirePipeline(List<CSBufferLayout> bindings, List<CSMaterial> materials, CSIdentifier renderPass) {
             return RequirePipeline(CollectionsMarshal.AsSpan(bindings), CollectionsMarshal.AsSpan(materials), renderPass);
         }
-        [SuppressMessage("Reliability", "CA2014:Do not use stackalloc in loops", Justification = "Is fine bruh")]
+        //[SuppressMessage("Reliability", "CA2014:Do not use stackalloc in loops", Justification = "Is fine bruh")]
         unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings, Span<CSMaterial> materials, CSIdentifier renderPass) {
             var usbindings = stackalloc CSBufferLayout[bindings.Length];
             var usbindingPtrs = stackalloc CSBufferLayout*[bindings.Length];
@@ -451,7 +470,6 @@ namespace GameEngine23.Interop {
         unsafe public CSPipeline RequirePipeline(CSSpan bindings, CSSpan materials, CSIdentifier renderPass) {
             return new CSPipeline(RequirePipeline(mGraphics, bindings, materials));
         }
-        [SuppressMessage("Reliability", "CA2014:Do not use stackalloc in loops", Justification = "Is fine bruh")]
         unsafe public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
             var usbindings = stackalloc CSBufferLayout[bindings.Count];
             for (int b = 0; b < bindings.Count; ++b) usbindings[b] = bindings[b];

@@ -161,8 +161,13 @@
     <FxCompile Include="assets\ui.hlsl">
       <Filter>Content</Filter>
     </FxCompile>
-    <FxCompile Include="assets\retained.hlsl" />
+    <FxCompile Include="assets\include\retained.hlsl" />
     <FxCompile Include="assets\text.hlsl" />
+    <FxCompile Include="assets\water.hlsl" />
+    <FxCompile Include="assets\transparent.hlsl" />
+    <FxCompile Include="assets\opaque.hlsl" />
+    <FxCompile Include="assets\include\shadowcast.hlsl" />
+    <FxCompile Include="assets\include\shadowreceive.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\T_CharactersAtlas.png">
@@ -190,6 +195,8 @@
     <Image Include="assets\T_Wheat.png" />
     <Image Include="assets\T_Axe.png" />
     <Image Include="assets\T_Book.png" />
+    <Image Include="assets\Noise.jpg" />
+    <Image Include="assets\FoamMask.jpg" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="assets\SM_Deer.fbx">

@@ -110,7 +110,7 @@ public struct TimedEvent<T> : ITimedEvent {
         Value = value;
     }
     public void Clear() {
-        Value = default;
+        Value = default!;
         if (IsSet) SetEventTime(TimedEvent.Clock, false);
     }
     public void SetEventTime(float time) { SetEventTime(time, IsSet); }
@@ -150,8 +150,8 @@ public struct TimedEvent<T> : ITimedEvent {
         return ReferenceEquals(item1, item2);
     }
 
-    public override bool Equals(object obj) { return obj is TimedEvent<T> @event && Compare(Value, @event.Value); }
-    public override int GetHashCode() { return Value.GetHashCode(); }
+    public override bool Equals(object? obj) { return obj is TimedEvent<T> @event && Compare(Value, @event.Value); }
+    public override int GetHashCode() { return Value != null ? Value.GetHashCode() : 0; }
     public override string ToString() {
         return Value + " T:" + eventTime;
     }
@@ -212,6 +212,11 @@ public static class Easing {
     }
     public static float Clamp01(float value) {
         return value < 0f ? 0f : value > 1f ? 1f : value;
+    }
+    public static float MoveTowards(float from, float to, float amount) {
+        var length = Math.Abs(to - from);
+        if (amount < length) to = from + (to - from) * (amount / length);
+        return to;
     }
 
     private static float BubbleEase(float from, float to, float amplitude, float pulses, float lerp) {

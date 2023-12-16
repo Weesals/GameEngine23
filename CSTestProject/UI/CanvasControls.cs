@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -98,7 +97,7 @@ namespace Weesals.UI {
             base.Compose(ref composer);
         }
     }
-    public abstract class Selectable : CanvasRenderable, IPointerDownHandler, ISelectable {
+    public abstract class Selectable : CanvasRenderable, ISelectable {
         protected bool selected;
         public bool IsSelected => selected;
         public virtual void OnSelected(bool _selected) { selected = _selected; }
@@ -108,9 +107,9 @@ namespace Weesals.UI {
         protected virtual void DrawSelectionFrame(ref CanvasCompositor.Context composer) {
             if (IsSelected) {
                 ref var background = ref composer.CreateTransient<CanvasSelection>(Canvas);
+                if (HasDirtyFlag(DirtyFlags.Layout)) background.MarkLayoutDirty();
                 if (background.IsDirty) MarkComposeDirty();
-                if (background.IsDirty || HasDirtyFlag(DirtyFlags.Layout))
-                    background.UpdateLayout(Canvas, mLayoutCache.Inset(-1));
+                if (background.IsDirty) background.UpdateLayout(Canvas, mLayoutCache.Inset(-1));
                 background.Append(ref composer);
             }
         }
@@ -610,7 +609,7 @@ namespace Weesals.UI {
             }
         }
     }
-    public class ScrollView : CanvasRenderable, IBeginDragHandler, IDragHandler, IEndDragHandler, ITweenable {
+    public class ScrollView : CanvasRenderable, IBeginDragHandler, IDragHandler, IEndDragHandler, ITweenable, IHitTestGroup {
         protected enum Flags { None = 0, Dragging = 1, }
         public Vector2 ScrollMask = new Vector2(1f, 1f);
         public RectF Margins = new RectF(0f, 0f, 0f, 0f);

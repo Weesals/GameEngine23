@@ -30,7 +30,7 @@
 --libraryPath
 	CSBindings
 --namespace
-	GameEngine23.Interop
+	Weesals.Engine
 --remap
 	Identifier=CSIdentifier
 	Mesh=NativeMesh

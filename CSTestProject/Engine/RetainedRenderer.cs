@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -95,14 +94,62 @@ namespace Weesals.Engine {
         }
     }
 
+    public struct RenderTag {
+        public readonly int Id;
+        public RenderTag(int id) { Id = id; }
+        public static RenderTag Default = new RenderTag(0);
+        public static RenderTag Transparent = new RenderTag(1);
+    }
+    public struct RenderTags {
+        public uint Mask;
+        public RenderTags(uint mask = 0) { Mask = mask; }
+        public void Add(RenderTag tag) { Mask |= 1u << tag.Id; }
+        public void Remove(RenderTag tag) { Mask &= ~(1u << tag.Id); }
+        public void Clear() { Mask = 0; }
+        public bool Has(RenderTag tag) { return (Mask & (1u << tag.Id)) != 0; }
+        public bool HasAny(RenderTags tags) { return (Mask & tags.Mask) != 0; }
+        public static implicit operator RenderTags(RenderTag tag) { var tags = new RenderTags(); tags.Add(tag); return tags; }
+        public static RenderTags Default = new RenderTags(0b01);
+        public static RenderTags None = new RenderTags(0b00);
+    }
+    public class RenderTagManager {
+        private List<CSIdentifier> identifiers = new();
+        public RenderTagManager() {
+            identifiers.Add("Default");
+            identifiers.Add("Transparent");
+        }
+        public RenderTag RequireTag(CSIdentifier identifier) {
+            var id = identifiers.IndexOf(identifier);
+            if (id == -1) { id = identifiers.Count; identifiers.Add(identifier); }
+            return new RenderTag(id);
+        }
+    }
     public class Scene {
-        public CSScene CSScene;
+        private CSScene CSScene;
         public RootMaterial RootMaterial = new();
         public RetainedMaterialCollection MaterialCollection = new();
         public ResolvedMaterialSets ResolvedMaterials;
+        public RenderTagManager TagManager = new();
         public Scene(CSScene scene) {
             CSScene = scene;
             ResolvedMaterials = new(MaterialCollection);
+        }
+
+        public CSInstance CreateInstance() {
+            return CSScene.CreateInstance();
+        }
+        public unsafe void UpdateInstanceData(CSInstance instance, void* data, int dataLen) {
+            CSScene.UpdateInstanceData(instance, data, dataLen);
+        }
+        public MemoryBlock<Vector4> GetInstanceData(CSInstance instance) {
+            return CSScene.GetInstanceData(instance);
+        }
+
+        public CSTexture GetGPUBuffer() {
+            return CSScene.GetGPUBuffer();
+        }
+        public int GetGPURevision() {
+            return CSScene.GetGPURevision();
         }
     }
 
@@ -125,7 +172,8 @@ namespace Weesals.Engine {
         public int InstanceCount => mInstanceBufferLayout.Count;
 
         public RenderQueue() {
-            mInstanceBufferLayout = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Instance, -1);
+            mInstanceBufferLayout = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
+            mInstanceBufferLayout.MarkInvalid();
             mInstanceBufferLayout.AppendElement(
                 new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32_UINT)
             );
@@ -222,6 +270,8 @@ namespace Weesals.Engine {
             public int mResolvedResources;
         };
 
+        public readonly Scene Scene;
+
         // All batches that currently exist
         private List<Batch> batches = new();
         private Dictionary<uint, StateKey> instanceBatches = new();
@@ -233,18 +283,14 @@ namespace Weesals.Engine {
         // Material to inject GPU Scene buffer as 'instanceData'
         private Material instanceMaterial;
         // Stores per-instance data
-        Scene mScene;
 
         public RetainedRenderer(Scene scene) {
-            mScene = scene;
+            Scene = scene;
             instanceMaterial = new();
-            mInstanceBufferLayout = new BufferLayoutPersistent(
-                0, BufferLayoutPersistent.Usages.Instance, -1
-            );
-            mInstanceBufferLayout.AppendElement(
-                new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32_UINT)
-            );
-            instanceMaterial.SetTexture("instanceData", mScene.CSScene.GetGPUBuffer());
+            mInstanceBufferLayout = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
+            mInstanceBufferLayout.MarkInvalid();
+            mInstanceBufferLayout.AppendElement(new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32_UINT));
+            instanceMaterial.SetTexture("instanceData", Scene.GetGPUBuffer());
         }
         public void Dispose() {
             //instanceMaterial.Dispose();
@@ -255,7 +301,7 @@ namespace Weesals.Engine {
             using var mats = new PooledArray<Material>(materials, materials.Length + 1);
             mats[^1] = instanceMaterial;
 
-            int matSetId = mScene.MaterialCollection.Require(mats);
+            int matSetId = Scene.MaterialCollection.Require(mats);
             var key = new StateKey(mesh, matSetId);
             int bucket = 0, max = batches.Count - 1;
             while (bucket < max) {
@@ -301,7 +347,7 @@ namespace Weesals.Engine {
                 var bboxCtr = bbox.Centre;
                 var bboxExt = bbox.Extents;
                 foreach (var instance in batch.Instances) {
-                    var data = mScene.CSScene.GetInstanceData(new CSInstance((int)instance));
+                    var data = Scene.GetInstanceData(new CSInstance((int)instance));
                     var matrix = *(Matrix4x4*)(data.Data);
                     if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
                     queue.AppendInstance(instance);
@@ -312,7 +358,7 @@ namespace Weesals.Engine {
                 // Compute and cache CB and resource data
                 var meshMatHash = HashCode.Combine(batch.Mesh.GetHashCode(), batch.MaterialSet, graphics.GetHashCode());
                 if (!mPipelineCache.TryGetValue(meshMatHash, out var resolved)) {
-                    var materials = mScene.MaterialCollection.GetMaterials(batch.MaterialSet);
+                    var materials = Scene.MaterialCollection.GetMaterials(batch.MaterialSet);
                     var pso = MaterialEvaluator.ResolvePipeline(graphics, batch.BufferLayoutCache, materials);
                     resolved = new ResolvedPipeline() {
                         mPipeline = pso,
@@ -321,7 +367,7 @@ namespace Weesals.Engine {
                     var psobuffsers = pso.GetConstantBuffers();
                     var psoresources = pso.GetResources();
                     foreach (var cb in psobuffsers) {
-                        var resolvedId = mScene.ResolvedMaterials.RequireResolved(graphics, cb.GetValues(), batch.MaterialSet);
+                        var resolvedId = Scene.ResolvedMaterials.RequireResolved(graphics, cb.GetValues(), batch.MaterialSet);
                         resolved.mResolvedCBs.Add(resolvedId);
                     }
                     using var tresources = new PooledArray<CSUniformValue>(psoresources.Length);
@@ -333,7 +379,7 @@ namespace Weesals.Engine {
                             mSize = (int)sizeof(void*),
                         };
                     }
-                    resolved.mResolvedResources = mScene.ResolvedMaterials.RequireResolved(graphics, tresources, batch.MaterialSet);
+                    resolved.mResolvedResources = Scene.ResolvedMaterials.RequireResolved(graphics, tresources, batch.MaterialSet);
                 }
 
                 var pipeline = resolved.mPipeline;
@@ -347,14 +393,14 @@ namespace Weesals.Engine {
                     nint resource = 0;
                     if (cbid >= 0) {
                         var psocb = psoconstantBuffers[i];
-                        ref var resolvedMat = ref mScene.ResolvedMaterials.GetResolved(cbid);
+                        ref var resolvedMat = ref Scene.ResolvedMaterials.GetResolved(cbid);
                         resource = RequireConstantBuffer(graphics, resolvedMat.mEvaluator);
                     }
                     resources[r++] = resource;
                 }
                 // Get other resource data for this batch
                 {
-                    ref var resCB = ref mScene.ResolvedMaterials.GetResolved(resolved.mResolvedResources);
+                    ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.mResolvedResources);
                     resCB.mEvaluator.EvaluateSafe(resources.Slice(r).Reinterpret<byte>());
                     r += resources.Length;
                 }

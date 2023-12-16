@@ -8,32 +8,6 @@
 #include <string>
 #include <vector>
 
-// A PBR texture set that can appear on the terrain, with some metadata
-// associated with game interaction and rendering
-class LandscapeLayer
-{
-public:
-    enum AlignmentModes : uint8_t { NoRotation, Clustered, WithNormal, Random90, Random, };
-    enum TerrainFlags : uint16_t {
-        land = 0x00ff, Ground = 0x0001, Cliff = 0x7002,
-        water = 0x0f00, River = 0x7100, Ocean = 0x7200,
-        FlagImpassable = 0x7000,
-    };
-public:
-    std::string Name;
-
-    float Scale = 0.2f;
-    float Rotation;
-    float Fringe = 0.5f;
-    float UniformMetal = 0.f;
-    float UniformSmoothness = 0.f;
-    float UvYScroll = 0.f;
-    AlignmentModes Alignment;
-    TerrainFlags Flags;
-
-    LandscapeLayer() : Alignment(AlignmentModes::Clustered), Flags(TerrainFlags::Ground) { }
-};
-
 // A terrain
 class Landscape
 {

@@ -1,3 +1,7 @@
+#ifndef __COMMON__
+#define __COMMON__
+
+#define PI 3.14159265359
 
 cbuffer WorldCB : register(b0)
 {
@@ -9,3 +13,5 @@ cbuffer WorldCB : register(b0)
     float4x4 View;
     float4x4 ViewProjection;
 }
+
+#endif

@@ -8,25 +8,64 @@ using Weesals.Engine;
 using Weesals.Utility;
 
 namespace Weesals.Landscape {
-    // A PBR texture set that can appear on the terrain, with some metadata
-    // associated with game interaction and rendering
-    public class LandscapeLayer {
-        public enum AlignmentModes : byte { NoRotation, Clustered, WithNormal, Random90, Random, }
-        public enum TerrainFlags : ushort {
-            land = 0x00ff, Ground = 0x0001, Cliff = 0x7002,
-            water = 0x0f00, River = 0x7100, Ocean = 0x7200,
-            FlagImpassable = 0x7000,
-        }
-        public string Name;
+    public interface ILandscapeReader {
+        public LandscapeData.SizingData Sizing { get; }
+    }
+    public interface IHeightmapReader : ILandscapeReader {
+        public int GetHeightAt(Int2 pnt);
+    }
+    public interface IControlMapReader : ILandscapeReader {
+    }
 
-        public float Scale = 0.2f;
-        public float Rotation;
-        public float Fringe = 0.5f;
-        public float UniformMetal = 0f;
-        public float UniformSmoothness = 0f;
-        public float UvYScroll = 0f;
-        public AlignmentModes Alignment = AlignmentModes.Clustered;
-        public TerrainFlags Flags = TerrainFlags.Ground;
+    // Contains data to determine what was changed in the terrain
+    public struct LandscapeChangeEvent {
+        public RectI Range;
+        public bool HeightMapChanged;
+        public bool ControlMapChanged;
+        public bool WaterMapChanged;
+        public LandscapeChangeEvent(RectI range, bool heightMap = false, bool controlMap = false, bool waterMap = false) {
+            Range = range;
+            HeightMapChanged = heightMap;
+            ControlMapChanged = controlMap;
+            WaterMapChanged = waterMap;
+        }
+        public LandscapeChangeEvent(Int2 min, Int2 max, bool heightMap = false, bool controlMap = false, bool waterMap = false) {
+            if (min.X < max.X || min.Y < max.Y) {
+                Range = new RectI(min.X, min.Y, max.X - min.X + 1, max.Y - min.Y + 1);
+                HeightMapChanged = heightMap;
+                ControlMapChanged = controlMap;
+                WaterMapChanged = waterMap;
+            } else {
+                this = MakeNone();
+            }
+        }
+        public bool HasChanges => HeightMapChanged | ControlMapChanged | WaterMapChanged;
+
+        // Expand this to include the passed in range/flags
+        public void CombineWith(in LandscapeChangeEvent other) {
+            // If this is the first change, just use it as is.
+            if (!HasChanges) { this = other; return; }
+            // Otherwise inflate our range and integrate changed flags
+            var min = Int2.Min(Range.Min, other.Range.Min);
+            var max = Int2.Max(Range.Max, other.Range.Max);
+            Range = new RectI(min.X, min.Y, max.X - min.X, max.Y - min.Y);
+            HeightMapChanged |= other.HeightMapChanged;
+            ControlMapChanged |= other.ControlMapChanged;
+            WaterMapChanged |= other.WaterMapChanged;
+        }
+        // Create a changed event that covers everything for the entire terrain
+        public static LandscapeChangeEvent MakeAll(Int2 size) {
+            return new LandscapeChangeEvent(new RectI(0, 0, size.X, size.Y), true, true, true);
+        }
+        // Create a changed event that includes nothing
+        public static LandscapeChangeEvent MakeNone() {
+            return new LandscapeChangeEvent(default, false, false, false);
+        }
+    }
+
+    // A raycast result
+    public struct LandscapeHit {
+        public Vector3 mHitPosition;
     }
 
     // A terrain
@@ -56,9 +95,9 @@ namespace Weesals.Landscape {
             public bool IsInBounds(Int2 pnt) { return (uint)pnt.X < (uint)Size.X && (uint)pnt.Y < (uint)Size.Y; }
 
             // Convert from world to local (cell) space
-            public Int2 WorldToLandscape(Vector3 worldPos) { return (Int2)((worldPos - Location).toxz() * (1024f / Scale1024) + new Vector2(0.5f)); }
-            public Int2 WorldToLandscape(Vector2 worldPos) { return (Int2)((worldPos - Location.toxz()) * (1024f / Scale1024) + new Vector2(0.5f)); }
-            public Vector3 LandscapeToWorld(Int2 landscapePos) { return (((Vector2)landscapePos) * (Scale1024 / 1024f)).AppendZ(0.0f) + Location; }
+            public Int2 WorldToLandscape(Vector3 worldPos) { return Int2.RoundToInt((worldPos - Location).toxz() * (1024f / Scale1024)); }
+            public Int2 WorldToLandscape(Vector2 worldPos) { return Int2.RoundToInt((worldPos - Location.toxz()) * (1024f / Scale1024)); }
+            public Vector3 LandscapeToWorld(Int2 landscapePos) { return (((Vector2)landscapePos) * (Scale1024 / 1024f)).AppendY(0.0f) + Location; }
 
             public Int2 WorldToLandscape(Vector2 worldPos, out Vector2 outLerp) {
                 worldPos -= Location.toxz();
@@ -72,66 +111,26 @@ namespace Weesals.Landscape {
         // Data used by the vertex shader to position a vertex (ie. its height)
         public struct HeightCell {
             public short Height;
-            public float GetHeightF() { return (float)Height / (float)HeightScale; }
-            public static HeightCell Default;
+            public float HeightF => (float)Height / (float)HeightScale;
+            public override string ToString() { return Height.ToString(); }
+            public static HeightCell Default = new();
         }
         // Data used by the fragment shader to determine shading (ie. texture)
         public struct ControlCell {
             public byte TypeId;
-            public static ControlCell Default;
+            public override string ToString() { return TypeId.ToString(); }
+            public static ControlCell Default = new();
         }
         // Data used to render water over the terrain
         public struct WaterCell {
             public byte Data;
-            public short GetHeight() {
-                return (short)((Data - 127) << 3);
+            public bool IsInvalid => Data == 0;
+            public short Height {
+                get => (short)((Data - 127) << 6);
+                set => Data = (byte)Math.Clamp((value >> 6) + 127, 0, 255);
             }
-            public void SetHeight(short value) {
-                Data = (byte)Math.Clamp((value >> 3) + 127, 0, 255);
-            }
-            public bool GetIsInvalid() { return Data == 0; }
-            public static WaterCell Default;
-        }
-
-        // Contains data to determine what was changed in the terrain
-        public struct LandscapeChangeEvent {
-            public RectI Range;
-            public bool HeightMapChanged;
-            public bool ControlMapChanged;
-            public bool WaterMapChanged;
-            public LandscapeChangeEvent(RectI range, bool heightMap = false, bool controlMap = false, bool waterMap = false) {
-                Range = range;
-                HeightMapChanged = heightMap;
-                ControlMapChanged = controlMap;
-                WaterMapChanged = waterMap;
-            }
-            public bool GetHasChanges() {
-                return HeightMapChanged | ControlMapChanged | WaterMapChanged;
-            }
-
-            // Expand this to include the passed in range/flags
-            public void CombineWith(in LandscapeChangeEvent other) {
-                // If this is the first change, just use it as is.
-                if (!GetHasChanges()) { this = other; return; }
-                // Otherwise inflate our range and integrate changed flags
-                var min = Int2.Min(Range.Min, other.Range.Min);
-                var max = Int2.Max(Range.Max, other.Range.Max);
-                Range = new RectI(min.X, min.Y, max.X - min.X, max.Y - min.Y);
-                HeightMapChanged |= other.HeightMapChanged;
-                ControlMapChanged |= other.ControlMapChanged;
-            }
-            // Create a changed event that covers everything for the entire terrain
-            public static LandscapeChangeEvent MakeAll(Int2 size) {
-                return new LandscapeChangeEvent(new RectI(0, 0, size.X, size.Y), true, true, true);
-            }
-            // Create a changed event that includes nothing
-            public static LandscapeChangeEvent MakeNone() {
-                return new LandscapeChangeEvent(default, false, false, false);
-            }
-        }
-
-        public struct LandscapeHit {
-            public Vector3 mHitPosition;
+            public override string ToString() { return Data.ToString(); }
+            public static WaterCell Default = new();
         }
 
         // Simplified data access API
@@ -143,55 +142,50 @@ namespace Weesals.Landscape {
                 mSizing = sizing;
                 mCells = cells;
             }
-            public ref CellType this[Int2 p] {
-                get => ref mCells[mSizing.ToIndex(p)];
-            }
+            public ref CellType this[int p] => ref mCells[mSizing.ToIndex(p)];
+            public ref CellType this[Int2 p] => ref mCells[mSizing.ToIndex(p)];
         }
-        public struct HeightMapReadOnly {
+        public struct HeightMapReadOnly : IHeightmapReader {
             internal DataReader<HeightCell> Reader;
+            public Int2 Size => Reader.Size;
+            public SizingData Sizing => Reader.mSizing;
             internal HeightMapReadOnly(SizingData sizing, HeightCell[] cells) {
                 Reader = new DataReader<HeightCell>(sizing, cells);
             }
-            public ref HeightCell this[Int2 p] {
-                get => ref Reader[p];
+            public ref HeightCell this[int p] => ref Reader[p];
+            public ref HeightCell this[Int2 p] => ref Reader[p];
+            public int GetHeightAt(Int2 pnt) {
+                if ((uint)pnt.X >= Reader.Size.X || (uint)pnt.Y >= Reader.Size.Y) return 0;
+                return Reader[pnt].Height;
             }
-            public float GetHeightAtF(Vector2 pos) {
-                Vector2 l;
-                var p00 = Reader.mSizing.WorldToLandscape(pos, out l);
-                p00 = Int2.Clamp(p00, 0, Reader.Size - 2);
-                var h00 = Reader[p00];
-                var h10 = Reader[p00 + new Int2(1, 0)];
-                var h01 = Reader[p00 + new Int2(0, 1)];
-                var h11 = Reader[p00 + new Int2(1, 1)];
-                return (
-                    (float)h00.Height * (1.0f - l.X) * (1.0f - l.Y)
-                    + (float)h10.Height * (l.X) * (1.0f - l.Y)
-                    + (float)h01.Height * (1.0f - l.X) * (l.Y)
-                    + (float)h11.Height * (l.X) * (l.Y)
-
-                    ) / (float)HeightScale;
-            }
-        };
-        public struct ControlMapReadOnly {
+        }
+        public struct ControlMapReadOnly : IControlMapReader {
             internal DataReader<ControlCell> Reader;
+            public Int2 Size => Reader.Size;
+            public SizingData Sizing => Reader.mSizing;
             internal ControlMapReadOnly(SizingData sizing, ControlCell[] cells) {
                 Reader = new DataReader<ControlCell>(sizing, cells);
             }
-            public ref ControlCell this[Int2 p] {
-                get => ref Reader[p];
-            }
+            public ref ControlCell this[int p] => ref Reader[p];
+            public ref ControlCell this[Int2 p] => ref Reader[p];
         }
-        public struct WaterMapReadOnly {
+        public struct WaterMapReadOnly : IHeightmapReader {
             internal DataReader<WaterCell> Reader;
+            public Int2 Size => Reader.Size;
+            public SizingData Sizing => Reader.mSizing;
             internal WaterMapReadOnly(SizingData sizing, WaterCell[] cells) {
                 Reader = new DataReader<WaterCell>(sizing, cells);
             }
-            public ref WaterCell this[Int2 p] {
-                get => ref Reader[p];
+            public ref WaterCell this[int p] => ref Reader[p];
+            public ref WaterCell this[Int2 p] => ref Reader[p];
+            public int GetHeightAt(Int2 pnt) {
+                if ((uint)pnt.X >= Reader.Size.X || (uint)pnt.Y >= Reader.Size.Y) return 0;
+                return Reader[pnt].Height;
             }
         }
 
         SizingData mSizing = new SizingData(0);
+        public LandscapeLayerCollection Layers { get; private set; }
         HeightCell[] mHeightMap = Array.Empty<HeightCell>();
         ControlCell[] mControlMap = Array.Empty<ControlCell>();
         WaterCell[]? mWaterMap;
@@ -201,16 +195,26 @@ namespace Weesals.Landscape {
 
         // Listen for changes to the landscape data
         //std::vector<ChangeCallback> mChangeListeners;
-        public Action<LandscapeData, LandscapeChangeEvent> mChangeListeners;
+        public event Action<LandscapeData, LandscapeChangeEvent> OnLandscapeChanged;
 
         public LandscapeData() { }
 
         public SizingData GetSizing() { return mSizing; }
         public Int2 GetSize() { return mSizing.Size; }
         public float GetScale() { return (float)mSizing.Scale1024 / 1024.0f; }
+        public Int2 Size => GetSize();
+        public SizingData Sizing => GetSizing();
 
-        public int GetRevision() { return mRevision; }
-        public bool GetIsWaterEnabled() { return mWaterMap != null; }
+        public int Revision => mRevision;
+        public bool WaterEnabled => mWaterMap != null;
+
+        public void Initialise(LandscapeLayerCollection layers) {
+            Layers = layers;
+        }
+        public void Initialise(Int2 size, LandscapeLayerCollection layers) {
+            Layers = layers;
+            SetSize(size);
+        }
 
         public void SetLocation(Vector3 location) {
             mSizing.Location = location;
@@ -222,7 +226,7 @@ namespace Weesals.Landscape {
             mControlMap = new ControlCell[cellCount];
             Array.Fill(mHeightMap, HeightCell.Default);
             Array.Fill(mControlMap, ControlCell.Default);
-            if (GetIsWaterEnabled()) {
+            if (WaterEnabled) {
                 mWaterMap = new WaterCell[cellCount];
                 Array.Fill(mWaterMap, WaterCell.Default);
             }
@@ -231,6 +235,7 @@ namespace Weesals.Landscape {
             mSizing.Scale1024 = scale1024;
         }
         public void SetWaterEnabled(bool enable) {
+            if (WaterEnabled == enable) return;
             // Resize water to either match heightmap or be erased
             mWaterMap = enable ? new WaterCell[mHeightMap.Length] : null;
         }
@@ -240,8 +245,8 @@ namespace Weesals.Landscape {
         }
         public void NotifyLandscapeChanged(in LandscapeChangeEvent changeEvent) {
             ++mRevision;
-            if (mChangeListeners != null)
-                mChangeListeners(this, changeEvent);
+            if (OnLandscapeChanged != null)
+                OnLandscapeChanged(this, changeEvent);
         }
 
         // Helper accessors
@@ -285,10 +290,10 @@ namespace Weesals.Landscape {
                 // (once the hierarchical cache is generated)
 
                 // Get the heights of the 4 corners
-                var terHeight00 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(0, 0))].GetHeightF();
-                var terHeight10 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(1, 0))].GetHeightF();
-                var terHeight01 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(0, 1))].GetHeightF();
-                var terHeight11 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(1, 1))].GetHeightF();
+                var terHeight00 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(0, 0))].HeightF;
+                var terHeight10 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(1, 0))].HeightF;
+                var terHeight01 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(0, 1))].HeightF;
+                var terHeight11 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(1, 1))].HeightF;
                 // Raycast against the triangles that make up this cell
                 Vector3 bc; float t;
                 if (Geometry.RayTriangleIntersection(localRay,
@@ -322,6 +327,38 @@ namespace Weesals.Landscape {
             return false;
         }
 
+    }
+
+    public static class HeightMapExt {
+        public static float GetHeightAtF<T>(this T heightmap, Vector2 pos) where T : IHeightmapReader{
+            Vector2 l;
+            var p00 = heightmap.Sizing.WorldToLandscape(pos, out l);
+            p00 = Int2.Clamp(p00, 0, heightmap.Sizing.Size - 2);
+            var h00 = heightmap.GetHeightAt(p00);
+            var h10 = heightmap.GetHeightAt(p00 + new Int2(1, 0));
+            var h01 = heightmap.GetHeightAt(p00 + new Int2(0, 1));
+            var h11 = heightmap.GetHeightAt(p00 + new Int2(1, 1));
+            return (
+                (float)h00 * (1.0f - l.X) * (1.0f - l.Y)
+                + (float)h10 * (l.X) * (1.0f - l.Y)
+                + (float)h01 * (1.0f - l.X) * (l.Y)
+                + (float)h11 * (l.X) * (l.Y)
+                ) / (float)LandscapeData.HeightScale;
+        }
+        public static float GetHeightAtF<T>(this T heightmap, Int2 pnt) where T : IHeightmapReader {
+            return heightmap.GetHeightAt(pnt) / LandscapeData.HeightScale;
+        }
+        public static Int2 GetDerivative<T>(this T heightmap, Int2 pnt) where T : IHeightmapReader {
+            var p0 = Int2.Max(pnt - 1, 0);
+            var p1 = Int2.Min(pnt + 1, heightmap.Sizing.Size - 1);
+            var dx = heightmap.GetHeightAt(new Int2(p1.X, pnt.Y)) - heightmap.GetHeightAt(new Int2(p0.X, pnt.Y));
+            var dy = heightmap.GetHeightAt(new Int2(pnt.X, p1.Y)) - heightmap.GetHeightAt(new Int2(pnt.X, p0.Y));
+            return new Int2(dx, dy);
+        }
+        public static Vector3 GetNormalAt<T>(this T heightmap, Int2 pnt) where T : IHeightmapReader {
+            var dd = heightmap.GetDerivative(pnt);
+            return Vector3.Normalize(new Vector3(-dd.X, LandscapeData.HeightScale * 2f, -dd.Y));
+        }
     }
 
 }

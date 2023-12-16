@@ -124,7 +124,7 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual GraphicsDeviceBase* GetGraphics() const = 0;
     virtual void Reset() = 0;
-    virtual void SetRenderTarget(const RenderTarget2D* target) { }
+    virtual void SetRenderTargets(std::span<const RenderTarget2D*> colorTargets, const RenderTarget2D* depthTarget) { }
     virtual void SetViewport(RectInt viewport) { }
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
@@ -148,7 +148,7 @@ public:
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
     void Reset() { mInterop->Reset(); mArena.Clear(); }
     void SetViewport(RectInt viewport) { mInterop->SetViewport(viewport); }
-    void SetRenderTarget(const RenderTarget2D* target) { mInterop->SetRenderTarget(target); }
+    void SetRenderTargets(std::span<const RenderTarget2D*> colorTargets, const RenderTarget2D* depthTarget) { mInterop->SetRenderTargets(colorTargets, depthTarget); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
     int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }

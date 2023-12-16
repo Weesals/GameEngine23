@@ -2,13 +2,17 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
 
 namespace Weesals.UI {
     public interface IHitTest {
-        bool HitTest(Int2 pos);
+        bool HitTest(Vector2 pos);
+    }
+    public interface IHitTestGroup {
+        bool HitTest(Vector2 pos);
     }
     public class HittestGrid {
 
@@ -106,9 +110,8 @@ namespace Weesals.UI {
             public void Reset() { index = cell?.Count ?? 0; }
             public bool MoveNext() {
                 while (true) {
-                    --index;
-                    if (cell == null || index < 0) return false;
-                    if (cell[index].HitTest(pos)) break;
+                    if (cell == null || index <= 0) return false;
+                    if (cell[--index].HitTest(pos)) break;
                 }
                 return true;
             }

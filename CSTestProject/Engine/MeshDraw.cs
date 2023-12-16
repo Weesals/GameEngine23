@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -17,22 +16,22 @@ namespace Weesals.Engine {
             public bool IsValid() { return mPipeline.IsValid(); }
         }
 
-        protected CSMesh mMesh;
+        protected Mesh mMesh;
 		protected List<Material> mMaterials = new();
 		protected List<CSBufferLayout> mBufferLayout = new();
 		protected List<RenderPassCache> mPassCache = new();
 
-        public MeshDraw(CSMesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
-		public MeshDraw(CSMesh mesh, Span<Material> materials) {
+        public MeshDraw(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
+		public MeshDraw(Mesh mesh, Span<Material> materials) {
             mMesh = mesh;
 			foreach (var mat in materials) mMaterials.Add(mat);
         }
 
-        public CSMesh GetMesh() { return mMesh; }
+        public Mesh GetMesh() { return mMesh; }
 		public virtual void InvalidateMesh() {
             mBufferLayout.Clear();
-            mBufferLayout.Add(*mMesh.GetIndexBuffer());
-            mBufferLayout.Add(*mMesh.GetVertexBuffer());
+            mBufferLayout.Add(mMesh.IndexBuffer);
+            mBufferLayout.Add(mMesh.VertexBuffer);
             //mMesh.CreateMeshLayout(mBufferLayout);
             mPassCache.Clear();
         }
@@ -71,11 +70,11 @@ namespace Weesals.Engine {
 	public class MeshDrawInstanced : MeshDraw {
         protected string name;
 		protected BufferLayoutPersistent mInstanceBuffer;
-		public MeshDrawInstanced(CSMesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) {
+		public MeshDrawInstanced(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) {
 		}
-		public MeshDrawInstanced(CSMesh mesh, Span<Material> materials) : base(mesh, materials) {
-            name = mesh.GetMeshData().mName.ToString();
-            mInstanceBuffer = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Instance, 0);
+		public MeshDrawInstanced(Mesh mesh, Span<Material> materials) : base(mesh, materials) {
+            name = mesh.Name.ToString();
+            mInstanceBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
         }
         unsafe public override void InvalidateMesh() {
             base.InvalidateMesh();
@@ -84,8 +83,8 @@ namespace Weesals.Engine {
         public int GetInstanceCount() {
             return mInstanceBuffer.Count;
         }
-		unsafe public int AddInstanceElement(CSIdentifier name, BufferFormat fmt = BufferFormat.FORMAT_R32_UINT, int stride = sizeof(int)) {
-            int id = mInstanceBuffer.AppendElement(new CSBufferElement(name, fmt, stride, null));
+		unsafe public int AddInstanceElement(CSIdentifier name, BufferFormat fmt = BufferFormat.FORMAT_R32_UINT) {
+            int id = mInstanceBuffer.AppendElement(new CSBufferElement(name, fmt));
             mPassCache.Clear();
             return id;
         }
@@ -96,10 +95,11 @@ namespace Weesals.Engine {
                 }
                 mInstanceBuffer.BufferLayout.mCount = count;
                 mInstanceBuffer.CalculateImplicitSize();
-                var el = mInstanceBuffer.Elements[elementId];
-                Unsafe.CopyBlock(el.mData, data, (uint)(count * BufferFormatType.GetMeta(el.mFormat).GetByteSize()));
+                markDirty = true;
             }
             if (markDirty) {
+                var el = mInstanceBuffer.Elements[elementId];
+                Unsafe.CopyBlock(el.mData, data, (uint)(count * BufferFormatType.GetMeta(el.mFormat).GetByteSize()));
                 mInstanceBuffer.BufferLayout.revision++;
                 if (mBufferLayout.Count > 0)
                     mBufferLayout[^1] = mInstanceBuffer.BufferLayout;
@@ -116,7 +116,7 @@ namespace Weesals.Engine {
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config, instanceCount);
         }
         //public void Draw(CSGraphics graphics, RenderQueue* queue, const DrawConfig& config);
-		unsafe public void Draw(CSGraphics graphics, RenderPass pass, CSDrawConfig config) {
+		unsafe public void Draw(CSGraphics graphics, ScenePass pass, CSDrawConfig config) {
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
             var passCache = GetPassCache(graphics);

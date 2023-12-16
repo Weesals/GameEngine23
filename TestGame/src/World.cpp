@@ -64,7 +64,7 @@ void World::Initialise(const std::shared_ptr<Material>& rootMaterial, const std:
     mLandscapeRenderer = std::make_shared<LandscapeRenderer>();
     mLandscapeRenderer->Initialise(mLandscape, rootMaterial);
 
-    mLitMaterial = std::make_shared<Material>(L"assets/retained.hlsl");
+    mLitMaterial = std::make_shared<Material>(L"assets/opaque.hlsl");
     mLitMaterial->InheritProperties(rootMaterial);
     mLitMaterial->SetUniform("Model", Matrix::Identity);
     mLitMaterial->SetUniform("Highlight", Vector4::Zero);

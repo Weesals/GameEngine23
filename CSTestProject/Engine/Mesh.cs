@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -33,8 +32,8 @@ namespace Weesals.Engine {
         unsafe public Mesh(string _name) {
             revision = 0;
             name = _name;
-            vertexBuffer = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Vertex, 0);
-            indexBuffer = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Index, 0);
+            vertexBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Vertex);
+            indexBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Index);
             vertexPositionId = 0;
             vertexNormalId = -1;
             vertexColorId = -1;
@@ -73,25 +72,30 @@ namespace Weesals.Engine {
             RequireVertexElementFormat(ref vertexColorId, fmt, "COLOR");
         }
         public void SetIndexFormat(bool _32bit) {
-            SetIndexCount(0);
             indexBuffer.SetElementFormat(0, _32bit ? BufferFormat.FORMAT_R32_UINT : BufferFormat.FORMAT_R16_UINT);
         }
 
         public void SetVertexCount(int count) {
 		    if (vertexBuffer.Count == count) return;
-            vertexBuffer.AllocResize(0);
-		    MarkChanged();
+            vertexBuffer.AllocResize(count);
+            vertexBuffer.BufferLayout.mCount = count;
+            MarkChanged();
 	    }
         public void SetIndexCount(int count) {
 		    if (indexBuffer.Count == count) return;
             indexBuffer.AllocResize(count);
-		    MarkChanged();
+            indexBuffer.BufferLayout.mCount = count;
+            MarkChanged();
 	    }
 
         public void SetIndices(Span<int> indices) {
 		    SetIndexCount((int)indices.Length);
 		    GetIndicesV().Set(indices);
 	    }
+        public void SetIndices(Span<ushort> indices) {
+            SetIndexCount((int)indices.Length);
+            GetIndicesV<ushort>().Set(indices);
+        }
 
         public TypedBufferView<Vector3> GetPositionsV() {
             return new TypedBufferView<Vector3>(vertexBuffer.Elements[vertexPositionId], vertexBuffer.Count);
@@ -110,6 +114,9 @@ namespace Weesals.Engine {
         }
         public TypedBufferView<int> GetIndicesV(bool require = false) {
             return new TypedBufferView<int>(indexBuffer.Elements[0], indexBuffer.Count);
+        }
+        public TypedBufferView<T> GetIndicesV<T>(bool require = false) where T : unmanaged {
+            return new TypedBufferView<T>(indexBuffer.Elements[0], indexBuffer.Count);
         }
 
 

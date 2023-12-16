@@ -83,7 +83,9 @@ namespace Weesals.Engine {
 
     public struct Int2 : IEquatable<Int2> {
 	    public int X, Y;
-	    public Int2(int v) : this(v, v) { }
+        public int LengthSquared => (X * X + Y * Y);
+        public float Length => MathF.Sqrt(LengthSquared);
+        public Int2(int v) : this(v, v) { }
         public Int2(int _x, int _y) { X = _x; Y = _y; }
 	    public Int2(Vector2 o) { X = ((int)o.X); Y = ((int)o.Y); }
         public bool Equals(Int2 o) { return X == o.X && Y == o.Y; }
@@ -97,8 +99,13 @@ namespace Weesals.Engine {
 	    public static Int2 operator /(Int2 o1, int o) { return new Int2(o1.X / o, o1.Y / o); }
 	    public static bool operator ==(Int2 o1, Int2 o2) { return o1.X == o2.X && o1.Y == o2.Y; }
 	    public static bool operator !=(Int2 o1, Int2 o2) { return o1.X != o2.X || o1.Y != o2.Y; }
-        
-	    public static Int2 Min(Int2 v1, Int2 v2) { return new Int2(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y)); }
+        public static Int2 operator >>(Int2 o1, int o) { return new Int2(o1.X >> o, o1.Y >> o); }
+        public static Int2 operator <<(Int2 o1, int o) { return new Int2(o1.X << o, o1.Y << o); }
+        public static Int2 operator &(Int2 o1, int o) { return new Int2(o1.X & o, o1.Y & o); }
+        public static Int2 operator |(Int2 o1, int o) { return new Int2(o1.X | o, o1.Y | o); }
+        public static Int2 operator ^(Int2 o1, int o) { return new Int2(o1.X ^ o, o1.Y ^ o); }
+
+        public static Int2 Min(Int2 v1, Int2 v2) { return new Int2(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y)); }
 	    public static Int2 Max(Int2 v1, Int2 v2) { return new Int2(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y)); }
         public static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return new Int2(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y)); }
         public static int Dot(Int2 v1, Int2 v2) { return v1.X * v2.X + v1.Y * v2.Y; }
@@ -106,7 +113,8 @@ namespace Weesals.Engine {
         public static int CMul(Int2 v) { return v.X * v.Y; }
 
         public static Int2 FloorToInt(Vector2 v) { return new Int2((int)MathF.Floor(v.X), (int)MathF.Floor(v.Y)); }
-	    public static Int2 CeilToInt(Vector2 v) { return new Int2((int)MathF.Ceiling(v.X), (int)MathF.Ceiling(v.Y)); }
+        public static Int2 RoundToInt(Vector2 v) { return new Int2((int)MathF.Round(v.X), (int)MathF.Round(v.Y)); }
+        public static Int2 CeilToInt(Vector2 v) { return new Int2((int)MathF.Ceiling(v.X), (int)MathF.Ceiling(v.Y)); }
 
         public static implicit operator Int2(Vector2 v) { return new Int2(v); }
         public static implicit operator Int2(int v) { return new Int2(v, v); }
@@ -116,6 +124,32 @@ namespace Weesals.Engine {
         public override string ToString() { return "<" + X + "," + Y + ">"; }
         public static readonly Int2 Zero = new Int2(0);
         public static readonly Int2 One = new Int2(1);
+    }
+    public struct Int3 : IEquatable<Int3> {
+        public int X, Y, Z;
+        public Int3(int v) : this(v, v, v) { }
+        public Int3(int _x, int _y, int _z) { X = _x; Y = _y; Z = _z; }
+        public Int3(Vector3 o) : this((int)o.X, (int)o.Y, (int)o.Z) { }
+        public bool Equals(Int3 o) { return X == o.X && Y == o.Y && Z == o.Z; }
+        unsafe public Int2 XY { get => new Int2(X, Y); set { X = value.X; Y = value.Y; } }
+        unsafe public Int2 XZ { get => new Int2(X, Z); set { X = value.X; Z = value.Y; } }
+        public static Int3 operator +(Int3 v, Int3 o) { return new Int3(v.X + o.X, v.Y + o.Y, v.Z + o.Z); }
+        public static Int3 operator -(Int3 v, Int3 o) { return new Int3(v.X - o.X, v.Y - o.Y, v.Z - o.Z); }
+        public static Int3 operator *(Int3 v, Int3 o) { return new Int3(v.X * o.X, v.Y * o.Y, v.Z * o.Z); }
+        public static Int3 operator /(Int3 v, Int3 o) { return new Int3(v.X / o.X, v.Y / o.Y, v.Z / o.Z); }
+        public static Int3 operator +(Int3 v, int o) { return new Int3(v.X + o, v.Y + o, v.Z + o); }
+        public static Int3 operator -(Int3 v, int o) { return new Int3(v.X - o, v.Y - o, v.Z - o); }
+        public static Int3 operator *(Int3 v, int o) { return new Int3(v.X * o, v.Y * o, v.Z * o); }
+        public static Int3 operator /(Int3 v, int o) { return new Int3(v.X / o, v.Y / o, v.Z / o); }
+
+        public static Int3 Min(Int3 v1, Int3 v2) { return new Int3(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y), Math.Min(v1.Z, v2.Z)); }
+        public static Int3 Max(Int3 v1, Int3 v2) { return new Int3(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y), Math.Max(v1.Z, v2.Z)); }
+        public static Int3 Clamp(Int3 v, Int3 min, Int3 max) {
+            return new Int3(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y), Math.Clamp(v.Z, min.Z, max.Z));
+        }
+
+        public static implicit operator Int3(int v) { return new Int3(v); }
+        public static implicit operator Vector3(Int3 v) { return new Vector3((float)v.X, (float)v.Y, (float)v.Z); }
     }
     public struct Int4 : IEquatable<Int4> {
         public int X, Y, Z, W;
@@ -149,6 +183,7 @@ namespace Weesals.Engine {
         public Vector2 ToVector2() { return new Vector2(X, Y); }
         public bool Equals(Short2 o) { return X == o.X && Y == o.Y; }
         public override string ToString() { return $"<{X}, {Y}>"; }
+        public override int GetHashCode() { return X + (Y << 16); }
     }
     public struct UShort2 : IEquatable<UShort2> {
         public ushort X, Y;
@@ -157,6 +192,7 @@ namespace Weesals.Engine {
         public Vector2 ToVector2() { return new Vector2(X, Y); }
         public bool Equals(UShort2 o) { return X == o.X && Y == o.Y; }
         public override string ToString() { return $"<{X}, {Y}>"; }
+        public override int GetHashCode() { return X + (Y << 16); }
     }
 
     public struct Color : IEquatable<Color> {
@@ -239,7 +275,7 @@ namespace Weesals.Engine {
         public RectF Lerp(RectF other) { return new RectF(Lerp(other.Min), other.Size * Size); }
         public RectF ExpandToInclude(RectF other) { return FromMinMax(Vector2.Min(Min, other.Min), Vector2.Max(Max, other.Max)); }
         public RectF ExpandToInclude(Vector2 pnt) { return FromMinMax(Vector2.Min(Min, pnt), Vector2.Max(Max, pnt)); }
-        public bool Overlaps(RectF other) { return Left < other.Right && Top < other.Bottom && Right > other.Left && Bottom > other.Top; }
+        public bool Overlaps(RectF other) { return X < other.Right && Y < other.Bottom && Right > other.X && Bottom > other.Y; }
         public RectF Inset(float v) { return Inset(new Vector2(v, v)); }
         public RectF Inset(Vector2 v) { return new RectF(Min + v, Size - v * 2f); }
 
@@ -283,6 +319,7 @@ namespace Weesals.Engine {
 
         public RectI ExpandToInclude(Int2 pnt) { return FromMinMax(Int2.Min(Min, pnt), Int2.Max(Max, pnt)); }
         public RectI ExpandToInclude(RectI other) { return FromMinMax(Int2.Min(Min, other.Min), Int2.Max(Max, other.Max)); }
+        public RectI ClampToBounds(RectI bounds) { return FromMinMax(Int2.Max(Min, bounds.Min), Int2.Min(Max, bounds.Max)); }
 
         public override bool Equals(object? obj) { return obj is RectI i && Equals(i); }
         public bool Equals(RectI other) { return X == other.X && Y == other.Y && Width == other.Width && Height == other.Height; }

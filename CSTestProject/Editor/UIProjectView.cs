@@ -62,7 +62,7 @@ namespace Weesals.Editor {
                     }
                 }
             }
-            public void SetSelected(ISelectable selectable) {
+            public void SetSelected(ISelectable? selectable) {
                 if (selectedFolder == selectable) return;
                 if (selectedFolder != null) selectedFolder.OnSelected(false);
                 selectedFolder = selectable as FolderView;
@@ -74,12 +74,30 @@ namespace Weesals.Editor {
                 public Sprite? Icon;
                 public static FileType Folder = new() { Icon = Resources.TryLoadSprite("FolderIcon"), };
                 public static FileType File = new() { Icon = Resources.TryLoadSprite("FileIcon"), };
+                public static FileType ShaderFile = new() { Icon = Resources.TryLoadSprite("FileShader"), };
+                public static FileType TextFile = new() { Icon = Resources.TryLoadSprite("FileText"), };
+                public static FileType ModelFile = new() { Icon = Resources.TryLoadSprite("FileModel"), };
+                public static FileType ImageFile = new() { Icon = Resources.TryLoadSprite("FileImage"), };
             }
-            public class FileView : Selectable, IPointerClickHandler, IBeginDragHandler {
+            public class FileView : Selectable, IPointerClickHandler, IBeginDragHandler, ICustomTransformer {
+                public class FileAnimator : ICustomTransformer {
+                    public DateTime BeginTime;
+                    public TimeSpan TimeSince => DateTime.UtcNow - BeginTime;
+                    public bool IsComplete => TimeSince >= TimeSpan.FromSeconds(1f);
+                    public void Begin() {
+                        BeginTime = DateTime.UtcNow;
+                    }
+                    public void Apply(CanvasRenderable renderable, ref TransformerContext context) {
+                        var scale = Easing.PowerOut(1f).Evaluate((float)TimeSince.TotalSeconds);
+                        context.Layout = context.Layout.Scale(scale);
+                        context.IsComplete = IsComplete;
+                    }
+                }
                 public readonly string Filename;
                 public readonly FileType Type;
                 public Image Icon;
                 public TextBlock Text;
+                private FileAnimator animator;
                 public FileView(string filename, FileType type) {
                     Filename = filename;
                     Type = type;
@@ -88,8 +106,8 @@ namespace Weesals.Editor {
                     };
                     Text = new(Path.GetFileName(filename)) {
                         FontSize = 10,
-                        DisplayParameters = TextDisplayParameters.Flat,
                         Color = Color.Black,
+                        DisplayParameters = TextDisplayParameters.Flat,
                     };
                     Icon.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 1f, 1f).WithOffsets(10f, 0f, -10f, -32f));
                     Text.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 1f, 1f, 1f).WithOffsets(0f, -32f, 0f, 0f));
@@ -114,7 +132,11 @@ namespace Weesals.Editor {
                     }
                 }
                 public void OnBeginDrag(PointerEvent events) {
+                    if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
                     events.System.DragDropManager.BeginDrag(events, this);
+                    if (animator == null) animator = new();
+                    animator.Begin();
+                    MarkTransformDirty();
                 }
 
                 private void LaunchFile() {
@@ -124,6 +146,11 @@ namespace Weesals.Editor {
                     process.Start();
                 }
                 public override string ToString() { return Filename; }
+
+                public void Apply(CanvasRenderable renderable, ref TransformerContext context) {
+                    if (animator != null) animator.Apply(renderable, ref context);
+                    else context.IsComplete = true;
+                }
             }
 
             ScrollView scrollView = new() { ScrollMask = new Vector2(0f, 1f), Margins = new RectF(-5f, -5f, 10f, 10), };
@@ -140,7 +167,14 @@ namespace Weesals.Editor {
                     filesGrid.AppendChild(new FileView(folder, FileType.Folder));
                 }
                 foreach (var file in Directory.EnumerateFiles(ContentPath)) {
-                    filesGrid.AppendChild(new FileView(file, FileType.File));
+                    filesGrid.AppendChild(new FileView(file,
+                        file.EndsWith("hlsl", StringComparison.OrdinalIgnoreCase) ? FileType.ShaderFile :
+                        file.EndsWith("txt", StringComparison.OrdinalIgnoreCase) ? FileType.TextFile :
+                        file.EndsWith("fbx", StringComparison.OrdinalIgnoreCase) ? FileType.ModelFile :
+                        file.EndsWith("png", StringComparison.OrdinalIgnoreCase) ? FileType.ImageFile :
+                        file.EndsWith("jpg", StringComparison.OrdinalIgnoreCase) ? FileType.ImageFile :
+                        FileType.File
+                    ));
                 }
             }
         }

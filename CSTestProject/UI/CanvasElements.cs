@@ -1,6 +1,6 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
@@ -154,7 +154,10 @@ namespace Weesals.UI {
                     8, 9, 12, 9, 13, 12, 9, 10, 13, 10, 14, 13, 10, 11, 14, 11, 15, 14,
                 }
                 : stackalloc uint[] { 0, 1, 2, 1, 3, 2, };
-            buffers.GetIndices().Set(indices);
+            var outIndices = buffers.GetIndices();
+            for (int i = 0; i < indices.Length; ++i) {
+                outIndices[i] = (uint)(buffers.VertexOffset + indices[i]);
+            }
             buffers.MarkIndicesChanged();
         }
         public void MarkLayoutDirty() {
@@ -498,12 +501,12 @@ namespace Weesals.UI {
                 var tbuffers = mBuilder.MapVertices(elementId);
 				var indices = tbuffers.GetIndices();
 				for (int v = 0, i = 0; i < indices.mCount; i += 6, v += 4) {
-					indices[i + 0] = (uint)(v + 0);
-					indices[i + 1] = (uint)(v + 1);
-					indices[i + 2] = (uint)(v + 2);
-					indices[i + 3] = (uint)(v + 1);
-					indices[i + 4] = (uint)(v + 3);
-					indices[i + 5] = (uint)(v + 2);
+					indices[i + 0] = (uint)(tbuffers.VertexOffset + v + 0);
+					indices[i + 1] = (uint)(tbuffers.VertexOffset + v + 1);
+					indices[i + 2] = (uint)(tbuffers.VertexOffset + v + 2);
+					indices[i + 3] = (uint)(tbuffers.VertexOffset + v + 1);
+					indices[i + 4] = (uint)(tbuffers.VertexOffset + v + 3);
+					indices[i + 5] = (uint)(tbuffers.VertexOffset + v + 2);
 				}
                 tbuffers.MarkIndicesChanged();
             }
@@ -564,16 +567,16 @@ namespace Weesals.UI {
         }
         public void Dispose(Canvas canvas) {
             frame.Dispose(canvas);
+            IsDirty = true;
         }
+        public void MarkLayoutDirty() { frame.MarkLayoutDirty(); IsDirty = true; }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
-            frame.MarkLayoutDirty();
             var tlayout = layout;
             var tsince = DateTime.UtcNow - beginTime;
             var scale = Easing.BubbleIn(0.3f).WithFromTo(0.5f, 1.0f).Evaluate((float)tsince.TotalSeconds);
-            var smin = 0.5f - 0.5f * scale;
-            var smax = 0.5f + 0.5f * scale;
-            tlayout = tlayout.MinMaxNormalized(smin, smin, smax, smax);
+            tlayout = tlayout.Scale(scale);
             frame.UpdateLayout(canvas, tlayout);
+            if (tsince < TimeSpan.FromSeconds(0.3f)) MarkLayoutDirty();
             if (tsince > TimeSpan.FromSeconds(0.3f)) IsDirty = false;
         }
         public void Append(ref CanvasCompositor.Context compositor) {
@@ -642,7 +645,6 @@ namespace Weesals.UI {
             public LinkedListNode<Node> mNode;
             public int mElementId;
             public int mBatchId;
-            public bool mTransient;
 		};
         public struct BatchElement {
             public RangeInt IndexRange;
@@ -655,7 +657,8 @@ namespace Weesals.UI {
             public RangeInt mIndexAlloc;
             public RangeInt ElementRange;
             public RectF MeshBounds;
-		};
+            public RangeInt IndexRange => new RangeInt(mIndexAlloc.Start, mIndexCount);
+        };
         public struct ClippingRect {
             public CanvasLayout Layout;
         }
@@ -688,7 +691,7 @@ namespace Weesals.UI {
         CanvasMeshBuffer mBuilder;
         public CanvasCompositor(CanvasMeshBuffer builder) {
 			mBuilder = builder;
-            mIndices = new BufferLayoutPersistent(0, BufferLayoutPersistent.Usages.Index, 0);
+            mIndices = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Index);
             mIndices.AppendElement(new CSBufferElement("INDEX", BufferFormat.FORMAT_R32_UINT));
         }
         public void Dispose() {
@@ -721,12 +724,12 @@ namespace Weesals.UI {
         public BufferLayoutPersistent GetIndices() { return mIndices; }
         private RectF ComputeElementBounds(int elementId) {
             var verts = mBuilder.MapVertices(elementId);
-            var vpositions = verts.GetPositions2D();
-            vpositions.AssetRequireReader();
-            Vector2 boundsMin = vpositions[0];
+            var positions = verts.GetPositions2D();
+            positions.AssetRequireReader();
+            Vector2 boundsMin = positions[0];
             Vector2 boundsMax = boundsMin;
-            for (int i = 1; i < vpositions.mCount; ++i) {
-                var pos = vpositions[i];
+            for (int i = 1; i < positions.mCount; ++i) {
+                var pos = positions[i];
                 boundsMin = Vector2.Min(boundsMin, pos);
                 boundsMax = Vector2.Max(boundsMax, pos);
             }
@@ -734,40 +737,50 @@ namespace Weesals.UI {
             return verts.VertexBounds;
         }
         private bool GetOverlaps(Batch batch, int elementId, RectF elBounds) {
-            var vertices = mBuilder.GetPositions();
-            var batchIndices = new TypedBufferView<uint>(mIndices.Elements[0], batch.mIndexAlloc);
-            foreach (var el in batchElements.Slice(batch.ElementRange)) {
+            var elements = batchElements.Slice(batch.ElementRange);
+            for (int e = elements.Count - 1; e >= 0; --e) {
+                var el = elements[e];
+                if (el.IndexRange.Start == -1) {
+                    if (!el.MeshBounds.Overlaps(elBounds))
+                        e -= el.IndexRange.Length;
+                    continue;
+                }
                 if (!el.MeshBounds.Overlaps(elBounds)) continue;
-                var elVertices = mBuilder.MapVertices(elementId);
-                var elIndices = elVertices.GetIndices();
+                var vertices = mBuilder.GetPositions<Vector2>();
+                var bIndices = new TypedBufferView<uint>(mIndices.Elements[0], batch.IndexRange);
+                var elIndices = mBuilder.MapIndices(elementId);
                 for (int i = 0; i < el.IndexRange.Length; i += 3) {
                     int i1 = el.IndexRange.Start + i;
-                    var t0v0 = vertices[batchIndices[i1 + 0]].toxy();
-                    var t0v1 = vertices[batchIndices[i1 + 1]].toxy();
-                    var t0v2 = vertices[batchIndices[i1 + 2]].toxy();
+                    var t0v0 = vertices[bIndices[i1 + 0]];
+                    var t0v1 = vertices[bIndices[i1 + 1]];
+                    var t0v2 = vertices[bIndices[i1 + 2]];
                     for (int i2 = 0; i2 < elIndices.mCount; i2 += 3) {
-                        var t1v0 = vertices[(uint)elVertices.VertexOffset + elIndices[i2 + 0]].toxy();
-                        var t1v1 = vertices[(uint)elVertices.VertexOffset + elIndices[i2 + 1]].toxy();
-                        var t1v2 = vertices[(uint)elVertices.VertexOffset + elIndices[i2 + 2]].toxy();
+                        var t1v0 = vertices[elIndices[i2 + 0]];
+                        var t1v1 = vertices[elIndices[i2 + 1]];
+                        var t1v2 = vertices[elIndices[i2 + 2]];
                         if (Geometry.GetTrianglesOverlap(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2)) return true;
                     }
                 }
             }
             return false;
         }
-        private int RequireBatchForElement(int elementId, Material material, RectF bounds) {
+        private int RequireBatchForElement(int elementId, Material material, RectF bounds, int icount) {
+            const int MaxBatchSize = 15 * 1024 * 3;
+            const int MaxOverlapSize = 5 * 1024 * 3;
             var matHash = (material?.GetHashCode() ?? 0);
             matHash += matStackHash;
             for (int batchId = mBatches.Count - 1; batchId >= 0; --batchId) {
                 var batch = mBatches[batchId];
                 // If materials match, use this batch
                 if (batch.MaterialHash == matHash) {
-                    // Avoid huge batches (expensive to overlap query, no real processing savings)
-                    if (batch.mIndexAlloc.Length < 10 * 1024 * 3) return batchId;
+                    // Avoid huge batches (expensive to reallocate)
+                    if (batch.mIndexCount <= Math.Max(MaxBatchSize, batch.mIndexAlloc.Length - icount)) return batchId;
                 }
                 // Cant merge with anything under batch 0
                 if (batchId == 0) break;
                 if (!batch.MeshBounds.Overlaps(bounds)) continue;
+                // Dont do expensive overlaps test with large buffers
+                if (batch.mIndexCount > MaxOverlapSize) break;
                 if (GetOverlaps(batch, elementId, bounds)) break;
             }
             var materials = new Material[(material != null ? 1 : 0) + materialStack.Count];
@@ -784,12 +797,12 @@ namespace Weesals.UI {
         public void AppendElementData(int elementId, Material material) {
 			var verts = mBuilder.MapVertices(elementId);
             var inds = verts.GetIndices();
-            if (inds.mCount == 0) return;
+            //Debug.Assert(inds.mCount > 0);
 
             // Determine valid batch to insert into
             var bounds = verts.VertexBounds;
             if (bounds.Width == -1f) bounds = ComputeElementBounds(elementId);
-            int batchId = RequireBatchForElement(elementId, material, bounds);
+            int batchId = RequireBatchForElement(elementId, material, bounds, inds.mCount);
             if (clippingRects.Count > 0) {
                 var top = clippingRects[^1];
                 var localBounds = bounds;
@@ -800,9 +813,9 @@ namespace Weesals.UI {
             }
 
             ref var batch = ref mBatches[batchId];
-            var oldRange = batch.mIndexAlloc;
             var newICount = batch.mIndexCount + inds.mCount;
             if (newICount > batch.mIndexAlloc.Length) {
+                var oldRange = batch.mIndexAlloc;
                 if (batch.mIndexAlloc.Length > 0 && batch.mIndexAlloc.End == mIndices.Count) {
                     // We can directly consume at the end of the array (mIndices will be resized below)
                     batch.mIndexAlloc.Length += inds.mCount;
@@ -816,25 +829,27 @@ namespace Weesals.UI {
                         batch.mIndexAlloc = new RangeInt(mIndices.Count, reqCount);
                     }
                 }
-            }
-            // Resize index buffer to contain index range
-            mIndices.BufferLayout.mCount = Math.Max(mIndices.BufferLayout.mCount, batch.mIndexAlloc.End);
-            if (mIndices.BufferCapacityCount < mIndices.BufferLayout.mCount) {
-                int resize = Math.Max(mIndices.BufferCapacityCount + 2048, mIndices.BufferLayout.mCount);
-                mIndices.AllocResize(resize);
-            }
-            // If batch was moved, copy data
-            if (batch.mIndexAlloc.Start != oldRange.Start) {
-                mIndices.CopyRange(oldRange.Start, batch.mIndexAlloc.Start, batch.mIndexCount);
-                mIndices.InvalidateRange(oldRange.Start, oldRange.Length);
-                mUnusedIndices.Return(ref oldRange);
-                mIndices.BufferLayout.mCount -= mUnusedIndices.Compact(mIndices.BufferLayout.mCount);
+                // Resize index buffer to contain index range
+                if (batch.mIndexAlloc.End > mIndices.BufferLayout.mCount) {
+                    mIndices.BufferLayout.mCount = batch.mIndexAlloc.End;
+                    if (mIndices.BufferCapacityCount < mIndices.BufferLayout.mCount) {
+                        int resize = Math.Max(mIndices.BufferCapacityCount + 2048, mIndices.BufferLayout.mCount);
+                        mIndices.AllocResize(resize);
+                    }
+                }
+                // If batch was moved, copy data
+                if (batch.mIndexAlloc.Start != oldRange.Start && batch.mIndexCount > 0) {
+                    mIndices.CopyRange(oldRange.Start, batch.mIndexAlloc.Start, batch.mIndexCount);
+                    //mIndices.InvalidateRange(oldRange.Start, oldRange.Length);
+                    mUnusedIndices.Return(ref oldRange);
+                    mIndices.BufferLayout.mCount -= mUnusedIndices.Compact(mIndices.BufferLayout.mCount);
+                }
             }
             // Write the index values
             var subRegionIndRange = new RangeInt(batch.mIndexCount, inds.mCount);
             var elIndexRange = new RangeInt(batch.mIndexAlloc.Start + batch.mIndexCount, inds.mCount);
             var elIndices = new TypedBufferView<uint>(mIndices.Elements[0], elIndexRange);
-			for (int i = 0; i < inds.mCount; ++i) elIndices[i] = (uint)(inds[i] + verts.VertexOffset);
+            inds.CopyTo(elIndices);
             batch.MeshBounds = batch.MeshBounds.ExpandToInclude(bounds);
 
             batch.mIndexCount = newICount;
@@ -848,19 +863,62 @@ namespace Weesals.UI {
                 var combinedBounds = lastEl.MeshBounds.ExpandToInclude(bounds);
                 var origArea = lastEl.MeshBounds.Area;
                 var combinedArea = combinedBounds.Area;
-                if (combinedArea < MathF.Max(origArea * 1.2f, 50f * 50f)) {
+                if (combinedArea < MathF.Max(origArea * 1.1f, 50f * 50f) && lastEl.IndexRange.Length < 512) {
                     lastEl.MeshBounds = combinedBounds;
                     lastEl.IndexRange.Length += subRegionIndRange.Length;
                     combine = true;
                 }
             }
             if (!combine) {
+                while (true) {
+                    var level = GetQuadLevelPrecise(batch.ElementRange.Length + 1);
+                    if (level == 0) break;
+                    var count = GetLevelQuad(level - 1) + 1;
+                    RectF quadBounds = batchElements[batch.ElementRange.End - 1].MeshBounds;
+                    int iBeg = batch.ElementRange.Length - 1;
+                    int iEnd = iBeg - count * 4;
+                    for (int i = iBeg; i > iEnd; i -= count) {
+                        quadBounds = quadBounds.ExpandToInclude(batchElements[batch.ElementRange.Start + i].MeshBounds);
+                    }
+                    batchElements.Append(ref batch.ElementRange, new BatchElement() {
+                        MeshBounds = quadBounds,
+                        IndexRange = new RangeInt(-1, count * 4),
+                    });
+                }
                 Debug.Assert(subRegionIndRange.End <= batch.mIndexCount);
                 batchElements.Append(ref batch.ElementRange, new BatchElement() {
                     MeshBounds = bounds,
                     IndexRange = subRegionIndRange,
                 });
             }
+        }
+        private static int GetQuadLevelPrecise(int quad) {
+            int level = GetQuadLevel(quad);
+            for (; level > 0; --level) {
+                int quadStride = GetLevelQuad(level) + 1;
+                Debug.Assert(quad >= 0);
+                while (quad >= quadStride) quad -= quadStride;
+                if (quad == 0) return level;
+            }
+            return 0;
+        }
+        // Get the level for the specified quad index
+        // 0,0,0,0, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 2,2,..
+        private static int GetQuadLevel(int quad) {
+            return (31 - BitOperations.LeadingZeroCount((uint)(quad + 1) * 3 + 1)) / 2 - 1;
+        }
+        // Get the quad index at the start of each level
+        // 0, 4, 20, 84,..
+        private static int GetLevelQuad(int level) {
+            return (int)((1u << (2 * (level + 1))) - 1) / 3 - 1;
+        }
+        private static int GetLevelQuadCount(int level) {
+            return (int)(1u << (2 * (level + 1)));
+        }
+        // Gets the id of the highest index at the start of each level:
+        // 0, 3, 15, 63,..
+        private static int GetLevelIndex(int level) {
+            return (int)(1u << (2 * level)) - 1;
         }
         public struct Builder {
 			public CanvasCompositor mCompositor;
@@ -876,16 +934,8 @@ namespace Weesals.UI {
 				if (where == null) return list.AddLast(item);
 				else return list.AddBefore(where, item);
             }
-            public void AppendItem(LinkedListNode<Node> node, CanvasElement element, bool transient) {
-                if (!transient) {
-                    while (mItem != null && mItem.ValueRef.mNode == node && mItem.ValueRef.mTransient) {
-                        var remove = mItem;
-                        mCompositor.mBuilder.Deallocate(remove.ValueRef.mElementId);
-                        mCompositor.mItems.Remove(remove);
-                        mItem = mItem.Next;
-                    }
-                }
-                if (mItem != null && mItem.ValueRef.mNode == node && mItem.ValueRef.mTransient == transient) {
+            public void AppendItem(LinkedListNode<Node> node, CanvasElement element) {
+                if (mItem != null && mItem.ValueRef.mNode == node) {
                     mItem.ValueRef.mElementId = element.ElementId;
                     mItem = mItem.Next;
 				}
@@ -893,7 +943,6 @@ namespace Weesals.UI {
 					InsertBefore(mCompositor.mItems, mItem, new Item{
 						mNode = node,
 						mElementId = element.ElementId,
-                        mTransient = transient,
                         //mBatchId = batchId,
                     });
 				}
@@ -920,9 +969,6 @@ namespace Weesals.UI {
 					while (mItem != null && mItem.ValueRef.mNode == node) {
                         var item = mItem;
                         mItem = item.Next;
-                        if (item.ValueRef.mTransient) {
-                            mCompositor.mBuilder.Deallocate(item.ValueRef.mElementId);
-                        }
                         mCompositor.mItems.Remove(item);
                     }
                     var child = mChildBefore!.Next;
@@ -940,18 +986,13 @@ namespace Weesals.UI {
         public ref struct Context {
 			ref Builder mBuilder;
             public LinkedListNode<Node> mNode;
-            private int transientId;
             public Context(ref Builder builder, LinkedListNode<Node> node) {
                 mBuilder = ref builder;
 				mNode = node;
-                transientId = -1;
             }
             public CanvasCompositor GetCompositor() { return mBuilder.mCompositor; }
             public void Append(CanvasElement element) {
-                Debug.Assert(transientId == -1 || transientId == element.ElementId,
-                    "Expected transient ID. Append must appear directly after CreateTransient<>");
-				mBuilder.AppendItem(mNode, element, transientId != -1);
-                transientId = -1;
+				mBuilder.AppendItem(mNode, element);
             }
             public Context InsertChild(object element) {
 				return new Context(ref mBuilder, mBuilder.InsertChild(mNode, element));
@@ -962,14 +1003,6 @@ namespace Weesals.UI {
 			}
             public ref T CreateTransient<T>(Canvas canvas) where T : ICanvasTransient, new() {
                 return ref mBuilder.mCompositor.RequireTransient<T>(mNode, canvas);
-                /*var item = new T();
-                var itemNode = mBuilder.mItem;
-                var elementId =
-                    itemNode != null && itemNode.ValueRef.mTransient ? itemNode.ValueRef.mElementId
-                    : mBuilder.mCompositor.mBuilder.Allocate(0, 0);
-                item.InitializeTransient(canvas, elementId);
-                transientId = elementId;
-                return item;*/
             }
 
             public CanvasCompositor.TransformerRef PushTransformer(Matrix3x2 transform) {
@@ -990,7 +1023,6 @@ namespace Weesals.UI {
 
         public Builder CreateBuilder(Canvas canvas) {
             transientCache.Reset(canvas);
-            mIndices.BufferLayout.revision++;
             Clear();
             if (mNodes.Count == 0) {
 				mNodes.AddFirst(new Node{ mContext = null, mParent = null, });
@@ -1000,6 +1032,39 @@ namespace Weesals.UI {
         public Context CreateRoot(ref Builder builder) {
 			return new Context(ref builder, mNodes.First!);
 		}
+        public void EndBuild(Builder builder) {
+            CompactIndexBuffer();
+            mIndices.BufferLayout.revision++;
+
+            /*string v = "";
+            for (int i = 0; i < 100; i++) {
+                var lvl = GetQuadLevelPrecise(i);
+                v += lvl + ",";
+            }
+            Console.WriteLine(v);*/
+        }
+
+        public void CompactIndexBuffer() {
+            int bindex = 0;
+            int cindex = 0;
+            foreach (ref var batch in mBatches) {
+                if (batch.mIndexAlloc.Length > batch.mIndexCount) {
+                    mUnusedIndices.Return(batch.mIndexAlloc.Start + batch.mIndexCount, batch.mIndexAlloc.Length - batch.mIndexCount);
+                    batch.mIndexAlloc.Length = batch.mIndexCount;
+                }
+            }
+            for (int i = 0; i <= mUnusedIndices.Ranges.Count; ++i) {
+                var range = i < mUnusedIndices.Ranges.Count ? mUnusedIndices.Ranges[i] : new RangeInt(mIndices.Count, 0);
+                foreach (ref var batch in mBatches) {
+                    if (batch.mIndexAlloc.Start >= bindex && batch.mIndexAlloc.Start < range.Start) batch.mIndexAlloc.Start += cindex - bindex;
+                }
+                mIndices.CopyRange(bindex, cindex, range.Start - bindex);
+                cindex += range.Start - bindex;
+                bindex = range.End;
+            }
+            mUnusedIndices.Clear();
+            mIndices.BufferLayout.mCount = cindex;
+        }
 
         public unsafe void Render(CSGraphics graphics, Material material) {
             if (mIndices.Count == 0) return;
@@ -1008,6 +1073,7 @@ namespace Weesals.UI {
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
             bindings[0] = mIndices.BufferLayout;
             bindings[1] = vertices.BufferLayout;
+            bindings[0].size = mIndices.BufferLayout.mCount * mIndices.BufferStride;
             using var materials = new PooledList<Material>(2);
             foreach (var batch in mBatches) {
                 materials.Clear();

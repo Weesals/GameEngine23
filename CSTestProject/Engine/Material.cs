@@ -1,7 +1,7 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -109,6 +109,7 @@ namespace Weesals.Engine {
         public abstract void EvaluateValue(Span<byte> output, ref MaterialEvaluatorContext context);
         public abstract void SourceValue(Span<byte> output, ref MaterialCollectorContext context);
     }
+#pragma warning disable CS8500 // This takes the address of, gets the size of, or declares a pointer to a managed type
     unsafe public ref struct ComputedContext {
         public enum Modes { Source, Evaluate, }
         public void* Context;
@@ -132,6 +133,7 @@ namespace Weesals.Engine {
             //return Context.GetUniform<T>(name);
         }
     }
+#pragma warning restore CS8500 // This takes the address of, gets the size of, or declares a pointer to a managed type
     public class ComputedParameter<T> : ComputedParameterBase where T : unmanaged {
         public delegate T Getter(ref ComputedContext context);
         public Getter Lambda;
@@ -270,8 +272,10 @@ namespace Weesals.Engine {
 
         // Set various uniform values
         unsafe public Span<byte> SetValue<T>(CSIdentifier name, T v) where T : unmanaged {
+#pragma warning disable CS9087 // This returns a parameter by reference but it is not a ref parameter
             return SetValue(name, new Span<T>(ref v));
-	    }
+#pragma warning restore CS9087 // This returns a parameter by reference but it is not a ref parameter
+        }
         unsafe public Span<byte> SetTexture(CSIdentifier name, CSTexture tex) {
             return SetValue(name, (nint)tex.mTexture);
 	    }
@@ -306,7 +310,9 @@ namespace Weesals.Engine {
         // Get the binary data for a specific parameter
         public unsafe Span<byte> GetUniformBinaryData(CSIdentifier name) {
             Material self = this;
+#pragma warning disable CS9091 // This returns local by reference but it is not a ref local
             return GetUniformBinaryData(name, new Span<Material>(ref self));
+#pragma warning restore CS9091 // This returns local by reference but it is not a ref local
         }
         unsafe public CSTexture GetUniformTexture(CSIdentifier name) {
             Material self = this;
@@ -405,7 +411,7 @@ namespace Weesals.Engine {
             });
         }
 
-        public RootMaterial() : base("./assets/retained.hlsl") {
+        public RootMaterial() : base("./assets/opaque.hlsl") {
             InitialiseDefaults();
         }
 

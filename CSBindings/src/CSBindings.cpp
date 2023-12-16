@@ -108,7 +108,7 @@ public:
 	NativeScene() {
 		mScene = std::make_shared<RetainedScene>();
 		mPassList = std::make_shared<RenderPassList>(mScene);
-		mDefaultMaterial = std::make_shared<RootMaterial>(L"./assets/retained.hlsl");
+		mDefaultMaterial = std::make_shared<RootMaterial>(L"./assets/opaque.hlsl");
 	}
 };
 class NativeGraphics {
@@ -143,8 +143,19 @@ void CSTexture::SetSize(NativeTexture* tex, Int2 size) {
 Int2C CSTexture::GetSize(NativeTexture* tex) {
 	return ToC(tex->GetSize());
 }
-CSSpan CSTexture::GetTextureData(NativeTexture* tex) {
-	auto data = tex->GetRawData();
+void CSTexture::SetFormat(NativeTexture* tex, BufferFormat fmt) { tex->SetBufferFormat(fmt); }
+BufferFormat CSTexture::GetFormat(NativeTexture* tex) { return tex->GetBufferFormat(); }
+
+void CSTexture::SetMipCount(NativeTexture* tex, int count) { tex->SetMipCount(count); }
+int CSTexture::GetMipCount(NativeTexture* tex) { return tex->GetMipCount(); }
+void CSTexture::SetArrayCount(NativeTexture* tex, int count) {
+	tex->SetArrayCount(count);
+}
+int CSTexture::GetArrayCount(NativeTexture* tex) {
+	return tex->GetArrayCount();
+}
+CSSpan CSTexture::GetTextureData(NativeTexture* tex, int mip, int slice) {
+	auto data = tex->GetRawData(mip, slice);
 	return CSSpan(data.data(), (int)data.size());
 }
 void CSTexture::MarkChanged(NativeTexture* tex) {
@@ -372,8 +383,9 @@ void CSGraphics::SetResolution(const NativeGraphics* graphics, Int2 res) {
 	auto* natgraphics = graphics->mCmdBuffer.GetGraphics();
 	natgraphics->SetResolution(res);
 }
-void CSGraphics::SetRenderTarget(NativeGraphics* graphics, const NativeRenderTarget* target) {
-	graphics->mCmdBuffer.SetRenderTarget(target);
+void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, const NativeRenderTarget* depthTarget) {
+	std::span<const NativeRenderTarget*> nativeTargets((const NativeRenderTarget**)colorTargets.mData, colorTargets.mSize);
+	graphics->mCmdBuffer.SetRenderTargets(nativeTargets, depthTarget);
 }
 void CSGraphics::SetViewport(NativeGraphics* graphics, RectInt viewport) {
 	graphics->mCmdBuffer.SetViewport(viewport);
@@ -462,7 +474,7 @@ void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bind
 }
 void CSGraphics::Reset(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Reset();
-	graphics->mCmdBuffer.SetRenderTarget(nullptr);
+	graphics->mCmdBuffer.SetRenderTargets({ }, nullptr);
 }
 void CSGraphics::Clear(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.ClearRenderTarget(ClearConfig(Color(0, 0, 0, 0), 1.0f));
@@ -526,7 +538,8 @@ void CSRenderPass::RemoveInstance(NativeRenderPass* renderPass, CSInstance insta
 }
 void CSRenderPass::Bind(NativeRenderPass* renderPass, NativeGraphics* graphics) {
 	auto& cmdBuffer = graphics->mCmdBuffer;
-	cmdBuffer.SetRenderTarget(renderPass->mRenderTarget.get());
+	InplaceVector<const NativeRenderTarget*, 1> targets(renderPass->mRenderTarget.get());
+	cmdBuffer.SetRenderTargets(targets, nullptr);
 	//cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
 	renderPass->mRenderQueue.Clear();
 }
@@ -593,7 +606,8 @@ void CSScene::Render(NativeScene* scene, NativeGraphics* graphics) {
 		//pass->UpdateViewProj(matView, matProj);
 		pass->mRenderQueue.Clear();
 		pass->mRetainedRenderer->SubmitToRenderQueue(cmdBuffer, pass->mRenderQueue, pass->mFrustum);
-		cmdBuffer.SetRenderTarget(pass->mRenderTarget.get());
+		InplaceVector<const NativeRenderTarget*, 1> targets(pass->mRenderTarget.get());
+		cmdBuffer.SetRenderTargets(targets, nullptr);
 		cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
 
 		pass->mRenderQueue.Render(cmdBuffer);

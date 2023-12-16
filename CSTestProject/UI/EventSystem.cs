@@ -1,9 +1,9 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
@@ -16,34 +16,56 @@ namespace Weesals.UI {
         public enum States { None = 0, Hover = 1, Press = 2, Drag = 4, };
         public uint DeviceId;
         public uint ButtonState;
+        public uint PreviousButtonState;
         public float DragDistance;
         public Vector2 CurrentPosition;
         public Vector2 PreviousPosition;
         public States State = States.Hover;
-        public CanvasRenderable? Active;
-        public bool IsDrag => DragDistance >= 2f;
+        public object? Active;
+        public bool IsDrag => DragDistance >= 2f && ButtonState != 0;
         public bool IsButtonDown => ButtonState != 0;
         public PointerEvent(EventSystem system, uint deviceId) {
             System = system;
             DeviceId = deviceId;
         }
+        public PointerEvent(PointerEvent other) : this(other.System, other.DeviceId) {
+            ButtonState = other.ButtonState;
+            PreviousButtonState = other.PreviousButtonState;
+            DragDistance = other.DragDistance;
+            CurrentPosition = other.CurrentPosition;
+            PreviousButtonState = other.PreviousButtonState;
+        }
         public bool HasState(States flag) { return (State & flag) != 0; }
 
+        internal void Step() {
+            PreviousButtonState = ButtonState;
+            PreviousPosition = CurrentPosition;
+        }
+        internal void Step(PointerEvent other) {
+            System.UpdatePointerPre(this, other.CurrentPosition, other.ButtonState);
+            System.UpdatePointerPost(this, other.ButtonState);
+        }
         public bool GetIsButtonDown(int btnId) {
             return (ButtonState & (1 << btnId)) != 0;
+        }
+        public bool HasButton(int buttonId) {
+            return ((ButtonState | PreviousButtonState) & (1 << buttonId)) != 0;
         }
         public void Yield() {
             System.MarkYielded();
         }
-        public void SetActive(CanvasRenderable instance) {
+        public void SetActive(object? instance) {
             System.SetActive(this, instance);
+        }
+        public void SetState(States state, bool enable) {
+            System.SetState(this, state, enable);
         }
     }
     public interface ISelectable {
         void OnSelected(bool selected);
     }
     public interface ISelectionGroup {
-        void SetSelected(ISelectable selectable);
+        void SetSelected(ISelectable? selectable);
     }
     public static class SelectableExt {
         public static void Select(this ISelectable selectable) {
@@ -87,7 +109,7 @@ namespace Weesals.UI {
     }
     public interface IDropTarget {
         bool InitializePotentialDrop(PointerEvent events, CanvasRenderable source);
-        void UninitialzePotentialDrop(CanvasRenderable source);
+        void UninitializePotentialDrop(CanvasRenderable source);
         void ReceiveDrop(CanvasRenderable item);
     }
     public interface IDropTargetCustom {
@@ -118,7 +140,7 @@ namespace Weesals.UI {
                     MarkComposeDirty();
                 }
                 IDropTarget? target = null;
-                foreach (var hit in Canvas.HittestGrid.BeginHitTest(events.CurrentPosition)) {
+                foreach (var hit in Canvas.HitTestGrid.BeginHitTest(events.CurrentPosition)) {
                     if (hit is IDropTarget dropTarget && (hit == Target || dropTarget.InitializePotentialDrop(events, Source))) {
                         target = dropTarget;
                         break;
@@ -131,7 +153,7 @@ namespace Weesals.UI {
             }
             private void SetTarget(PointerEvent events, IDropTarget? dropTarget) {
                 if (Target == dropTarget) return;
-                if (Target != null) Target.UninitialzePotentialDrop(Source);
+                if (Target != null) Target.UninitializePotentialDrop(Source);
                 Target = dropTarget;
             }
             public void OnEndDrag(PointerEvent events) {
@@ -159,10 +181,43 @@ namespace Weesals.UI {
             }
         }
     }
+    public class SelectionManager : ISelectionGroup, IPointerDownHandler {
+        private HashSet<ISelectable> selected = new();
 
-    public class EventSystem : ISelectionGroup {
+        public IReadOnlyCollection<ISelectable> Selected => selected;
+
+        public void ClearSelected() {
+            using var toDeselect = new PooledList<ISelectable>(selected.Count);
+            foreach (var item in selected) toDeselect.Add(item);
+            selected.Clear();
+            foreach (var item in toDeselect) item.OnSelected(false);
+        }
+        public void SetSelected(ISelectable? item) {
+            ClearSelected();
+            if (item != null) AppendSelected(item);
+        }
+        private void AppendSelected(ISelectable item) {
+            selected.Add(item);
+            item.OnSelected(true);
+        }
+
+        public void OnPointerDown(PointerEvent events) {
+            if (!events.GetIsButtonDown(0)) return;
+            if (HierarchyExt.TryGetRecursive(events.Active, out ISelectable selectable) == true) {
+                selectable.Select();
+            } else {
+                if (HierarchyExt.TryGetRecursive(events.Active, out ISelectionGroup? group) != true) {
+                    group = events.System.Canvas.SelectionGroup;
+                }
+                if (group != null) group.SetSelected(null);
+            }
+        }
+    }
+
+    public class EventSystem {
 
         public Canvas Canvas { get; private set; }
+        public readonly SelectionManager SelectionManager = new();
         public readonly DoubleClickManager DoubleClick = new();
         public readonly DragDropManager DragDropManager;
 
@@ -173,89 +228,143 @@ namespace Weesals.UI {
         private bool yielded;
         public float DeltaTime => (currTimerUS - prevTimerUS) / (1000.0f * 1000.0f);
 
+        private List<IPointerDownHandler> pointerDownHandlers = new();
         private Dictionary<uint, PointerEvent> pointerEvents = new();
 
-        private HashSet<ISelectable> selected = new();
+        private Dictionary<INestedEventSystem, List<CSPointer>> activeDeferred = new();
 
         public EventSystem(Canvas canvas) {
-            input = Core.ActiveInstance?.GetInput() ?? default;
+            input = default;
             Canvas = canvas;
-            Canvas.SelectionGroup = this;
+            Canvas.SelectionGroup = SelectionManager;
             DragDropManager = new(Canvas);
-        }
-
-        private void ClearSelected() {
-            foreach(var item in selected) item.OnSelected(false);
-            selected.Clear();
-        }
-        public void SetSelected(ISelectable item) {
-            ClearSelected();
-            if (item != null) AppendSelected(item);
-        }
-        private void AppendSelected(ISelectable item) {
-            selected.Add(item);
-            item.OnSelected(true);
+            pointerDownHandlers.Add(SelectionManager);
         }
 
         public void SetPointerOffset(Vector2 pointerOffset) {
             this.pointerOffset = pointerOffset;
+        }
+        public void SetInput(CSInput input) {
+            this.input = input;
         }
 
         public void Update(float dt) {
             prevTimerUS = currTimerUS;
             currTimerUS += (int)(dt * 1000.0f * 1000.0f + 0.5f);
 
-            using var seenPointers = new PooledList<uint>();
-            foreach (var pointer in input.GetPointers()) {
-                seenPointers.Add(pointer.mDeviceId);
-                if (!pointerEvents.TryGetValue(pointer.mDeviceId, out var events)) {
-                    events = new PointerEvent(this, pointer.mDeviceId) {
-                        PreviousPosition = pointer.mPositionPrevious + pointerOffset,
-                        CurrentPosition = pointer.mPositionCurrent + pointerOffset,
-                    };
-                    pointerEvents.Add(pointer.mDeviceId, events);
-                } else {
-                    events.PreviousPosition = events.CurrentPosition;
-                    events.CurrentPosition = pointer.mPositionCurrent + pointerOffset;
-                }
-                // Apply button presses
-                SetButtonState(events, events.ButtonState | pointer.mCurrentButtonState);
-
-                // Drags during click or release are accepted
-                if (events.HasState(PointerEvent.States.Press)) {
-                    events.DragDistance += Vector2.Distance(events.PreviousPosition, events.CurrentPosition);
-                    if (events.IsDrag && !events.HasState(PointerEvent.States.Drag)) {
-                        if (events.Active?.TryGetRecursive(out IBeginDragHandler draggable) == true) {
-                            SetActive(events, draggable as CanvasRenderable);
-                        }
-                        SetState(events, PointerEvent.States.Drag, true);
-                    }
-                }
-                if (events.PreviousPosition != events.CurrentPosition) {
-                    if (events.Active?.TryGetRecursive(out IPointerMoveHandler pmove) == true) {
-                        pmove.OnPointerMove(events);
-                    }
-                }
-
-                // Find active element (hover is default state so will always happen at least once)
-                if (!events.IsButtonDown) {
-                    var hit = Canvas.HittestGrid.BeginHitTest(events.CurrentPosition).First();
-                    SetActive(events, hit);
-                }
-
-                // Update drag
-                if (events.HasState(PointerEvent.States.Drag) && events.Active is IDragHandler dragHandler)
-                    dragHandler.OnDrag(events);
-
-                // Apply button releases
-                SetButtonState(events, pointer.mCurrentButtonState);
+            if (input.IsValid()) {
+                var inputPointers = input.GetPointers();
+                using var pointers = new PooledList<CSPointer>(inputPointers.Length);
+                foreach (var ptr in inputPointers) pointers.Add(ptr);
+                ProcessPointers(pointers);
             }
         }
 
-        internal void SetActive(PointerEvent events, CanvasRenderable? hit) {
+        public void ProcessPointers(Span<CSPointer> pointers) {
+            using var seenPointers = new PooledList<uint>();
+            foreach (var deferredPtrs in activeDeferred.Values) {
+                for (int i = 0; i < deferredPtrs.Count; ++i) {
+                    var ptr = deferredPtrs[i];
+                    ptr.mCurrentButtonState = 0;
+                    deferredPtrs[i] = ptr;
+                }
+            }
+            foreach (var pointer in pointers) {
+                seenPointers.Add(pointer.mDeviceId);
+                if (!pointerEvents.TryGetValue(pointer.mDeviceId, out var events)) {
+                    events = new PointerEvent(this, pointer.mDeviceId) {
+                        CurrentPosition = pointer.mPositionCurrent + pointerOffset,
+                    };
+                    pointerEvents.Add(pointer.mDeviceId, events);
+                }
+                UpdatePointerPre(events, pointer.mPositionCurrent + pointerOffset, pointer.mCurrentButtonState);
+
+                // Find active element (hover is default state so will always happen at least once)
+                if (!events.IsButtonDown && !events.HasState(PointerEvent.States.Press)) {
+                    var hit = Canvas.HitTestGrid.BeginHitTest(events.CurrentPosition).First();
+                    SetActive(events, hit);
+                }
+
+                UpdatePointerPost(events, pointer.mCurrentButtonState);
+            }
+            using var toRelease = new PooledList<INestedEventSystem>();
+            // Send pointers to nested systems
+            foreach (var kv in activeDeferred) {
+                var nested = kv.Key;
+                var es = nested.EventSystem;
+                if (es != null)
+                    es.ProcessPointers(CollectionsMarshal.AsSpan(kv.Value));
+                for (int i = 0; i < kv.Value.Count; ++i) {
+                    var ptr = kv.Value[i];
+                    if (seenPointers.IndexOf(ptr.mDeviceId) == -1) kv.Value.RemoveAt(i--);
+                }
+                if (kv.Value.Count == 0) toRelease.Add(kv.Key);
+            }
+            foreach (var es in toRelease) {
+                activeDeferred.Remove(es);
+            }
+        }
+
+        internal void UpdatePointerPre(PointerEvent events, Vector2 position, uint buttonState) {
+            events.Step();
+            events.CurrentPosition = position;
+            // Apply button presses
+            SetButtonState(events, events.ButtonState | buttonState);
+
+            // Drags during click or release are accepted
+            if (events.HasState(PointerEvent.States.Press)) {
+                events.DragDistance += Vector2.Distance(events.PreviousPosition, events.CurrentPosition);
+                if (events.IsDrag && !events.HasState(PointerEvent.States.Drag)) {
+                    if (HierarchyExt.TryGetRecursive(events.Active, out IBeginDragHandler draggable) == true) {
+                        SetActive(events, draggable as CanvasRenderable);
+                    }
+                    SetState(events, PointerEvent.States.Drag, true);
+                }
+            }
+        }
+        internal void UpdatePointerPost(PointerEvent events, uint buttonState) {
+            // Update drag
+            if (events.HasState(PointerEvent.States.Drag) && events.Active is IDragHandler dragHandler)
+                dragHandler.OnDrag(events);
+
+            // Update pointer move listeners
+            if (events.PreviousPosition != events.CurrentPosition) {
+                if (HierarchyExt.TryGetRecursive(events.Active, out IPointerMoveHandler pmove) == true) {
+                    pmove.OnPointerMove(events);
+                }
+            }
+
+            // Apply button releases
+            SetButtonState(events, buttonState);
+
+            // Defer to raw handlers
+            if (events.Active is IPointerEventsRaw raw) {
+                raw.ProcessPointer(events);
+            }
+
+            // Track nested event systems
+            if (events.Active is INestedEventSystem nested) {
+                if (!activeDeferred.TryGetValue(nested, out var list)) {
+                    list = new();
+                    activeDeferred.Add(nested, list);
+                }
+                var nestedPtr = new CSPointer();
+                var layout = nested.GetComputedLayout();
+                nestedPtr.mDeviceId = events.DeviceId;
+                nestedPtr.mCurrentButtonState = events.ButtonState;
+                nestedPtr.mPositionCurrent = events.CurrentPosition - layout.Position.toxy();
+                int index = 0;
+                for (; index < list.Count; ++index) if (list[index].mDeviceId == events.DeviceId) break;
+                if (index < list.Count) list[index] = nestedPtr;
+                else list.Add(nestedPtr);
+            }
+        }
+
+        internal void SetActive(PointerEvent events, object? hit, PointerEvent.States cmn = PointerEvent.States.None) {
             if (events.Active == hit) return;
             var ostate = events.State;
-            SetStates(events, PointerEvent.States.None);
+            SetStates(events, cmn);
+            Console.WriteLine("Setting active " + hit);
             events.Active = hit;
             SetStates(events, ostate);
             Debug.Assert(events.HasState(PointerEvent.States.Hover));
@@ -265,7 +374,11 @@ namespace Weesals.UI {
             TryInvoke(events, state, events.Active, pUpHandler);
             TryInvoke(events, state, events.Active, pExitHandler);
             TryInvoke(events, state, events.Active, pEnterHandler);
-            TryInvoke(events, state, events.Active, pDownHandler);
+            if (pDownHandler.ShouldInvoke(events, state)) {
+                if (TryInvoke(events, state, events.Active, pDownHandler) == null) {
+                    foreach (var handler in pointerDownHandlers) handler.OnPointerDown(events);
+                }
+            }
             TryInvoke(events, state, events.Active, bDragHandler);
         }
         public class PointerHandler<T> where T : IEventSystemHandler {
@@ -274,6 +387,9 @@ namespace Weesals.UI {
             public bool IsTransactional;
             public Action<T, PointerEvent> InvokeEvent;
             public PointerHandler(Action<T, PointerEvent> invoker, PointerEvent.States mask, bool sign) { InvokeEvent = invoker; StateMask = mask; StateValue = sign ? mask : default; }
+            public bool ShouldInvoke(PointerEvent events, PointerEvent.States states) {
+                return ((events.State & StateMask) != StateValue) && ((states & StateMask) == StateValue);
+            }
         }
         private PointerHandler<IPointerDownHandler> pDownHandler = new((item, events) => item.OnPointerDown(events), PointerEvent.States.Press, true);
         private PointerHandler<IPointerUpHandler> pUpHandler = new((item, events) => item.OnPointerUp(events), PointerEvent.States.Press, false);
@@ -281,17 +397,34 @@ namespace Weesals.UI {
         private PointerHandler<IPointerExitHandler> pExitHandler = new((item, events) => item.OnPointerExit(events), PointerEvent.States.Hover, false);
         private PointerHandler<IBeginDragHandler> bDragHandler = new((item, events) => item.OnBeginDrag(events), PointerEvent.States.Drag, true) { IsTransactional = true, };
         private PointerHandler<IEndDragHandler> eDragHandler = new((item, events) => item.OnEndDrag(events), PointerEvent.States.Drag, false);
-        private CanvasRenderable? TryInvoke<T>(PointerEvent events, PointerEvent.States states, CanvasRenderable? target, PointerHandler<T> handler) where T : IEventSystemHandler {
-            if (((events.State & handler.StateMask) == handler.StateValue) || ((states & handler.StateMask) != handler.StateValue)) return default;
-            var ostate = events.State & handler.StateMask;
-            events.State = (events.State & ~handler.StateMask) | handler.StateValue;
-            for (; target != null; target = target.Parent) {
-                if (target is not T tvalue) continue;
-                handler.InvokeEvent(tvalue, events);
-                if (!ConsumeYield()) break;
+        private object? TryInvoke<T>(PointerEvent events, PointerEvent.States states, object? target, PointerHandler<T> handler) where T : IEventSystemHandler {
+            if (!handler.ShouldInvoke(events, states)) return events.Active;
+            var active = events.Active;
+            var hitIterator = Canvas.HitTestGrid.BeginHitTest(events.CurrentPosition);
+            while (true) {
+                if (target == null) {
+                    break;
+                    //if (!handler.IsTransactional) break;
+                    //if (!hitIterator.MoveNext()) break;
+                    //target = hitIterator.Current;
+                }
+                for (; target != null; target = HierarchyExt.TryGetParent(target)) {
+                    if (target is not T tvalue) continue;
+                    handler.InvokeEvent(tvalue, events);
+                    if (!ConsumeYield()) break;
+                }
+                if (target != null) break;
             }
-            if (handler.IsTransactional && target == null) {
-                events.State = (events.State & ~handler.StateMask) | ostate;
+            if (active != events.Active) {
+                target = events.Active;
+                if (target is T tvalue)
+                    handler.InvokeEvent(tvalue, events);
+            }
+            if (events.Active != target && target != null && handler.IsTransactional) {
+                SetActive(events, target);
+            }
+            if (target != null || !handler.IsTransactional) {
+                events.State = (events.State & ~handler.StateMask) | handler.StateValue;
             }
             return target;
         }
@@ -302,7 +435,7 @@ namespace Weesals.UI {
             return true;
         }
 
-        private void SetButtonState(PointerEvent events, uint buttons) {
+        internal void SetButtonState(PointerEvent events, uint buttons) {
             if (events.ButtonState == buttons) return;
             events.ButtonState = buttons;
             var isPress = buttons != 0;
@@ -315,13 +448,13 @@ namespace Weesals.UI {
             events.DragDistance = 0;
         }
         private void EndPress(PointerEvent events) {
-            if (!events.IsDrag && events.Active?.TryGetRecursive(out IPointerClickHandler pclick) == true) {
+            if (!events.IsDrag && HierarchyExt.TryGetRecursive(events.Active, out IPointerClickHandler pclick) == true) {
                 pclick.OnPointerClick(events);
             }
             SetState(events, PointerEvent.States.Drag, false);
         }
 
-        private bool SetState(PointerEvent events, PointerEvent.States state, bool enable) {
+        internal bool SetState(PointerEvent events, PointerEvent.States state, bool enable) {
             var nstate = events.State;
             if (enable) nstate |= state; else nstate &= ~state;
             if (nstate == events.State) return false;
@@ -362,5 +495,13 @@ namespace Weesals.UI {
     }
     public interface IEndDragHandler : IEventSystemHandler {
         void OnEndDrag(PointerEvent events);
+    }
+
+    public interface INestedEventSystem : IEventSystemHandler {
+        EventSystem? EventSystem { get; }
+        CanvasLayout GetComputedLayout();
+    }
+    public interface IPointerEventsRaw : IEventSystemHandler {
+        void ProcessPointer(PointerEvent events);
     }
 }

@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using UnityEngine;
@@ -11,9 +10,6 @@ using Weesals.UI;
 using Weesals.Utility;
 
 class Program {
-
-    [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "InvokeTest", ExactSpelling = true)]
-    public static extern Int2 InvokeTest();
 
     unsafe static void Main() {
         var core = new Core();
@@ -27,11 +23,23 @@ class Program {
         var play = new Play(scene);
 
         var eventSystem = new EventSystem(play.Canvas);
+        editorWindow.GameView.EventSystem = eventSystem;
+        editorWindow.GameView.Camera = play.Camera;
+        editorWindow.GameView.Landscape = play.Landscape;
+        editorWindow.ActivateLandscapeTools();
 
         Stopwatch timer = new();
         timer.Start();
 
         float timeSinceRender = 0f;
+
+        var triangleData = new Vector2[3 * 2048];
+        var rnd = new Random(165);
+        for (int i = 0; i < triangleData.Length; i++) {
+            triangleData[i] = new Vector2(
+                (float)rnd.NextDouble() * 100,
+                (float)rnd.NextDouble() * 100);
+        }
 
         // Loop while the window is valid
         while (core.MessagePump() == 0) {
@@ -45,8 +53,28 @@ class Program {
                 graphics.SetResolution(windowRes);
                 continue;
             }
+            /*int count = 0;
+            for (int i1 = 0; i1 < triangleData.Length; i1 += 3) {
+                for (int i2 = 0; i2 < triangleData.Length; i2 += 3) {
+                    var r = Geometry.GetTrianglesOverlap(
+                        triangleData[i1], triangleData[i1 + 1], triangleData[i1 + 2],
+                        triangleData[i2], triangleData[i2 + 1], triangleData[i2 + 2]);
+                    if (r) ++count;
+                }
+            }
 
-            int renderHash = play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.Scene.CSScene.GetGPURevision();
+            int countOG = 0;
+            for (int i1 = 0; i1 < triangleData.Length; i1 += 3) {
+                for (int i2 = 0; i2 < triangleData.Length; i2 += 3) {
+                    var r = Geometry.GetTrianglesOverlapOG(
+                        triangleData[i1], triangleData[i1 + 1], triangleData[i1 + 2],
+                        triangleData[i2], triangleData[i2 + 1], triangleData[i2 + 2]);
+                    if (r) ++countOG;
+                }
+            }
+            Debug.Assert(count == countOG);// */
+
+            int renderHash = play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.Scene.GetGPURevision();
 
             var dt = (float)timer.Elapsed.TotalSeconds;
             timer.Restart();
@@ -59,13 +87,13 @@ class Program {
             // Setup for game viewport rendering
             play.SetViewport(gameViewport);
 
-            eventSystem.SetPointerOffset(-(Vector2)gameViewport.Min);
+            //eventSystem.SetPointerOffset(-(Vector2)gameViewport.Min);
             eventSystem.Update(dt);
             play.Update(dt);
             play.PreRender(graphics);
 
             // If the frame hasnt changed, dont render anything
-            bool requireRender = renderHash != play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.Scene.CSScene.GetGPURevision();
+            bool requireRender = renderHash != play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.Scene.GetGPURevision();
             if (!requireRender && timeSinceRender < 0.25f) {
                 Thread.Sleep(6);
                 continue;

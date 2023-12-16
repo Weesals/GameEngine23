@@ -1,15 +1,16 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using UnityEngine;
 using Weesals.Engine;
+using Weesals.Landscape;
 using Weesals.UI;
 
 namespace Weesals.Game {
-    public class UXCameraControls : CanvasRenderable, IBeginDragHandler, IDragHandler, IEndDragHandler {
+    public class UXCameraControls : IInteraction, IBeginDragHandler, IDragHandler, IEndDragHandler {
         public readonly UIPlay PlayUI;
         private TimedEvent<Vector2> rubberband;
 
@@ -17,29 +18,94 @@ namespace Weesals.Game {
             PlayUI = playUI;
         }
 
+        public ActivationScore GetActivation(PointerEvent events) {
+            if (PlayUI.Play.Camera == null) return ActivationScore.None;
+            if (events.HasButton(1) && events.IsDrag) return ActivationScore.Active;
+            return ActivationScore.Potential;
+        }
+
         public void OnBeginDrag(PointerEvent events) {
+            if (!events.GetIsButtonDown(1)) { events.Yield(); return; }
             rubberband.Clear();
         }
         public void OnDrag(PointerEvent events) {
             var camera = PlayUI.Play.Camera;
-            var m0 = mLayoutCache.InverseTransformPosition2D(events.PreviousPosition) / mLayoutCache.GetSize();
-            var m1 = mLayoutCache.InverseTransformPosition2D(events.CurrentPosition) / mLayoutCache.GetSize();
+            var layout = PlayUI.GetComputedLayout();
+            var m0 = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
+            var m1 = layout.InverseTransformPosition2D(events.CurrentPosition) / layout.GetSize();
             if (m0 == m1) return;
             var ray0 = camera.ViewportToRay(m0);
             var ray1 = camera.ViewportToRay(m1);
             // TODO: Project onto the coarse terrain
             var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
             var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
-            var delta = pos0 - pos1;
-            camera.Position += delta;
+            var delta = pos1 - pos0;
+            camera.Position -= delta;
         }
         public void OnEndDrag(PointerEvent events) {
         }
     }
 
-    public class UIPlay : CanvasRenderable, IPointerMoveHandler, IUpdatable {
+    public class UXEntityDrag : IInteraction, IBeginDragHandler, IDragHandler, IEndDragHandler {
+        public readonly UIPlay PlayUI;
+        public Play Play => PlayUI.Play;
+
+        public struct Instance {
+            public Play.WorldObject Target;
+        }
+        private Dictionary<PointerEvent, Instance> instances = new();
+
+        public UXEntityDrag(UIPlay playUI) {
+            PlayUI = playUI;
+        }
+
+        public ActivationScore GetActivation(PointerEvent events) {
+            if (!CanInteract(events)) return ActivationScore.None;
+            if (events.IsDrag && events.HasButton(0)) return ActivationScore.Active;
+            return ActivationScore.Potential;
+        }
+        public bool CanInteract(PointerEvent events) {
+            var target = FindTarget(events);
+            return target != null;
+        }
+        private Play.WorldObject? FindTarget(PointerEvent events) {
+            var layout = PlayUI.GetComputedLayout();
+            var m = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
+            var mray = PlayUI.Play.Camera.ViewportToRay(m);
+            return PlayUI.Play.HitTest(mray);
+        }
+        public void OnBeginDrag(PointerEvent events) {
+            if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
+            var entity = FindTarget(events);
+            if (entity == null) { events.Yield(); return; }
+            instances.Add(events, new Instance() { Target = entity, });
+        }
+        public void OnDrag(PointerEvent events) {
+            if (!instances.TryGetValue(events, out var instance)) return;
+            var camera = PlayUI.Play.Camera;
+            var layout = PlayUI.GetComputedLayout();
+            var m0 = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
+            var m1 = layout.InverseTransformPosition2D(events.CurrentPosition) / layout.GetSize();
+            var ray0 = camera.ViewportToRay(m0);
+            var ray1 = camera.ViewportToRay(m1);
+            var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
+            var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
+            var delta = pos1 - pos0;
+            var pos = PlayUI.Play.GetLocation(instance.Target);
+            PlayUI.Play.SetLocation(instance.Target, pos + delta);
+        }
+        public void OnEndDrag(PointerEvent events) {
+            instances.Remove(events);
+        }
+    }
+
+    public class UIPlay : CanvasRenderable, IUpdatable {
 
         public readonly Play Play;
+
+        private InputDispatcher inputDispatcher;
+        private UXCameraControls cameraControls;
+        private UXEntityDrag entityDrag;
 
         public UIPlay(Play play) {
             Play = play;
@@ -48,10 +114,13 @@ namespace Weesals.Game {
 
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
-            AppendChild(new UXCameraControls(this));
+            AppendChild(inputDispatcher = new());
+            inputDispatcher.AddInteraction(cameraControls = new UXCameraControls(this));
+            inputDispatcher.AddInteraction(entityDrag = new UXEntityDrag(this));
 
             var btn = new TextButton();
             btn.SetTransform(CanvasTransform.MakeAnchored(new Vector2(128, 128), new Vector2(0.5f, 1.0f), new Vector2(0.0f, 0.0f)));
+            btn.OnClick += () => { Console.WriteLine("Hello"); };
             AppendChild(btn);
 
             var spriteRenderer = new SpriteRenderer();
@@ -69,21 +138,21 @@ namespace Weesals.Game {
                 Resources.LoadTexture("./assets/T_Spear.png"),
             });
 
-            if (false) {
-                var vlist = new ListLayout() {
-                    Transform = CanvasTransform.MakeAnchored(new Vector2(1024, 512), new Vector2(0.0f, 1.0f)),
-                };
-                for (int i = 0; i < 50; ++i) {
-                    var hlist = new ListLayout() { Axis = ListLayout.Axes.Horizontal, };
-                    for (int x = 0; x < 100; x++) {
-                        hlist.AppendChild(new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
-                            Transform = CanvasTransform.MakeDefault().Inset(0),
-                        });
-                    }
-                    vlist.AppendChild(hlist);
+#if FALSE
+            var vlist = new ListLayout() {
+                Transform = CanvasTransform.MakeAnchored(new Vector2(1024, 512), new Vector2(0.0f, 1.0f)),
+            };
+            for (int i = 0; i < 50; ++i) {
+                var hlist = new ListLayout() { Axis = ListLayout.Axes.Horizontal, };
+                for (int x = 0; x < 100; x++) {
+                    hlist.AppendChild(new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
+                        Transform = CanvasTransform.MakeDefault().Inset(0),
+                    });
                 }
-                AppendChild(vlist);
+                vlist.AppendChild(hlist);
             }
+            AppendChild(vlist);
+#endif
 
             var list = new ListLayout() {
                 Transform = CanvasTransform.MakeAnchored(new Vector2(256, 256), new Vector2(0.0f, 1.0f)),
@@ -98,17 +167,6 @@ namespace Weesals.Game {
 
         public void Update(float dt) {
             //MarkComposeDirty();
-        }
-
-        unsafe public void OnPointerMove(PointerEvent events) {
-            // Control position with mouse cursor
-            var mpos = Input.GetMousePosition();
-            var mray = Play.Camera.ViewportToRay(((RectF)Play.GameViewport).Unlerp(mpos));
-            var pos = mray.ProjectTo(new Plane(Vector3.UnitY, 0f));
-            var mat = Matrix4x4.CreateRotationY(3.14f) * Matrix4x4.CreateTranslation(pos);
-            foreach (var instance in Play.instances) {
-                Play.Scene.CSScene.UpdateInstanceData(instance, &mat, sizeof(Matrix4x4));
-            }
         }
 
     }

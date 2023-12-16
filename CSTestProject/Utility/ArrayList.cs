@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
@@ -77,8 +76,9 @@ namespace Weesals.Utility {
         public MemoryBlock<O> Reinterpret<O>() where O : unmanaged {
             return new MemoryBlock<O>((O*)Data, Length * sizeof(T) / sizeof(O));
         }
-
+        public void CopyTo(Span<T> dest) { AsSpan().CopyTo(dest); }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
+        public override string ToString() { return $"<count={Length}>"; }
 
         public static implicit operator Span<T>(MemoryBlock<T> block) { return block.AsSpan(); }
         public static implicit operator CSSpan(MemoryBlock<T> block) { return new CSSpan(block.Data, block.Length); }
@@ -99,10 +99,12 @@ namespace Weesals.Utility {
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
         public void Dispose() { ArrayPool<T>.Shared.Return(Data); }
-        public static implicit operator Span<T>(PooledArray<T> pool) { return pool.AsSpan(); }
         public ArraySegment<T>.Enumerator GetEnumerator() {
             return new ArraySegment<T>(Data, 0, Count).GetEnumerator();
         }
+        public override string ToString() { return $"<count={Count}>"; }
+
+        public static implicit operator Span<T>(PooledArray<T> pool) { return pool.AsSpan(); }
     }
     public struct PooledList<T> : IDisposable {
         public T[] Data;
@@ -125,10 +127,13 @@ namespace Weesals.Utility {
             Array.Copy(oldData, Data, Count);
             ArrayPool<T>.Shared.Return(oldData);
         }
+        public int IndexOf(T value) { return Array.IndexOf(Data, value, 0, Count); }
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
-        public void Dispose() { ArrayPool<T>.Shared.Return(Data); }
+        public void Dispose() { if (Data != null) ArrayPool<T>.Shared.Return(Data); this = default; }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
+        public override string ToString() { return $"<count={Count}>"; }
+
         public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }
 

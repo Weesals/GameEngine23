@@ -1,5 +1,4 @@
-﻿using GameEngine23.Interop;
-using System;
+﻿using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
@@ -101,8 +100,8 @@ namespace Weesals.UI {
             var srcToDstY = dstOff.Y - srcOff.Y;
             for (int y = srcOff.Y; y < srcEnd.Y; ++y) {
                 Unsafe.CopyBlock(
-                    (Color*)dstData.mData + ((y + srcToDstY) * dstSize.X + dstOff.X),
-                    (Color*)srcData.mData + ((y) * srcSize.X + srcOff.X),
+                    (Color*)dstData.Data + ((y + srcToDstY) * dstSize.X + dstOff.X),
+                    (Color*)srcData.Data + ((y) * srcSize.X + srcOff.X),
                     (uint)(4 * size.X)
                 );
             }
