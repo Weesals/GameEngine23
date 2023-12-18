@@ -47,9 +47,15 @@ namespace Weesals.Game {
         public int RenderRevision;
 
         ShadowPass shadowPass;
+        DeferredPass clearPass;
         BasePass basePass;
         TransparentPass transPass;
-        ScenePassManager passes;
+        HiZPass highZPass;
+        BloomPass bloomPass;
+        PostProcessPass postProcessPass;
+        DeferredPass canvasPass;
+
+        ScenePassManager scenePasses;
 
         public class WorldObject {
             public List<CSInstance> Meshes = new();
@@ -84,14 +90,41 @@ namespace Weesals.Game {
             };
 
             shadowPass = new ShadowPass(scene);
-            basePass = new BasePass(scene);
-            transPass = new TransparentPass(scene);
+            clearPass = new DeferredPass("Clear",
+                default,
+                new[] { new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }), new RenderPass.PassOutput("SceneColor"), },
+                (CSGraphics graphics, ref RenderPass.Context context) => {
+                    graphics.SetViewport(new RectI(Int2.Zero, context.ResolvedDepth.Texture.GetSize()));
+                    graphics.Clear();
+                });
+            basePass = new BasePass(scene) {
+                PreRender = (graphics) => {
+                    //graphics.SetViewport(GameViewport);
+                    RenderBasePass(graphics, basePass);
+                },
+            };
+            transPass = new TransparentPass(scene) {
+                PreRender = (graphics) => {
+                    //graphics.SetViewport(GameViewport);
+                    RenderBasePass(graphics, transPass);
+                }
+            };
+            highZPass = new();
+            bloomPass = new();
             basePass.UpdateShadowParameters(shadowPass);
             transPass.UpdateShadowParameters(shadowPass);
-            passes = new();
-            passes.AddPass(shadowPass);
-            passes.AddPass(basePass);
-            passes.AddPass(transPass);
+            postProcessPass = new();
+            canvasPass = new DeferredPass("Canvas",
+                new[] { new RenderPass.PassInput("SceneColor", true) },
+                new[] { new RenderPass.PassOutput("SceneColor", 0), },
+                (CSGraphics graphics, ref RenderPass.Context context) => {
+                    //graphics.SetViewport(GameViewport);
+                    Canvas.Render(graphics, Canvas.Material);
+                });
+            scenePasses = new();
+            scenePasses.AddPass(shadowPass);
+            scenePasses.AddPass(basePass);
+            scenePasses.AddPass(transPass);
 
             testObject = new();
             foreach (var mesh in model.Meshes) {
@@ -99,7 +132,7 @@ namespace Weesals.Game {
                 var mat = Matrix4x4.CreateRotationY(3.14f);
                 unsafe { Scene.UpdateInstanceData(instance, &mat, sizeof(Matrix4x4)); }
                 testObject.Meshes.Add(instance);
-                passes.AddInstance(instance, mesh);
+                scenePasses.AddInstance(instance, mesh);
             };
 
             Canvas = new Canvas();
@@ -153,38 +186,24 @@ namespace Weesals.Game {
         public void Render(CSGraphics graphics) {
             renderGraph.Clear();
             // Render shadows
-            renderGraph.BeginPass(shadowPass)
-                .SetEvaluator((CSGraphics graphics, ref RenderPass.Context context) => {
-                    shadowPass.Bind(graphics, ref context);
-                    graphics.Clear();
-                    shadowPass.Render(graphics);
+            renderGraph.BeginPass(shadowPass);
+            basePass.UpdateShadowParameters(shadowPass);
+            transPass.UpdateShadowParameters(shadowPass);
 
-                });
-            // Render opaques
-            renderGraph.BeginPass(basePass)
-                .SetEvaluator((CSGraphics graphics, ref RenderPass.Context context) => {
-                    basePass.UpdateShadowParameters(shadowPass);
-                    basePass.Bind(graphics, ref context);
-                    graphics.Clear();
-                    graphics.SetViewport(GameViewport);
-                    RenderBasePass(graphics, basePass);
-                    basePass.Render(graphics);
-                })
-                .SetDependency("ShadowMap", shadowPass, 0);
-            // Render transparents
-            renderGraph.BeginPass(transPass)
-                .SetEvaluator((CSGraphics graphics, ref RenderPass.Context context) => {
-                    transPass.UpdateShadowParameters(shadowPass);
-                    transPass.Bind(graphics, ref context);
-                    graphics.SetViewport(GameViewport);
-                    RenderBasePass(graphics, transPass);
-                    transPass.Render(graphics);
-                    Canvas.Render(graphics, Canvas.Material);
-                })
-                .SetDependency("BasePass", basePass, 1)
-                .SetDependency("SceneDepth", basePass, 0)
-                .SetDependency("ShadowMap", shadowPass, 0);
-            renderGraph.Execute(transPass, graphics);
+            // Render scene color
+            renderGraph.BeginPass(clearPass);
+            renderGraph.BeginPass(basePass);
+            //renderGraph.BeginPass(highZPass);
+            renderGraph.BeginPass(transPass);
+
+            // Render post processing
+            renderGraph.BeginPass(bloomPass);
+            renderGraph.BeginPass(postProcessPass);
+
+            // Render UI
+            renderGraph.BeginPass(canvasPass)
+                .SetViewport(GameViewport);
+            renderGraph.Execute(canvasPass, graphics);
         }
 
         private void RenderBasePass(CSGraphics graphics, ScenePass pass) {

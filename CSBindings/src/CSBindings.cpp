@@ -172,6 +172,10 @@ Int2C CSRenderTarget::GetSize(NativeRenderTarget* target) { return ToC(target->G
 void CSRenderTarget::SetSize(NativeRenderTarget* target, Int2 size) { target->SetResolution(size); }
 BufferFormat CSRenderTarget::GetFormat(NativeRenderTarget* target) { return target->GetFormat(); }
 void CSRenderTarget::SetFormat(NativeRenderTarget* target, BufferFormat format) { target->SetFormat(format); }
+int CSRenderTarget::GetMipCount(NativeRenderTarget* target) { return target->GetMipCount(); }
+void CSRenderTarget::SetMipCount(NativeRenderTarget* target, int count) { target->SetMipCount(count); }
+int CSRenderTarget::GetArrayCount(NativeRenderTarget* target) { return target->GetArrayCount(); }
+void CSRenderTarget::SetArrayCount(NativeRenderTarget* target, int count) { target->SetArrayCount(count); }
 NativeRenderTarget* CSRenderTarget::_Create() {
 	return create_shared<NativeRenderTarget>(Int2(0));
 }
@@ -383,18 +387,18 @@ void CSGraphics::SetResolution(const NativeGraphics* graphics, Int2 res) {
 	auto* natgraphics = graphics->mCmdBuffer.GetGraphics();
 	natgraphics->SetResolution(res);
 }
-void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, const NativeRenderTarget* depthTarget) {
-	std::span<const NativeRenderTarget*> nativeTargets((const NativeRenderTarget**)colorTargets.mData, colorTargets.mSize);
-	graphics->mCmdBuffer.SetRenderTargets(nativeTargets, depthTarget);
-}
-void CSGraphics::SetViewport(NativeGraphics* graphics, RectInt viewport) {
-	graphics->mCmdBuffer.SetViewport(viewport);
-}
-bool CSGraphics::IsTombstoned(NativeGraphics* graphics) {
-	return false;
+void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget) {
+	auto* bindings = (const CSRenderTargetBinding*)colorTargets.mData;
+	InplaceVector<RenderTargetBinding, 16> nativeTargets;
+	for (int i = 0; i < colorTargets.mSize; ++i) {
+		auto& binding = bindings[i];
+		nativeTargets.push_back(RenderTargetBinding(binding.mTarget, binding.mMip, binding.mSlice));
+	}
+	graphics->mCmdBuffer.SetRenderTargets(nativeTargets, RenderTargetBinding(depthTarget.mTarget, depthTarget.mMip, depthTarget.mSlice));
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials) {
-	InplaceVector<BufferLayout, 8> bindingsData;
+	return nullptr;
+	/*InplaceVector<BufferLayout, 8> bindingsData;
 	InplaceVector<const BufferLayout*, 8> pobindings;
 	InplaceVector<const Material*, 8> pomaterials;
 	for (int m = 0; m < bindings.mSize; ++m) {
@@ -413,7 +417,7 @@ const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSp
 	auto pipeline = graphics->mCmdBuffer.GetGraphics()->RequirePipeline(
 		pobindings, pomaterials
 	);
-	return pipeline;
+	return pipeline;*/
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
 	NativeShader* vertexShader, NativeShader* pixelShader, void* materialState,
@@ -482,6 +486,15 @@ void CSGraphics::Clear(NativeGraphics* graphics) {
 void CSGraphics::Execute(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Execute();
 }
+void CSGraphics::SetViewport(NativeGraphics* graphics, RectInt viewport) {
+	graphics->mCmdBuffer.SetViewport(viewport);
+}
+bool CSGraphics::IsTombstoned(NativeGraphics* graphics) {
+	return false;
+}
+uint64_t CSGraphics::GetGlobalPSOHash(NativeGraphics* graphics) {
+	return graphics->mCmdBuffer.GetGlobalPSOHash();
+}
 
 void CSWindow::Dispose(NativeWindow* window) {
 	window->Close();
@@ -538,7 +551,7 @@ void CSRenderPass::RemoveInstance(NativeRenderPass* renderPass, CSInstance insta
 }
 void CSRenderPass::Bind(NativeRenderPass* renderPass, NativeGraphics* graphics) {
 	auto& cmdBuffer = graphics->mCmdBuffer;
-	InplaceVector<const NativeRenderTarget*, 1> targets(renderPass->mRenderTarget.get());
+	InplaceVector<RenderTargetBinding, 1> targets(renderPass->mRenderTarget.get());
 	cmdBuffer.SetRenderTargets(targets, nullptr);
 	//cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
 	renderPass->mRenderQueue.Clear();
@@ -606,7 +619,7 @@ void CSScene::Render(NativeScene* scene, NativeGraphics* graphics) {
 		//pass->UpdateViewProj(matView, matProj);
 		pass->mRenderQueue.Clear();
 		pass->mRetainedRenderer->SubmitToRenderQueue(cmdBuffer, pass->mRenderQueue, pass->mFrustum);
-		InplaceVector<const NativeRenderTarget*, 1> targets(pass->mRenderTarget.get());
+		InplaceVector<RenderTargetBinding, 1> targets(pass->mRenderTarget.get());
 		cmdBuffer.SetRenderTargets(targets, nullptr);
 		cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
 

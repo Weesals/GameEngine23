@@ -14,6 +14,11 @@ namespace Weesals.Utility {
         public override string ToString() { return "[" + Start + "-" + End + "]"; }
         public static RangeInt FromBeginEnd(int begin, int end) { return new RangeInt(begin, end - begin); }
     }
+    public static class SpanExt {
+        public static Span<T> Slice<T>(this Span<T> span, RangeInt range) {
+            return span.Slice(range.Start, range.Length);
+        }
+    }
 
     public struct SparseIndices {
         private List<RangeInt> ranges = new();

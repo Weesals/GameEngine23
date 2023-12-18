@@ -12,6 +12,7 @@ namespace Weesals.Engine {
 	unsafe public class MeshDraw {
         protected struct RenderPassCache {
             public CSIdentifier mRenderPass;
+            public ulong mPipelineHash;
             public CSPipeline mPipeline;
             public bool IsValid() { return mPipeline.IsValid(); }
         }
@@ -39,10 +40,11 @@ namespace Weesals.Engine {
         unsafe protected RenderPassCache GetPassCache(CSGraphics graphics) {
             var renderPass = CSName.None;
             if (mBufferLayout.Count == 0) InvalidateMesh();
+            var pipelineHash = (ulong)renderPass.GetId() + graphics.GetGlobalPSOHash();
             int min = 0, max = mPassCache.Count - 1;
             while (min < max) {
                 int mid = (min + max) >> 1;
-                if (mPassCache[mid].mRenderPass.GetId() < renderPass.GetId()) {
+                if (mPassCache[mid].mPipelineHash < pipelineHash) {
                     min = mid + 1;
                 } else {
                     max = mid;

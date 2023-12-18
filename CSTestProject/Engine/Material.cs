@@ -227,8 +227,12 @@ namespace Weesals.Engine {
         }
 
         public Material() { }
-        public Material(Material parent) { InheritProperties(parent); }
-        public Material(string path) : this(Resources.LoadShader(path, "VSMain"), Resources.LoadShader(path, "PSMain")) { }
+        public Material(Material parent) {
+            if (parent != null) InheritProperties(parent);
+        }
+        public Material(string path, Material parent = null) : this(Resources.LoadShader(path, "VSMain"), Resources.LoadShader(path, "PSMain")) {
+            if (parent != null) InheritProperties(parent);
+        }
         public Material(ShaderBase vert, ShaderBase pix) {
             SetVertexShader(vert);
             SetPixelShader(pix);

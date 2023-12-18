@@ -127,13 +127,18 @@ namespace Weesals.Utility {
             Array.Copy(oldData, Data, Count);
             ArrayPool<T>.Shared.Return(oldData);
         }
+        public RangeInt Add(T value, int count) {
+            Reserve(Count + count);
+            Array.Fill(Data, value, Count, count);
+            Count += count;
+            return new RangeInt(Count - count, count);
+        }
         public int IndexOf(T value) { return Array.IndexOf(Data, value, 0, Count); }
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
         public void Dispose() { if (Data != null) ArrayPool<T>.Shared.Return(Data); this = default; }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Count}>"; }
-
         public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }
 

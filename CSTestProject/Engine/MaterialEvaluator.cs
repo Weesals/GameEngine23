@@ -104,9 +104,15 @@ namespace Weesals.Engine {
 				}
 			}
 		}
+        private static void MergeState(ref Material.StateData state, Material mat) {
+            state.MergeWith(mat.State);
+            foreach (var inherit in mat.InheritParameters) {
+                MergeState(ref state, inherit);
+            }
+        }
         public static Material.StateData ResolveState(Span<Material> materials) {
             Material.StateData r = default;
-            foreach (var mat in materials) r.MergeWith(mat.State);
+            foreach (var mat in materials) MergeState(ref r, mat);
             r.MergeWith(Material.StateData.Default);
             return r;
         }

@@ -92,6 +92,12 @@ struct __declspec(dllexport) CSBufferLayout {
 	int mOffset;
 	int mCount;
 };
+struct __declspec(dllexport) CSRenderTargetBinding {
+	NativeRenderTarget* mTarget;
+	int mMip, mSlice;
+	CSRenderTargetBinding(NativeRenderTarget* target, int mip = 0, int slice = 0)
+		: mTarget(target), mMip(mip), mSlice(slice) { }
+};
 /*struct __declspec(dllexport) CSBufferFormat {
 	enum Format : uint8_t { Float, Int, Short, Byte, };
 	Format mFormat;
@@ -133,6 +139,10 @@ public:
 	static void SetSize(NativeRenderTarget* target, Int2 size);
 	static BufferFormat GetFormat(NativeRenderTarget* target);
 	static void SetFormat(NativeRenderTarget* target, BufferFormat format);
+	static int GetMipCount(NativeRenderTarget* target);
+	static void SetMipCount(NativeRenderTarget* target, int size);
+	static int GetArrayCount(NativeRenderTarget* target);
+	static void SetArrayCount(NativeRenderTarget* target, int size);
 	static NativeRenderTarget* _Create();
 	static void Dispose(NativeRenderTarget* target);
 };
@@ -270,10 +280,12 @@ class __declspec(dllexport) CSGraphics {
 public:
 	CSGraphics(NativeGraphics* graphics)
 		: mGraphics(graphics) { }
+	NativeGraphics* GetNativeGraphics() const { return mGraphics; }
+private:
 	static void Dispose(NativeGraphics* graphics);
 	static Int2C GetResolution(const NativeGraphics* graphics);
 	static void SetResolution(const NativeGraphics* graphics, Int2 res);
-	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, const NativeRenderTarget* depthTarget);
+	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
@@ -285,7 +297,7 @@ public:
 	static void Execute(NativeGraphics* graphics);
 	static void SetViewport(NativeGraphics* graphics, RectInt viewport);
 	static bool IsTombstoned(NativeGraphics* graphics);
-	NativeGraphics* GetNativeGraphics() const { return mGraphics; }
+	static uint64_t GetGlobalPSOHash(NativeGraphics* graphics);
 };
 class __declspec(dllexport) CSWindow {
 	NativeWindow* mWindow = nullptr;

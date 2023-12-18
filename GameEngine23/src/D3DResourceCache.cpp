@@ -508,7 +508,8 @@ void D3DResourceCache::SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameI
 D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
     const Shader& vertexShader, const Shader& pixelShader,
     const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-    std::span<const MacroValue> macros, const IdentifierWithName& renderPass
+    std::span<const MacroValue> macros, const IdentifierWithName& renderPass,
+    std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
 )
 {
     // Find (or create) a pipeline that matches these requirements
@@ -577,9 +578,10 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         psoDesc.DepthStencilState.DepthWriteMask = materialState.mDepthMode.mWriteEnable ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-        psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-        psoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        psoDesc.NumRenderTargets = (uint32_t)frameBufferFormats.size();
+        for (int f = 0; f < frameBufferFormats.size(); ++f)
+            psoDesc.RTVFormats[f] = frameBufferFormats[f];
+        psoDesc.DSVFormat = depthBufferFormat;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState->mPipelineState)));
         pipelineState->mPipelineState->SetName(pixelShader.GetPath().c_str());

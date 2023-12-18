@@ -9,8 +9,7 @@
 
 class GraphicsDeviceBase;
 
-class ShaderBase
-{
+class ShaderBase {
 public:
     // Reflected uniforms that can be set by the application
     struct UniformValue {
@@ -65,6 +64,10 @@ public:
         std::vector<InputParameter> mInputParameters;
     };
 };
+struct MacroValue {
+    Identifier mName;
+    Identifier mValue;
+};
 
 // Control what and how a render target is cleared
 struct ClearConfig {
@@ -78,15 +81,13 @@ struct ClearConfig {
 private:
     static const Color GetInvalidColor() { return Color(-1, -1, -1, -1); }
 };
-struct DrawConfig
-{
+struct DrawConfig {
     int mIndexBase = 0;
     int mIndexCount = 0;
     static DrawConfig MakeDefault() { return { 0, -1, }; }
 };
 
-struct PipelineLayout
-{
+struct PipelineLayout {
     IdentifierWithName mRenderPass;
     size_t mRootHash;       // Persistent
     size_t mPipelineHash;   // Persistent
@@ -99,8 +100,7 @@ struct PipelineLayout
     int GetResourceCount() const { return (int)(mConstantBuffers.size() + mResources.size()); }
 };
 
-struct PipelineState
-{
+struct PipelineState {
     size_t mRootHash;       // Persistent
     size_t mPipelineHash;   // Persistent
     size_t mResourceHash;   // Transient
@@ -116,6 +116,14 @@ struct PipelineState
             : this < &other;
     }
 };
+struct RenderTargetBinding {
+    const RenderTarget2D* mTarget;
+    int mMip;
+    int mSlice;
+    RenderTargetBinding() : RenderTargetBinding(nullptr) { }
+    RenderTargetBinding(const RenderTarget2D* target, int mip = 0, int slice = 0) : mTarget(target), mMip(mip), mSlice(slice) { }
+    RenderTargetBinding(const RenderTargetBinding& other) = default;
+};
 
 // Draw commands are forwarded to a subclass of this class
 class CommandBufferInteropBase
@@ -124,11 +132,18 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual GraphicsDeviceBase* GetGraphics() const = 0;
     virtual void Reset() = 0;
-    virtual void SetRenderTargets(std::span<const RenderTarget2D*> colorTargets, const RenderTarget2D* depthTarget) { }
+    virtual void SetRenderTargets(std::span<RenderTargetBinding> colorTargets, RenderTargetBinding depthTarget) { }
     virtual void SetViewport(RectInt viewport) { }
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
+    virtual uint64_t GetGlobalPSOHash() const { return (uint64_t)this; }
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
     virtual void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) { }
+    virtual const PipelineLayout* RequirePipeline(
+        const Shader& vertexShader, const Shader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+        std::span<const MacroValue> macros, const IdentifierWithName& renderPass) {
+        return nullptr;
+    }
     virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void Execute() = 0;
 };
@@ -148,9 +163,16 @@ public:
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
     void Reset() { mInterop->Reset(); mArena.Clear(); }
     void SetViewport(RectInt viewport) { mInterop->SetViewport(viewport); }
-    void SetRenderTargets(std::span<const RenderTarget2D*> colorTargets, const RenderTarget2D* depthTarget) { mInterop->SetRenderTargets(colorTargets, depthTarget); }
+    void SetRenderTargets(std::span<RenderTargetBinding> colorTargets, RenderTargetBinding depthTarget) { mInterop->SetRenderTargets(colorTargets, depthTarget); }
     void ClearRenderTarget(const ClearConfig& config) { mInterop->ClearRenderTarget(config); }
+    uint64_t GetGlobalPSOHash() const { return mInterop->GetGlobalPSOHash(); }
     int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
+    const PipelineLayout* RequirePipeline(
+        const Shader& vertexShader, const Shader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
+        std::span<const MacroValue> macros, const IdentifierWithName& renderPass) {
+        return mInterop->RequirePipeline(vertexShader, pixelShader, materialState, bindings, macros, renderPass);
+    }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
     template<class T> std::span<T> RequireFrameData(std::span<T> data) {
         auto outData = std::span<T>((T*)RequireFrameData((int)(data.size() * sizeof(T))), data.size());
@@ -196,11 +218,6 @@ struct RenderStatistics {
         mBufferWrites++;
         mBufferBandwidth += size;
     }
-};
-
-struct MacroValue {
-    Identifier mName;
-    Identifier mValue;
 };
 
 // Base class for a graphics device

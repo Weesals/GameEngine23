@@ -159,6 +159,8 @@ namespace Weesals.Engine {
         unsafe public static bool operator ==(CSTexture left, CSTexture right) { return left.mTexture == right.mTexture; }
         unsafe public static bool operator !=(CSTexture left, CSTexture right) { return left.mTexture != right.mTexture; }
 
+        unsafe public static implicit operator CSTexture(CSRenderTarget target) { return new CSTexture((NativeTexture*)target.mRenderTarget); }
+
         unsafe public static CSTexture Create() { return new CSTexture(_Create()); }
         unsafe public static CSTexture Create(int sizeX, int sizeY, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
             var tex = new CSTexture(_Create());
@@ -173,6 +175,8 @@ namespace Weesals.Engine {
         unsafe public Int2 GetSize() { return GetSize(mRenderTarget); }
         unsafe public void SetFormat(BufferFormat format) { SetFormat(mRenderTarget, format); }
         unsafe public BufferFormat GetFormat() { return GetFormat(mRenderTarget); }
+        unsafe public void SetMipCount(int count) { SetMipCount(mRenderTarget, count); }
+        unsafe public int GetMipCount() { return GetMipCount(mRenderTarget); }
 
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }
@@ -418,10 +422,16 @@ namespace Weesals.Engine {
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
         unsafe public Int2 GetResolution() { return GetResolution(mGraphics); }
+        unsafe public void SetRenderTargets(CSRenderTargetBinding colorTarget, CSRenderTargetBinding depth) {
+            SetRenderTargets(mGraphics, colorTarget.mTarget != null ? new CSSpan(&colorTarget, 1) : default, depth);
+        }
         unsafe public void SetRenderTargets(Span<CSRenderTarget> targets, CSRenderTarget depth) {
-            var nativeTargets = stackalloc NativeRenderTarget*[targets.Length];
-            for (int i = 0; i < targets.Length; ++i) nativeTargets[i] = targets[i].mRenderTarget;
-            SetRenderTargets(mGraphics, new CSSpan(nativeTargets, targets.Length), depth.mRenderTarget);
+            var nativeTargets = stackalloc CSRenderTargetBinding[targets.Length];
+            for (int i = 0; i < targets.Length; ++i) nativeTargets[i] = new CSRenderTargetBinding(targets[i].mRenderTarget);
+            SetRenderTargets(mGraphics, new CSSpan(nativeTargets, targets.Length), new CSRenderTargetBinding(depth.mRenderTarget));
+        }
+        unsafe public void SetRenderTargets(MemoryBlock<CSRenderTargetBinding> targets, CSRenderTargetBinding depth) {
+            SetRenderTargets(mGraphics, new CSSpan(targets.Data, targets.Length), depth);
         }
         unsafe public bool IsTombstoned() { return IsTombstoned(mGraphics) != 0; }
         unsafe public void SetResolution(Int2 res) { SetResolution(mGraphics, res); }
@@ -489,7 +499,11 @@ namespace Weesals.Engine {
         unsafe public MemoryBlock<T> RequireFrameData<T>(int count) where T: unmanaged {
             return new MemoryBlock<T>((T*)RequireFrameData(mGraphics, sizeof(T) * count), count);
         }
+        unsafe public CSSpan ImmortalizeBufferLayout(CSSpan data) {
+            return ImmortalizeBufferLayout(mGraphics, data);
+        }
         unsafe public override int GetHashCode() { return (int)(mGraphics) ^ (int)((ulong)mGraphics >> 32); }
+        unsafe public ulong GetGlobalPSOHash() { return GetGlobalPSOHash(mGraphics); }
         unsafe public static implicit operator NativeGraphics*(CSGraphics g) { return g.mGraphics; }
     }
     public partial struct CSRenderPass {
@@ -512,7 +526,7 @@ namespace Weesals.Engine {
         unsafe public void AppendDraw(CSGraphics graphics, CSPipeline pipeline, IList<CSBufferLayout> bindings, CSSpan resources, Int2 instanceRange) {
             var usbindings = stackalloc CSBufferLayout[bindings.Count];
             for (int b = 0; b < bindings.Count; ++b) usbindings[b] = bindings[b];
-            var ibindings = CSGraphics.ImmortalizeBufferLayout(graphics, new CSSpan(usbindings, bindings.Count));
+            var ibindings = graphics.ImmortalizeBufferLayout(new CSSpan(usbindings, bindings.Count));
             AppendDraw(mRenderPass, graphics, pipeline, ibindings, resources, instanceRange);
         }
     }
@@ -571,6 +585,8 @@ namespace Weesals.Engine {
         }
         public static BlendMode MakeOpaque() { return new BlendMode(BlendArg.One, BlendArg.Zero, BlendArg.One, BlendArg.Zero, BlendOp.Add, BlendOp.Add); }
         public static BlendMode MakeAlphaBlend() { return new BlendMode(BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
+        public static BlendMode MakeAdditive() { return new BlendMode(BlendArg.One, BlendArg.One, BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
+        public static BlendMode MakePremultiplied() { return new BlendMode(BlendArg.One, BlendArg.SrcInvAlpha, BlendArg.One, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
 
         public override bool Equals(object? obj) { return obj is BlendMode mode && Equals(mode); }
         public bool Equals(BlendMode other) {

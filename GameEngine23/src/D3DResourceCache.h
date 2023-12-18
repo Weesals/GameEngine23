@@ -56,23 +56,53 @@ public:
         int mRevision = 0;
     };
     struct D3DRenderSurface : public D3DBufferWithSRV {
-        int mRTVOffset;
+        struct SubresourceData {
+            int mRTVOffset = -1;
+            mutable D3D12_RESOURCE_STATES mState = D3D12_RESOURCE_STATE_COMMON;
+        };
+        SubresourceData mMip0;
+        std::vector<SubresourceData> mMipN;
         int mWidth, mHeight;
-        mutable D3D12_RESOURCE_STATES mState = D3D12_RESOURCE_STATE_COMMON;
+        SubresourceData& RequireSubResource(int subresource) {
+            if (subresource == 0) return mMip0;
+            --subresource;
+            if (subresource >= mMipN.size()) mMipN.resize(subresource + 1);
+            return mMipN[subresource];
+        }
+        const SubresourceData& RequireSubResource(int subresource) const {
+            return const_cast<D3DRenderSurface*>(this)->RequireSubResource(subresource);
+        }
         template<class T>
-        bool RequireState(T& barriers, D3D12_RESOURCE_STATES state) const {
-            if (mState == state) return false;
+        bool RequireState(T& barriers, D3D12_RESOURCE_STATES state, int subresourceId) const {
+            auto& subresource = RequireSubResource(subresourceId);
+            if (subresource.mState == state) return false;
             D3D12_RESOURCE_BARRIER barrier;
             barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
             barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
             barrier.Transition.pResource = mBuffer.Get();
-            barrier.Transition.StateBefore = mState;
+            barrier.Transition.StateBefore = subresource.mState;
             barrier.Transition.StateAfter = state;
-            barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barrier.Transition.Subresource = subresourceId;
             barriers.push_back(barrier);
-            mState = state;
+            subresource.mState = state;
             return true;
         }
+    };
+    struct D3DRenderSurfaceView {
+        const D3DRenderSurface* mSurface;
+        int mMip, mSlice;
+        D3DRenderSurfaceView() : mSurface(nullptr), mMip(0), mSlice(0) { }
+        D3DRenderSurfaceView(const D3DRenderSurface* surface) : mSurface(surface), mMip(0), mSlice(0) { }
+        D3DRenderSurfaceView(const D3DRenderSurfaceView& other) = default;
+        D3DRenderSurfaceView(const D3DRenderSurface* surface, int mip, int slice)
+            : mSurface(surface), mMip(mip), mSlice(slice) { }
+        bool operator == (const D3DRenderSurfaceView& other) const = default;
+        D3DRenderSurfaceView& operator = (const D3DRenderSurface* surface) { return *this = D3DRenderSurfaceView(surface); }
+        const D3DRenderSurface* operator -> () const { return mSurface; }
+    };
+    struct CachedSRV {
+        int mType;
+        int mSRVOffset;
     };
     // The GPU data for a mesh
     struct D3DMesh
@@ -175,6 +205,7 @@ private:
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
+    PerFrameItemStore<CachedSRV> mResourceViewCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
     std::vector<uint8_t> mTempData;
@@ -203,7 +234,8 @@ public:
     D3DPipelineState* RequirePipelineState(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        std::span<const MacroValue> macros, const IdentifierWithName& renderPass
+        std::span<const MacroValue> macros, const IdentifierWithName& renderPass,
+        std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
     D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
     D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);

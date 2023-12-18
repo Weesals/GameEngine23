@@ -131,15 +131,13 @@ namespace Weesals.Landscape {
             landscapeDraw = new MeshDrawInstanced(tileMesh, LandMaterial);
             landscapeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
 
-            EdgeMaterial = new Material("./assets/landscape.hlsl");
-            EdgeMaterial.InheritProperties(LandMaterial);
+            EdgeMaterial = new Material(LandMaterial);
             EdgeMaterial.SetMacro("EDGE", "1");
             EdgeMaterial.SetTexture("EdgeTex", CSResources.LoadTexture("./assets/T_WorldsEdge.jpg"));
             edgeDraw = new MeshDrawInstanced(edgeMesh, EdgeMaterial);
             edgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
 
-            WaterMaterial = new("./assets/water.hlsl");
-            WaterMaterial.InheritProperties(LandMaterial);
+            WaterMaterial = new("./assets/water.hlsl", LandMaterial);
             WaterMaterial.SetTexture("NoiseTex", CSResources.LoadTexture("./assets/Noise.jpg"));
             WaterMaterial.SetTexture("FoamTex", CSResources.LoadTexture("./assets/FoamMask.jpg"));
             WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
@@ -147,10 +145,8 @@ namespace Weesals.Landscape {
             waterDraw = new MeshDrawInstanced(tileMesh, WaterMaterial);
             waterDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
 
-            WaterEdgeMaterial = new Material("./assets/water.hlsl");
-            WaterEdgeMaterial.InheritProperties(WaterMaterial);
+            WaterEdgeMaterial = new Material(WaterMaterial);
             WaterEdgeMaterial.SetMacro("EDGE", "1");
-            WaterEdgeMaterial.SetDepthMode(DepthMode.MakeReadOnly());
             waterEdgeDraw = new MeshDrawInstanced(edgeMesh, WaterEdgeMaterial);
             waterEdgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
 
@@ -478,9 +474,6 @@ namespace Weesals.Landscape {
                         if (i == ato) break;
                     }
                 }
-            }
-            if (count > Int2.CSum(imax - imin)) {
-                int a = 0;
             }
             draw.SetInstanceData(items, count, 0, drawHash);
         }
