@@ -435,7 +435,7 @@ const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSp
 		bindingsData.push_back(buffer);
 		pobindings.push_back(&bindingsData.back());
 	}
-	auto pipeline = graphics->mCmdBuffer.GetGraphics()->RequirePipeline(
+	auto pipeline = graphics->mCmdBuffer.RequirePipeline(
 		*(Shader*)vertexShader, *(Shader*)pixelShader, *(MaterialState*)materialState,
 		pobindings, std::span<const MacroValue>((const MacroValue*)macros.mData, macros.mSize), IdentifierWithName(Identifier(renderPass.mId))
 	);
@@ -582,9 +582,9 @@ int CSScene::CreateInstance(NativeScene* scene) {
 	scene->mScene->UpdateInstanceData(sceneId, instanceData);
 	return sceneId;
 }
-void CSScene::UpdateInstanceData(NativeScene* scene, CSInstance instance, const uint8_t* data, int dataLen) {
+void CSScene::UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, const uint8_t* data, int dataLen) {
 	scene->mScene->UpdateInstanceData(instance.GetInstanceId(),
-		std::span<const uint8_t>(data, dataLen));
+		offset, std::span<const uint8_t>(data, dataLen));
 }
 CSSpan CSScene::GetInstanceData(NativeScene* scene, CSInstance instance) {
 	auto data = scene->mScene->GetInstanceData(instance.GetInstanceId());

@@ -95,9 +95,9 @@ public:
 	bool UpdateInstanceData(int instanceId, const T& tdata) {
 		auto& instance = mInstances[instanceId];
 		assert(instance.mData.length * sizeof(Vector4) >= sizeof(T));
-		return UpdateInstanceData(instanceId, std::span<const uint8_t>((const uint8_t*)&tdata, sizeof(T)));
+		return UpdateInstanceData(instanceId, 0, std::span<const uint8_t>((const uint8_t*)&tdata, sizeof(T)));
 	}
-	bool UpdateInstanceData(int instanceId, std::span<const uint8_t> data);
+	bool UpdateInstanceData(int instanceId, int offset, std::span<const uint8_t> data);
 	// Remove an instance from rendering
 	void RemoveInstance(int instanceId);
 

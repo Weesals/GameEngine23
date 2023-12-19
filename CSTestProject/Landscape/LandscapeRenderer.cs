@@ -295,8 +295,8 @@ namespace Weesals.Landscape {
         unsafe private HeightMetaData ComputeMetadata<T>(T heightMap, RectI range) where T : IHeightmapReader {
             // Calculate min/max height range
             int heightMin = int.MaxValue, heightMax = int.MinValue;
-            for (int y = range.Min.Y; y < range.Max.Y; ++y) {
-                for (int x = range.Min.X; x < range.Max.X; ++x) {
+            for (int y = range.Min.Y; y <= range.Max.Y; ++y) {
+                for (int x = range.Min.X; x <= range.Max.X; ++x) {
                     var height = heightMap.GetHeightAt(new Int2(x, y));
                     heightMin = Math.Min(heightMin, height);
                     heightMax = Math.Max(heightMax, height);
@@ -435,8 +435,8 @@ namespace Weesals.Landscape {
                     var value = new UShort2((ushort)(x * TileResolution), (ushort)(y * TileResolution));
                     var ctr = new Vector3((x + 0.5f) * TileResolution + 0.5f, 0f, (y + 0.5f) * TileResolution + 0.5f);
                     var ext = new Vector3((TileResolution + 1) / 2.0f, 0f, (TileResolution + 1) / 2.0f);
-                    ctr.Y = chunk.HeightMedian / HeightScale;
-                    ext.Y = chunk.HeightRange / 2f / HeightScale;
+                    ctr.Y = (float)chunk.HeightMedian / HeightScale;
+                    ext.Y = (float)chunk.HeightRange / 2f / HeightScale;
                     if (localFrustum.GetIsVisible(ctr, ext)) {
                         items[count++] = value;
                         drawHash = HashCode.Combine(drawHash, value);
@@ -449,7 +449,7 @@ namespace Weesals.Landscape {
             var items = stackalloc UShort2[Int2.CSum(imax - imin) * 4 + 2];
             int count = 0;
             int drawHash = 0;
-            var lmax = LandscapeData.Size / TileResolution;
+            var lmax = runtimeData.ChunkCount - 1;
             for (int a = 0; a < 2; a++) {
                 var amin = a == 0 ? imin : imin.YX;
                 var amax = a == 0 ? imax : imax.YX;

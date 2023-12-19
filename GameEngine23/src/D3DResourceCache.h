@@ -30,6 +30,7 @@ public:
     struct D3DBuffer
     {
         ComPtr<ID3D12Resource> mBuffer;
+        DXGI_FORMAT mFormat;
     };
     struct D3DVBView
     {

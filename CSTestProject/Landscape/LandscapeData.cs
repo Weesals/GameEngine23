@@ -48,6 +48,7 @@ namespace Weesals.Landscape {
         public void CombineWith(in LandscapeChangeEvent other) {
             // If this is the first change, just use it as is.
             if (!HasChanges) { this = other; return; }
+            if (!other.HasChanges) return;
             // Otherwise inflate our range and integrate changed flags
             var min = Int2.Min(Range.Min, other.Range.Min);
             var max = Int2.Max(Range.Max, other.Range.Max);

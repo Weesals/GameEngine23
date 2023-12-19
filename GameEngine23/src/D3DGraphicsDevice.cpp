@@ -156,6 +156,7 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
     ComPtr<IDXGISwapChain1> swapChain;
     ThrowIfFailed(d3dFactory->CreateSwapChainForHwnd(mCmdQueue.Get(), hWnd, &swapChainDesc, nullptr, nullptr, &swapChain));
     ThrowIfFailed(swapChain.As(&mSwapChain));
+    mSwapChain->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 }
 
 D3DGraphicsDevice::~D3DGraphicsDevice()

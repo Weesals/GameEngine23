@@ -307,6 +307,7 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
         CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), mCBOffset);
         device->CreateShaderResourceView(d3dTex->mBuffer.Get(), &srvDesc, srvHandle);
         d3dTex->mSRVOffset = mCBOffset;
+        d3dTex->mFormat = textureDesc.Format;
         mCBOffset += descriptorSize;
     }
 

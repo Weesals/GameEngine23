@@ -52,6 +52,7 @@ namespace Weesals.Game {
         TransparentPass transPass;
         HiZPass highZPass;
         BloomPass bloomPass;
+        TemporalJitter temporalJitter;
         PostProcessPass postProcessPass;
         DeferredPass canvasPass;
 
@@ -82,6 +83,8 @@ namespace Weesals.Game {
             landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
             landscape.OnLandscapeChanged += (landscape, change) => { RenderRevision++; };
 
+            scenePasses = new();
+
             var model = Resources.LoadModel("./assets/SM_Barracks.fbx");
             Camera = new Camera() {
                 FOV = 3.14f * 0.25f,
@@ -92,7 +95,11 @@ namespace Weesals.Game {
             shadowPass = new ShadowPass(scene);
             clearPass = new DeferredPass("Clear",
                 default,
-                new[] { new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }), new RenderPass.PassOutput("SceneColor"), },
+                new[] {
+                    new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
+                    new RenderPass.PassOutput("SceneColor"),
+                    new RenderPass.PassOutput("SceneVelocity"),
+                },
                 (CSGraphics graphics, ref RenderPass.Context context) => {
                     graphics.SetViewport(new RectI(Int2.Zero, context.ResolvedDepth.Texture.GetSize()));
                     graphics.Clear();
@@ -111,17 +118,25 @@ namespace Weesals.Game {
             };
             highZPass = new();
             bloomPass = new();
+            temporalJitter = new TemporalJitter("TJitter") {
+                ScenePasses = scenePasses,
+                OnBegin = (size) => {
+                    scenePasses.BeginRender(size);
+                    basePass.UpdateShadowParameters(shadowPass);
+                    transPass.UpdateShadowParameters(shadowPass);
+                },
+            };
             basePass.UpdateShadowParameters(shadowPass);
             transPass.UpdateShadowParameters(shadowPass);
             postProcessPass = new();
             canvasPass = new DeferredPass("Canvas",
-                new[] { new RenderPass.PassInput("SceneColor", true) },
+                new[] { new RenderPass.PassInput("SceneColor", false) },
                 new[] { new RenderPass.PassOutput("SceneColor", 0), },
                 (CSGraphics graphics, ref RenderPass.Context context) => {
                     //graphics.SetViewport(GameViewport);
                     Canvas.Render(graphics, Canvas.Material);
                 });
-            scenePasses = new();
+
             scenePasses.AddPass(shadowPass);
             scenePasses.AddPass(basePass);
             scenePasses.AddPass(transPass);
@@ -129,11 +144,10 @@ namespace Weesals.Game {
             testObject = new();
             foreach (var mesh in model.Meshes) {
                 var instance = scene.CreateInstance();
-                var mat = Matrix4x4.CreateRotationY(3.14f);
-                unsafe { Scene.UpdateInstanceData(instance, &mat, sizeof(Matrix4x4)); }
                 testObject.Meshes.Add(instance);
                 scenePasses.AddInstance(instance, mesh);
             };
+            SetLocation(testObject, Vector3.Zero);
 
             Canvas = new Canvas();
             Canvas.AppendChild(new UIPlay(this));
@@ -177,9 +191,12 @@ namespace Weesals.Game {
         }
 
         public void PreRender(CSGraphics graphics) {
-            if (basePass.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) RenderRevision++;
-            if (transPass.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) RenderRevision++;
-            if (shadowPass.UpdateShadowFrustum(basePass)) RenderRevision++;
+            if (scenePasses.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) {
+                RenderRevision++;
+            }
+            if (shadowPass.UpdateShadowFrustum(scenePasses.Frustum)) {
+                RenderRevision++;
+            }
             Canvas.RequireComposed();
         }
         RenderGraph renderGraph = new();
@@ -187,14 +204,16 @@ namespace Weesals.Game {
             renderGraph.Clear();
             // Render shadows
             renderGraph.BeginPass(shadowPass);
-            basePass.UpdateShadowParameters(shadowPass);
-            transPass.UpdateShadowParameters(shadowPass);
 
             // Render scene color
             renderGraph.BeginPass(clearPass);
+
             renderGraph.BeginPass(basePass);
             //renderGraph.BeginPass(highZPass);
             renderGraph.BeginPass(transPass);
+
+            // Intercept render to set up jitter offset
+            renderGraph.BeginPass(temporalJitter);
 
             // Render post processing
             renderGraph.BeginPass(bloomPass);
@@ -204,6 +223,7 @@ namespace Weesals.Game {
             renderGraph.BeginPass(canvasPass)
                 .SetViewport(GameViewport);
             renderGraph.Execute(canvasPass, graphics);
+            TickObject(testObject);
         }
 
         private void RenderBasePass(CSGraphics graphics, ScenePass pass) {
@@ -226,7 +246,14 @@ namespace Weesals.Game {
                 var data = Scene.GetInstanceData(instance);
                 Matrix4x4 mat = *(Matrix4x4*)data.Data;
                 mat.Translation = pos;
-                Scene.UpdateInstanceData(instance, &mat, sizeof(Matrix4x4));
+                Scene.UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4));
+            }
+        }
+        unsafe private void TickObject(WorldObject target) {
+            foreach (var instance in target.Meshes) {
+                var data = Scene.GetInstanceData(instance);
+                Matrix4x4 mat = *(Matrix4x4*)data.Data;
+                Scene.UpdateInstanceData(instance, sizeof(Matrix4x4), &mat, sizeof(Matrix4x4));
             }
         }
     }

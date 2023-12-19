@@ -20,6 +20,7 @@ struct PSInput
     float2 uv : TEXCOORD0;
     float3 viewPos : TEXCOORD1;
     float3 normal : NORMAL;
+    float2 velocity : VELOCITY;
 };
 
 
@@ -36,6 +37,10 @@ PSInput VSMain(VSInput input)
     result.viewPos = mul(View, float4(worldPos, 1.0)).xyz;
     result.normal = mul(View, float4(worldNrm, 0.0)).xyz;
     result.uv = input.uv;
+
+    float3 prevWorldPos = mul(instance.PreviousModel, float4(input.position.xyz, 1.0)).xyz;
+    float4 previousVPos = mul(PreviousViewProjection, float4(prevWorldPos, 1.0));
+    result.velocity = result.position.xy / result.position.w - previousVPos.xy / previousVPos.w;
         
 #if defined(VULKAN)
     result.position.y = -result.position.y;
@@ -44,9 +49,14 @@ PSInput VSMain(VSInput input)
     return result;
 }
 
-float4 PSMain(PSInput input) : SV_TARGET
+void PSMain(PSInput input
+, out float4 OutColor : SV_Target0
+, out float4 OutVelocity : SV_Target1
+) 
 {
     InstanceData instance = instanceData[input.primitiveId];
+    
+    //input.uv += (ddx(input.uv) * TemporalJitter.x - ddy(input.uv) * TemporalJitter.y);
     
     float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);
@@ -73,8 +83,13 @@ float4 PSMain(PSInput input) : SV_TARGET
     
     o.rgb *= 1.0f - instance.Highlight.a;
     o.rgb += instance.Highlight.rgb;
+    //o.rgb = pow(o.rgb, 4) * 5.0;
 
-    return float4(o, tex.a);
+    // Add a slight amount to avoid velocity being 0 (special case)
+    input.velocity.x += 0.0000001;
+    
+    OutColor = float4(o, tex.a);
+    OutVelocity = float4(input.velocity, 0, 1);
 }
 
 //#include "include/shadowcast.hlsl"

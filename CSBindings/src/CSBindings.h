@@ -337,7 +337,7 @@ public:
 	static void Dispose(NativeScene* scene);
 	static NativeMaterial* GetRootMaterial(NativeScene* scene);
 	static int CreateInstance(NativeScene* scene);
-	static void UpdateInstanceData(NativeScene* scene, CSInstance instance, const uint8_t* data, int dataLen);
+	static void UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, const uint8_t* data, int dataLen);
 	static CSSpan GetInstanceData(NativeScene* scene, CSInstance instance);
 	static NativeTexture* GetGPUBuffer(NativeScene* scene);
 	static int GetGPURevision(NativeScene* scene);

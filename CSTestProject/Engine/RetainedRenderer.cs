@@ -138,8 +138,8 @@ namespace Weesals.Engine {
         public CSInstance CreateInstance() {
             return CSScene.CreateInstance();
         }
-        public unsafe void UpdateInstanceData(CSInstance instance, void* data, int dataLen) {
-            CSScene.UpdateInstanceData(instance, data, dataLen);
+        public unsafe void UpdateInstanceData(CSInstance instance, int offset, void* data, int dataLen) {
+            CSScene.UpdateInstanceData(instance, offset, data, dataLen);
         }
         public MemoryBlock<Vector4> GetInstanceData(CSInstance instance) {
             return CSScene.GetInstanceData(instance);

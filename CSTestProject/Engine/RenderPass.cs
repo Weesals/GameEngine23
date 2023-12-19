@@ -17,9 +17,14 @@ namespace Weesals.Engine {
      * Outputs can be RT or direct to screen
      */
     public struct TextureDesc {
-        public Int2 Size;
+        public Int2 Size = 0;
         public BufferFormat Format;
-        public bool MipMapped;
+        public int MipCount = 1;
+        public TextureDesc() { }
+        public override string ToString() { return $"<{Size}:{Format}:{MipCount}>"; }
+    }
+    public interface ICustomOutputTextures {
+        void FillTextures(ref RenderGraph.CustomTexturesContext context);
     }
     public class RenderPass {
         protected static Material blitMaterial;
@@ -27,14 +32,14 @@ namespace Weesals.Engine {
 
         public struct PassInput {
             public readonly CSIdentifier Name;
-            public readonly bool IsWriteOnly;
-            public PassInput(CSIdentifier name, bool writeOnly) { Name = name; IsWriteOnly = writeOnly; }
+            public readonly bool RequireAttachment;
+            public PassInput(CSIdentifier name, bool requireAttachment = true) { Name = name; RequireAttachment = requireAttachment; }
             public override string ToString() { return Name.ToString(); }
         }
         public struct PassOutput {
             public readonly CSIdentifier Name;
             public readonly int PassthroughInput;
-            public TextureDesc TargetDesc { get; private set; }
+            public TextureDesc TargetDesc { get; private set; } = new();
             public PassOutput(CSIdentifier name, int passthroughInput = -1) {
                 Name = name; PassthroughInput = passthroughInput;
             }
@@ -42,12 +47,21 @@ namespace Weesals.Engine {
             public override string ToString() { return Name.ToString(); }
         }
         public struct IOContext : IDisposable {
+            public readonly RenderGraph Graph;
+            public readonly int PassId;
             private PooledList<PassInput> inputs;
             private PooledList<PassOutput> outputs;
-            public IOContext() {
+
+            public IOContext(RenderGraph renderGraph, int passId) : this() {
+                Graph = renderGraph;
+                PassId = passId;
                 inputs = new();
                 outputs = new();
             }
+            public RectI GetViewport() {
+                return Graph.GetPassData(PassId).Viewport;
+            }
+
             public void AddInput(PassInput input) { inputs.Add(input); }
             public void AddOutput(PassOutput output) { outputs.Add(output); }
             public void Dispose() {
@@ -80,6 +94,9 @@ namespace Weesals.Engine {
             foreach (var input in Inputs) context.AddInput(input);
             foreach (var output in Outputs) context.AddOutput(output);
         }
+        /*public virtual void AdjustParameters(ref ParamContext context) {
+
+        }*/
 
         public Material GetPassMaterial() {
             return OverrideMaterial;
@@ -116,7 +133,13 @@ namespace Weesals.Engine {
             public CSRenderTarget Texture;
             public int Mip;
             public int Slice;
+            public Target(CSRenderTarget texture) {
+                Texture = texture;
+                Mip = 0;
+                Slice = 0;
+            }
             public bool IsValid() { return Texture.IsValid(); }
+            public override string ToString() { return $"{Texture}@{Mip}.{Slice}"; }
         }
         public ref struct Context {
             public Target ResolvedDepth;
@@ -156,8 +179,10 @@ namespace Weesals.Engine {
                 quadMesh.SetIndices(inds);
             }
 
-            material.SetTexture("Texture", texture);
-            material.SetValue("TextureSize", (Vector2)texture.GetSize());
+            if (texture.IsValid()) {
+                material.SetTexture("Texture", texture);
+                material.SetValue("TextureSize", (Vector2)texture.GetSize());
+            }
             Span<CSBufferLayout> bindings = stackalloc CSBufferLayout[2];
             bindings[0] = quadMesh.IndexBuffer;
             bindings[1] = quadMesh.VertexBuffer;
@@ -167,418 +192,7 @@ namespace Weesals.Engine {
                 graphics.Draw(pso, new MemoryBlock<CSBufferLayout>(bindingsPtr, bindings.Length), resources, CSDrawConfig.MakeDefault());
             }
         }
-    }
-    public class RenderTargetPool {
-        private List<CSRenderTarget> pool = new();
-        public CSRenderTarget RequireTarget(TextureDesc desc) {
-            for (int i = pool.Count - 1; i >= 0; --i) {
-                var item = pool[i];
-                if (item.GetSize() == desc.Size && item.GetFormat() == desc.Format && (item.GetMipCount() > 1) == desc.MipMapped) {
-                    pool.RemoveAt(i);
-                    return item;
-                }
-            }
-            var target = CSRenderTarget.Create();
-            target.SetSize(desc.Size);
-            target.SetFormat(desc.Format);
-            if(desc.MipMapped) target.SetMipCount(
-                31 - BitOperations.LeadingZeroCount((uint)Math.Max(desc.Size.X, desc.Size.Y))
-            );
-            return target;
-        }
-        public void Return(CSRenderTarget target) {
-            pool.Add(target);
-        }
-    }
-    public class RenderGraph {
-        public delegate void RenderPassEvaluator(CSGraphics graphics, ref RenderPass.Context context);
-        public struct Pass {
-            public RenderPass RenderPass;
-            public RangeInt InputsRange;
-            public RangeInt OutputsRange;
-            public RenderPassEvaluator Evaluator;
-            public RectI Viewport;
-            public override string ToString() { return $"{RenderPass}[{InputsRange}]"; }
-        }
-        public struct RPInput {
-            public RenderPass.PassInput Input;
-            public int OtherPassId;
-            public int OtherOutput;
-            public override string ToString() { return $"{Input}: {OtherPassId}[{OtherOutput}]"; }
-            public static readonly RPInput Invalid = new RPInput() { OtherPassId = -1, OtherOutput = -1, };
-        }
-        public struct RPOutput {
-            public RenderPass.PassOutput Output;
-            public int TargetId;
-            public override string ToString() { return $"{Output}: {TargetId}"; }
-            public static readonly RPOutput Invalid = new RPOutput() { Output = default, TargetId = -1, };
-        }
-        public struct Builder {
-            public readonly RenderGraph Graph;
-            public readonly RenderPass Pass;
-            private readonly int passId;
-            public Builder(RenderGraph graph, RenderPass pass) {
-                Graph = graph;
-                Pass = pass;
-                Debug.Assert(pass != null, "Pass is null");
-                passId = Graph.passes.Count;
-                var iocontext = new RenderPass.IOContext();
-                Pass.GetInputOutput(ref iocontext);
-                var inputs = iocontext.GetInputs();
-                var outputs = iocontext.GetOutputs();
-                var deps = Graph.dependencies.Allocate(inputs.Length);
-                var outs = Graph.outputs.Allocate(outputs.Length);
-                Graph.dependencies.Slice(deps).AsSpan().Fill(RPInput.Invalid);
-                Graph.outputs.Slice(outs).AsSpan().Fill(RPOutput.Invalid);
-                for (int i = 0; i < inputs.Length; ++i) Graph.dependencies[deps.Start + i].Input = inputs[i];
-                for (int i = 0; i < outputs.Length; ++i) Graph.outputs[outs.Start + i].Output = outputs[i];
-                foreach (var input in inputs) Debug.Assert(input.Name.IsValid());
-                foreach (var output in outputs) Debug.Assert(output.Name.IsValid());
-                Graph.passes.Add(new Pass() {
-                    RenderPass = Pass,
-                    InputsRange = deps,
-                    OutputsRange = outs,
-                });
-            }
-            public Builder SetEvaluator(RenderPassEvaluator evaluator) {
-                var pass = Graph.passes[passId];
-                pass.Evaluator = evaluator;
-                Graph.passes[passId] = pass;
-                return this;
-            }
-            public Builder SetDependency(CSIdentifier identifier, RenderPass other, int outputId = -1) {
-                int otherPassId;
-                if (other != null) {
-                    for (otherPassId = passId - 1; otherPassId >= 0; --otherPassId) {
-                        if (Graph.passes[otherPassId].RenderPass == other) break;
-                    }
-                } else {
-                    Debug.Assert(outputId == -1, "Cannot specify an output id without pass");
-                    for (otherPassId = passId - 1; otherPassId >= 0; --otherPassId) {
-                        other = Graph.passes[otherPassId].RenderPass;
-                        outputId = other.FindOutputI(identifier);
-                        if (outputId >= 0) break;
-                    }
-                    Debug.Assert(outputId >= 0, "Failed to find pass for input " + identifier);
-                }
-                return SetDependency(identifier, otherPassId, outputId);
-            }
-            private Builder SetDependency(CSIdentifier identifier, int otherPassId, int outputId = -1) {
-                var pass = Graph.passes[passId];
-                //if (outputId == -1) outputId = Graph.passes[otherPassId].RenderPass.FindOutputI(identifier);
-                var deps = Graph.dependencies.Slice(pass.InputsRange).AsSpan();
-                int input = deps.Length - 1;
-                for (; input >= 0; --input) if (deps[input].Input.Name == identifier) break;
-                if (input != -1) {
-                    deps[input].OtherPassId = otherPassId;
-                    deps[input].OtherOutput = outputId;
-                    Graph.passes[passId] = pass;
-                }
-                return this;
-            }
-            public void SetViewport(RectI viewport) {
-                var pass = Graph.passes[passId];
-                pass.Viewport = viewport;
-                Graph.passes[passId] = pass;
-            }
-        }
-        private List<Pass> passes = new();
-        private HashSet<RenderPass> rendered = new();
-        private SparseArray<RPInput> dependencies = new();
-        private SparseArray<RPOutput> outputs = new();
-        private RenderTargetPool rtPool = new();
-        public void Clear() {
-            passes.Clear();
-            rendered.Clear();
-            dependencies.Clear();
-            outputs.Clear();
-        }
-        public Builder BeginPass(RenderPass pass) {
-            return new Builder(this, pass);
-        }
-
-        public struct BufferItem {
-            public TextureDesc Description;
-            public bool RequireAttachment;
-            public RenderPass.Target Target;
-        }
-        public struct ExecuteItem {
-            public int PassId;
-            //public RangeInt ResolvedTargets;
-            public override string ToString() { return PassId.ToString(); }
-        }
-        private void FillDependencies(int passId) {
-            var passData = passes[passId];
-            var selfPass = passData.RenderPass;
-            var selfDeps = dependencies.AsSpan().Slice(passData.InputsRange);
-            for (int i = 0; i < selfDeps.Length; i++) {
-                ref var dep = ref selfDeps[i];
-                var input = dep.Input;
-                if (dep.OtherPassId == -1) {
-                    for (int p = passId - 1; p >= 0; --p) {
-                        var pass = passes[p];
-                        var outId = pass.RenderPass.FindOutputI(input.Name);
-                        if (outId >= 0) {
-                            dep.OtherPassId = p;
-                            dep.OtherOutput = outId;
-                            break;
-                        }
-                    }
-                    Debug.Assert(dep.OtherPassId != -1, "Could not find pass for input buffer");
-                }
-                if (dep.OtherOutput == -1) {
-                    dep.OtherOutput = passes[dep.OtherPassId].RenderPass.FindOutputI(input.Name);
-                }
-                Debug.Assert(dep.OtherOutput >= -1, "Could not find dependency for " + selfPass);
-            }
-        }
-        public void Execute(RenderPass pass, CSGraphics graphics) {
-            using var buffers = new PooledList<BufferItem>();
-            //using var outputBufferIds = new PooledList<int>();
-            //outputBufferIds.Add(-1, outputs.Items.Length);
-            using var inputBufferIds = new PooledArray<int>(dependencies.Items.Length);
-            Array.Fill(inputBufferIds.Data, -1);
-            using var executeList = new PooledList<ExecuteItem>();
-            using var tempTargets = new PooledList<CSRenderTarget>();
-
-            {
-                var passId = passes.Count - 1;
-                for (; passId >= 0; --passId) if (passes[passId].RenderPass == pass) break;
-                executeList.Add(new ExecuteItem() { PassId = passId, });
-            }
-            // Collect dependencies
-            for (int l = 0; l < executeList.Count; ++l) {
-                var selfExec = executeList[l];
-                FillDependencies(selfExec.PassId);
-                var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange);
-                for (int i = 0; i < selfDeps.Count; i++) {
-                    var selfDep = selfDeps[i];
-                    int otherI = 0;
-                    for (; otherI < executeList.Count; ++otherI) if (executeList[otherI].PassId == selfDep.OtherPassId) break;
-                    if (otherI >= executeList.Count) {
-                        var otherPass = passes[selfDep.OtherPassId].RenderPass;
-                        // Add it and resolve its targets
-                        executeList.Add(new ExecuteItem() { PassId = selfDep.OtherPassId, });
-                    }
-                }
-            }
-            // Build executeList based on dependencies
-            // Mark any non-write-only dependencies as Required
-            for (int l = 0; l < executeList.Count; ++l) {
-                var selfExec = executeList[l];
-                var selfPassData = passes[selfExec.PassId];
-                var selfPass = selfPassData.RenderPass;
-                var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
-                var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
-                uint passthroughMask = 0;
-                for (int o = 0; o < selfOutputs.Length; o++)
-                    if (selfOutputs[o].Output.PassthroughInput >= 0)
-                        passthroughMask |= 1u << selfOutputs[o].Output.PassthroughInput;
-                for (int i = 0; i < selfDeps.Length; ++i) {
-                    var selfInput = selfDeps[i];
-                    var selfDep = selfDeps[i];
-                    var otherOutputI = selfDep.OtherOutput;
-                    // Check that the item doesnt already exist
-                    int otherI = 0;
-                    for (; otherI < executeList.Count; ++otherI) if (executeList[otherI].PassId == selfDep.OtherPassId) break;
-                    Debug.Assert(otherI < executeList.Count);
-                    if ((passthroughMask & (1u << i)) != 0) {
-                        var otherPassData = passes[selfDep.OtherPassId];
-                        otherPassData.Viewport = selfPassData.Viewport;
-                        passes[selfDep.OtherPassId] = otherPassData;
-                    }
-                }
-            }
-            // Collect and merge descriptors
-            for (int l = executeList.Count - 1; l >= 0; --l) {
-                var selfExec = executeList[l];
-                var selfPassData = passes[selfExec.PassId];
-                var selfPass = selfPassData.RenderPass;
-                var selfDeps = dependencies.Slice(selfPassData.InputsRange).AsSpan();
-                var selfOutputIds = outputs.Slice(selfPassData.OutputsRange).AsSpan();
-                var selfInputIds = inputBufferIds.AsSpan().Slice(selfPassData.InputsRange);
-                // Grab input buffers from dependencies
-                for (int i = 0; i < selfDeps.Length; i++) {
-                    var selfDep = selfDeps[i];
-                    int otherI = 0;
-                    for (; otherI < executeList.Count; ++otherI) if (executeList[otherI].PassId == selfDep.OtherPassId) break;
-                    Debug.Assert(otherI < executeList.Count);
-                    ref var otherExec = ref executeList[otherI];
-                    var otherTargetIds = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
-                    selfInputIds[i] = otherTargetIds[selfDep.OtherOutput].TargetId;
-                }
-                // Fill selfTargets
-                for (int o = 0; o < selfOutputIds.Length; ++o) {
-                    var output = selfOutputIds[o];
-                    Debug.Assert(selfOutputIds[o].TargetId == -1);
-                    // First based on passthrough inputs (reuse buffer of input)
-                    if (output.Output.PassthroughInput != -1) selfOutputIds[o].TargetId = selfInputIds[output.Output.PassthroughInput];
-                    // Otherwise allocate a new buffer
-                    if (selfOutputIds[o].TargetId == -1) {
-                        selfOutputIds[o].TargetId = buffers.Count;
-                        buffers.Add(new BufferItem() { Description = output.Output.TargetDesc, });
-                    }
-                    // Populate the buffer with our specifications
-                    ref var buffer = ref buffers[selfOutputIds[o].TargetId];
-                    if (buffer.Description.Format == BufferFormat.FORMAT_UNKNOWN)
-                        buffer.Description.Format = output.Output.TargetDesc.Format;
-                    if (buffer.Description.Size == 0)
-                        buffer.Description.Size = output.Output.TargetDesc.Size;
-                    buffer.Description.MipMapped |= output.Output.TargetDesc.MipMapped;
-                }
-            }
-            // Mark input buffers as requiring attachment
-            for (int l = executeList.Count - 1; l >= 0; --l) {
-                var selfExec = executeList[l];
-                var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
-                var selfPassData = passes[selfExec.PassId];
-                var selfPass = selfPassData.RenderPass;
-                var selfOutputIds = outputs.Slice(selfPassData.OutputsRange).AsSpan();
-                for (int i = 0; i < selfDeps.Length; i++) {
-                    var selfInput = selfDeps[i].Input;
-                    var selfDep = selfDeps[i];
-                    if (!selfInput.IsWriteOnly) {
-                        int otherI = 0;
-                        for (; otherI < executeList.Count; ++otherI) if (executeList[otherI].PassId == selfDep.OtherPassId) break;
-                        Debug.Assert(otherI < executeList.Count);
-                        ref var otherExec = ref executeList[otherI];
-                        var otherTargetIds = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
-                        Debug.Assert(otherTargetIds[selfDep.OtherOutput].TargetId >= 0);
-                        buffers[otherTargetIds[selfDep.OtherOutput].TargetId].RequireAttachment |= !selfInput.IsWriteOnly;
-                    }
-                }
-            }
-            // Reorder for performance
-            {
-                using var refCounter = new PooledArray<int>(passes.Count);
-                refCounter.AsSpan().Fill(0);
-                for (int l = 0; l < executeList.Count; ++l) {
-                    var selfExec = executeList[l];
-                    var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange);
-                    for (int i = 0; i < selfDeps.Count; i++) {
-                        var selfDep = selfDeps[i];
-                        refCounter[selfDep.OtherPassId]++;
-                    }
-                }
-                // Reorder to preferred order
-                for (int l = 0; l < executeList.Count - 1; l++) {
-                    var selfExec = executeList[l];
-                    var selfOutputs = outputs.Slice(passes[selfExec.PassId].OutputsRange);
-                    Debug.Assert(refCounter[selfExec.PassId] == 0, "Pass should have no dependencies by now");
-                    var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange);
-                    for (int i = 0; i < selfDeps.Count; i++) {
-                        var selfDep = selfDeps[i];
-                        refCounter[selfDep.OtherPassId]--;
-                    }
-                    int best = -1;
-                    int bestScore = -1;
-                    for (int l2 = l + 1; l2 < executeList.Count; l2++) {
-                        var otherExec = executeList[l2];
-                        if (refCounter[otherExec.PassId] != 0) continue;
-                        var otherOutputs = outputs.Slice(passes[otherExec.PassId].OutputsRange);
-                        int score = 0;
-                        int min = Math.Min(otherOutputs.Count, selfOutputs.Count);
-                        for (int i = 0; i < min; i++) {
-                            if (selfOutputs[i].TargetId == otherOutputs[i].TargetId) ++score;
-                        }
-                        if (score > bestScore) {
-                            bestScore = score;
-                            best = l2;
-                        }
-                    }
-                    Debug.Assert(best >= 0, "Could not find valid pass");
-                    if (best != l + 1) {
-                        var tmp = executeList[l + 1];
-                        executeList[l + 1] = executeList[best];
-                        executeList[best] = tmp;
-                    }
-                }
-            }
-            /*for (int i = 0; i < executeList.Count; i++) {
-                var selfExec = executeList[i];
-                var selfOutputIds = outputs.AsSpan().Slice(passes[selfExec.PassId].OutputsRange);
-                var selfInputIds = inputBufferIds.AsSpan().Slice(passes[selfExec.PassId].InputsRange);
-                uint idsMask = 0;
-                for (int i2 = i + 1; i2 < executeList.Count; i2++) {
-                    var otherExec = executeList[i2];
-                    var otherOutputIds = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
-                    var otherInputIds = inputBufferIds.AsSpan().Slice(passes[otherExec.PassId].InputsRange);
-                    bool sharesRT = false;
-                    uint otherIdsMask = 0;
-                    for (int t = 0; t < otherOutputIds.Length; t++) {
-                        foreach (var item in selfOutputIds) if (otherOutputIds[t].TargetId == item.TargetId) sharesRT = true;
-                        if (selfInputIds.Contains(otherOutputIds[t].TargetId)) otherIdsMask = 0xffffffff;
-                        otherIdsMask |= 1u << otherOutputIds[t].TargetId;
-                    }
-                    bool hasDependencies = (idsMask & otherIdsMask) != 0;
-                    idsMask |= otherIdsMask;
-                    // This item is irrelevant
-                    if (!sharesRT) continue;
-                    // This item is already well positioned
-                    if (i2 == i + 1) break;
-                    // Another dependency is blocking this move
-                    if (hasDependencies) break;
-
-                    var tmp = executeList[i + 1];
-                    executeList[i + 1] = otherExec;
-                    executeList[i2] = tmp;
-                    break;
-                }
-            }*/
-            // Create temporary RTs for any required RTs
-            foreach (ref var buffer in buffers) {
-                if (buffer.Target.IsValid()) continue;
-                if (buffer.RequireAttachment) {
-                    var desc = buffer.Description;
-                    if (desc.Size.X == -1) desc.Size = graphics.GetResolution();
-                    if (desc.Format == BufferFormat.FORMAT_UNKNOWN) desc.Format = BufferFormat.FORMAT_R8G8B8A8_UNORM;
-                    buffer.Target.Texture = rtPool.RequireTarget(desc);
-                    tempTargets.Add(buffer.Target.Texture);
-                }
-            }
-            // Set resolved RTs for any passes that require them
-            for (int l = 0; l < executeList.Count; ++l) {
-                var selfExec = executeList[l];
-                var selfPass = passes[selfExec.PassId].RenderPass;
-                var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
-                for (int i = 0; i < selfDeps.Length; ++i) {
-                    var input = selfDeps[i].Input;
-                    var dep = selfDeps[i];
-                    int index = 0;
-                    for (; index < executeList.Count; ++index) if (executeList[index].PassId == dep.OtherPassId) break;
-                    if (index >= executeList.Count) continue;
-                    var otherTarget = outputs.AsSpan().Slice(passes[executeList[index].PassId].OutputsRange)[dep.OtherOutput];
-                    selfPass.GetPassMaterial().SetTexture(input.Name, buffers[otherTarget.TargetId].Target.Texture);
-                }
-            }
-            using var targetsSpan = new PooledList<RenderPass.Target>(16);
-            // Invoke render passes
-            for (int r = executeList.Count - 1; r >= 0; --r) {
-                var execItem = executeList[r];
-                var passData = passes[execItem.PassId];
-                var selfTargetIds = outputs.AsSpan().Slice(passes[execItem.PassId].OutputsRange);
-                var selfOutputs = outputs.Slice(passData.OutputsRange).AsSpan();
-                RenderPass.Target depth = default;
-                for (int i = 0; i < selfTargetIds.Length; i++) {
-                    var target = buffers[selfTargetIds[i].TargetId].Target;
-                    var fmt = target.Texture.IsValid() ? target.Texture.GetFormat() : selfOutputs[i].Output.TargetDesc.Format;
-                    if (BufferFormatType.GetIsDepthBuffer(fmt)) depth = target;
-                    else targetsSpan.Add(target);
-                }
-                RenderPass.Context context = new RenderPass.Context(depth, targetsSpan) {
-                    Viewport = passData.Viewport,
-                };
-                if (passData.Evaluator != null)
-                    passData.Evaluator(graphics, ref context);
-                else
-                    passData.RenderPass.Render(graphics, ref context);
-                targetsSpan.Clear();
-            }
-            // Clean up temporary RTs
-            foreach (var item in tempTargets) {
-                if (item.IsValid()) rtPool.Return(item);
-            }
-        }
+        public override string ToString() { return Name; }
     }
     public class ScenePass : RenderPass {
         public readonly RenderQueue RenderQueue;
@@ -635,9 +249,8 @@ namespace Weesals.Engine {
             Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 1024, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }) };
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
         }
-        public bool UpdateShadowFrustum(ScenePass basePass) {
+        public bool UpdateShadowFrustum(Frustum frustum) {
             // Create shadow projection based on frustum near/far corners
-            var frustum = basePass.GetFrustum();
             Span<Vector3> corners = stackalloc Vector3[8];
             frustum.GetCorners(corners);
             var lightViewMatrix = Matrix4x4.CreateLookAt(new Vector3(40, 50, -70), Vector3.Zero, Vector3.UnitY);
@@ -675,17 +288,8 @@ namespace Weesals.Engine {
             base.RenderScene(graphics, ref context);
         }
     }
-    public class BasePass : ScenePass {
-        public BasePass(Scene scene) : base(scene, "BasePass") {
-            Outputs = new[] {
-                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
-                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, }),
-            };
-            Inputs = new[] {
-                new PassInput("SceneDepth", true),
-                new PassInput("SceneColor", true),
-                new PassInput("ShadowMap", false),
-            };
+    public class MainPass : ScenePass {
+        public MainPass(Scene scene, string name) : base(scene, name) {
         }
         public void UpdateShadowParameters(ScenePass shadowPass) {
             var basePassMat = OverrideMaterial;
@@ -697,40 +301,105 @@ namespace Weesals.Engine {
             basePassMat.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
         }
     }
-    public class TransparentPass : ScenePass {
-        public TransparentPass(Scene scene) : base(scene, "TransparentPass") {
-            Outputs = new[] {
-                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
-                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, /*Format = BufferFormat.FORMAT_R11G11B10_FLOAT,*/ }),
-            };
+    public class BasePass : MainPass {
+        public BasePass(Scene scene) : base(scene, "BasePass") {
             Inputs = new[] {
                 new PassInput("SceneDepth", false),
-                new PassInput("SceneColor", true),
-                new PassInput("ShadowMap", false),
+                new PassInput("SceneColor", false),
+                new PassInput("SceneVelocity", false),
+                new PassInput("ShadowMap"),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
+                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, MipCount = 1, }),
+                new PassOutput("SceneVelocity", 2).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R16G16_FLOAT, MipCount = 1, }),
+            };
+            TagsToInclude.Add(scene.TagManager.RequireTag("MainPass"));
+        }
+    }
+    public class TransparentPass : MainPass {
+        public TransparentPass(Scene scene) : base(scene, "TransparentPass") {
+            Inputs = new[] {
+                new PassInput("SceneDepth"),
+                new PassInput("SceneColor", false),
+                new PassInput("ShadowMap"),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
+                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, }),
             };
             TagsToInclude.Clear();
             TagsToInclude.Add(scene.TagManager.RequireTag("Transparent"));
+            TagsToInclude.Add(scene.TagManager.RequireTag("MainPass"));
             GetPassMaterial().SetBlendMode(BlendMode.MakeAlphaBlend());
             GetPassMaterial().SetDepthMode(DepthMode.MakeReadOnly());
         }
-        public void UpdateShadowParameters(ScenePass shadowPass) {
-            var basePassMat = OverrideMaterial;
-            var shadowPassViewProj = shadowPass.View * shadowPass.Projection;
-            Matrix4x4.Invert(View, out var basePassInvView);
-            basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);
-            basePassMat.SetValue("ShadowIVViewProjection", basePassInvView * shadowPassViewProj);
-            basePassMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(-Vector3.UnitZ, basePassInvView)));
-            basePassMat.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f));
+    }
+    public class TemporalJitter : RenderPass, ICustomOutputTextures {
+        public ScenePassManager ScenePasses;
+        public Action<Int2>? OnBegin;
+        public DeferredPass.RenderPassEvaluator? OnRender;
+        private Material temporalMaterial;
+        CSRenderTarget[] targets = new CSRenderTarget[2];
+        CSRenderTarget accumulation;
+        int frame = 0;
+        private Matrix4x4 previousViewProj;
+        public TemporalJitter(string name) : base(name) {
+            Inputs = new[] { new RenderPass.PassInput("SceneDepth"), new RenderPass.PassInput("SceneColor", true), new RenderPass.PassInput("SceneVelocity", true), };
+            Outputs = new[] { new RenderPass.PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }), };
+            temporalMaterial = new Material("./assets/temporal.hlsl", GetPassMaterial());
+            //temporalMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
+        }
+        public void FillTextures(ref RenderGraph.CustomTexturesContext context) {
+            ++frame;
+            int targetId = frame % 2;
+            if (!targets[targetId].IsValid() || targets[targetId].GetSize() != context.Viewport.Size) {
+                if (targets[targetId].IsValid()) targets[targetId].Dispose();
+                targets[targetId] = CSRenderTarget.Create();
+                targets[targetId].SetSize(context.Viewport.Size);
+                targets[targetId].SetFormat(BufferFormat.FORMAT_R11G11B10_FLOAT);
+            }
+            /*if (!accumulation.IsValid() || accumulation.GetSize() != context.Viewport.Size) {
+                if (accumulation.IsValid()) accumulation.Dispose();
+                accumulation = CSRenderTarget.Create();
+                accumulation.SetSize(context.Viewport.Size);
+                accumulation.SetFormat(BufferFormat.FORMAT_R11G11B10_FLOAT);
+            }*/
+            //context.OverwriteInput(context.Inputs[1], targets[targetId]);
+            context.OverwriteOutput(context.Outputs[0], targets[targetId]);
+            OnBegin?.Invoke(context.Viewport.Size);
+        }
+        public override void Render(CSGraphics graphics, ref Context context) {
+            base.Render(graphics, ref context);
+            var viewProj = ScenePasses.View * ScenePasses.Projection;
+            Matrix4x4.Invert(previousViewProj, out var invPrevVP);
+            Matrix4x4.Invert(viewProj, out var invVP);
+            temporalMaterial.SetValue("PreviousVP", previousViewProj);
+            temporalMaterial.SetValue("CurrentVP", invVP);
+            OnRender?.Invoke(graphics, ref context);
+            //var targetId = frame % 2;
+            //DrawQuad(graphics, GetPassMaterial().GetUniformTexture("SceneColor"));
+            var sceneColor = GetPassMaterial().GetUniformTexture("SceneColor");
+            var target0 = frame % 2;
+            var target1 = (frame - 1) % 2;
+            if (targets[target1].IsValid()) {
+                temporalMaterial.SetTexture("CurrentFrame", sceneColor);
+                temporalMaterial.SetTexture("PreviousFrame", targets[target1]);
+                DrawQuad(graphics, default, temporalMaterial);
+            } else {
+                DrawQuad(graphics, sceneColor);
+            }
+            previousViewProj = viewProj;
         }
     }
     public class HiZPass : RenderPass {
         protected Material depthBlitMaterial;
         public HiZPass() : base("HighZ") {
-            Outputs = new[] {
-                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, MipMapped = true, }),
-            };
             Inputs = new[] {
-                new PassInput("SceneDepth", false),
+                new PassInput("SceneDepth"),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, MipCount = 0, }),
             };
             depthBlitMaterial = new Material("./assets/copydepth.hlsl");
             depthBlitMaterial.SetBlendMode(BlendMode.MakeOpaque());
@@ -753,14 +422,19 @@ namespace Weesals.Engine {
         protected Material bloomChainMaterial;
         public BloomPass() : base("Bloom") {
             Inputs = new[] {
-                new PassInput("SceneColor", false),
+                new PassInput("SceneColor"),
             };
             Outputs = new[] {
-                new PassOutput("BloomChain").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, MipMapped = true, }),
+                new PassOutput("BloomChain").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, MipCount = 7, }),
             };
             bloomChainMaterial = new Material("./assets/bloomchain.hlsl");
             bloomChainMaterial.SetBlendMode(BlendMode.MakeOpaque());
             bloomChainMaterial.SetDepthMode(DepthMode.MakeOff());
+        }
+        public override void GetInputOutput(ref IOContext context) {
+            base.GetInputOutput(ref context);
+            //var desc = Outputs[0].TargetDesc;
+            //desc.MipCount = 
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
             var sceneColor = GetPassMaterial().GetUniformTexture("SceneColor");
@@ -782,11 +456,11 @@ namespace Weesals.Engine {
         protected Material postMaterial;
         public PostProcessPass() : base("PostProcess") {
             Inputs = new[] {
-                new PassInput("SceneColor", false),
-                new PassInput("BloomChain", false),
+                new PassInput("SceneColor"),
+                new PassInput("BloomChain"),
             };
             Outputs = new[] {
-                new PassOutput("SceneColor"),
+                new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }),
             };
             postMaterial = new Material("./assets/postprocess.hlsl");
             postMaterial.SetBlendMode(BlendMode.MakePremultiplied());
@@ -806,8 +480,9 @@ namespace Weesals.Engine {
     }
 
     public class DeferredPass : RenderPass {
-        public RenderGraph.RenderPassEvaluator OnRender;
-        public DeferredPass(string name, PassInput[]? inputs, PassOutput[]? outputs, RenderGraph.RenderPassEvaluator onRender) : base(name) {
+        public delegate void RenderPassEvaluator(CSGraphics graphics, ref RenderPass.Context context);
+        public RenderPassEvaluator OnRender;
+        public DeferredPass(string name, PassInput[]? inputs, PassOutput[]? outputs, RenderPassEvaluator onRender) : base(name) {
             if (inputs != null) Inputs = inputs;
             if (outputs != null) Outputs = outputs;
             OnRender = onRender;
@@ -819,7 +494,14 @@ namespace Weesals.Engine {
     }
 
     public class ScenePassManager {
+        private Matrix4x4 view, projection;
         private List<ScenePass> scenePasses = new();
+
+        public Matrix4x4 View => view;
+        public Matrix4x4 Projection => projection;
+        public Frustum Frustum => new Frustum(view * projection);
+        Matrix4x4 previousView, previousProj;
+
         public void AddInstance(CSInstance instance, Mesh mesh) {
             AddInstance(instance, mesh, null, RenderTags.Default);
         }
@@ -838,6 +520,41 @@ namespace Weesals.Engine {
 
         public void AddPass(ScenePass pass) {
             scenePasses.Add(pass);
+        }
+
+        Vector2[] offsets = new Vector2[] {
+            new Vector2(-0.8f, -0.266f),
+            new Vector2(0.8f, 0.266f),
+            new Vector2(-0.266f, 0.8f),
+            new Vector2(0.266f, -0.8f),
+        };
+        int frame = 0;
+        public bool SetViewProjection(Matrix4x4 view, Matrix4x4 projection) {
+            if (this.view == view && this.projection == projection) return false;
+            this.view = view;
+            this.projection = projection;
+            return true;
+        }
+
+        public void BeginRender(Int2 viewportSize) {
+            ++frame;
+            var jitter = offsets[frame % offsets.Length];
+            var jitteredProjection = projection;
+            var jitteredPrevProj = previousProj;
+            jitteredProjection.M31 += jitter.X / viewportSize.X;
+            jitteredProjection.M32 += jitter.Y / viewportSize.Y;
+            jitteredPrevProj.M31 += jitter.X / viewportSize.X;
+            jitteredPrevProj.M32 += jitter.Y / viewportSize.Y;
+            var previousVP = previousView * jitteredPrevProj;
+            foreach (var pass in scenePasses) {
+                if (pass.TagsToInclude.Has(pass.Scene.TagManager.RequireTag("MainPass"))) {
+                    pass.OverrideMaterial.SetValue("PreviousViewProjection", previousVP);
+                    pass.OverrideMaterial.SetValue("TemporalJitter", jitter);
+                    pass.SetViewProjection(view, jitteredProjection);
+                }
+            }
+            previousView = View;
+            previousProj = Projection;
         }
     }
 }

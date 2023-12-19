@@ -33,10 +33,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
     }
     sum /= Count * Count;
 #if CopyPass
-    //const float Limit = 0.9;
-    //sum = min(sum, Limit - (Limit - sum) * 10.0);
-    //sum *= 2.0;
     sum -= 1.0;
+    sum = max(sum, 0.0);
 #endif
     return sum;
 }

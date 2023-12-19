@@ -177,6 +177,7 @@ namespace Weesals.Engine {
         unsafe public BufferFormat GetFormat() { return GetFormat(mRenderTarget); }
         unsafe public void SetMipCount(int count) { SetMipCount(mRenderTarget, count); }
         unsafe public int GetMipCount() { return GetMipCount(mRenderTarget); }
+        unsafe public void Dispose() { Dispose(mRenderTarget); }
 
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }
@@ -536,7 +537,7 @@ namespace Weesals.Engine {
         unsafe public int GetGPURevision() { return GetGPURevision(mScene); }
         unsafe public CSMaterial GetRootMaterial() { return new CSMaterial(GetRootMaterial(mScene)); }
         unsafe public CSInstance CreateInstance() { return new CSInstance(CreateInstance(mScene)); }
-        unsafe public void UpdateInstanceData(CSInstance instance, void* data, int dataLen) { UpdateInstanceData(mScene, instance, (byte*)data, dataLen); }
+        unsafe public void UpdateInstanceData(CSInstance instance, int offset, void* data, int dataLen) { UpdateInstanceData(mScene, instance, offset, (byte*)data, dataLen); }
         unsafe public MemoryBlock<Vector4> GetInstanceData(CSInstance instance) { return GetInstanceData(mScene, instance).AsMemoryBlock<Vector4>(); }
         unsafe public CSRenderPass GetBasePass() { return new CSRenderPass(GetBasePass(mScene)); }
         unsafe public CSRenderPass GetShadowPass() { return new CSRenderPass(GetShadowPass(mScene)); }

@@ -104,7 +104,7 @@ namespace Weesals.Landscape.Editor {
 
                     var heightAve = (float)heightSum / Math.Max(1, heightCount);
 
-                    var amount = intensityCurve.Evaluate(dstL) * Time.deltaTime * 50f;
+                    var amount = intensityCurve.Evaluate(dstL) * Math.Clamp(Time.deltaTime * 50f, 0f, 1f);
 
                     var terrainIndex = it.Sizing.ToIndex(terrainPos);
                     var cell = heightMapRaw[terrainIndex];
@@ -142,7 +142,7 @@ namespace Weesals.Landscape.Editor {
                     var delta = cell.Height - surfaceHeightTerrain;
                     if (Math.Abs(delta) < threshold) continue;
                     threshold = Easing.MoveTowards(
-                        Easing.Lerp(Math.Abs(delta), threshold, Time.deltaTime * 10f),
+                        Easing.Lerp(Math.Abs(delta), threshold, Math.Clamp(Time.deltaTime * 10f, 0f, 1f)),
                         threshold,
                         (float)rnd.NextDouble()
                     );

@@ -6,7 +6,7 @@
 struct InstanceData
 {
     matrix Model;
-    matrix Unused;
+    matrix PreviousModel;
     float4 Highlight;
     float4 V10;
 };

@@ -132,6 +132,7 @@ public:
         surface->RequireSubResource(0).mState = D3D12_RESOURCE_STATE_COMMON;
         surface->mWidth = (int)rtvDesc.Width;
         surface->mHeight = (int)rtvDesc.Height;
+        surface->mFormat = rtvDesc.Format;
 
         // Create texture view
         D3D12_RENDER_TARGET_VIEW_DESC rtvViewDesc = { .Format = rtvDesc.Format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D };
@@ -160,6 +161,7 @@ public:
         surface->RequireSubResource(0).mState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
         surface->mWidth = (int)dsvDesc.Width;
         surface->mHeight = (int)dsvDesc.Height;
+        surface->mFormat = dsvDesc.Format;
 
         // Create depth view
         D3D12_DEPTH_STENCIL_VIEW_DESC dsViewDesc = { .Format = dsvDesc.Format, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D };
@@ -189,7 +191,7 @@ public:
             auto d3dDevice = mDevice->GetD3DDevice();
             auto& cache = mDevice->GetResourceCache();
             // Create texture view
-            auto format = surface->mBuffer->GetDesc().Format;
+            auto format = surface->mFormat;
             if (isDepth) {
                 D3D12_DEPTH_STENCIL_VIEW_DESC dsViewDesc = { .Format = format, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D };
                 dsViewDesc.Texture2D.MipSlice = buffer.mMip;
@@ -260,16 +262,16 @@ public:
         CD3DX12_RECT clearRect((LONG)mViewportRect.x, (LONG)mViewportRect.y,
             (LONG)(mViewportRect.x + mViewportRect.width), (LONG)(mViewportRect.y + mViewportRect.height));
         mDevice->CheckDeviceState();
-        if (clear.HasClearColor() && mFrameBuffers[0] != nullptr)
-        {
-            CD3DX12_CPU_DESCRIPTOR_HANDLE descriptor(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(),
-                mFrameBuffers[0]->RequireSubResource(0).mRTVOffset);
-            mCmdList->ClearRenderTargetView(descriptor, clear.ClearColor, 1, &clearRect);
+        for (int i = 0; i < mFrameBuffers.mSize; i++) {
+            if (clear.HasClearColor() && mFrameBuffers[i] != nullptr) {
+                CD3DX12_CPU_DESCRIPTOR_HANDLE descriptor(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(),
+                    mFrameBuffers[i]->RequireSubResource(0).mRTVOffset);
+                mCmdList->ClearRenderTargetView(descriptor, clear.ClearColor, 1, &clearRect);
+            }
         }
         auto flags = (clear.HasClearDepth() ? D3D12_CLEAR_FLAG_DEPTH : 0)
             | (clear.HasClearScencil() ? D3D12_CLEAR_FLAG_STENCIL : 0);
-        if (flags && mDepthBuffer != nullptr)
-        {
+        if (flags && mDepthBuffer != nullptr) {
             CD3DX12_CPU_DESCRIPTOR_HANDLE depth(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(),
                 mDepthBuffer->RequireSubResource(0).mRTVOffset);
             mCmdList->ClearDepthStencilView(depth, (D3D12_CLEAR_FLAGS)flags,
@@ -281,7 +283,7 @@ public:
         for (int r = 0; r < mFrameBuffers.mSize; ++r) {
             auto& fb = mFrameBuffers[r];
             hash *= 12345;
-            hash += fb.mSurface->mBuffer->GetDesc().Format;
+            hash += fb.mSurface->mFormat;
         }
         return hash;
     }
@@ -321,8 +323,8 @@ public:
         mDevice->CheckDeviceState();
 
         InplaceVector<DXGI_FORMAT> frameBufferFormats;
-        for (auto& fb : mFrameBuffers) frameBufferFormats.push_back(fb->mBuffer->GetDesc().Format);
-        DXGI_FORMAT depthBufferFormat = mDepthBuffer->mBuffer->GetDesc().Format;
+        for (auto& fb : mFrameBuffers) frameBufferFormats.push_back(fb->mFormat);
+        DXGI_FORMAT depthBufferFormat = mDepthBuffer->mFormat;
         auto pipelineState = mDevice->GetResourceCache().RequirePipelineState(
             vertexShader, pixelShader, materialState, bindings, macros, renderPass,
             frameBufferFormats, depthBufferFormat
@@ -487,6 +489,7 @@ void GraphicsDeviceD3D12::SetResolution(Int2 resolution) {
         }
         frameBuffer.mWidth = (int)resolution.x;
         frameBuffer.mHeight = (int)resolution.y;
+        frameBuffer.mFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
         ThrowIfFailed(mSwapChain->GetBuffer(n, IID_PPV_ARGS(&frameBuffer.mBuffer)));
         auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice.GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), frameBuffer.RequireSubResource(0).mRTVOffset);
         mD3DDevice->CreateRenderTargetView(frameBuffer.mBuffer.Get(), nullptr, handle);
@@ -534,7 +537,7 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
     CheckDeviceState();
 
     InplaceVector<DXGI_FORMAT> fbFormats;
-    fbFormats.push_back(DXGI_FORMAT_R8G8B8A8_UNORM);
+    fbFormats.push_back(GetBackBuffer().mFormat);
     auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, macros, renderPass,
         fbFormats, DXGI_FORMAT_D24_UNORM_S8_UINT);
     if (pipelineState->mLayout == nullptr)

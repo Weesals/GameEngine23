@@ -795,8 +795,8 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateInstance@CSScene@@SAHPEAVNativeScene@@@Z", ExactSpelling = true)]
         public static extern int CreateInstance(NativeScene* scene);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?UpdateInstanceData@CSScene@@SAXPEAVNativeScene@@VCSInstance@@PEBEH@Z", ExactSpelling = true)]
-        public static extern void UpdateInstanceData(NativeScene* scene, CSInstance instance, [NativeTypeName("const uint8_t *")] byte* data, int dataLen);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?UpdateInstanceData@CSScene@@SAXPEAVNativeScene@@VCSInstance@@HPEBEH@Z", ExactSpelling = true)]
+        public static extern void UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, [NativeTypeName("const uint8_t *")] byte* data, int dataLen);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetInstanceData@CSScene@@SA?AUCSSpan@@PEAVNativeScene@@VCSInstance@@@Z", ExactSpelling = true)]
         public static extern CSSpan GetInstanceData(NativeScene* scene, CSInstance instance);

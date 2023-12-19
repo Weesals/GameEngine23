@@ -101,11 +101,11 @@ int RetainedScene::AllocateInstance(int instanceDataSize) {
 	return id;
 }
 // Add user data for a mesh instance
-bool RetainedScene::UpdateInstanceData(int instanceId, std::span<const uint8_t> tdata) {
+bool RetainedScene::UpdateInstanceData(int instanceId, int offset, std::span<const uint8_t> tdata) {
 	auto& instance = mInstances[instanceId];
 	auto data = mGPUBuffer.GetValues(instance.mData);
-	if (std::memcmp(data.data(), tdata.data(), tdata.size()) == 0) return false;
-	std::memcpy(data.data(), tdata.data(), tdata.size());
+	if (std::memcmp((uint8_t*)data.data() + offset, tdata.data(), tdata.size()) == 0) return false;
+	std::memcpy((uint8_t*)data.data() + offset, tdata.data(), tdata.size());
 	mGPUBuffer.MarkChanged(instance.mData);
 	mGPUDelta.AppendRegion(instance.mData);
 	return true;
