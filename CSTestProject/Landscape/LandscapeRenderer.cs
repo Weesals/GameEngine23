@@ -98,7 +98,7 @@ namespace Weesals.Landscape {
                 Bounds = BoundingBox.FromMinMax(Vector3.Zero, landscapeData.Sizing.LandscapeToWorld(landscapeData.Size)),
             };
             if (!runtimeData.BaseTextures.IsValid()) {
-                runtimeData.BaseTextures = CSTexture.Create()
+                runtimeData.BaseTextures = CSTexture.Create("BaseMaps")
                     .SetSize(512)
                     .SetArrayCount(Layers.LayerCount);
                 for (int i = 0; i < Layers.LayerCount; ++i) {
@@ -110,7 +110,7 @@ namespace Weesals.Landscape {
                 runtimeData.BaseTextures.GenerateMips();
             }
             if (!runtimeData.BumpTextures.IsValid()) {
-                runtimeData.BumpTextures = CSTexture.Create()
+                runtimeData.BumpTextures = CSTexture.Create("BumpMaps")
                     .SetSize(256)
                     .SetArrayCount(Layers.LayerCount);
                 for (int i = 0; i < Layers.LayerCount; ++i) {
@@ -191,9 +191,9 @@ namespace Weesals.Landscape {
             var range = changed.Range;
             var size = LandscapeData.GetSize();
             if (!runtimeData.HeightMap.IsValid())
-                runtimeData.HeightMap = CSTexture.Create(size.X, size.Y);
+                runtimeData.HeightMap = CSTexture.Create("HeightMap", size.X, size.Y);
             if (!runtimeData.ControlMap.IsValid())
-                runtimeData.ControlMap = CSTexture.Create(size.X, size.Y);
+                runtimeData.ControlMap = CSTexture.Create("ControlMap", size.X, size.Y);
 
             // Avoid reading water data if not allocated
             if (!LandscapeData.WaterEnabled) changed.WaterMapChanged = false;

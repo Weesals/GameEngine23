@@ -9,10 +9,13 @@
 
 class TextureBase : public std::enable_shared_from_this<TextureBase>
 {
+	std::wstring mName;
 	int mRevision;
 public:
-	TextureBase();
+	TextureBase() : TextureBase(L"Texture") {}
+	TextureBase(const std::wstring_view& name);
 	virtual ~TextureBase() { }
+	const std::wstring& GetName() const { return mName; }
 	void MarkChanged() { mRevision++; }
 	int GetRevision() const { return mRevision; }
 };

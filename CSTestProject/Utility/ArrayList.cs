@@ -118,7 +118,13 @@ namespace Weesals.Utility {
         public ref T this[int index] { get => ref Data[index]; }
         public void Clear() { Count = 0; }
         public void Add(T value) { Reserve(Count + 1); Data[Count++] = value; }
-        public void RemoveAt(int index) { for (--Count; index < Count; ++index) Data[index] = Data[index]; }
+        public void Insert(int index, T item) {
+            Reserve(Count + 1);
+            Array.Copy(Data, index, Data, index + 1, Count - index);
+            Data[index] = item;
+            ++Count;
+        }
+        public void RemoveAt(int index) { Array.Copy(Data, index + 1, Data, index, Count - index - 1); --Count; }
         private void Reserve(int capacity) {
             if (Data != null && Data.Length >= capacity) return;
             var oldData = Data;
@@ -139,6 +145,7 @@ namespace Weesals.Utility {
         public void Dispose() { if (Data != null) ArrayPool<T>.Shared.Return(Data); this = default; }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Count}>"; }
+
         public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }
 

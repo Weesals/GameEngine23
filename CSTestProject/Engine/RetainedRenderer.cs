@@ -130,6 +130,7 @@ namespace Weesals.Engine {
         public RetainedMaterialCollection MaterialCollection = new();
         public ResolvedMaterialSets ResolvedMaterials;
         public RenderTagManager TagManager = new();
+        private HashSet<CSInstance> movedInstances = new();
         public Scene(CSScene scene) {
             CSScene = scene;
             ResolvedMaterials = new(MaterialCollection);
@@ -150,6 +151,32 @@ namespace Weesals.Engine {
         }
         public int GetGPURevision() {
             return CSScene.GetGPURevision();
+        }
+
+        unsafe public void PostRender() {
+            foreach (var instance in movedInstances) {
+                var data = GetInstanceData(instance);
+                Matrix4x4 mat = *(Matrix4x4*)data.Data;
+                UpdateInstanceData(instance, sizeof(Matrix4x4), &mat, sizeof(Matrix4x4));
+            }
+            movedInstances.Clear();
+        }
+
+        unsafe public Vector3 GetLocation(WorldObject target) {
+            foreach (var instance in target.Meshes) {
+                var data = GetInstanceData(instance);
+                return ((Matrix4x4*)data.Data)->Translation;
+            }
+            return default;
+        }
+        unsafe public void SetLocation(WorldObject target, Vector3 pos) {
+            foreach (var instance in target.Meshes) {
+                var data = GetInstanceData(instance);
+                Matrix4x4 mat = *(Matrix4x4*)data.Data;
+                mat.Translation = pos;
+                UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4));
+                movedInstances.Add(instance);
+            }
         }
     }
 

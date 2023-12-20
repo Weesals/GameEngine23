@@ -49,7 +49,7 @@ namespace Weesals.UI {
         }
         public unsafe SpriteAtlas Generate(IList<CSTexture> insprites) {
             var sprites = new Sprite[insprites.Count];
-            var atlas = CSTexture.Create();
+            var atlas = CSTexture.Create("Sprite Atlas");
             atlas.SetSize(1024);
             var atlasSize = atlas.GetSize();
             using var sorted = new PooledArray<CSTexture>(insprites.Count);

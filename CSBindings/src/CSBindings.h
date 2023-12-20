@@ -127,7 +127,7 @@ public:
 	static int GetArrayCount(NativeTexture* tex);
 	static CSSpan GetTextureData(NativeTexture* tex, int mip, int slice);
 	static void MarkChanged(NativeTexture* tex);
-	static NativeTexture* _Create();
+	static NativeTexture* _Create(CSString name);
 	static void Dispose(NativeTexture* tex);
 };
 struct __declspec(dllexport) CSRenderTarget {
@@ -143,7 +143,7 @@ public:
 	static void SetMipCount(NativeRenderTarget* target, int size);
 	static int GetArrayCount(NativeRenderTarget* target);
 	static void SetArrayCount(NativeRenderTarget* target, int size);
-	static NativeRenderTarget* _Create();
+	static NativeRenderTarget* _Create(CSString name);
 	static void Dispose(NativeRenderTarget* target);
 };
 struct CSGlyph {

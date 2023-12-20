@@ -168,6 +168,7 @@
     <FxCompile Include="assets\opaque.hlsl" />
     <FxCompile Include="assets\include\shadowcast.hlsl" />
     <FxCompile Include="assets\include\shadowreceive.hlsl" />
+    <FxCompile Include="assets\highz.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="assets\T_CharactersAtlas.png">

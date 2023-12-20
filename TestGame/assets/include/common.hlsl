@@ -10,6 +10,7 @@ cbuffer WorldCB : register(b0)
     float3 _ViewSpaceUpVector;
     float Time;
     float2 TemporalJitter;
+    float TemporalFrame;
     matrix ShadowIVViewProjection;
     matrix View;
     matrix ViewProjection;

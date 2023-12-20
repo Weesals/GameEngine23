@@ -3,7 +3,7 @@
 #include "include/shadowcast.hlsl"
 #include "include/shadowreceive.hlsl"
 
-SamplerState BilinearSampler : register(s0);
+SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);
 Texture2D<float4> SceneDepth : register(t2);
 

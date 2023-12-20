@@ -19,7 +19,7 @@ namespace Weesals.Engine {
                     return item;
                 }
             }
-            var target = CSRenderTarget.Create();
+            var target = CSRenderTarget.Create("RT Temp");
             target.SetSize(desc.Size);
             target.SetFormat(desc.Format);
             target.SetMipCount(desc.MipCount);
@@ -205,11 +205,16 @@ namespace Weesals.Engine {
                 executeList.Add(new ExecuteItem() { PassId = passId, });
             }
             // Collect dependencies
+            int processedTo = 0;
             for (int l = 0; l < executeList.Count; ++l) {
                 var selfExec = executeList[l];
-                FillDependencies(selfExec.PassId);
+                if (l <= processedTo) {
+                    FillDependencies(selfExec.PassId);
+                    ++processedTo;
+                }
                 var selfPassData = passes[selfExec.PassId];
                 var selfPass = selfPassData.RenderPass;
+                Debug.Assert(selfPassData.OutputsRange.Length == selfPass.Outputs.Length);
                 var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
                 var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
                 uint passthroughMask = 0;
@@ -217,23 +222,37 @@ namespace Weesals.Engine {
                     if (selfOutputs[o].Output.PassthroughInput >= 0)
                         passthroughMask |= 1u << selfOutputs[o].Output.PassthroughInput;
                 for (int i = 0; i < selfInputs.Length; i++) {
-                    var selfDep = selfInputs[i];
+                    var selfInput = selfInputs[i];
+                    var otherPassData = passes[selfInput.OtherPassId];
+                    // Require added to executeList and following self
                     int otherI = 0;
-                    for (; otherI < executeList.Count; ++otherI) if (executeList[otherI].PassId == selfDep.OtherPassId) break;
+                    for (; otherI < executeList.Count; ++otherI) if (executeList[otherI].PassId == selfInput.OtherPassId) break;
                     if (otherI >= executeList.Count) {
-                        var otherPass = passes[selfDep.OtherPassId].RenderPass;
+                        var otherPass = otherPassData.RenderPass;
                         // Add it and resolve its targets
-                        executeList.Add(new ExecuteItem() { PassId = selfDep.OtherPassId, });
+                        executeList.Add(new ExecuteItem() { PassId = selfInput.OtherPassId, });
+                    }
+                    if (otherI < l) {
+                        var otherExec = executeList[otherI];
+                        executeList.RemoveAt(otherI);
+                        executeList.Insert(l, otherExec);
+                        --l;
                     }
                     // Mark any non-write-only dependencies as Required
-                    var selfInput = selfInputs[i];
-                    var otherOutputI = selfDep.OtherOutput;
+                    var otherOutputI = selfInput.OtherOutput;
                     if ((passthroughMask & (1u << i)) != 0) {
-                        var otherPassData = passes[selfDep.OtherPassId];
                         otherPassData.Viewport = selfPassData.Viewport;
-                        passes[selfDep.OtherPassId] = otherPassData;
                     }
+                    // If connected output node specifies size -1, fill its size
+                    passes[selfInput.OtherPassId] = otherPassData;
+
                 }
+            }
+            for (int l = 0; l < executeList.Count; ++l) {
+                var selfExec = executeList[l];
+                var selfPassData = passes[selfExec.PassId];
+                var selfPass = selfPassData.RenderPass;
+                Debug.Assert(selfPassData.OutputsRange.Length == selfPass.Outputs.Length);
             }
             // Collect and merge descriptors
             for (int l = executeList.Count - 1; l >= 0; --l) {
@@ -471,6 +490,31 @@ namespace Weesals.Engine {
                     buffer.Target.Texture = rtPool.RequireTarget(desc);
                     tempTargets.Add(buffer.Target.Texture);
                 }
+            }
+            if (false) {
+                string output = "";
+                for (int l = 0; l < executeList.Count; l++) {
+                    var selfExec = executeList[l];
+                    var selfPassData = passes[selfExec.PassId];
+                    var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
+                    var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
+                    output += $"Pass[{selfPassData.RenderPass.Name}]\n";
+                    output += $"  Inputs(";
+                    for (int i = 0; i < selfInputs.Length; i++) {
+                        var otherPass = passes[selfInputs[i].OtherPassId];
+                        var otherOutputs = outputs.AsSpan().Slice(otherPass.OutputsRange);
+                        if (i > 0) output += ", ";
+                        output += $"{selfInputs[i].Input.Name}:{otherOutputs[selfInputs[i].OtherOutput].TargetId}";
+                    }
+                    output += $")\n";
+                    output += $"  Outputs(";
+                    for (int i = 0; i < selfOutputs.Length; i++) {
+                        if (i > 0) output += ", ";
+                        output += $"{selfOutputs[i].Output.Name}:{selfOutputs[i].TargetId}";
+                    }
+                    output += $")\n";
+                }
+                Debug.WriteLine(output);
             }
             using var targetsSpan = new PooledList<RenderPass.Target>(16);
             // Invoke render passes

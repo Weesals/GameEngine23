@@ -51,7 +51,7 @@ namespace Weesals.Game {
         public Play Play => PlayUI.Play;
 
         public struct Instance {
-            public Play.WorldObject Target;
+            public WorldObject Target;
         }
         private Dictionary<PointerEvent, Instance> instances = new();
 
@@ -68,7 +68,7 @@ namespace Weesals.Game {
             var target = FindTarget(events);
             return target != null;
         }
-        private Play.WorldObject? FindTarget(PointerEvent events) {
+        private WorldObject? FindTarget(PointerEvent events) {
             var layout = PlayUI.GetComputedLayout();
             var m = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
             var mray = PlayUI.Play.Camera.ViewportToRay(m);
@@ -78,6 +78,7 @@ namespace Weesals.Game {
             if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
             var entity = FindTarget(events);
             if (entity == null) { events.Yield(); return; }
+            SetSelected(entity, true);
             instances.Add(events, new Instance() { Target = entity, });
         }
         public void OnDrag(PointerEvent events) {
@@ -91,11 +92,19 @@ namespace Weesals.Game {
             var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
             var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
             var delta = pos1 - pos0;
-            var pos = PlayUI.Play.GetLocation(instance.Target);
-            PlayUI.Play.SetLocation(instance.Target, pos + delta);
+            var pos = PlayUI.Play.Scene.GetLocation(instance.Target);
+            PlayUI.Play.Scene.SetLocation(instance.Target, pos + delta);
         }
         public void OnEndDrag(PointerEvent events) {
+            SetSelected(instances[events].Target, false);
             instances.Remove(events);
+        }
+
+        unsafe private void SetSelected(WorldObject entity, bool selected) {
+            foreach (var instance in entity.Meshes) {
+                float value = selected ? 1.0f : 0.0f;
+                Play.Scene.UpdateInstanceData(instance, sizeof(float) * (16 + 16 + 4), &value, sizeof(float));
+            }
         }
     }
 

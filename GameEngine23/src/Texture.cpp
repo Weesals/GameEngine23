@@ -2,8 +2,8 @@
 
 #include <algorithm>
 
-TextureBase::TextureBase()
-	: mRevision(0) { }
+TextureBase::TextureBase(const std::wstring_view& name)
+	: mName(name), mRevision(0) { }
 
 
 void Texture::ResizeData(Sizing oldSize) {

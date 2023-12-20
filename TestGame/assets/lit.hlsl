@@ -33,7 +33,7 @@ struct PSInput
 };
 
 Texture2D<float4> Texture : register(t0);
-SamplerState g_sampler : register(s0);
+SamplerState g_sampler : register(s1);
 
 PSInput VSMain(VSInput input)
 {

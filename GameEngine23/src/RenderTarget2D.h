@@ -11,6 +11,7 @@ class RenderTarget2D : public TextureBase
 	int mArrayCount = 1;
 public:
 	RenderTarget2D(Int2 resolution);
+	RenderTarget2D(const std::wstring_view& name) : TextureBase(name) { }
 	Int2 GetResolution() const { return mResolution; }
 	void SetResolution(Int2 res) { mResolution = res; MarkChanged(); }
 	BufferFormat GetFormat() const { return mFormat; }

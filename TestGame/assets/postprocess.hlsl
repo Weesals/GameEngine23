@@ -1,6 +1,6 @@
 
-SamplerState BilinearSampler : register(s0);
-SamplerState AnisotropicSampler : register(s3);
+SamplerState BilinearSampler : register(s1);
+SamplerState AnisotropicSampler : register(s2);
 Texture2D<float4> BloomChain : register(t0);
 
 struct VSInput {

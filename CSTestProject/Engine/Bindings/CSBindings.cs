@@ -161,12 +161,17 @@ namespace Weesals.Engine {
 
         unsafe public static implicit operator CSTexture(CSRenderTarget target) { return new CSTexture((NativeTexture*)target.mRenderTarget); }
 
-        unsafe public static CSTexture Create() { return new CSTexture(_Create()); }
-        unsafe public static CSTexture Create(int sizeX, int sizeY, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
-            var tex = new CSTexture(_Create());
-            tex.SetSize(new Int2(sizeX, sizeY));
-            //tex.SetFormat(fmt);
-            return tex;
+        unsafe public static CSTexture Create(string name) {
+            fixed (char* namePtr = name)
+                return new CSTexture(_Create(new CSString(namePtr, name.Length)));
+        }
+        unsafe public static CSTexture Create(string name, int sizeX, int sizeY, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
+            fixed (char* namePtr = name) {
+                var tex = new CSTexture(_Create(new CSString(namePtr, name.Length)));
+                tex.SetSize(new Int2(sizeX, sizeY));
+                //tex.SetFormat(fmt);
+                return tex;
+            }
         }
     }
     public partial struct CSRenderTarget : IEquatable<CSRenderTarget> {
@@ -186,7 +191,10 @@ namespace Weesals.Engine {
         unsafe public static bool operator ==(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget == right.mRenderTarget; }
         unsafe public static bool operator !=(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget != right.mRenderTarget; }
 
-        unsafe public static CSRenderTarget Create() { return new CSRenderTarget(_Create()); }
+        unsafe public static CSRenderTarget Create(string name) {
+            fixed (char* namePtr = name)
+                return new CSRenderTarget(_Create(new CSString(namePtr, name.Length)));
+        }
     }
     public partial struct CSFont : IEquatable<CSFont> {
         unsafe public bool IsValid() { return mFont != null; }

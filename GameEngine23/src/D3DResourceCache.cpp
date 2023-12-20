@@ -80,10 +80,12 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
 
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = { };
     CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
-        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
-        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_POINT),
-        CD3DX12_STATIC_SAMPLER_DESC(2, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 0, 16, D3D12_COMPARISON_FUNC_LESS_EQUAL),
-        CD3DX12_STATIC_SAMPLER_DESC(3, D3D12_FILTER_ANISOTROPIC),
+        CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_POINT),
+        CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
+        CD3DX12_STATIC_SAMPLER_DESC(2, D3D12_FILTER_ANISOTROPIC),
+        CD3DX12_STATIC_SAMPLER_DESC(3, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 0, 16, D3D12_COMPARISON_FUNC_LESS_EQUAL),
+        CD3DX12_STATIC_SAMPLER_DESC(4, D3D12_FILTER_MINIMUM_MIN_MAG_LINEAR_MIP_POINT),
+        CD3DX12_STATIC_SAMPLER_DESC(5, D3D12_FILTER_MAXIMUM_MIN_MAG_LINEAR_MIP_POINT),
     };
     rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -515,6 +517,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
 {
     // Find (or create) a pipeline that matches these requirements
     size_t hash = GenericHash({ GenericHash(materialState), GenericHash((Identifier)renderPass), });
+    hash = GenericHash({ hash, ArrayHash(frameBufferFormats), GenericHash(depthBufferFormat) });
     for (auto* binding : bindings) {
         for (auto& el : binding->GetElements()) {
             hash = AppendHash(el.mBufferStride, hash);

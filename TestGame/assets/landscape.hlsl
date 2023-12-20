@@ -3,6 +3,7 @@
 #define PI 3.14159265359
 
 #include "include/common.hlsl"
+#include "include/temporal.hlsl"
 #include "include/lighting.hlsl"
 #include "include/noise.hlsl"
 #include "include/landscapecommon.hlsl"
@@ -13,8 +14,8 @@ cbuffer ConstantBuffer : register(b1) {
     matrix ModelViewProjection;
 }
 
-SamplerState BilinearSampler : register(s0);
-SamplerState AnisotropicSampler : register(s3);
+SamplerState BilinearSampler : register(s1);
+SamplerState AnisotropicSampler : register(s2);
 #if EDGE
     Texture2D<float4> EdgeTex : register(t2);
 #else
@@ -22,7 +23,7 @@ SamplerState AnisotropicSampler : register(s3);
     Texture2DArray<float4> BumpMaps : register(t3);
 #endif
 Texture2D<float4> ShadowMap : register(t4);
-SamplerComparisonState ShadowSampler : register(s2);
+SamplerComparisonState ShadowSampler : register(s3);
 
 
 struct SampleContext {
@@ -64,7 +65,8 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoint cp) {
     o.Normal = context.BumpMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
     o.Normal.xyz = o.Normal.xyz * 2.0 - 1.0;
     o.Normal.xy = mul(rot, o.Normal.xy);
-    o.Height = 0.5;//o.Albedo.a;
+    o.Height = o.Albedo.a;
+    if (o.Height == 0) o.Height = 0.5;
     return o;
 }
 
@@ -144,6 +146,11 @@ void CalculateTerrainTBN(float3 normal, out float3 tangent, out float3 bitangent
     bitangent.z -= 1;
 }
 
+float IGN(float2 pos) {
+    pos.x += TemporalFrame * 5.588238;
+    return frac(52.9829189f * frac(dot(float2(0.06711056f, 0.00583715f), pos)));
+}
+
 float4 PSMain(PSInput input) : SV_TARGET {
     float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);
@@ -158,7 +165,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
     shadowVPos.xyz /= shadowVPos.w;
     shadowVPos.y *= -1.0;
     //float4 shadowSample = ShadowMap.Sample(BilinearSampler, 0.5 + shadowVPos.xy * 0.5);
-    float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, 0.5 + shadowVPos.xy * 0.5, shadowVPos.z - 0.002).r;
+    float2 shadowUV = 0.5 + shadowVPos.xy * 0.5;
+    float noise = IGN(input.position.xy);
+    //shadowUV += (float2(noise, frac(noise * 100)) - 0.5) / 512;
+    //return float4(float2(noise, frac(noise * 100)), 0, 1);
+    float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowUV, shadowVPos.z - 0.002).r;
 
 
 #if 0
@@ -194,9 +205,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
 #endif
     
 #if EDGE
+    TemporalAdjust(input.uv.xy);
     Albedo = EdgeTex.Sample(BilinearSampler, input.uv.xy);
     Albedo = lerp(Albedo, 1, pow(1 - saturate(input.uv.z - input.localPos.y), 4) * 0.25);
 #else
+    TemporalAdjust(input.localPos.xz);
     SampleContext context = { BaseMaps, BumpMaps, input.localPos };
     Triangle tri = ComputeTriangle(context.WorldPos.xz);
     ControlPoint c0 = SampleControlMap(tri.P0);

@@ -56,11 +56,9 @@ namespace Weesals.Game {
         PostProcessPass postProcessPass;
         DeferredPass canvasPass;
 
-        ScenePassManager scenePasses;
+        RenderGraph renderGraph = new();
+        ScenePassManager scenePasses = new();
 
-        public class WorldObject {
-            public List<CSInstance> Meshes = new();
-        }
         private WorldObject testObject;
 
         public Play(Scene scene) {
@@ -83,9 +81,6 @@ namespace Weesals.Game {
             landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
             landscape.OnLandscapeChanged += (landscape, change) => { RenderRevision++; };
 
-            scenePasses = new();
-
-            var model = Resources.LoadModel("./assets/SM_Barracks.fbx");
             Camera = new Camera() {
                 FOV = 3.14f * 0.25f,
                 Position = new Vector3(0, 20f, -10f),
@@ -98,7 +93,7 @@ namespace Weesals.Game {
                 new[] {
                     new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
                     new RenderPass.PassOutput("SceneColor"),
-                    new RenderPass.PassOutput("SceneVelocity"),
+                    new RenderPass.PassOutput("SceneVelId"),
                 },
                 (CSGraphics graphics, ref RenderPass.Context context) => {
                     graphics.SetViewport(new RectI(Int2.Zero, context.ResolvedDepth.Texture.GetSize()));
@@ -142,12 +137,13 @@ namespace Weesals.Game {
             scenePasses.AddPass(transPass);
 
             testObject = new();
+            var model = Resources.LoadModel("./assets/SM_Barracks.fbx");
             foreach (var mesh in model.Meshes) {
                 var instance = scene.CreateInstance();
                 testObject.Meshes.Add(instance);
                 scenePasses.AddInstance(instance, mesh);
             };
-            SetLocation(testObject, Vector3.Zero);
+            Scene.SetLocation(testObject, Vector3.Zero);
 
             Canvas = new Canvas();
             Canvas.AppendChild(new UIPlay(this));
@@ -199,8 +195,11 @@ namespace Weesals.Game {
             }
             Canvas.RequireComposed();
         }
-        RenderGraph renderGraph = new();
         public void Render(CSGraphics graphics) {
+            var velTgtDsc = basePass.Outputs[2].TargetDesc;
+            velTgtDsc.Format = Input.GetKeyDown(KeyCode.Z) ? BufferFormat.FORMAT_R16G16_FLOAT : BufferFormat.FORMAT_R8G8B8A8_SNORM;
+            basePass.Outputs[2].SetTargetDesc(velTgtDsc);
+
             renderGraph.Clear();
             // Render shadows
             renderGraph.BeginPass(shadowPass);
@@ -209,7 +208,7 @@ namespace Weesals.Game {
             renderGraph.BeginPass(clearPass);
 
             renderGraph.BeginPass(basePass);
-            //renderGraph.BeginPass(highZPass);
+            renderGraph.BeginPass(highZPass);
             renderGraph.BeginPass(transPass);
 
             // Intercept render to set up jitter offset
@@ -223,7 +222,9 @@ namespace Weesals.Game {
             renderGraph.BeginPass(canvasPass)
                 .SetViewport(GameViewport);
             renderGraph.Execute(canvasPass, graphics);
-            TickObject(testObject);
+
+            // Copy current matrices into previous frame slots
+            Scene.PostRender();
         }
 
         private void RenderBasePass(CSGraphics graphics, ScenePass pass) {
@@ -234,27 +235,5 @@ namespace Weesals.Game {
             return testObject;
         }
 
-        unsafe public Vector3 GetLocation(WorldObject target) {
-            foreach (var instance in target.Meshes) {
-                var data = Scene.GetInstanceData(instance);
-                return ((Matrix4x4*)data.Data)->Translation;
-            }
-            return default;
-        }
-        unsafe public void SetLocation(WorldObject target, Vector3 pos) {
-            foreach (var instance in target.Meshes) {
-                var data = Scene.GetInstanceData(instance);
-                Matrix4x4 mat = *(Matrix4x4*)data.Data;
-                mat.Translation = pos;
-                Scene.UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4));
-            }
-        }
-        unsafe private void TickObject(WorldObject target) {
-            foreach (var instance in target.Meshes) {
-                var data = Scene.GetInstanceData(instance);
-                Matrix4x4 mat = *(Matrix4x4*)data.Data;
-                Scene.UpdateInstanceData(instance, sizeof(Matrix4x4), &mat, sizeof(Matrix4x4));
-            }
-        }
     }
 }

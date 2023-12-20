@@ -37,6 +37,7 @@
     
 
 #include "include/common.hlsl"
+#include "include/temporal.hlsl"
 #include "include/lighting.hlsl"
 #include "include/noise.hlsl"
 #include "include/landscapecommon.hlsl"
@@ -49,13 +50,13 @@ cbuffer ConstantBuffer : register(b1) {
     matrix Projection;
 }
 
-SamplerState BilinearSampler : register(s0);
-SamplerState AnisotropicSampler : register(s3);
+SamplerState BilinearSampler : register(s1);
+SamplerState AnisotropicSampler : register(s2);
 Texture2D<float4> NoiseTex : register(t1);
 Texture2D<float4> FoamTex : register(t2);
 Texture2D<float4> ShadowMap : register(t4);
 Texture2D<float4> SceneDepth : register(t5);
-SamplerComparisonState ShadowSampler : register(s2);
+SamplerComparisonState ShadowSampler : register(s3);
 
 
 
@@ -128,6 +129,8 @@ void CalculateTerrainTBN(float3 normal, out float3 tangent, out float3 bitangent
 }
 
 float4 PSMain(PSInput input) : SV_TARGET {
+    TemporalAdjust(input.worldPos.xz);
+    
     float2 normalizedScreenSpaceUV = input.position.xy / 1024;
     float3 viewDirectionWS = normalize(input.viewPos);
     float3 positionWS = input.worldPos.xyz;
@@ -138,7 +141,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float waterDepth = input.waterPos.w;
     
     normalWS = normalize(normalWS);
-    
+
     float4 noise = NoiseTex.Sample(BilinearSampler, input.worldPos.xz * 0.3);
     normalWS.xz = (noise.xy * 2 - 1);
     float rot = Time + dot(input.worldPos.xz, float2(0.14, 0.12) * 2);

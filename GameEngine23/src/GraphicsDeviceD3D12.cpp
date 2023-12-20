@@ -99,6 +99,7 @@ public:
             else {
                 AllocateRenderTarget(d3dRt, target->GetResolution(), target->GetFormat(), target->GetMipCount(), target->GetArrayCount());
             }
+            d3dRt->mBuffer->SetName(target->GetName().c_str());
 
             auto viewFmt = (DXGI_FORMAT)target->GetFormat();
             if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
@@ -487,10 +488,11 @@ void GraphicsDeviceD3D12::SetResolution(Int2 resolution) {
             frameBuffer.RequireSubResource(0).mRTVOffset = mCache.mRTOffset;
             mCache.mRTOffset += mDevice.GetDescriptorHandleSizeRTV();
         }
+        ThrowIfFailed(mSwapChain->GetBuffer(n, IID_PPV_ARGS(&frameBuffer.mBuffer)));
         frameBuffer.mWidth = (int)resolution.x;
         frameBuffer.mHeight = (int)resolution.y;
         frameBuffer.mFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-        ThrowIfFailed(mSwapChain->GetBuffer(n, IID_PPV_ARGS(&frameBuffer.mBuffer)));
+        frameBuffer.mBuffer->SetName(L"Frame Buffer");
         auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice.GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), frameBuffer.RequireSubResource(0).mRTVOffset);
         mD3DDevice->CreateRenderTargetView(frameBuffer.mBuffer.Get(), nullptr, handle);
     }

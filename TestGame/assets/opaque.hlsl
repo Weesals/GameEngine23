@@ -2,7 +2,7 @@
 #include "include/lighting.hlsl"
 #include "include/shadowreceive.hlsl"
 
-SamplerState BilinearSampler : register(s0);
+SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);
 
 struct VSInput
@@ -41,6 +41,8 @@ PSInput VSMain(VSInput input)
     float3 prevWorldPos = mul(instance.PreviousModel, float4(input.position.xyz, 1.0)).xyz;
     float4 previousVPos = mul(PreviousViewProjection, float4(prevWorldPos, 1.0));
     result.velocity = result.position.xy / result.position.w - previousVPos.xy / previousVPos.w;
+    // Add a slight amount to avoid velocity being 0 (special case)
+    result.velocity.x += 0.0000001;
         
 #if defined(VULKAN)
     result.position.y = -result.position.y;
@@ -56,7 +58,7 @@ void PSMain(PSInput input
 {
     InstanceData instance = instanceData[input.primitiveId];
     
-    //input.uv += (ddx(input.uv) * TemporalJitter.x - ddy(input.uv) * TemporalJitter.y);
+    TemporalAdjust(input.uv);
     
     float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);
@@ -85,11 +87,8 @@ void PSMain(PSInput input
     o.rgb += instance.Highlight.rgb;
     //o.rgb = pow(o.rgb, 4) * 5.0;
 
-    // Add a slight amount to avoid velocity being 0 (special case)
-    input.velocity.x += 0.0000001;
-    
     OutColor = float4(o, tex.a);
-    OutVelocity = float4(input.velocity, 0, 1);
+    OutVelocity = float4(input.velocity * 16.0, instance.Selected, 1);
 }
 
 //#include "include/shadowcast.hlsl"

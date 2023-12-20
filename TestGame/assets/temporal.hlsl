@@ -1,13 +1,14 @@
 matrix PreviousVP;
 matrix CurrentVP;
+float2 TemporalJitter;
 
-SamplerState BilinearSampler : register(s0);
+SamplerState BilinearSampler : register(s1);
 
 Texture2D<float4> CurrentFrame : register(t0);
 Texture2D<float4> PreviousFrame : register(t1);
 
 Texture2D<float4> SceneDepth : register(t2);
-Texture2D<float4> SceneVelocity : register(t3);
+Texture2D<float4> SceneVelId : register(t3);
 
 struct VSInput {
     float4 position : POSITION;
@@ -28,11 +29,21 @@ PSInput VSMain(VSInput input) {
 }
 
 float4 PSMain(PSInput input) : SV_TARGET {
+    float2 offsets[] = { float2(1.0, 0.0), float2(0.0, 1.0), float2(0.0, -1.0), float2(-1.0, 0.0), };
+    float2 sign = float2(TemporalJitter.x < 0 ? -1 : +1, TemporalJitter.y < 0 ? +1 : -1);
+    float2 texelSize = float2(ddx(input.uv.x), ddy(input.uv.y));
+    
     float depth = SceneDepth[input.position.xy].x;
-    float2 velocity = SceneVelocity[input.position.xy].xy;
+    float4 velId = SceneVelId[input.position.xy];
+    float2 velocity = velId.xy;
+
+    float4 otherVelId = SceneVelId.Sample(BilinearSampler, input.uv + texelSize * sign * 0.5);
+    if (otherVelId.z != velId.z) return float4(1.0, 1.0, 0.0, 1.0);
+
+    //return float4(velocity * 0.5 + 0.5, 0.0, 1.0);
 
     float4 curVPos = float4((input.uv * 2.0 - 1.0) * float2(1.0, -1.0), depth, 1.0);
-    float2 previousUV = curVPos.xy - velocity;
+    float2 previousUV = curVPos.xy - velocity / 16.0;
     
     if (all(velocity.xy == 0)) {
         float4 wpos = mul(CurrentVP, curVPos);
@@ -43,17 +54,18 @@ float4 PSMain(PSInput input) : SV_TARGET {
         previousUV = prevVPos.xy;
     }
     
-    float2 offsets[] = { float2(-1.0, 0.0), float2(1.0, 0.0), float2(0.0, -1.0), float2(0.0, 1.0), };
     float4 sceneColor = CurrentFrame[input.position.xy];
+    float4 scenePrev = PreviousFrame.Sample(BilinearSampler, previousUV * float2(1.0, -1.0) / 2.0 + 0.5);
+
     float4 colorMin = sceneColor;
     float4 colorMax = sceneColor;
-    for (int i = 0; i < 4; ++i) {
-        float4 otherColor = CurrentFrame[input.position.xy + offsets[i]];
+    for (int i = 0; i < 2; ++i) {
+        float4 otherColor = CurrentFrame[input.position.xy + offsets[i] * sign];
         colorMin = min(colorMin, otherColor);
         colorMax = max(colorMax, otherColor);
     }
-    float4 scenePrev = PreviousFrame.Sample(BilinearSampler, previousUV * float2(1.0, -1.0) / 2.0 + 0.5);
     scenePrev = clamp(scenePrev, colorMin, colorMax);
     sceneColor = lerp(sceneColor, scenePrev, 0.85);
+
     return sceneColor;
 }

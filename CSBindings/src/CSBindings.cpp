@@ -161,8 +161,8 @@ CSSpan CSTexture::GetTextureData(NativeTexture* tex, int mip, int slice) {
 void CSTexture::MarkChanged(NativeTexture* tex) {
 	tex->MarkChanged();
 }
-NativeTexture* CSTexture::_Create() {
-	return new NativeTexture();
+NativeTexture* CSTexture::_Create(CSString name) {
+	return new NativeTexture(ToWString(name));
 }
 void CSTexture::Dispose(NativeTexture* texture) {
 	if (texture != nullptr) delete texture;
@@ -176,8 +176,8 @@ int CSRenderTarget::GetMipCount(NativeRenderTarget* target) { return target->Get
 void CSRenderTarget::SetMipCount(NativeRenderTarget* target, int count) { target->SetMipCount(count); }
 int CSRenderTarget::GetArrayCount(NativeRenderTarget* target) { return target->GetArrayCount(); }
 void CSRenderTarget::SetArrayCount(NativeRenderTarget* target, int count) { target->SetArrayCount(count); }
-NativeRenderTarget* CSRenderTarget::_Create() {
-	return create_shared<NativeRenderTarget>(Int2(0));
+NativeRenderTarget* CSRenderTarget::_Create(CSString name) {
+	return create_shared<NativeRenderTarget>(ToWString(name));
 }
 void CSRenderTarget::Dispose(NativeRenderTarget* target) {
 	//delete_shared<Material>(target);

@@ -270,8 +270,8 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?MarkChanged@CSTexture@@SAXPEAVTexture@@@Z", ExactSpelling = true)]
         public static extern void MarkChanged(NativeTexture* tex);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSTexture@@SAPEAVTexture@@XZ", ExactSpelling = true)]
-        public static extern NativeTexture* _Create();
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSTexture@@SAPEAVTexture@@UCSString@@@Z", ExactSpelling = true)]
+        public static extern NativeTexture* _Create(CSString name);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSTexture@@SAXPEAVTexture@@@Z", ExactSpelling = true)]
         public static extern void Dispose(NativeTexture* tex);
@@ -317,8 +317,8 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetArrayCount@CSRenderTarget@@SAXPEAVRenderTarget2D@@H@Z", ExactSpelling = true)]
         public static extern void SetArrayCount(NativeRenderTarget* target, int size);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSRenderTarget@@SAPEAVRenderTarget2D@@XZ", ExactSpelling = true)]
-        public static extern NativeRenderTarget* _Create();
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSRenderTarget@@SAPEAVRenderTarget2D@@UCSString@@@Z", ExactSpelling = true)]
+        public static extern NativeRenderTarget* _Create(CSString name);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSRenderTarget@@SAXPEAVRenderTarget2D@@@Z", ExactSpelling = true)]
         public static extern void Dispose(NativeRenderTarget* target);
