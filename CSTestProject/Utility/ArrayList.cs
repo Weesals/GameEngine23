@@ -142,6 +142,7 @@ namespace Weesals.Utility {
         public int IndexOf(T value) { return Array.IndexOf(Data, value, 0, Count); }
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
+        unsafe public ref PooledList<T> AsMutable() { return ref this; }
         public void Dispose() { if (Data != null) ArrayPool<T>.Shared.Return(Data); this = default; }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Count}>"; }

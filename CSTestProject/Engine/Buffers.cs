@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -123,9 +124,9 @@ namespace Weesals.Engine {
             return (depthMask[(int)fmt >> 7] & (1ul << ((int)fmt & 63))) != 0;
         }
         static readonly ulong[] depthMask = new ulong[] {
-            0b0000000010000000001000010000000000000000000100000000000000000000,
-            0b0000000000000000000000000000000000000000000000000000000000000000,
-			//	^64		^56		^48		^40		^32		^24		^16		^8		^0
+            /*   */0b0000000010000000001000010000000000000000000100000000000000000000,
+            /*   */0b0000000000000000000000000000000000000000000000000000000000000000,
+			//  	^64		^56		^48		^40		^32		^24		^16		^8		^0
 		};
         static readonly BufferFormatType[] Metadata = new[] {
             new BufferFormatType(Types.TLss, Sizes.Other, 0),//FORMAT_UNKNOWN = 0,
@@ -198,24 +199,6 @@ namespace Weesals.Engine {
 		};
     }
 
-    /*public unsafe struct BufferElement {
-        public ushort mItemSize = 0;     // Size of each item
-        public ushort mBufferStride = 0; // Separation between items in this buffer (>= mItemSize)
-        public BufferFormat mFormat = BufferFormat.FORMAT_UNKNOWN;
-        public void* mData = null;
-        public string mBindName;
-        public BufferElement(string name, BufferFormat format)
-            : this(name, format, 0, 0, null) {
-            mItemSize = mBufferStride = (ushort)BufferFormatType.GetMeta(format).GetByteSize();
-        }
-        public BufferElement(string name, BufferFormat format, int stride, int size, void* data) {
-            mBindName = name;
-            mFormat = format;
-            mBufferStride = (ushort)stride;
-            mItemSize = (ushort)size;
-            mData = data;
-        }
-    }*/
     unsafe public struct BufferLayoutPersistent : IDisposable {
         public enum Usages : byte { Vertex, Index, Instance, Uniform, };
         public CSBufferLayout BufferLayout;
@@ -326,12 +309,6 @@ namespace Weesals.Engine {
         private static ulong gId;
         public static ulong MakeId() { return gId++; }
     }
-    public unsafe interface IConverterFn {
-        public static delegate*<void*, void*, void> mConvert { get; }
-    }
-    public unsafe struct ConvertFn<From, To> : IConverterFn where From : unmanaged where To : unmanaged {
-        public static delegate*<void*, void*, void> mConvert { get; set; }
-    }
     struct Normalized<T> where T : unmanaged {
         public T Value;
         public static implicit operator Normalized<T>(T v) { return new Normalized<T>() { Value = v }; }
@@ -363,43 +340,11 @@ namespace Weesals.Engine {
             return new Vector3(c.R, c.G, c.B) * (1.0f / 127.0f);
         }
     }
-    public struct Half {
-        public ushort Bits;
-        unsafe public Half(float value) {
-            uint valueBits = *(uint*)&value;
-            Bits = (ushort)(
-                ((valueBits >> 16) & 0x8000) |
-                (((valueBits >> 13) & (0x3fc00 | 0x03ff)) - (112 << 10))
-            );
-        }
-        unsafe public static implicit operator float(Half h) {
-            uint valueBits =
-                (((uint)h.Bits << 16) & 0x80000000) |
-                ((((uint)h.Bits << 13) & (0x0f800000 | 0x03ff0000)) + ((uint)112 << 23));
-            return *(float*)&valueBits;
-        }
-        unsafe public static implicit operator Half(float f) { return new Half(f); }
+    public unsafe interface IConverterFn {
+        public static delegate*<void*, void*, void> mConvert { get; }
     }
-    public struct Half2 {
-        public Half X, Y;
-        public Half2(Vector2 v) { X = v.X; Y = v.Y; }
-        public static implicit operator Vector2(Half2 h) { return new Vector2(h.X, h.Y); }
-        public static implicit operator Half2(Vector2 v) { return new Half2(v); }
-        public override string ToString() { return ((Vector2)this).ToString(); }
-    }
-    public struct Half3 {
-        public Half X, Y, Z;
-        public Half3(Vector3 v) { X = v.X; Y = v.Y; Z = v.Z; }
-        public static implicit operator Vector3(Half3 h) { return new Vector3(h.X, h.Y, h.Z); }
-        public static implicit operator Half3(Vector3 v) { return new Half3(v); }
-        public override string ToString() { return ((Vector3)this).ToString(); }
-    }
-    public struct Half4 {
-        public Half X, Y, Z, W;
-        public Half4(Vector4 v) { X = v.X; Y = v.Y; Z = v.Z; }
-        public static implicit operator Vector4(Half4 h) { return new Vector4(h.X, h.Y, h.Z, h.W); }
-        public static implicit operator Half4(Vector4 v) { return new Half4(v); }
-        public override string ToString() { return ((Vector4)this).ToString(); }
+    public unsafe struct ConvertFn<From, To> : IConverterFn where From : unmanaged where To : unmanaged {
+        public static delegate*<void*, void*, void> mConvert { get; set; }
     }
     public unsafe struct ConvertFiller {
         static ConvertFiller() {
@@ -634,10 +579,6 @@ namespace Weesals.Engine {
         public void Set(T value) {
             for (int i = 0; i < mCount; ++i) this[i] = value;
         }
-        public override string ToString() {
-            return "Count = " + mCount;
-        }
-
         public void CopyTo(TypedBufferView<T> destination) {
             if (destination.ReadWriter.IsPassthroughWriter) {
                 if (mStride == destination.mStride && mStride == sizeof(T) && ReadWriter.IsPassthroughReader) {
@@ -659,6 +600,18 @@ namespace Weesals.Engine {
                 for (int i = 0; i < mCount; ++i) destination[i] = this[i];
             }
         }
+        public struct Enumerator : IEnumerator<T> {
+            public TypedBufferView<T> View;
+            int index = 0;
+            public T Current => View[index];
+            object IEnumerator.Current => Current;
+            public Enumerator(TypedBufferView<T> view) { View = view; index = -1; }
+            public void Dispose() { }
+            public bool MoveNext() { return ++index < View.mCount; }
+            public void Reset() { index = -1; }
+        }
+        public Enumerator GetEnumerator() { return new Enumerator(this); }
+        public override string ToString() { return "Count = " + mCount; }
     }
     unsafe public class BufferLayoutCollection : IDisposable {
         CSBufferLayout** mBuffers = null;

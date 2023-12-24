@@ -26,6 +26,7 @@ class Program {
         editorWindow.GameView.EventSystem = eventSystem;
         editorWindow.GameView.Camera = play.Camera;
         editorWindow.GameView.Landscape = play.Landscape;
+        editorWindow.GameView.Scene = play.ScenePasses;
         editorWindow.ActivateLandscapeTools();
 
         Stopwatch timer = new();
@@ -33,13 +34,13 @@ class Program {
 
         float timeSinceRender = 0f;
 
-        var triangleData = new Vector2[3 * 2048];
+        /*var triangleData = new Vector2[3 * 2048];
         var rnd = new Random(165);
         for (int i = 0; i < triangleData.Length; i++) {
             triangleData[i] = new Vector2(
                 (float)rnd.NextDouble() * 100,
                 (float)rnd.NextDouble() * 100);
-        }
+        }*/
 
         // Loop while the window is valid
         while (core.MessagePump() == 0) {

@@ -36,6 +36,7 @@
 	Mesh=NativeMesh
 	Model=NativeModel
 	Texture=NativeTexture
+	GraphicsBufferBase=NativeBuffer
 	RenderTarget2D=NativeRenderTarget
 	Shader=NativeShader
 	Material=NativeMaterial

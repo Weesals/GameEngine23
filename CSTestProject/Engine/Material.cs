@@ -218,6 +218,8 @@ namespace Weesals.Engine {
         // Incremented whenever data within this material changes
         int mRevision = 0;
         int hashCache = 0;
+        int mIdentifier;
+        static int gIdentifier = 0;
 
         // Whenever a change is made that requires this material to be re-uploaded
         // (or computed parameters to recompute)
@@ -226,16 +228,16 @@ namespace Weesals.Engine {
             hashCache = 0;
         }
 
-        public Material() { }
-        public Material(Material parent) {
+        public Material() { mIdentifier = gIdentifier++; }
+        public Material(Material parent) : this() {
             if (parent != null) InheritProperties(parent);
+        }
+        public Material(ShaderBase vert, ShaderBase pix) : this() {
+            SetVertexShader(vert);
+            SetPixelShader(pix);
         }
         public Material(string path, Material parent = null) : this(Resources.LoadShader(path, "VSMain"), Resources.LoadShader(path, "PSMain")) {
             if (parent != null) InheritProperties(parent);
-        }
-        public Material(ShaderBase vert, ShaderBase pix) {
-            SetVertexShader(vert);
-            SetPixelShader(pix);
         }
         public ref Parameters GetParametersRaw() { return ref Parameters; }
         public ref Parameters GetMacrosRaw() { return ref Macros; }
@@ -286,6 +288,12 @@ namespace Weesals.Engine {
 	    }
         unsafe public Span<byte> SetTexture(CSIdentifier name, CSRenderTarget tex) {
             return SetValue(name, (nint)tex.mRenderTarget);
+        }
+        unsafe public Span<byte> SetBuffer(CSIdentifier name, CSTexture tex) {
+            return SetValue(name, (nint)tex.mTexture);
+        }
+        unsafe public void SetBuffer(CSIdentifier name, CSBufferLayout buffer) {
+            SetValue(name, (nint)buffer.identifier);
         }
 
         public void SetComputedUniform<T>(CSIdentifier name, ComputedParameter<T>.Getter lambda) where T : unmanaged {
@@ -358,6 +366,7 @@ namespace Weesals.Engine {
             }
             return builder.ToString();
         }
+        public int GetIdentifier() { return mIdentifier; }
         public override int GetHashCode() {
             if (hashCache == 0) hashCache = HashCode.Combine(State.GetHashCode(), Parameters.GetHashCode());
             return hashCache;

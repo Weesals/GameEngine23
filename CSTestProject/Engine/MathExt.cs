@@ -7,6 +7,14 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
+namespace System {
+    public static partial class MathExt {
+        public static int FloorToInt(float v) { int i = (int)v; return i - (i > v ? 1 : 0); }
+        public static int CeilToInt(float v) { int i = (int)v; return i + (i < v ? 1 : 0); }
+        public static int RoundToInt(float v) { return (int)(v + (v >= 0f ? 0.5f : -0.5f)); }
+    }
+}
+
 namespace Weesals.Engine {
 
     public static class Vector4Ext {
@@ -81,6 +89,46 @@ namespace Weesals.Engine {
         }
     }
 
+    public struct Half {
+        public ushort Bits;
+        unsafe public Half(float value) {
+            uint valueBits = *(uint*)&value;
+            Bits = (ushort)(
+                ((valueBits >> 16) & 0x8000) |
+                (((valueBits >> 13) & (0x3fc00 | 0x03ff)) - (112 << 10))
+            );
+        }
+        unsafe public static implicit operator float(Half h) {
+            uint valueBits =
+                (((uint)h.Bits << 16) & 0x80000000) |
+                ((((uint)h.Bits << 13) & (0x0f800000 | 0x03ff0000)) + ((uint)112 << 23));
+            return *(float*)&valueBits;
+        }
+        unsafe public static implicit operator Half(float f) { return new Half(f); }
+        public override string ToString() { return ((float)this).ToString() + "h"; }
+    }
+    public struct Half2 {
+        public Half X, Y;
+        public Half2(Vector2 v) { X = v.X; Y = v.Y; }
+        public static implicit operator Vector2(Half2 h) { return new Vector2(h.X, h.Y); }
+        public static implicit operator Half2(Vector2 v) { return new Half2(v); }
+        public override string ToString() { return $"<{X}, {Y}>"; }
+    }
+    public struct Half3 {
+        public Half X, Y, Z;
+        public Half3(Vector3 v) { X = v.X; Y = v.Y; Z = v.Z; }
+        public static implicit operator Vector3(Half3 h) { return new Vector3(h.X, h.Y, h.Z); }
+        public static implicit operator Half3(Vector3 v) { return new Half3(v); }
+        public override string ToString() { return $"<{X}, {Y}, {Z}>"; }
+    }
+    public struct Half4 {
+        public Half X, Y, Z, W;
+        public Half4(Vector4 v) { X = v.X; Y = v.Y; Z = v.Z; }
+        public static implicit operator Vector4(Half4 h) { return new Vector4(h.X, h.Y, h.Z, h.W); }
+        public static implicit operator Half4(Vector4 v) { return new Half4(v); }
+        public override string ToString() { return $"<{X}, {Y}, {Z}, {W}>"; }
+    }
+
     public struct Int2 : IEquatable<Int2> {
 	    public int X, Y;
         public int LengthSquared => (X * X + Y * Y);
@@ -113,9 +161,9 @@ namespace Weesals.Engine {
         public static int CSum(Int2 v) { return v.X + v.X; }
         public static int CMul(Int2 v) { return v.X * v.Y; }
 
-        public static Int2 FloorToInt(Vector2 v) { return new Int2((int)MathF.Floor(v.X), (int)MathF.Floor(v.Y)); }
-        public static Int2 RoundToInt(Vector2 v) { return new Int2((int)MathF.Round(v.X), (int)MathF.Round(v.Y)); }
-        public static Int2 CeilToInt(Vector2 v) { return new Int2((int)MathF.Ceiling(v.X), (int)MathF.Ceiling(v.Y)); }
+        public static Int2 FloorToInt(Vector2 v) { return new Int2(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y)); }
+        public static Int2 RoundToInt(Vector2 v) { return new Int2(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y)); }
+        public static Int2 CeilToInt(Vector2 v) { return new Int2(MathExt.CeilToInt(v.X), MathExt.CeilToInt(v.Y)); }
 
         public static implicit operator Int2(Vector2 v) { return new Int2(v); }
         public static implicit operator Int2(int v) { return new Int2(v, v); }
@@ -143,6 +191,10 @@ namespace Weesals.Engine {
         public static Int3 operator *(Int3 v, int o) { return new Int3(v.X * o, v.Y * o, v.Z * o); }
         public static Int3 operator /(Int3 v, int o) { return new Int3(v.X / o, v.Y / o, v.Z / o); }
 
+        public static Int3 FloorToInt(Vector3 v) { return new Int3(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y), MathExt.FloorToInt(v.Z)); }
+        public static Int3 RoundToInt(Vector3 v) { return new Int3(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y), MathExt.RoundToInt(v.Z)); }
+        public static Int3 CeilToInt(Vector3 v) { return new Int3(MathExt.CeilToInt(v.X), MathExt.CeilToInt(v.Y), MathExt.CeilToInt(v.Z)); }
+
         public static Int3 Min(Int3 v1, Int3 v2) { return new Int3(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y), Math.Min(v1.Z, v2.Z)); }
         public static Int3 Max(Int3 v1, Int3 v2) { return new Int3(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y), Math.Max(v1.Z, v2.Z)); }
         public static Int3 Clamp(Int3 v, Int3 min, Int3 max) {
@@ -166,8 +218,12 @@ namespace Weesals.Engine {
 	    public static Int4 operator -(Int4 v, int o) { return new Int4(v.X - o, v.Y - o, v.Z - o, v.W - o); }
 	    public static Int4 operator *(Int4 v, int o) { return new Int4(v.X * o, v.Y * o, v.Z * o, v.W * o); }
 	    public static Int4 operator /(Int4 v, int o) { return new Int4(v.X / o, v.Y / o, v.Z / o, v.W / o); }
-        
-	    public static Int4 Min(Int4 v1, Int4 v2) { return new Int4(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y), Math.Min(v1.Z, v2.Z), Math.Min(v1.W, v2.W)); }
+
+        public static Int4 FloorToInt(Vector4 v) { return new Int4(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y), MathExt.FloorToInt(v.Z), MathExt.FloorToInt(v.W)); }
+        public static Int4 RoundToInt(Vector4 v) { return new Int4(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y), MathExt.RoundToInt(v.Z), MathExt.RoundToInt(v.W)); }
+        public static Int4 CeilToInt(Vector4 v) { return new Int4(MathExt.CeilToInt(v.X), MathExt.CeilToInt(v.Y), MathExt.CeilToInt(v.Z), MathExt.CeilToInt(v.W)); }
+
+        public static Int4 Min(Int4 v1, Int4 v2) { return new Int4(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y), Math.Min(v1.Z, v2.Z), Math.Min(v1.W, v2.W)); }
 	    public static Int4 Max(Int4 v1, Int4 v2) { return new Int4(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y), Math.Max(v1.Z, v2.Z), Math.Max(v1.W, v2.W)); }
         public static Int4 Clamp(Int4 v, Int4 min, Int4 max) {
             return new Int4(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y), Math.Clamp(v.Z, min.Z, max.Z), Math.Clamp(v.W, min.W, max.W));

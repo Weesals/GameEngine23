@@ -55,13 +55,6 @@ public:
         mLineHeight = 27;
         FT_Set_Pixel_Sizes(mFace, 0, mLineHeight);
 
-        mTexture = std::make_shared<Texture>();
-        mTexture->SetSize(256);
-        auto datavec = mTexture->GetRawData();
-        auto texdata = std::span<ColorB4>((ColorB4*)datavec.data(), (int)datavec.size() / 4);
-
-        for (auto& px : texdata) px = ColorB4::Clear;
-
         struct EntryMeta {
             Glyph mGlyph;
             int mDataOffset;
@@ -111,12 +104,20 @@ public:
                 }
             }
         }
-        FT_Done_Face(mFace);
 
         // Blit glyphs into texture (starting with largest)
         std::sort(entries.begin(), entries.end(), [](auto& g1, auto& g2) {
             return g1.mGlyph.mSize.y > g2.mGlyph.mSize.y;
         });
+
+        mTexture = std::make_shared<Texture>();
+        mTexture->SetSize(256);
+        mTexture->SetMipCount(1);
+
+        auto datavec = mTexture->GetRawData();
+        auto texdata = std::span<ColorB4>((ColorB4*)datavec.data(), (int)datavec.size() / 4);
+        for (auto& px : texdata) px = ColorB4::Clear;
+
         int lineHeight = 0;
         int padding = 9;
         Int2 pos = Int2(padding, padding);
@@ -140,12 +141,45 @@ public:
             }
             pos.x += entry.mGlyph.mSize.x + padding;
         }
+        
+        for (int m = 1; m < mTexture->GetMipCount(); ++m) {
+            FT_Set_Pixel_Sizes(mFace, 0, mLineHeight >> m);
+            auto mipDataRaw = mTexture->GetData(m, 0);
+            std::span<ColorB4> mipDataPX((ColorB4*)mipDataRaw.data(), (int)mipDataRaw.size() / 4);
+            Int2 mipSize = Texture::GetMipResolution(mTexture->GetSize(), mTexture->GetBufferFormat(), m);
+            // Generate mips
+            for (auto& entry : entries) {
+                auto ci1 = FT_Get_Char_Index(mFace, entry.mGlyph.mGlyph);
+                FT_Load_Glyph(mFace, ci1, FT_LOAD_RENDER);
+                // Read pixel data
+                auto& bitmap = mFace->glyph->bitmap;
+                unsigned char* pixels = bitmap.buffer;
+                Int2 pos = Int2(
+                    (entry.mX * 2 + entry.mGlyph.mSize.x - (bitmap.width << m)) >> (m + 1),
+                    (entry.mY * 2 + entry.mGlyph.mSize.y - (bitmap.rows << m)) >> (m + 1)
+                );
+                for (int y = 0; y < (int)bitmap.rows; ++y) {
+                    for (int x = 0; x < (int)bitmap.width; ++x) {
+                        Int2 pxp(pos.x + x, pos.y + y);
+                        if ((uint32_t)pxp.x >= (uint32_t)mipSize.x || (uint32_t)pxp.y >= (uint32_t)mipSize.y) continue;
+                        auto px = pixels[x + y * bitmap.pitch];
+                        mipDataPX[pxp.x + pxp.y * mipSize.x] = ColorB4::MakeWhite(px);
+                    }
+                }
+            }
+        }
+        FT_Done_Face(mFace);
 
-        // Generate distance field
-        for (int t = 0; t < 1; ++t) {
-            DistanceFieldGenerator dfgen;
-            dfgen.Generate(texdata, mTexture->GetSize());
-            dfgen.ApplyDistances(texdata, mTexture->GetSize(), 20.0f);
+        for (int m = 0; m < std::min(1, mTexture->GetMipCount()); ++m) {
+            auto mipDataRaw = mTexture->GetData(m, 0);
+            std::span<ColorB4> mipDataPX((ColorB4*)mipDataRaw.data(), (int)mipDataRaw.size() / 4);
+            Int2 mipSize = Texture::GetMipResolution(mTexture->GetSize(), mTexture->GetBufferFormat(), m);
+            // Generate distance field
+            for (int t = 0; t < 1; ++t) {
+                DistanceFieldGenerator dfgen;
+                dfgen.Generate(mipDataPX, mipSize);
+                dfgen.ApplyDistances(mipDataPX, mipSize, 7.0f / (1 << m));
+            }
         }
         mTexture->MarkChanged();
 

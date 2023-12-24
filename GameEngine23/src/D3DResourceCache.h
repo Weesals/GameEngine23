@@ -180,7 +180,9 @@ public:
         ComPtr<ID3D12Resource> mBuffer;
         D3D12_GPU_VIRTUAL_ADDRESS mGPUMemory;
         int mSize = -1;
+        int mStride, mCount;
         int mRevision = 0;
+        int mSRVOffset;
         BufferLayout::Usage mUsage;
     };
 
@@ -218,10 +220,14 @@ public:
     void SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId);
     ID3D12Resource* AllocateUploadBuffer(int size);
     void CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size);
-    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges);
+    void RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin);
+    D3DResourceCache::D3DBinding* GetBinding(uint64_t bindingIdentifier);
+    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, std::span<const RangeInt> ranges);
+    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, const BufferLayout& buffer, std::span<const RangeInt> ranges);
 
     void ComputeElementLayout(std::span<const BufferLayout*> bindings,
         std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
+    void CopyBufferData(ID3D12GraphicsCommandList* cmdList, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize);
     void ComputeElementData(std::span<const BufferLayout*> bindings,
         ID3D12GraphicsCommandList* cmdList,
         std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,

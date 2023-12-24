@@ -489,6 +489,16 @@ namespace Weesals.Engine {
         unsafe public CSPipeline RequirePipeline(CSSpan bindings, CSSpan materials, CSIdentifier renderPass) {
             return new CSPipeline(RequirePipeline(mGraphics, bindings, materials));
         }
+        unsafe public void CopyBufferData(CSTexture buffer, List<RangeInt> ranges) {
+            fixed (RangeInt* rangesPtr = CollectionsMarshal.AsSpan(ranges)) {
+                CopyBufferData(mGraphics, (NativeBuffer*)buffer.mTexture, new CSSpan(rangesPtr, ranges.Count));
+            }
+        }
+        unsafe public void CopyBufferData(CSBufferLayout buffer, List<RangeInt> ranges) {
+            fixed (RangeInt* rangesPtr = CollectionsMarshal.AsSpan(ranges)) {
+                CopyBufferData(mGraphics, &buffer, new CSSpan(rangesPtr, ranges.Count));
+            }
+        }
         unsafe public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
             var usbindings = stackalloc CSBufferLayout[bindings.Count];
             for (int b = 0; b < bindings.Count; ++b) usbindings[b] = bindings[b];
@@ -514,6 +524,9 @@ namespace Weesals.Engine {
         unsafe public override int GetHashCode() { return (int)(mGraphics) ^ (int)((ulong)mGraphics >> 32); }
         unsafe public ulong GetGlobalPSOHash() { return GetGlobalPSOHash(mGraphics); }
         unsafe public static implicit operator NativeGraphics*(CSGraphics g) { return g.mGraphics; }
+    }
+    public partial struct CSInstance {
+        public override string ToString() { return GetInstanceId().ToString(); }
     }
     public partial struct CSRenderPass {
         public readonly unsafe Frustum GetFrustum() { return *GetFrustum(mRenderPass); }
@@ -545,6 +558,7 @@ namespace Weesals.Engine {
         unsafe public int GetGPURevision() { return GetGPURevision(mScene); }
         unsafe public CSMaterial GetRootMaterial() { return new CSMaterial(GetRootMaterial(mScene)); }
         unsafe public CSInstance CreateInstance() { return new CSInstance(CreateInstance(mScene)); }
+        unsafe public void RemoveInstance(CSInstance instance) { RemoveInstance(mScene, instance); }
         unsafe public void UpdateInstanceData(CSInstance instance, int offset, void* data, int dataLen) { UpdateInstanceData(mScene, instance, offset, (byte*)data, dataLen); }
         unsafe public MemoryBlock<Vector4> GetInstanceData(CSInstance instance) { return GetInstanceData(mScene, instance).AsMemoryBlock<Vector4>(); }
         unsafe public CSRenderPass GetBasePass() { return new CSRenderPass(GetBasePass(mScene)); }

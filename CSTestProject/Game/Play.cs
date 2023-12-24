@@ -57,7 +57,8 @@ namespace Weesals.Game {
         DeferredPass canvasPass;
 
         RenderGraph renderGraph = new();
-        ScenePassManager scenePasses = new();
+        ScenePassManager scenePasses;
+        public ScenePassManager ScenePasses => scenePasses;
 
         private WorldObject testObject;
 
@@ -86,6 +87,8 @@ namespace Weesals.Game {
                 Position = new Vector3(0, 20f, -10f),
                 Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.3f),
             };
+
+            scenePasses = new(scene);
 
             shadowPass = new ShadowPass(scene);
             clearPass = new DeferredPass("Clear",
@@ -143,7 +146,7 @@ namespace Weesals.Game {
                 testObject.Meshes.Add(instance);
                 scenePasses.AddInstance(instance, mesh);
             };
-            Scene.SetLocation(testObject, Vector3.Zero);
+            Scene.SetTransform(testObject, Matrix4x4.CreateRotationY(MathF.PI));
 
             Canvas = new Canvas();
             Canvas.AppendChild(new UIPlay(this));
@@ -225,6 +228,7 @@ namespace Weesals.Game {
 
             // Copy current matrices into previous frame slots
             Scene.PostRender();
+            ScenePasses.EndRender();
         }
 
         private void RenderBasePass(CSGraphics graphics, ScenePass pass) {

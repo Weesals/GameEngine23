@@ -166,12 +166,15 @@ public:
     }
     void ApplyDistances(std::span<ColorB4> texdata, Int2 tsize, float spread = 32.0f) {
         auto startTime = std::chrono::system_clock::now();
+        //float midPoint = 127.5f + 0.5f * 127.5f / spread;
         // Calculate final distance values
         for (int y = 0; y < tsize.y; ++y) {
             int iy = y * tsize.x;
             for (int x = 0; x < tsize.x; ++x) {
                 auto& a = texdata[x + iy].a;
-                a = (uint8_t)std::clamp(127.5f + (a > 127 ? spread : -spread) * values[x + iy].Length(), 0.0f, 255.0f);
+                float distance = values[x + iy].Length();
+                distance *= a > 127 ? 1.0f : -1.0f;
+                a = (uint8_t)std::clamp(127.5f + 128.0f * distance / spread, 0.0f, 255.0f);
             }
         }
         auto endTime = std::chrono::system_clock::now();

@@ -4,6 +4,7 @@
 #include <span>
 #include "MathTypes.h"
 #include "Delegate.h"
+#include "Buffer.h"
 
 class GraphicsBufferBase
 {

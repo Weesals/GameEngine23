@@ -24,7 +24,7 @@ namespace Weesals.Engine {
         public override string ToString() { return $"<{Size}:{Format}:{MipCount}>"; }
     }
     public interface ICustomOutputTextures {
-        void FillTextures(ref RenderGraph.CustomTexturesContext context);
+        bool FillTextures(ref RenderGraph.CustomTexturesContext context);
     }
     public class RenderPass {
         protected static Material blitMaterial;
@@ -234,6 +234,9 @@ namespace Weesals.Engine {
         public void SetVisible(CSInstance instance, bool visible) {
             RetainedRenderer.SetVisible(instance.GetInstanceId(), visible);
         }
+        public void RemoveInstance(CSInstance instance) {
+            RetainedRenderer.RemoveInstance(instance.GetInstanceId());
+        }
 
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
@@ -243,6 +246,7 @@ namespace Weesals.Engine {
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
             PreRender?.Invoke(graphics);
             RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
+            Scene.SubmitToGPU(graphics);
             RenderQueue.Render(graphics);
         }
     }
@@ -353,7 +357,7 @@ namespace Weesals.Engine {
             temporalMaterial = new Material("./assets/temporal.hlsl", GetPassMaterial());
             //temporalMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
         }
-        public void FillTextures(ref RenderGraph.CustomTexturesContext context) {
+        public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
             ++frame;
             int targetId = frame % 2;
             if (!targets[targetId].IsValid() || targets[targetId].GetSize() != context.Viewport.Size) {
@@ -371,6 +375,7 @@ namespace Weesals.Engine {
             //context.OverwriteInput(context.Inputs[1], targets[targetId]);
             context.OverwriteOutput(context.Outputs[0], targets[targetId]);
             OnBegin?.Invoke(context.Viewport.Size);
+            return true;
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
@@ -396,7 +401,7 @@ namespace Weesals.Engine {
             previousViewProj = viewProj;
         }
     }
-    public class HiZPass : RenderPass {
+    public class HiZPass : RenderPass, ICustomOutputTextures {
         protected Material firstPassMaterial;
         protected Material highZMaterial;
         public HiZPass() : base("HighZ") {
@@ -404,7 +409,7 @@ namespace Weesals.Engine {
                 new PassInput("SceneDepth"),
             };
             Outputs = new[] {
-                new PassOutput("HighZ").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8_UNORM, MipCount = 0, }),
+                new PassOutput("HighZ").SetTargetDesc(new TextureDesc() { Size = -2, Format = BufferFormat.FORMAT_R8G8_UNORM, MipCount = 0, }),
             };
             firstPassMaterial = new Material("./assets/highz.hlsl", GetPassMaterial());
             firstPassMaterial.SetPixelShader(Resources.LoadShader("./assets/highz.hlsl", "FirstPassPS"));
@@ -412,6 +417,14 @@ namespace Weesals.Engine {
             firstPassMaterial.SetDepthMode(new DepthMode(DepthMode.Comparisons.Always, true));
             highZMaterial = new Material(firstPassMaterial);
             highZMaterial.SetPixelShader(Resources.LoadShader("./assets/highz.hlsl", "HighZPassPS"));
+        }
+        public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
+            var inputSize = context.FindInputSize(0);
+            if (inputSize.X <= 0) return false;
+            var outputDesc = context.Outputs[0].Output.TargetDesc;
+            outputDesc.Size = inputSize >> 1;
+            context.Outputs[0].Output.SetTargetDesc(outputDesc);
+            return true;
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
             var sceneDepth = context.ResolvedDepth;
@@ -505,8 +518,10 @@ namespace Weesals.Engine {
         public List<CSInstance> Meshes = new();
     }
     public class ScenePassManager {
+        public readonly Scene Scene;
         private Matrix4x4 view, projection;
         private List<ScenePass> scenePasses = new();
+        private List<CSInstance> dynamicInstances = new();
 
         public Matrix4x4 View => view;
         public Matrix4x4 Projection => projection;
@@ -523,6 +538,10 @@ namespace Weesals.Engine {
 
         public Vector2 TemporalOffset => offsets[frame % offsets.Length];
 
+        public ScenePassManager(Scene scene) {
+            Scene = scene;
+        }
+
         public void AddInstance(CSInstance instance, Mesh mesh) {
             AddInstance(instance, mesh, null, RenderTags.Default);
         }
@@ -536,6 +555,11 @@ namespace Weesals.Engine {
                 if (pass.OverrideMaterial != null) materials.Add(pass.OverrideMaterial);
                 materials.Add(pass.RetainedRenderer.Scene.RootMaterial);
                 pass.AddInstance(instance, mesh, materials);
+            }
+        }
+        private void RemoveInstance(CSInstance instance) {
+            foreach (var pass in scenePasses) {
+                pass.RemoveInstance(instance);
             }
         }
 
@@ -570,6 +594,20 @@ namespace Weesals.Engine {
             }
             previousView = View;
             previousProj = Projection;
+        }
+        public void EndRender() {
+            foreach (var instance in dynamicInstances) {
+                Scene.RemoveInstance(instance);
+                RemoveInstance(instance);
+            }
+            dynamicInstances.Clear();
+        }
+        public CSInstance DrawDynamicMesh(Mesh mesh, Matrix4x4 transform, Material material) {
+            var instance = Scene.CreateInstance();
+            dynamicInstances.Add(instance);
+            Scene.SetTransform(instance, transform);
+            AddInstance(instance, mesh, material, RenderTags.Default);
+            return instance;
         }
     }
 }

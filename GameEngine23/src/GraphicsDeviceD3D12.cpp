@@ -289,13 +289,15 @@ public:
         return hash;
     }
 
-    void* RequireConstantBuffer(std::span<const uint8_t> data) override
-    {
+    void* RequireConstantBuffer(std::span<const uint8_t> data) override {
         auto& cache = mDevice->GetResourceCache();
         return cache.RequireConstantBuffer(data);
     }
-    void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) override
-    {
+    void CopyBufferData(GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) override {
+        auto& cache = mDevice->GetResourceCache();
+        cache.UpdateBufferData(mCmdList.Get(), buffer, ranges);
+    }
+    void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) override {
         auto& cache = mDevice->GetResourceCache();
         cache.UpdateBufferData(mCmdList.Get(), buffer, ranges);
     }
@@ -367,9 +369,14 @@ public:
         {
             auto* rb = pipelineState->mResourceBindings[i];
             auto* resource = resources[roff + i];
-            const D3DResourceCache::D3DBufferWithSRV* buffer = nullptr;
+            int srvOffset = -1;
             if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
-                buffer = cache.RequireCurrentBuffer((GraphicsBufferBase*)resource, mCmdList.Get());
+                if ((uint64_t)resource < 1000) {
+                    srvOffset = cache.GetBinding((uint64_t)resource)->mSRVOffset;
+                }
+                else {
+                    srvOffset = cache.RequireCurrentBuffer((GraphicsBufferBase*)resource, mCmdList.Get())->mSRVOffset;
+                }
             }
             else {
                 auto* textureBase = (TextureBase*)resource;
@@ -380,17 +387,17 @@ public:
                     D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
                     if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
                     surface->RequireState(barriers, barrierState, 0);
-                    buffer = surface;
+                    srvOffset = surface->mSRVOffset;
                     if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
                 } else {
                     auto tex = dynamic_cast<Texture*>(textureBase);
-                    buffer = cache.RequireCurrentTexture(tex, mCmdList.Get());
+                    srvOffset = cache.RequireCurrentTexture(tex, mCmdList.Get())->mSRVOffset;
                 }
             }
-            if (buffer == nullptr) break;
+            if (srvOffset == -1) break;
             auto rootSig = pipelineState->mRootSignature;
             auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
-            handle.ptr += buffer->mSRVOffset;
+            handle.ptr += srvOffset;
             auto bindingId = rootSig->mNumConstantBuffers + rb->mBindPoint;
             if (mLastResources[bindingId] == handle.ptr) continue;
             mCmdList->SetGraphicsRootDescriptorTable(bindingId, handle);

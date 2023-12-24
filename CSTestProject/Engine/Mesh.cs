@@ -50,6 +50,15 @@ namespace Weesals.Engine {
             SetIndexCount(0);
             MarkChanged();
         }
+        public void CalculateBoundingBox() {
+            Vector3 min = new Vector3(float.MaxValue);
+            Vector3 max = new Vector3(float.MinValue);
+            foreach (var pos in GetPositionsV()) {
+                min = Vector3.Min(min, pos);
+                max = Vector3.Max(max, pos);
+            }
+            boundingBox = BoundingBox.FromMinMax(min, max);
+        }
 
         private void RequireVertexElementFormat(ref sbyte elementId, BufferFormat fmt, string semantic) {
             if (elementId == -1) {
@@ -141,6 +150,5 @@ namespace Weesals.Engine {
             mesh.boundingBox = other.GetBoundingBox();
             return mesh;
         }
-
     }
 }

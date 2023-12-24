@@ -13,6 +13,10 @@ namespace Weesals.Utility {
         public RangeInt(int start, int length) { this.Start = start; this.Length = length; }
         public override string ToString() { return "[" + Start + "-" + End + "]"; }
         public static RangeInt FromBeginEnd(int begin, int end) { return new RangeInt(begin, end - begin); }
+
+        public bool Overlaps(RangeInt other) {
+            return Start <= other.End && End >= other.Start;
+        }
     }
     public static class SpanExt {
         public static Span<T> Slice<T>(this Span<T> span, RangeInt range) {

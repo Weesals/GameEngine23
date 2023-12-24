@@ -137,7 +137,8 @@ public:
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual uint64_t GetGlobalPSOHash() const { return (uint64_t)this; }
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
-    virtual void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges) { }
+    virtual void CopyBufferData(GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) { }
+    virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
     virtual const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
@@ -188,8 +189,10 @@ public:
     {
         return mInterop->RequireConstantBuffer(data);
     }
-    void CopyBufferData(GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges)
-    {
+    void CopyBufferData(GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) {
+        mInterop->CopyBufferData(buffer, ranges);
+    }
+    void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) {
         mInterop->CopyBufferData(buffer, ranges);
     }
     void DrawMesh(

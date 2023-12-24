@@ -12,7 +12,9 @@ using Weesals.UI;
 
 namespace Weesals.Editor {
 
-    public class UILandscapeTools : CanvasRenderable, IToolServiceProvider<BrushConfiguration> {
+    public class UILandscapeTools : CanvasRenderable
+        , IToolServiceProvider<BrushConfiguration>
+        , IToolServiceProvider<ScenePassManager> {
         public TextButton HeightButton = new("Edit Height");
         public TextButton WaterButton = new("Edit Water");
         public InputDispatcher InputDispatcher = new();
@@ -21,33 +23,37 @@ namespace Weesals.Editor {
         public BrushWaterTool WaterTool = new();
 
         private BrushConfiguration brushConfig = new();
+
+        ScenePassManager scenePassManager;
+        ScenePassManager IToolServiceProvider<ScenePassManager>.Service => scenePassManager;
         BrushConfiguration IToolServiceProvider<BrushConfiguration>.Service => brushConfig;
 
+        private UXBrushTool activeTool;
+
         public void Initialize(UIGameView gameView) {
+            scenePassManager = gameView.Scene;
             var toolContext = new ToolContext(gameView.Landscape, InputDispatcher, gameView.Camera, this);
             CliffTool.InitializeTool(toolContext);
             WaterTool.InitializeTool(toolContext);
 
             var list = new ListLayout() { Axis = ListLayout.Axes.Vertical, };
 
-            HeightButton.OnClick += () => {
-                bool isAdded = !InputDispatcher.RemoveInteraction(CliffTool);
-                if (isAdded) InputDispatcher.AddInteraction(CliffTool);
-                HeightButton.Text.Text = isAdded ? "End" : "Edit Height";
-            };
+            HeightButton.OnClick += () => { SetActiveTool(activeTool == CliffTool ? null : CliffTool); };
             list.AppendChild(HeightButton);
 
-            WaterButton.OnClick += () => {
-                bool isAdded = !InputDispatcher.RemoveInteraction(WaterTool);
-                if (isAdded) InputDispatcher.AddInteraction(WaterTool);
-                WaterButton.Text.Text = isAdded ? "End" : "Edit Water";
-            };
+            WaterButton.OnClick += () => { SetActiveTool(activeTool == WaterTool ? null : WaterTool); };
             list.AppendChild(WaterButton);
 
             AppendChild(list);
         }
 
-
+        private void SetActiveTool(UXBrushTool? tool) {
+            if (activeTool is IInteraction otool) InputDispatcher.RemoveInteraction(otool);
+            activeTool = tool;
+            if (activeTool is IInteraction ntool) InputDispatcher.AddInteraction(ntool);
+            HeightButton.Text.Text = activeTool == CliffTool ? "End" : "Edit Height";
+            WaterButton.Text.Text = activeTool == WaterTool ? "End" : "Edit Water";
+        }
     }
     public class UIInspector : TabbedWindow {
         public UILandscapeTools LandscapeTools = new();

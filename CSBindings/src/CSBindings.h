@@ -7,6 +7,7 @@
 class Mesh;
 class Model;
 class Texture;
+class GraphicsBufferBase;
 class RenderTarget2D;
 class Material;
 struct PipelineLayout;
@@ -18,6 +19,7 @@ class Shader;
 typedef Mesh NativeMesh;
 typedef Model NativeModel;
 typedef Texture NativeTexture;
+typedef GraphicsBufferBase NativeBuffer;
 typedef RenderTarget2D NativeRenderTarget;
 typedef Shader NativeShader;
 typedef Material NativeMaterial;
@@ -291,6 +293,8 @@ private:
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static CSSpan ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bindings);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
+	static void CopyBufferData(NativeGraphics* graphics, NativeBuffer* buffer, CSSpan ranges);
+	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount = 1);
 	static void Reset(NativeGraphics* graphics);
 	static void Clear(NativeGraphics* graphics);
@@ -337,6 +341,7 @@ public:
 	static void Dispose(NativeScene* scene);
 	static NativeMaterial* GetRootMaterial(NativeScene* scene);
 	static int CreateInstance(NativeScene* scene);
+	static void RemoveInstance(NativeScene* scene, CSInstance instance);
 	static void UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, const uint8_t* data, int dataLen);
 	static CSSpan GetInstanceData(NativeScene* scene, CSInstance instance);
 	static NativeTexture* GetGPUBuffer(NativeScene* scene);

@@ -15,6 +15,10 @@ namespace Weesals.Engine
     {
     }
 
+    public partial struct NativeBuffer
+    {
+    }
+
     public partial struct NativeRenderTarget
     {
     }
@@ -677,6 +681,12 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireConstantBuffer@CSGraphics@@CAPEAXPEAVNativeGraphics@@UCSSpan@@@Z", ExactSpelling = true)]
         private static extern void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyBufferData@CSGraphics@@CAXPEAVNativeGraphics@@PEAVGraphicsBufferBase@@UCSSpan@@@Z", ExactSpelling = true)]
+        private static extern void CopyBufferData(NativeGraphics* graphics, NativeBuffer* buffer, CSSpan ranges);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyBufferData@CSGraphics@@CAXPEAVNativeGraphics@@PEBUCSBufferLayout@@UCSSpan@@@Z", ExactSpelling = true)]
+        private static extern void CopyBufferData(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* layout, CSSpan ranges);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Draw@CSGraphics@@CAXPEAVNativeGraphics@@VCSPipeline@@UCSSpan@@2UCSDrawConfig@@H@Z", ExactSpelling = true)]
         private static extern void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount = 1);
 
@@ -794,6 +804,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateInstance@CSScene@@SAHPEAVNativeScene@@@Z", ExactSpelling = true)]
         public static extern int CreateInstance(NativeScene* scene);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RemoveInstance@CSScene@@SAXPEAVNativeScene@@VCSInstance@@@Z", ExactSpelling = true)]
+        public static extern void RemoveInstance(NativeScene* scene, CSInstance instance);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?UpdateInstanceData@CSScene@@SAXPEAVNativeScene@@VCSInstance@@HPEBEH@Z", ExactSpelling = true)]
         public static extern void UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, [NativeTypeName("const uint8_t *")] byte* data, int dataLen);

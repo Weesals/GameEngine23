@@ -92,8 +92,9 @@ namespace Weesals.Game {
             var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
             var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
             var delta = pos1 - pos0;
-            var pos = PlayUI.Play.Scene.GetLocation(instance.Target);
-            PlayUI.Play.Scene.SetLocation(instance.Target, pos + delta);
+            var transform = PlayUI.Play.Scene.GetTransform(instance.Target);
+            transform.Translation += delta;
+            PlayUI.Play.Scene.SetTransform(instance.Target, transform);
         }
         public void OnEndDrag(PointerEvent events) {
             SetSelected(instances[events].Target, false);

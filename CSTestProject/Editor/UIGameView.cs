@@ -17,6 +17,7 @@ namespace Weesals.Editor {
         // TODO: Remove these, get them dynamically
         public Camera? Camera;
         public LandscapeData? Landscape;
+        public ScenePassManager? Scene;
 
         public UIGameView(Editor editor) : base(editor, "Game") {
             EnableBackground = false;

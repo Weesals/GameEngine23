@@ -36,7 +36,10 @@ namespace Weesals.Engine {
         }
         public static ulong ArrayHash(Span<Material> materials) {
             ulong hash = 0;
-            foreach (var mat in materials) hash = hash * 0x9E3779B97F4A7C15uL + (ulong)mat.GetHashCode();
+            foreach (var mat in materials) {
+                if (mat == null) continue;
+                hash = hash * 0x9E3779B97F4A7C15uL + (ulong)mat.GetIdentifier();
+            }
             return hash;
         }
     }
@@ -126,32 +129,82 @@ namespace Weesals.Engine {
     }
     public class Scene {
         private CSScene CSScene;
+
+        public struct Instance {
+            public RangeInt Data;
+        }
+        private BufferLayoutPersistent gpuScene;
+        private SparseIndices gpuSceneFree = new();
+        private SparseIndices gpuSceneUpdate = new();
+        private SparseArray<Instance> instances = new();
+
         public RootMaterial RootMaterial = new();
         public RetainedMaterialCollection MaterialCollection = new();
         public ResolvedMaterialSets ResolvedMaterials;
         public RenderTagManager TagManager = new();
         private HashSet<CSInstance> movedInstances = new();
+        private List<RangeInt> gpuDelta = new();
         public Scene(CSScene scene) {
-            CSScene = scene;
             ResolvedMaterials = new(MaterialCollection);
+            //CSScene = scene;
+            gpuScene = new(BufferLayoutPersistent.Usages.Instance);
+            gpuScene.AppendElement(new CSBufferElement("Data", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
+            gpuSceneFree = new();
+            gpuSceneUpdate = new();//*/
         }
 
         public CSInstance CreateInstance() {
-            return CSScene.CreateInstance();
+            //return CSScene.CreateInstance();
+            int size = sizeof(float) * 4 * 10;
+            var range = gpuSceneFree.Allocate(size);
+            if (range.Length == -1) {
+                int resize = Math.Max(gpuScene.BufferCapacityCount, 1024) * 2;
+                gpuScene.AllocResize(resize);
+                range = new RangeInt(gpuScene.BufferLayout.mCount, size);
+                gpuScene.BufferLayout.mCount += size;
+            }
+            var id = instances.Add(new Instance() { Data = range, });
+            return new CSInstance(id);//*/
         }
         public unsafe void UpdateInstanceData(CSInstance instance, int offset, void* data, int dataLen) {
-            CSScene.UpdateInstanceData(instance, offset, data, dataLen);
+            var instanceData = instances[instance.GetInstanceId()];
+            new Span<byte>((byte*)data, dataLen).CopyTo(
+                new Span<byte>((byte*)gpuScene.Elements[0].mData + instanceData.Data.Start + offset, dataLen)
+            );//*/
+            gpuScene.BufferLayout.revision++;
+            //CSScene.UpdateInstanceData(instance, offset, data, dataLen);
+            int stride = sizeof(float) * 10 * 4;
+            var range = new RangeInt(instance.GetInstanceId() * stride + offset, dataLen);
+            int itemI = 0, max = gpuDelta.Count;
+            while (itemI < max) {
+                int mid = (itemI + max) / 2;
+                if (gpuDelta[mid].Start < range.Start) itemI = mid + 1;
+                else max = mid;
+            }
+            if (itemI < gpuDelta.Count && gpuDelta[itemI].Overlaps(range)) {
+                var other = gpuDelta[itemI];
+                gpuDelta[itemI] = RangeInt.FromBeginEnd(Math.Min(other.Start, range.Start), Math.Max(other.End, range.End));
+                return;
+            }
+            gpuDelta.Insert(itemI, range);
         }
-        public MemoryBlock<Vector4> GetInstanceData(CSInstance instance) {
-            return CSScene.GetInstanceData(instance);
+        public unsafe MemoryBlock<Vector4> GetInstanceData(CSInstance instance) {
+            //return CSScene.GetInstanceData(instance);
+            var instanceData = instances[instance.GetInstanceId()];
+            var data = (byte*)gpuScene.Elements[0].mData + instanceData.Data.Start;
+            return new MemoryBlock<Vector4>((Vector4*)data, instanceData.Data.Length / sizeof(Vector4));//*/
+        }
+        public void RemoveInstance(CSInstance instance) {
+            //CSScene.RemoveInstance(instance);
+            var instanceData = instances[instance.GetInstanceId()];
+            gpuSceneFree.Return(ref instanceData.Data);
+            instances.Return(instance.GetInstanceId());//*/
         }
 
-        public CSTexture GetGPUBuffer() {
-            return CSScene.GetGPUBuffer();
-        }
-        public int GetGPURevision() {
-            return CSScene.GetGPURevision();
-        }
+        //public CSTexture GetGPUBuffer() { return CSScene.GetGPUBuffer(); }
+        //public int GetGPURevision() { return CSScene.GetGPURevision(); }
+        public CSBufferLayout GetGPUBuffer() { return gpuScene.BufferLayout; }
+        public int GetGPURevision() { return gpuScene.BufferLayout.revision; }
 
         unsafe public void PostRender() {
             foreach (var instance in movedInstances) {
@@ -162,21 +215,32 @@ namespace Weesals.Engine {
             movedInstances.Clear();
         }
 
-        unsafe public Vector3 GetLocation(WorldObject target) {
+        unsafe public Matrix4x4 GetTransform(WorldObject target) {
             foreach (var instance in target.Meshes) {
                 var data = GetInstanceData(instance);
-                return ((Matrix4x4*)data.Data)->Translation;
+                return *((Matrix4x4*)data.Data);
             }
             return default;
         }
-        unsafe public void SetLocation(WorldObject target, Vector3 pos) {
+        unsafe public void SetTransform(WorldObject target, Matrix4x4 mat) {
             foreach (var instance in target.Meshes) {
-                var data = GetInstanceData(instance);
-                Matrix4x4 mat = *(Matrix4x4*)data.Data;
-                mat.Translation = pos;
                 UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4));
                 movedInstances.Add(instance);
             }
+        }
+        unsafe public Matrix4x4 GetTransform(CSInstance instance) {
+            var data = GetInstanceData(instance);
+            return *((Matrix4x4*)data.Data);
+        }
+        unsafe public void SetTransform(CSInstance instance, Matrix4x4 mat) {
+            UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4));
+            movedInstances.Add(instance);
+        }
+
+        public void SubmitToGPU(CSGraphics graphics) {
+            if (gpuDelta.Count == 0) return;
+            graphics.CopyBufferData(GetGPUBuffer(), gpuDelta);
+            gpuDelta.Clear();
         }
     }
 
@@ -317,9 +381,10 @@ namespace Weesals.Engine {
             mInstanceBufferLayout = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
             mInstanceBufferLayout.MarkInvalid();
             mInstanceBufferLayout.AppendElement(new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32_UINT));
-            instanceMaterial.SetTexture("instanceData", Scene.GetGPUBuffer());
+            instanceMaterial.SetBuffer("instanceData", Scene.GetGPUBuffer());
         }
         public void Dispose() {
+            mInstanceBufferLayout.Dispose();
             //instanceMaterial.Dispose();
         }
 
@@ -358,11 +423,28 @@ namespace Weesals.Engine {
         public void SetVisible(int sceneId, bool visible) {
         }
         // Remove an instance from rendering
-        public void RemoveInstance(int instanceId) {
+        public void RemoveInstance(int sceneId) {
+            if (!instanceBatches.TryGetValue((uint)sceneId, out var key)) return;
+            int bucket = 0, max = batches.Count - 1;
+            while (bucket < max) {
+                int mid = (bucket + max) / 2;
+                if (batches[mid].StateKey.CompareTo(key) < 0) bucket = mid + 1;
+                else max = mid;
+            }
+            var batch = batches[bucket];
+            int instance = 0, imax = batch.Instances.Count - 1;
+            while (instance < imax) {
+                int mid = (instance + imax) / 2;
+                if (batch.Instances[mid].CompareTo(sceneId) < 0) instance = mid + 1;
+                else imax = mid;
+            }
+            batch.Instances.RemoveAt(instance);
+            instanceBatches.Remove((uint)sceneId);
         }
 
         // Generate a drawlist for rendering currently visible objects
         unsafe public void SubmitToRenderQueue(CSGraphics graphics, RenderQueue queue, in Frustum frustum) {
+            queue.mInstanceBufferLayout.BufferLayout.revision++;
             foreach (var batch in batches) {
                 if (batch.Instances.Count == 0) continue;
 
@@ -435,6 +517,8 @@ namespace Weesals.Engine {
                 // Need to force this to use queues instance buffer
                 // TODO: A more generic approach
                 var bindings = graphics.RequireFrameData<CSBufferLayout>(batch.BufferLayoutCache);
+                bindings[0] = mesh.IndexBuffer;
+                bindings[1] = mesh.VertexBuffer;
                 bindings[^1] = queue.mInstanceBufferLayout;
                 bindings[^1].mOffset = instBegin;
                 bindings[^1].mCount = queue.InstanceCount - instBegin;

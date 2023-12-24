@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using UnityEngine;
 using Weesals.Engine;
 using Weesals.UI;
 using Weesals.Utility;
@@ -34,7 +35,6 @@ namespace Weesals.Landscape.Editor {
     public class BrushConfiguration {
 
         public int BrushSize = 14;
-
         public FloatCurve BrushFalloff = FloatCurve.MakeLinear();
 
         public Material BrushMaterial = new();
@@ -42,21 +42,29 @@ namespace Weesals.Landscape.Editor {
 
         private Mesh brushMesh;
 
-        public void DrawBrush(Scene scene, LandscapeData landscapeData, ToolContext context, Vector3 pos, float radiusMin, float radiusMax, float angle) {
+        public void DrawBrush(ScenePassManager scene, LandscapeData landscapeData, ToolContext context, Vector3 pos, float radiusMin, float radiusMax, float angle) {
             if (brushMesh == null) brushMesh = new Mesh("Brush");
             using var vertices = new PooledList<Vector3>();
             using var uvs = new PooledList<Vector2>();
             using var indices = new PooledList<ushort>();
-            AppendRing(landscapeData, vertices, uvs, indices, pos, radiusMin, angle);
-            AppendRing(landscapeData, vertices, uvs, indices, pos, radiusMax, angle, 16);
+            AppendRing(landscapeData, ref vertices.AsMutable(), ref uvs.AsMutable(), ref indices.AsMutable(), pos, radiusMin, angle);
+            AppendRing(landscapeData, ref vertices.AsMutable(), ref uvs.AsMutable(), ref indices.AsMutable(), pos, radiusMax, angle, 16);
+            brushMesh.SetVertexCount(vertices.Count);
+            brushMesh.RequireVertexTexCoords(0);
+            brushMesh.RequireVertexNormals();
             brushMesh.GetPositionsV().Set(vertices);
+            brushMesh.GetNormalsV().Set(Vector3.UnitY);
             brushMesh.GetTexCoordsV().Set(uvs);
             brushMesh.SetIndices(indices);
-            //scene
-            //Graphics.DrawMesh(brushMesh, Matrix4x4.identity, BrushMaterial, 0);
+            brushMesh.MarkChanged();
+            brushMesh.CalculateBoundingBox();
+            scene.DrawDynamicMesh(brushMesh, Matrix4x4.Identity, BrushMaterial);
         }
 
-        private void AppendRing(LandscapeData landscapeData, PooledList<Vector3> vertices, PooledList<Vector2> uvs, PooledList<ushort> indices, Vector3 centre, float radius, float angle, int dashes = 1) {
+        private void AppendRing(LandscapeData landscapeData
+            , ref PooledList<Vector3> vertices
+            , ref PooledList<Vector2> uvs
+            , ref PooledList<ushort> indices, Vector3 centre, float radius, float angle, int dashes = 1) {
             var twoPi = MathF.PI * 2f;
             var angO = angle;
             for (int d = 0; d < dashes; d++) {
@@ -94,6 +102,10 @@ namespace Weesals.Landscape.Editor {
         public CanvasRenderable Viewport => Context.Viewport;
         public Camera Camera => Context.Camera;
         public T? GetService<T>() { return Context.GetService<T>(); }
+
+        private TimedEvent active;
+        private float reticleAngle;
+
         public void InitializeTool(ToolContext context) {
             Context = context;
         }
@@ -105,7 +117,18 @@ namespace Weesals.Landscape.Editor {
             };
         }
 
-        protected void DrawBrush(LandscapeData landscapeData, in ToolContext context, bool _active) {
+        protected void DrawBrush(LandscapeData landscapeData, in ToolContext context, Vector3 pos, bool _active) {
+            active.SetChecked(_active);
+            var scene = context.GetService<ScenePassManager>()!;
+            var brushConfig = context.GetService<BrushConfiguration>()!;
+            var radMin = brushConfig.BrushSize / 2f * 0.5f;
+            var radMax = brushConfig.BrushSize / 2f;
+            radMax += 0.5f * (active
+                ? 1 - Easing.PowerOut(0.15f).Evaluate(active.TimeSinceEvent)
+                : Easing.PowerInOut(0.5f).Evaluate(active.TimeSinceEvent)
+            );
+            if (!active) reticleAngle += Time.deltaTime;
+            brushConfig.DrawBrush(scene, landscapeData, context, pos, radMin, radMax, reticleAngle);
         }
     }
     public struct TileIterator {

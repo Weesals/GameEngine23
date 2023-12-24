@@ -454,6 +454,12 @@ CSSpan CSGraphics::ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bind
 void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span) {
 	return graphics->mCmdBuffer.RequireConstantBuffer(std::span<uint8_t>((uint8_t*)span.mData, span.mSize));
 }
+void CSGraphics::CopyBufferData(NativeGraphics* graphics, NativeBuffer* buffer, CSSpan ranges) {
+	graphics->mCmdBuffer.CopyBufferData(buffer, std::span<const RangeInt>((const RangeInt*)ranges.mData, ranges.mSize));
+}
+void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* buffer, CSSpan ranges) {
+	graphics->mCmdBuffer.CopyBufferData(*(const BufferLayout*)buffer, std::span<const RangeInt>((const RangeInt*)ranges.mData, ranges.mSize));
+}
 void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bindings, CSSpan resources, CSDrawConfig config, int instanceCount) {
 	InplaceVector<BufferLayout, 8> bindingsData;
 	InplaceVector<const BufferLayout*, 8> pobindings;
@@ -463,6 +469,7 @@ void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bind
 			csbuffer.identifier, csbuffer.size,
 			(BufferLayout::Usage)csbuffer.mUsage, csbuffer.mCount);
 		buffer.mRevision = csbuffer.revision;
+		buffer.mOffset = csbuffer.mOffset;
 		buffer.mElements = (BufferLayout::Element*)csbuffer.mElements;
 		buffer.mElementCount = csbuffer.mElementCount;
 		bindingsData.push_back(buffer);
@@ -581,6 +588,9 @@ int CSScene::CreateInstance(NativeScene* scene) {
 	auto sceneId = scene->mScene->AllocateInstance(sizeof(instanceData));
 	scene->mScene->UpdateInstanceData(sceneId, instanceData);
 	return sceneId;
+}
+void CSScene::RemoveInstance(NativeScene* scene, CSInstance instance) {
+	scene->mScene->RemoveInstance(instance.GetInstanceId());
 }
 void CSScene::UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, const uint8_t* data, int dataLen) {
 	scene->mScene->UpdateInstanceData(instance.GetInstanceId(),

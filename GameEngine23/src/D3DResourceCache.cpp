@@ -37,6 +37,40 @@ void D3DResourceCache::CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size) {
     buffer->SetName(L"MeshBuffer");
     mStatistics.mBufferCreates++;
 };
+void D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin) {
+    int size = (binding.mSize + BufferAlignment) & ~BufferAlignment;
+    if (d3dBin.mBuffer == nullptr || d3dBin.mSize < size) {
+        d3dBin.mSize = size;
+        CreateBuffer(d3dBin.mBuffer, d3dBin.mSize);
+        d3dBin.mBuffer->SetName(
+            binding.mUsage == BufferLayout::Usage::Vertex ? L"VertexBuffer" :
+            binding.mUsage == BufferLayout::Usage::Index ? L"IndexBuffer" :
+            binding.mUsage == BufferLayout::Usage::Instance ? L"InstanceBuffer" :
+            L"ElementBuffer"
+        );
+        d3dBin.mGPUMemory = d3dBin.mBuffer->GetGPUVirtualAddress();
+    }
+}
+void WriteBufferData(uint8_t* data, const BufferLayout& binding, int itemSize, int byteOffset, int byteSize) {
+    // Fast path
+    if (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize) {
+        memcpy(data, (uint8_t*)binding.GetElements()[0].mData + byteOffset, byteSize);
+        return;
+    }
+    int count = byteSize / itemSize;
+    int toffset = 0;
+    for (auto& element : binding.GetElements()) {
+        auto elItemSize = element.GetItemByteSize();
+        auto* dstData = data + toffset;
+        auto* srcData = (uint8_t*)element.mData + byteOffset;
+        for (int s = 0; s < count; ++s) {   //binding.mCount
+            memcpy(dstData, srcData, elItemSize);
+            dstData += itemSize;
+            srcData += element.mBufferStride;
+        }
+        toffset += elItemSize;
+    }
+}
 template<class F2>
 void WriteBuffer(ID3D12GraphicsCommandList* cmdList, D3DResourceCache& cache, ID3D12Resource* buffer, int size, const F2& fillBuffer,
     int dstOffset = 0) {
@@ -50,7 +84,53 @@ void WriteBuffer(ID3D12GraphicsCommandList* cmdList, D3DResourceCache& cache, ID
     cmdList->CopyBufferRegion(buffer, dstOffset, uploadBuffer, 0, size);
     cache.mStatistics.BufferWrite(size);
 };
-
+template<class Fn1, class Fn2, class Fn3, class Fn4>
+void ProcessBindings(const BufferLayout& binding, std::map<size_t, std::unique_ptr<D3DResourceCache::D3DBinding>>& bindingMap,
+    const Fn1& OnBuffer, const Fn2& OnIndices, const Fn3& OnElement, const Fn4& OnVertices)
+{
+    auto d3dBinIt = bindingMap.find(binding.mIdentifier);
+    if (d3dBinIt == bindingMap.end()) {
+        d3dBinIt = bindingMap.emplace(std::make_pair(binding.mIdentifier, std::make_unique<D3DResourceCache::D3DBinding>())).first;
+        d3dBinIt->second->mRevision = -16;
+        d3dBinIt->second->mUsage = binding.mUsage;
+        d3dBinIt->second->mSRVOffset = -1;
+    }
+    assert(d3dBinIt->second->mUsage == binding.mUsage);
+    auto* d3dBin = d3dBinIt->second.get();
+    uint32_t itemSize = 0;
+    if (binding.mUsage == BufferLayout::Usage::Index) {
+        assert(binding.GetElements().size() == 1);
+        assert(binding.GetElements()[0].mBufferStride == binding.GetElements()[0].GetItemByteSize());
+        itemSize = binding.GetElements()[0].GetItemByteSize();
+        OnBuffer(binding, *d3dBin, itemSize);
+        OnIndices(binding, *d3dBin, itemSize);
+    }
+    else {
+        auto classification =
+            binding.mUsage == BufferLayout::Usage::Vertex ? D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA
+            : binding.mUsage == BufferLayout::Usage::Instance || binding.mUsage == BufferLayout::Usage::Uniform ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+            : throw "Not implemented";
+        for (auto& element : binding.GetElements()) {
+            auto elItemSize = element.GetItemByteSize();
+            if (elItemSize >= 4) itemSize = (itemSize + 3) & (~3);
+            OnElement(D3D12_INPUT_ELEMENT_DESC{ element.mBindName.GetName().c_str(), 0, (DXGI_FORMAT)element.mFormat, 0,
+                PostIncrement(itemSize, (uint32_t)elItemSize), classification,
+                binding.mUsage == BufferLayout::Usage::Instance ? 1u : 0u });
+        }
+        OnBuffer(binding, *d3dBin, itemSize);
+        OnVertices(binding, *d3dBin, itemSize);
+    }
+    d3dBinIt->second->mCount = binding.mCount;
+    d3dBinIt->second->mStride = itemSize;
+}
+template<class Fn1, class Fn2, class Fn3, class Fn4>
+void ProcessBindings(std::span<const BufferLayout*> bindings, std::map<size_t, std::unique_ptr<D3DResourceCache::D3DBinding>>& bindingMap,
+    const Fn1& OnBuffer, const Fn2& OnIndices, const Fn3& OnElement, const Fn4& OnVertices)
+{
+    for (auto* bindingPtr : bindings) {
+        ProcessBindings(*bindingPtr, bindingMap, OnBuffer, OnIndices, OnElement, OnVertices);
+    }
+}
 D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& statistics)
     : mD3D12(d3d12)
     , mStatistics(statistics)
@@ -230,13 +310,38 @@ void D3DResourceCache::UpdateBufferData(D3DBufferWithSRV* d3dBuf, const Graphics
 
     d3dBuf->mRevision = buffer.GetRevision();
 }
-void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, const std::span<RangeInt>& ranges)
-{
+D3DResourceCache::D3DBinding* D3DResourceCache::GetBinding(uint64_t bindingIdentifier) {
+    auto d3dBinIt = mBindings.find(bindingIdentifier);
+    if (d3dBinIt == mBindings.end()) return nullptr;
+
+    D3DBinding* binding = d3dBinIt->second.get();
+    if (binding->mSRVOffset == -1) {
+        // Create a shader resource view (SRV) for the texture
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.NumElements = binding->mCount;
+        srvDesc.Buffer.StructureByteStride = binding->mStride;
+        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+        // Get the CPU handle to the descriptor in the heap
+        auto descriptorSize = mD3D12.GetDescriptorHandleSizeSRV();
+        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), mCBOffset);
+        auto device = mD3D12.GetD3DDevice();
+        device->CreateShaderResourceView(binding->mBuffer.Get(), &srvDesc, srvHandle);
+        binding->mSRVOffset = mCBOffset;
+        mCBOffset += descriptorSize;
+    }
+    return binding;
+}
+void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) {
     auto d3dBuf = RequireD3DBuffer(*(Texture*)buffer);
     RequireD3DBuffer(d3dBuf, *buffer, cmdList);
 
     int totalCount = std::accumulate(ranges.begin(), ranges.end(), 0, [](int counter, RangeInt range) { return counter + range.length; });
-    int stride = buffer->GetStride();
+    int stride = 1;// buffer->GetStride();
+    if (totalCount == 0) return;
 
     // Map and fill the buffer data (via temporary upload buffer)
     ID3D12Resource* uploadBuffer = AllocateUploadBuffer(totalCount * stride);
@@ -268,8 +373,44 @@ void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, Grap
     cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());
     d3dBuf->mRevision = buffer->GetRevision();
 }
-void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList)
-{
+void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, const BufferLayout& binding, std::span<const RangeInt> ranges) {
+    int totalCount = std::accumulate(ranges.begin(), ranges.end(), 0, [](int counter, RangeInt range) { return counter + range.length; });
+    if (totalCount == 0) return;
+    ProcessBindings(binding, mBindings,
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
+            RequireBuffer(binding, d3dBin);
+            // Map and fill the buffer data (via temporary upload buffer)
+            ID3D12Resource* uploadBuffer = AllocateUploadBuffer(totalCount);
+            UINT8* mappedData;
+            CD3DX12_RANGE readRange(0, 0);
+            ThrowIfFailed(uploadBuffer->Map(0, &readRange, (void**)&mappedData));
+            int it = 0;
+            for (auto& range : ranges) {
+                WriteBufferData(mappedData + it, binding, itemSize, range.start, range.length);
+                it += range.length;
+            }
+            uploadBuffer->Unmap(0, nullptr);
+            auto beginWrite = { CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST), };
+            cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
+
+            it = 0;
+            for (auto& range : ranges) {
+                cmdList->CopyBufferRegion(d3dBin.mBuffer.Get(), range.start,
+                    uploadBuffer, it, range.length);
+                it += range.length;
+                mStatistics.BufferWrite(ranges.size());
+            }
+            auto endWrite = { CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON), };
+            cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());
+            d3dBin.mRevision = binding.mRevision;
+        },
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {},
+        [&](const D3D12_INPUT_ELEMENT_DESC& element) {},
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {}
+    );
+}
+
+void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList) {
     auto device = mD3D12.GetD3DDevice();
     auto size = tex.GetSize();
 
@@ -374,132 +515,62 @@ D3DResourceCache::D3DBufferWithSRV* D3DResourceCache::RequireCurrentBuffer(const
     }
     return d3dBuf;
 }
-template<class Fn1, class Fn2, class Fn3, class Fn4>
-void ProcessBindings(std::span<const BufferLayout*> bindings, std::map<size_t, std::unique_ptr<D3DResourceCache::D3DBinding>>& bindingMap,
-    const Fn1& OnIndices, const Fn2& OnElement, const Fn3& OnVertices, const Fn4& OnBuffer)
-{
-    int vbuffCount = 0;
-    for (auto* bindingPtr : bindings) {
-        auto& binding = *bindingPtr;
-        auto d3dBinIt = bindingMap.find(binding.mIdentifier);
-        if (d3dBinIt == bindingMap.end()) {
-            d3dBinIt = bindingMap.emplace(std::make_pair(binding.mIdentifier, std::make_unique<D3DResourceCache::D3DBinding>())).first;
-            d3dBinIt->second->mRevision = -16;
-            d3dBinIt->second->mUsage = binding.mUsage;
-        }
-        assert(d3dBinIt->second->mUsage == binding.mUsage);
-        auto* d3dBin = d3dBinIt->second.get();
-        uint32_t itemSize = 0;
-        if (binding.mUsage == BufferLayout::Usage::Index) {
-            assert(binding.GetElements().size() == 1);
-            assert(binding.GetElements()[0].mBufferStride == binding.GetElements()[0].GetItemByteSize());
-            itemSize = binding.GetElements()[0].GetItemByteSize();
-            OnIndices(binding, *d3dBin, itemSize);
-        }
-        else {
-            auto classification =
-                binding.mUsage == BufferLayout::Usage::Vertex ? D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA
-                : binding.mUsage == BufferLayout::Usage::Instance || binding.mUsage == BufferLayout::Usage::Uniform ? D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
-                : throw "Not implemented";
-            for (auto& element : binding.GetElements()) {
-                auto elItemSize = element.GetItemByteSize();
-                if (elItemSize >= 4) itemSize = (itemSize + 3) & (~3);
-                OnElement(D3D12_INPUT_ELEMENT_DESC{ element.mBindName.GetName().c_str(), 0, (DXGI_FORMAT)element.mFormat, (uint32_t)vbuffCount,
-                    PostIncrement(itemSize, (uint32_t)elItemSize), classification,
-                    binding.mUsage == BufferLayout::Usage::Instance ? 1u : 0u });
-            }
-            OnVertices(binding, *d3dBin, itemSize);
-            ++vbuffCount;
-        }
-        OnBuffer(binding, *d3dBin, itemSize);
-    }
+void D3DResourceCache::CopyBufferData(ID3D12GraphicsCommandList* cmdList, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize) {
+    auto state = binding.mUsage == BufferLayout::Usage::Index ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    auto beginWrite = { CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), state, D3D12_RESOURCE_STATE_COPY_DEST), };
+    cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
+    int size = (byteSize + BufferAlignment) & ~BufferAlignment;
+    WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), size,
+        [&](uint8_t* data) { WriteBufferData(data, binding, itemSize, byteOffset, byteSize); },
+        byteOffset
+    );
+    d3dBin.mRevision = binding.mRevision;
+    auto endWrite = { CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, state), };
+    cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());
 }
 void D3DResourceCache::ComputeElementLayout(std::span<const BufferLayout*> bindings,
     std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements)
 {
+    int vertexSlot = 0;
     ProcessBindings(bindings, mBindings,
-        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-        }, [&](const D3D12_INPUT_ELEMENT_DESC& element) {
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {},
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {},
+        [&](const D3D12_INPUT_ELEMENT_DESC& element) {
             inputElements.push_back(element);
-        }, [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-        }, [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-        });
+            inputElements.back().InputSlot = vertexSlot;
+        },
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) { ++vertexSlot; }
+    );
 }
 void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> bindings,
     ID3D12GraphicsCommandList* cmdList,
     std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,
     D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount)
 {
-    auto RequireBuffer = [&](const BufferLayout& binding, D3DBinding& d3dBin) {
-        int size = (binding.mSize + BufferAlignment) & ~BufferAlignment;
-        if (d3dBin.mBuffer == nullptr || d3dBin.mSize < size) {
-            d3dBin.mSize = size;
-            CreateBuffer(d3dBin.mBuffer, d3dBin.mSize);
-            d3dBin.mBuffer->SetName(
-                binding.mUsage == BufferLayout::Usage::Vertex ? L"VertexBuffer" :
-                binding.mUsage == BufferLayout::Usage::Index ? L"IndexBuffer" :
-                binding.mUsage == BufferLayout::Usage::Instance ? L"InstanceBuffer" :
-                L"ElementBuffer"
-            );
-            d3dBin.mGPUMemory = d3dBin.mBuffer->GetGPUVirtualAddress();
-        }
-        };
     indexCount = -1;
     ProcessBindings(bindings, mBindings,
         [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
             RequireBuffer(binding, d3dBin);
+            if (d3dBin.mRevision == binding.mRevision) return;
+            CopyBufferData(cmdList, binding, d3dBin, itemSize, 0, binding.mSize);
+        },
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
             indexCount = binding.mCount;
             indexView = {
                 d3dBin.mGPUMemory + (UINT)(binding.mOffset * itemSize),
                 (UINT)(binding.mCount * itemSize),
                 (DXGI_FORMAT)binding.GetElements()[0].mFormat
             };
-        }, [&](const D3D12_INPUT_ELEMENT_DESC& element) {
-            }, [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-                RequireBuffer(binding, d3dBin);
-                inputViews.push_back({
-                    d3dBin.mGPUMemory + (UINT)(binding.mOffset * itemSize),
-                    (UINT)(binding.mCount * itemSize),
-                    (UINT)itemSize
-                    });
-                }, [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-                    if (d3dBin.mRevision == binding.mRevision) return;
-                    auto state = binding.mUsage == BufferLayout::Usage::Index ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-                    auto beginWrite = {
-                        CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), state, D3D12_RESOURCE_STATE_COPY_DEST),
-                    };
-                    cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
-                    int size = (binding.mSize + BufferAlignment) & ~BufferAlignment;
-                    WriteBuffer(cmdList, *this, d3dBin.mBuffer.Get(), size, //binding.mCount * itemSize,
-                        [&](uint8_t* data) {
-                            // Fast path
-                            if (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize) {
-                                memcpy(data, (uint8_t*)binding.GetElements()[0].mData, binding.mSize);
-                                return;
-                            }
-                            int count = binding.mSize / itemSize;
-                            int toffset = 0;
-                            for (auto& element : binding.GetElements()) {
-                                auto elItemSize = element.GetItemByteSize();
-                                auto* dstData = data + toffset;
-                                auto* srcData = (uint8_t*)element.mData;
-                                for (int s = 0; s < count; ++s) {   //binding.mCount
-                                    memcpy(dstData, srcData, elItemSize);
-                                    dstData += itemSize;
-                                    srcData += element.mBufferStride;
-                                }
-                                toffset += elItemSize;
-                            }
-                        },
-                        0//binding.mOffset * itemSize
-                    );
-                    d3dBin.mRevision = binding.mRevision;
-                    auto endWrite = {
-                        CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, state),
-                    };
-                    cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());
-                }
-            );
+        },
+        [&](const D3D12_INPUT_ELEMENT_DESC& element) {},
+        [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
+            inputViews.push_back({
+                d3dBin.mGPUMemory + (UINT)(binding.mOffset * itemSize),
+                (UINT)(binding.mCount * itemSize),
+                (UINT)itemSize
+            });
+        }
+    );
 }
 void D3DResourceCache::SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId)
 {
