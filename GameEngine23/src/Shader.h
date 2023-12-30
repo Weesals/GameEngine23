@@ -7,14 +7,15 @@
 class Shader
 {
 private:
-	std::wstring mPath;
-	std::string mEntryPoint;
+	Identifier mEntryPoint;
 	Identifier mPathId;
 public:
-	Shader(std::wstring_view path, std::string entrypoint) : mPath(path), mPathId(path), mEntryPoint(entrypoint) { }
+	Shader(std::wstring_view path, std::string entrypoint) : mPathId(path), mEntryPoint(entrypoint) { }
 
-	const std::wstring& GetPath() const { return mPath; }
+	const std::wstring& GetPath() const { return Identifier::GetWName(mPathId); }
 	Identifier GetIdentifier() const { return mPathId; }
-	const std::string& GetEntryPoint() const { return mEntryPoint; }
+	Identifier GetEntryPoint() const { return mEntryPoint; }
+
+	size_t GetHash() const { return (mPathId.mId) + (mEntryPoint.mId << 16); }
 
 };

@@ -6,10 +6,11 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 using Weesals.Engine;
+using Weesals.Game;
 using Weesals.UI;
 
 namespace Weesals.Landscape.Editor {
-    public class UXLandscapeCliffTool : UXBrushTool, IInteraction, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler {
+    public class UXLandscapeCliffTool : UXBrushTool, IInteraction, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerEventsRaw {
 
         public const float InvalidHeight = -999f;
 
@@ -39,39 +40,44 @@ namespace Weesals.Landscape.Editor {
             if (!isBtnDown) { events.Yield(); return; }
             surfaceHeight = InvalidHeight;
         }
-        public void OnDrag(PointerEvent events) {
-            bool invert = events.GetIsButtonDown(1);
-            bool alternate = false;
-
+        public void OnDrag(PointerEvent events) { }
+        public void ProcessPointer(PointerEvent events) {
             var layout = Viewport.GetComputedLayout();
             var m = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
             var mray = Camera.ViewportToRay(m);
             var cursorPosition = mray.ProjectTo(new Plane(Vector3.UnitY, 0f));
 
-            bool smoothing = alternate && invert;
-            // Compute the target height to pull the terrain towards
-            if (surfaceHeight == InvalidHeight || smoothing) {
-                var heightMap = LandscapeData.GetHeightMap();
-                surfaceHeight = heightMap.GetHeightAtF(cursorPosition.toxz());
-                if (!alternate)
-                    surfaceHeight += HeightDelta * (invert ? -1 : 1);
-                surfaceHeight = MathF.Round(surfaceHeight);
+            if (!events.IsButtonDown) {
+                surfaceHeight = InvalidHeight;
+            } else {
+                bool invert = events.GetIsButtonDown(1);
+                bool alternate = false;
+
+                bool smoothing = alternate && invert;
+                // Compute the target height to pull the terrain towards
+                if (surfaceHeight == InvalidHeight || smoothing) {
+                    var heightMap = LandscapeData.GetHeightMap();
+                    surfaceHeight = heightMap.GetHeightAtF(cursorPosition.toxz());
+                    if (!alternate)
+                        surfaceHeight += HeightDelta * (invert ? -1 : 1);
+                    surfaceHeight = MathF.Round(surfaceHeight);
+                }
+
+                var brushConfig = CreateBrushContext(Context).BrushConfiguration;
+                var it = new TileIterator(LandscapeData, cursorPosition, brushConfig.BrushSize);
+
+                var changed = LandscapeChangeEvent.MakeNone();
+                // Apply height action
+                if (smoothing) SmoothCliffArea(LandscapeData, it, SmoothHeightCurve, ref changed);
+                else ExtrudeCliffArea(LandscapeData, it, surfaceHeight, HeightCurve, ref changed);
+                // Repaint cliff texture
+                PaintCliffArea(LandscapeData, it, Type, ref changed);
+
+                BrushWaterTool.RepairWaterArea(LandscapeData, it, ref changed);
+
+                ExtrudeCliffArea(LandscapeData, it, surfaceHeight, HeightCurve, ref changed);
+                if (changed.HasChanges) LandscapeData.NotifyLandscapeChanged(changed);
             }
-
-            var brushConfig = CreateBrushContext(Context).BrushConfiguration;
-            var it = new TileIterator(LandscapeData, cursorPosition, brushConfig.BrushSize);
-
-            var changed = LandscapeChangeEvent.MakeNone();
-            // Apply height action
-            if (smoothing) SmoothCliffArea(LandscapeData, it, SmoothHeightCurve, ref changed);
-            else ExtrudeCliffArea(LandscapeData, it, surfaceHeight, HeightCurve, ref changed);
-            // Repaint cliff texture
-            PaintCliffArea(LandscapeData, it, Type, ref changed);
-
-            BrushWaterTool.RepairWaterArea(LandscapeData, it, ref changed);
-
-            ExtrudeCliffArea(LandscapeData, it, surfaceHeight, HeightCurve, ref changed);
-            if (changed.HasChanges) LandscapeData.NotifyLandscapeChanged(changed);
             DrawBrush(LandscapeData, Context, cursorPosition, events.ButtonState != 0);
         }
         public void OnEndDrag(PointerEvent events) { }
@@ -116,7 +122,7 @@ namespace Weesals.Landscape.Editor {
             }
             changed.CombineWith(new LandscapeChangeEvent(min, max, heightMap: true));
         }
-        public static void ExtrudeCliffArea(LandscapeData landscapeData, in TileIterator it, float surfaceHeight, FloatCurve heightCurve, ref LandscapeChangeEvent changed) {
+        public static void ExtrudeCliffArea(LandscapeData landscapeData, in TileIterator it, float surfaceHeight, FloatCurve? heightCurve, ref LandscapeChangeEvent changed) {
             var heightMapRaw = landscapeData.GetRawHeightMap();
             var surfaceHeightTerrain = (int)(surfaceHeight * LandscapeData.HeightScale);
             var rnd = new Random();
@@ -196,5 +202,6 @@ namespace Weesals.Landscape.Editor {
             var endCell = heightMapRaw[endIndex];
             return endCell.Height;
         }
+
     }
 }

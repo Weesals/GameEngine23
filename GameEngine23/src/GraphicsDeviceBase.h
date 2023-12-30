@@ -137,7 +137,6 @@ public:
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual uint64_t GetGlobalPSOHash() const { return (uint64_t)this; }
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
-    virtual void CopyBufferData(GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) { }
     virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
     virtual const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,
@@ -185,12 +184,8 @@ public:
         std::transform(data.begin(), data.end(), outData.data(), fn);
         return outData;
     }
-    void* RequireConstantBuffer(std::span<const uint8_t> data)
-    {
+    void* RequireConstantBuffer(std::span<const uint8_t> data) {
         return mInterop->RequireConstantBuffer(data);
-    }
-    void CopyBufferData(GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) {
-        mInterop->CopyBufferData(buffer, ranges);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) {
         mInterop->CopyBufferData(buffer, ranges);
@@ -203,8 +198,7 @@ public:
         mInterop->DrawMesh(bindings, pso, resources, config, instanceCount, name);
     }
     void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config, const char* name = nullptr);
-    void DrawMesh(const Mesh* mesh, const Material* material, const char* name = nullptr)
-    {
+    void DrawMesh(const Mesh* mesh, const Material* material, const char* name = nullptr) {
         if (mesh->GetVertexCount() == 0) return;
         DrawMesh(mesh, material, DrawConfig::MakeDefault(), name);
     }

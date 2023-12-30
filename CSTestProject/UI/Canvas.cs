@@ -55,7 +55,7 @@ namespace Weesals.UI {
             Initialise(new CanvasBinding(this));
             Material = new Material("./assets/ui.hlsl");
             Material.SetBlendMode(BlendMode.MakeAlphaBlend());
-            Material.SetRasterMode(RasterMode.MakeDefault().SetCull(RasterMode.CullModes.None));
+            Material.SetRasterMode(RasterMode.MakeNoCull());
             Material.SetDepthMode(DepthMode.MakeOff());
             var iModel = (CSIdentifier)"Model";
             var iView = (CSIdentifier)"View";

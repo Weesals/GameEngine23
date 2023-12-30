@@ -14,8 +14,7 @@
 // Stores a cache of Constant Buffers that have been generated
 // so that they can be efficiently reused where appropriate
     // The GPU data for a set of shaders, rendering state, and vertex attributes
-struct D3DConstantBuffer
-{
+struct D3DConstantBuffer {
     ComPtr<ID3D12Resource> mConstantBuffer;
     D3D12_GPU_DESCRIPTOR_HANDLE mConstantBufferHandle;
     int mSize;
@@ -27,33 +26,29 @@ public:
     inline static const char* StrVSProfile = "vs_5_0";
     inline static const char* StrPSProfile = "ps_5_0";
 
-    struct D3DBuffer
-    {
+    struct D3DBuffer {
         ComPtr<ID3D12Resource> mBuffer;
         DXGI_FORMAT mFormat;
     };
-    struct D3DVBView
-    {
+    struct D3DVBView {
         D3DBuffer* mBuffer;
         std::vector<D3D12_INPUT_ELEMENT_DESC> mLayout;
         D3D12_VERTEX_BUFFER_VIEW mBufferView;
         int mRevision = 0;
     };
-    struct D3DIBView
-    {
+    struct D3DIBView {
         D3DBuffer* mBuffer;
         D3D12_INDEX_BUFFER_VIEW mBufferView;
         int mRevision = 0;
     };
     template<class View>
-    struct D3DBufferWithView
-    {
+    struct D3DBufferWithView {
         ComPtr<ID3D12Resource> mBuffer;
         View mView;
         bool IsValidForSize(int size) { return (int)mView.SizeInBytes >= size && mBuffer != nullptr; }
     };
     struct D3DBufferWithSRV : public D3DBuffer {
-        int mSRVOffset;
+        int mSRVOffset = -100;
         int mRevision = 0;
     };
     struct D3DRenderSurface : public D3DBufferWithSRV {
@@ -63,7 +58,8 @@ public:
         };
         SubresourceData mMip0;
         std::vector<SubresourceData> mMipN;
-        int mWidth, mHeight;
+        uint16_t mWidth, mHeight;
+        uint16_t mMips, mSlices;
         SubresourceData& RequireSubResource(int subresource) {
             if (subresource == 0) return mMip0;
             --subresource;
@@ -102,25 +98,21 @@ public:
         const D3DRenderSurface* operator -> () const { return mSurface; }
     };
     struct CachedSRV {
-        int mType;
         int mSRVOffset;
     };
     // The GPU data for a mesh
-    struct D3DMesh
-    {
+    struct D3DMesh {
         std::vector<const BufferLayout*> mBindingLayout;
         std::vector<D3D12_INPUT_ELEMENT_DESC> mVertElements;
         std::vector<D3D12_VERTEX_BUFFER_VIEW> mVertexViews;
         D3D12_INDEX_BUFFER_VIEW mIndexView;
         int mRevision = 0;
     };
-    struct ResourceBindingCache
-    {
+    struct ResourceBindingCache {
         int mRefCount;
         RangeInt mSlots;
     };
-    struct ResourceSets
-    {
+    struct ResourceSets {
         SparseArray<void*> mBindingSlots;
         SparseArray<ResourceBindingCache> mBindingCache;
         int Require(std::vector<void*>& bindings)
@@ -152,16 +144,14 @@ public:
     };
     // Each PSO must fit within one of these
     // TODO: Make them more broad and select the smallest appropriate one
-    struct D3DRootSignature
-    {
+    struct D3DRootSignature {
         ComPtr<ID3D12RootSignature> mRootSignature;
         int mNumConstantBuffers;
         int mNumResources;
         int GetNumBindings() const { return mNumConstantBuffers + mNumResources; }
     };
     // The GPU data for a set of shaders, rendering state, and vertex attributes
-    struct D3DPipelineState
-    {
+    struct D3DPipelineState {
         D3DRootSignature* mRootSignature;
         ComPtr<ID3D12PipelineState> mPipelineState;
         // NOTE: Is unsafe if D3DShader is unloaded;
@@ -208,28 +198,32 @@ private:
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
-    PerFrameItemStore<CachedSRV> mResourceViewCache;
+    PerFrameItemStore<D3DRenderSurface::SubresourceData> mResourceViewCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
     std::vector<uint8_t> mTempData;
+
+    std::vector<size_t> mFrameBitPool;
 
 public:
     RenderStatistics& mStatistics;
 
     D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& statistics);
-    void SetResourceLockIds(UINT64 lockFrameId, UINT64 writeFrameId);
-    ID3D12Resource* AllocateUploadBuffer(int size);
-    void CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size);
-    void RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin);
+    int RequireFrameHandle(size_t frameHash);
+    void UnlockFrame(size_t frameHash);
+    void ClearDelayedData();
+    ID3D12Resource* AllocateUploadBuffer(int size, int lockBits);
+    void CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size, int lockBits);
+    bool RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin, int lockBits);
     D3DResourceCache::D3DBinding* GetBinding(uint64_t bindingIdentifier);
-    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, GraphicsBufferBase* buffer, std::span<const RangeInt> ranges);
-    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, const BufferLayout& buffer, std::span<const RangeInt> ranges);
+    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& buffer, std::span<const RangeInt> ranges);
 
     void ComputeElementLayout(std::span<const BufferLayout*> bindings,
         std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
-    void CopyBufferData(ID3D12GraphicsCommandList* cmdList, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize);
+    void CopyBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits,
+        const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize);
     void ComputeElementData(std::span<const BufferLayout*> bindings,
-        ID3D12GraphicsCommandList* cmdList,
+        ID3D12GraphicsCommandList* cmdList, int lockBits,
         std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,
         D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
@@ -244,12 +238,58 @@ public:
         std::span<const MacroValue> macros, const IdentifierWithName& renderPass,
         std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
-    D3DConstantBuffer* RequireConstantBuffer(const ShaderBase::ConstantBuffer& cb, const Material& material);
-    D3DConstantBuffer* RequireConstantBuffer(std::span<const uint8_t> data);
+    D3DConstantBuffer* RequireConstantBuffer(int lockBits,const ShaderBase::ConstantBuffer& cb, const Material& material);
+    D3DConstantBuffer* RequireConstantBuffer(int lockBits, std::span<const uint8_t> data);
+    D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, int lockBits);
 
-    void UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList);
-    void RequireD3DBuffer(D3DBufferWithSRV* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList);
-    void UpdateBufferData(D3DBufferWithSRV* d3dBuf, const GraphicsBufferBase& buffer, ID3D12GraphicsCommandList* cmdList);
-    D3DBufferWithSRV* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList);
-    D3DBufferWithSRV* RequireCurrentBuffer(const GraphicsBufferBase* tex, ID3D12GraphicsCommandList* cmdList);
+    void UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
+    D3DBufferWithSRV* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
+};
+
+
+
+class D3DGraphicsSurface {
+    // This renderer supports 2 backbuffers
+    static const int FrameCount = 2;
+
+    struct BackBuffer : D3DResourceCache::D3DRenderSurface {
+        //ComPtr<ID3D12Resource> mBuffer;
+    };
+
+    D3DGraphicsDevice& mDevice;
+
+    // Size of the client rect of the window
+    Int2 mResolution;
+
+    // Used to track when a frame is complete
+    UINT64 mFenceValues[FrameCount];
+
+    // Each frame needs its own allocator
+    ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
+    BackBuffer mFrameBuffers[FrameCount];
+
+    // Current frame being rendered (wraps to the number of back buffers)
+    int mBackBufferIndex;
+    // Fence to wait for frames to render
+    HANDLE mFenceEvent;
+    ComPtr<ID3D12Fence> mFence;
+
+public:
+    ComPtr<IDXGISwapChain3> mSwapChain;
+    D3DGraphicsSurface(D3DGraphicsDevice& device, HWND hWnd);
+    IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
+    Int2 GetResolution() const { return mResolution; }
+    void SetResolution(Int2 res);
+    void ResizeSwapBuffers();
+
+    ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
+    const BackBuffer& GetBackBuffer() const { return mFrameBuffers[mBackBufferIndex]; }
+
+    int GetBackBufferIndex() const { return mBackBufferIndex; }
+    int GetBackFrameIndex() const;
+
+    int Present();
+    int WaitForFrame();
+    void WaitForGPU();
+
 };

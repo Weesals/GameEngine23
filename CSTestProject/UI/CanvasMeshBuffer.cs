@@ -112,7 +112,7 @@ namespace Weesals.UI {
             return RequireSlice(ref mIndices, mFreeIndices, icount);
         }
         private RangeInt RequireSlice(ref BufferLayoutPersistent items, SparseIndices unused, int count) {
-            RangeInt range = unused.Allocate(count);
+            RangeInt range = unused.Take(count);
             if (range.Start >= 0) return range;
             items.BufferLayout.mCount -= unused.Compact(items.Count);
             range = new RangeInt(items.Count, count);
@@ -127,18 +127,18 @@ namespace Weesals.UI {
         private bool Reallocate(ref BufferLayoutPersistent items, SparseIndices unused, ref RangeInt range, int count) {
             if (range.Length == count) return false;
             if (range.Length > count) {
-                unused.Return(range.End, count - range.End);
+                unused.Add(range.End, count - range.End);
                 range.Length = count;
                 return true;
             }
-            if (unused.TryAllocateAt(range.End, count - range.Length)) {
+            if (unused.TryTakeAt(range.End, count - range.Length)) {
                 range.Length = count;
                 return true;
             }
             var oldRange = range;
             range = RequireSlice(ref items, unused, count);
             items.CopyRange(oldRange.Start, range.Start, oldRange.Length);
-            unused.Return(ref oldRange);
+            unused.Add(ref oldRange);
             return true;
         }
         public int Allocate(int vcount, int icount) {
@@ -150,8 +150,8 @@ namespace Weesals.UI {
         public void Deallocate(int id) {
             // TODO: Remove directly from buffer if at end
             var range = Ranges[id];
-            mFreeVertices.Return(ref range.mVertexRange);
-            mFreeIndices.Return(ref range.mIndexRange);
+            mFreeVertices.Add(ref range.mVertexRange);
+            mFreeIndices.Add(ref range.mIndexRange);
             Ranges.Return(id);
         }
         public CanvasVertices MapVertices(int id) {

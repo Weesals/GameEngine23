@@ -37,11 +37,17 @@ Triangle ComputeTriangle(half2 pos)
 void TransformLandscapeVertex(inout float3 position, inout float3 normal, float2 offset) {
     // Each instance has its own offset
 #if EDGE
-    float2 axes[] = { float2(1, 0), float2(0, 1), float2(1, 0), float2(0, 1), };
+    float2 axes[] = { float2(1, 0), float2(0, -1), float2(-1, 0), float2(0, 1), };
+    float2 offsets[] = {
+        float2(0, 0), float2(0, 0),
+        float2(0, _LandscapeSizing.y),
+        float2(_LandscapeSizing.x, 0)
+    };
     float2 axis = axes[offset.y];
-    position.xz = axis * (position.x + offset.x);
-    normal = float3(-axis.y, 0, -axis.x);
+    position.xz = axis * position.x + axis * offset.x + offsets[offset.y];
+    normal = float3(axis.y, 0, -axis.x);
 #else
     position.xz += offset;
 #endif
+    position.xz = min(position.xz, _LandscapeSizing.xy);
 }

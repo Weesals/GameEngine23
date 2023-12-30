@@ -58,6 +58,7 @@ private:
     // TODO: Use hat trie instead of map
     static std::unordered_map<std::string, Identifier, string_hash, std::equal_to<>> gStringToId;
     static std::unordered_map<Identifier, std::string> gIdToString;
+    static std::unordered_map<Identifier, std::wstring> gIdToWString;
 
 public:
     // Get a persistent id for the any string
@@ -65,6 +66,7 @@ public:
     static Identifier RequireStringId(const std::string_view& name);
     static Identifier RequireStringId(const std::wstring_view& name);
     static const std::string& GetName(Identifier identifier);
+    static const std::wstring& GetWName(Identifier identifier);
     static void Purge();
 
 };

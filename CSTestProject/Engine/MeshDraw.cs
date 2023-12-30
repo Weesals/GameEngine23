@@ -133,7 +133,6 @@ namespace Weesals.Engine {
             var resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config, instanceCount);
         }
-        //public void Draw(CSGraphics graphics, RenderQueue* queue, const DrawConfig& config);
 		unsafe public void Draw(CSGraphics graphics, ScenePass pass, CSDrawConfig config) {
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
@@ -147,7 +146,7 @@ namespace Weesals.Engine {
             var resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, materials);
             var buffers = graphics.RequireFrameData(mBufferLayout);
 
-            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, new RangeInt(0, instanceCount));
+            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount);
         }
 	};
 

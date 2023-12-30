@@ -7,7 +7,7 @@ using Weesals.UI;
 
 namespace Weesals.Engine {
     public class Resources {
-        static Dictionary<Tuple<string, string>, ShaderBase> loadedShaders = new();
+        static Dictionary<ValueTuple<string, string>, ShaderBase> loadedShaders = new();
         static Dictionary<string, Model> loadedModels = new();
         static Dictionary<string, Sprite> loadedSprites = new();
 
@@ -36,7 +36,7 @@ namespace Weesals.Engine {
         }
 
         public static ShaderBase LoadShader(string path, string entry) {
-            var key = new Tuple<string, string>(path, entry);
+            var key = new ValueTuple<string, string>(path, entry);
             if (!loadedShaders.TryGetValue(key, out var shader)) {
                 shader = ShaderBase.FromPath(path, entry);
                 loadedShaders.Add(key, shader);

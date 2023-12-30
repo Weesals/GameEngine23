@@ -29,6 +29,8 @@ inline void ThrowIfFailed(HRESULT hr)
 // and issuing relevant draw commands
 class D3DCommandBuffer : public CommandBufferInteropBase {
     GraphicsDeviceD3D12* mDevice;
+    D3DGraphicsSurface* mSurface;
+    int mFrameHandle;
     ComPtr<ID3D12GraphicsCommandList> mCmdList;
     ID3D12RootSignature* mLastRootSig;
     const D3DResourceCache::D3DPipelineState* mLastPipeline;
@@ -39,24 +41,24 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     std::vector<D3D12_VERTEX_BUFFER_VIEW> tVertexViews;
     RectInt mViewportRect;
 public:
-    D3DCommandBuffer(GraphicsDeviceD3D12* device) : mDevice(device) {
+    D3DCommandBuffer(GraphicsDeviceD3D12* device, D3DGraphicsSurface* surface)
+        : mDevice(device), mSurface(surface) {
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
         queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         ThrowIfFailed(device->GetD3DDevice()
             ->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-                device->GetCmdAllocator(), nullptr, IID_PPV_ARGS(&mCmdList)));
+                mSurface->GetCmdAllocator(), nullptr, IID_PPV_ARGS(&mCmdList)));
         ThrowIfFailed(mCmdList->Close());
     }
     ID3D12Device* GetD3DDevice() const { return mDevice->GetD3DDevice(); }
-    GraphicsDeviceBase* GetGraphics() const override
-    {
+    GraphicsDeviceBase* GetGraphics() const override {
         return mDevice;
     }
     // Get this command buffer ready to begin rendering
-    virtual void Reset() override
-    {
-        mCmdList->Reset(mDevice->GetCmdAllocator(), nullptr);
+    virtual void Reset() override {
+        mFrameHandle = 1ull << mDevice->GetResourceCache().RequireFrameHandle((size_t)mSurface + mSurface->GetBackFrameIndex());
+        mCmdList->Reset(mSurface->GetCmdAllocator(), nullptr);
 
         mLastRootSig = nullptr;
         mLastPipeline = nullptr;
@@ -79,10 +81,10 @@ public:
         for (int t = 0; t < colorTargets.size(); ++t) {
             auto target = colorTargets[t];
             auto d3dRt = RequireInitializedRT(target.mTarget);
-            if (target.mTarget == nullptr) d3dRt = &mDevice->GetBackBuffer();
+            if (target.mTarget == nullptr) d3dRt = &mSurface->GetBackBuffer();
             d3dColorTargets.push_back(D3DResourceCache::D3DRenderSurfaceView(d3dRt, target.mMip, target.mSlice));
         }
-        if (colorTargets.empty() && depthTarget.mTarget == nullptr) d3dColorTargets.push_back(&mDevice->GetBackBuffer());
+        if (colorTargets.empty() && depthTarget.mTarget == nullptr) d3dColorTargets.push_back(&mSurface->GetBackBuffer());
         if (depthTarget.mTarget != nullptr)
             d3dDepthTarget = D3DResourceCache::D3DRenderSurfaceView(RequireInitializedRT(depthTarget.mTarget), depthTarget.mMip, depthTarget.mSlice);
         SetD3DRenderTarget(d3dColorTargets, d3dDepthTarget);
@@ -116,61 +118,30 @@ public:
         }
         return d3dRt;
     }
-    void AllocateRenderTarget(D3DResourceCache::D3DRenderSurface* surface, Int2 size, BufferFormat fmt, int mipCount, int arrayCount) {
-        auto& cache = mDevice->GetResourceCache();
-        auto* d3dDevice = mDevice->GetD3DDevice();
-
+    void AllocateRTBuffer(D3DResourceCache::D3DRenderSurface* surface, const D3D12_RESOURCE_DESC& texDesc, const D3D12_CLEAR_VALUE& clearValue) {
         // Create the render target
         auto heapParams = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto rtvDesc = CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)fmt,
-            (long)size.x, (long)size.y,
-            arrayCount, mipCount, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-        FLOAT clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
-        auto rtvClear = CD3DX12_CLEAR_VALUE(rtvDesc.Format, clearColor);
-        d3dDevice->CreateCommittedResource(&heapParams, D3D12_HEAP_FLAG_NONE, &rtvDesc,
-            D3D12_RESOURCE_STATE_COMMON, &rtvClear, IID_PPV_ARGS(&surface->mBuffer));
+        mDevice->GetD3DDevice()->CreateCommittedResource(&heapParams, D3D12_HEAP_FLAG_NONE, &texDesc,
+            D3D12_RESOURCE_STATE_COMMON, &clearValue, IID_PPV_ARGS(&surface->mBuffer));
         surface->mBuffer->SetName(L"Texture RT");
-        surface->RequireSubResource(0).mState = D3D12_RESOURCE_STATE_COMMON;
-        surface->mWidth = (int)rtvDesc.Width;
-        surface->mHeight = (int)rtvDesc.Height;
-        surface->mFormat = rtvDesc.Format;
-
-        // Create texture view
-        D3D12_RENDER_TARGET_VIEW_DESC rtvViewDesc = { .Format = rtvDesc.Format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D };
-        d3dDevice->CreateRenderTargetView(surface->mBuffer.Get(), &rtvViewDesc,
-            CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), cache.mRTOffset));
-        surface->RequireSubResource(0).mRTVOffset = cache.mRTOffset;
-        surface->mSRVOffset = -100;
-        cache.mRTOffset += mDevice->GetDevice().GetDescriptorHandleSizeRTV();
+        surface->mWidth = (uint16_t)texDesc.Width;
+        surface->mHeight = (uint16_t)texDesc.Height;
+        surface->mMips = (uint16_t)texDesc.MipLevels;
+        surface->mSlices = (uint16_t)texDesc.DepthOrArraySize;
+        surface->mFormat = texDesc.Format;
+    }
+    void AllocateRenderTarget(D3DResourceCache::D3DRenderSurface* surface, Int2 size, BufferFormat fmt, int mipCount, int arrayCount) {
+        auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)fmt,
+            size.x, size.y, arrayCount, mipCount, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+        FLOAT clearColor[]{ 0.0f, 0.0f, 0.0f, 0.0f };
+        AllocateRTBuffer(surface, texDesc, CD3DX12_CLEAR_VALUE(texDesc.Format, clearColor));
     }
     void AllocateDepthBuffer(D3DResourceCache::D3DRenderSurface* surface, Int2 size, BufferFormat fmt, int mipCount, int arrayCount, bool memoryless = false) {
-        auto& cache = mDevice->GetResourceCache();
-        auto* d3dDevice = mDevice->GetD3DDevice();
-
-        // Create the depth stencil target
-        auto heapParams = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
         auto flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         if (memoryless) flags |= D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
-        auto dsvDesc = CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)fmt,
-            (long)size.x, (long)size.y,
-            arrayCount, mipCount, 1, 0, flags);
-        auto dsvClear = CD3DX12_CLEAR_VALUE(dsvDesc.Format, 1.0f, 0);
-        ThrowIfFailed(d3dDevice->CreateCommittedResource(&heapParams, D3D12_HEAP_FLAG_NONE, &dsvDesc,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE, &dsvClear, IID_PPV_ARGS(&surface->mBuffer)
-        ));
-        surface->mBuffer->SetName(L"Depth RT");
-        surface->RequireSubResource(0).mState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-        surface->mWidth = (int)dsvDesc.Width;
-        surface->mHeight = (int)dsvDesc.Height;
-        surface->mFormat = dsvDesc.Format;
-
-        // Create depth view
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsViewDesc = { .Format = dsvDesc.Format, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D };
-        d3dDevice->CreateDepthStencilView(surface->mBuffer.Get(), &dsViewDesc,
-            CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), cache.mDSOffset));
-        surface->RequireSubResource(0).mRTVOffset = cache.mDSOffset;
-        surface->mSRVOffset = -100;
-        cache.mDSOffset += mDevice->GetDevice().GetDescriptorHandleSizeDSV();
+        auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)fmt,
+            size.x, size.y, arrayCount, mipCount, 1, 0, flags);
+        AllocateRTBuffer(surface, texDesc, CD3DX12_CLEAR_VALUE(texDesc.Format, 1.0f, 0));
     }
     D3DResourceCache::D3DRenderSurface* RequireDepth(Int2 size) {
         auto& cache = mDevice->GetResourceCache();
@@ -184,32 +155,6 @@ public:
         AllocateDepthBuffer(surface, size, BufferFormat::FORMAT_D24_UNORM_S8_UINT, 1, 1, true);
         auto d3dDevice = mDevice->GetD3DDevice();
         return surface;
-    }
-    int GetRTVOffset(const D3DResourceCache::D3DRenderSurfaceView buffer, bool isDepth = false) {
-        auto* surface = const_cast<D3DResourceCache::D3DRenderSurface*>(buffer.mSurface);
-        auto& subresource = surface->RequireSubResource(buffer.mMip);
-        if (subresource.mRTVOffset == -1) {
-            auto d3dDevice = mDevice->GetD3DDevice();
-            auto& cache = mDevice->GetResourceCache();
-            // Create texture view
-            auto format = surface->mFormat;
-            if (isDepth) {
-                D3D12_DEPTH_STENCIL_VIEW_DESC dsViewDesc = { .Format = format, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D };
-                dsViewDesc.Texture2D.MipSlice = buffer.mMip;
-                d3dDevice->CreateDepthStencilView(surface->mBuffer.Get(), &dsViewDesc,
-                    CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), cache.mDSOffset));
-                subresource.mRTVOffset = cache.mDSOffset;
-                cache.mDSOffset += mDevice->GetDevice().GetDescriptorHandleSizeDSV();
-            } else {
-                D3D12_RENDER_TARGET_VIEW_DESC rtvViewDesc = { .Format = format, .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D };
-                rtvViewDesc.Texture2D.MipSlice = buffer.mMip;
-                d3dDevice->CreateRenderTargetView(surface->mBuffer.Get(), &rtvViewDesc,
-                    CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), cache.mRTOffset));
-                subresource.mRTVOffset = cache.mRTOffset;
-                cache.mRTOffset += mDevice->GetDevice().GetDescriptorHandleSizeRTV();
-            }
-        }
-        return subresource.mRTVOffset;
     }
     void SetD3DRenderTarget(std::span<const D3DResourceCache::D3DRenderSurfaceView> frameBuffers, D3DResourceCache::D3DRenderSurfaceView depthBuffer) {
         bool same = mDepthBuffer == depthBuffer;
@@ -245,13 +190,16 @@ public:
         }
 
         if (anyBuffer != nullptr) {
+            auto& cache = mDevice->GetResourceCache();
             SetViewport(RectInt(0, 0, anyBuffer->mWidth, anyBuffer->mHeight));
 
             InplaceVector<D3D12_CPU_DESCRIPTOR_HANDLE, 8> targets;
             for (int i = 0; i < (int)frameBuffers.size(); ++i) {
-                targets.push_back(CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), GetRTVOffset(mFrameBuffers[i])));
+                auto& surface = cache.RequireTextureRTV(mFrameBuffers[i], mFrameHandle);
+                targets.push_back(CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), surface.mRTVOffset));
             }
-            CD3DX12_CPU_DESCRIPTOR_HANDLE depthHandle(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), GetRTVOffset(mDepthBuffer, true));
+            auto& depthSurface = cache.RequireTextureRTV(mDepthBuffer, mFrameHandle);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE depthHandle(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), depthSurface.mRTVOffset);
             mCmdList->OMSetRenderTargets(targets.size(), targets.data(), FALSE, &depthHandle);
         } else {
             mCmdList->OMSetRenderTargets(0, nullptr, FALSE, nullptr);
@@ -260,21 +208,24 @@ public:
     // Clear the screen
     void ClearRenderTarget(const ClearConfig& clear) override
     {
+        auto& cache = mDevice->GetResourceCache();
         CD3DX12_RECT clearRect((LONG)mViewportRect.x, (LONG)mViewportRect.y,
             (LONG)(mViewportRect.x + mViewportRect.width), (LONG)(mViewportRect.y + mViewportRect.height));
         mDevice->CheckDeviceState();
         for (int i = 0; i < mFrameBuffers.mSize; i++) {
             if (clear.HasClearColor() && mFrameBuffers[i] != nullptr) {
+                auto& surface = cache.RequireTextureRTV(mFrameBuffers[i], mFrameHandle);
                 CD3DX12_CPU_DESCRIPTOR_HANDLE descriptor(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(),
-                    mFrameBuffers[i]->RequireSubResource(0).mRTVOffset);
+                    surface.mRTVOffset);
                 mCmdList->ClearRenderTargetView(descriptor, clear.ClearColor, 1, &clearRect);
             }
         }
         auto flags = (clear.HasClearDepth() ? D3D12_CLEAR_FLAG_DEPTH : 0)
             | (clear.HasClearScencil() ? D3D12_CLEAR_FLAG_STENCIL : 0);
         if (flags && mDepthBuffer != nullptr) {
+            auto& surface = cache.RequireTextureRTV(mDepthBuffer, mFrameHandle);
             CD3DX12_CPU_DESCRIPTOR_HANDLE depth(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(),
-                mDepthBuffer->RequireSubResource(0).mRTVOffset);
+                surface.mRTVOffset);
             mCmdList->ClearDepthStencilView(depth, (D3D12_CLEAR_FLAGS)flags,
                 clear.ClearDepth, clear.ClearStencil, 1, &clearRect);
         }
@@ -291,15 +242,11 @@ public:
 
     void* RequireConstantBuffer(std::span<const uint8_t> data) override {
         auto& cache = mDevice->GetResourceCache();
-        return cache.RequireConstantBuffer(data);
-    }
-    void CopyBufferData(GraphicsBufferBase* buffer, std::span<const RangeInt> ranges) override {
-        auto& cache = mDevice->GetResourceCache();
-        cache.UpdateBufferData(mCmdList.Get(), buffer, ranges);
+        return cache.RequireConstantBuffer(mFrameHandle, data);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) override {
         auto& cache = mDevice->GetResourceCache();
-        cache.UpdateBufferData(mCmdList.Get(), buffer, ranges);
+        cache.UpdateBufferData(mCmdList.Get(), mFrameHandle, buffer, ranges);
     }
     void BindPipelineState(D3DResourceCache::D3DPipelineState* pipelineState)
     {
@@ -355,8 +302,7 @@ public:
         BindPipelineState(pipelineState);
 
         // Require and bind constant buffers
-        for (int i = 0; i < pipelineState->mConstantBuffers.size(); ++i)
-        {
+        for (int i = 0; i < pipelineState->mConstantBuffers.size(); ++i) {
             auto cb = pipelineState->mConstantBuffers[i];
             auto d3dCB = (D3DConstantBuffer*)resources[i];
             if (mLastCBs[cb->mBindPoint] == d3dCB) continue;
@@ -371,12 +317,7 @@ public:
             auto* resource = resources[roff + i];
             int srvOffset = -1;
             if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
-                if ((uint64_t)resource < 1000) {
-                    srvOffset = cache.GetBinding((uint64_t)resource)->mSRVOffset;
-                }
-                else {
-                    srvOffset = cache.RequireCurrentBuffer((GraphicsBufferBase*)resource, mCmdList.Get())->mSRVOffset;
-                }
+                srvOffset = cache.GetBinding((uint64_t)resource)->mSRVOffset;
             }
             else {
                 auto* textureBase = (TextureBase*)resource;
@@ -391,7 +332,7 @@ public:
                     if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
                 } else {
                     auto tex = dynamic_cast<Texture*>(textureBase);
-                    srvOffset = cache.RequireCurrentTexture(tex, mCmdList.Get())->mSRVOffset;
+                    srvOffset = cache.RequireCurrentTexture(tex, mCmdList.Get(), mFrameHandle)->mSRVOffset;
                 }
             }
             if (srvOffset == -1) break;
@@ -408,7 +349,7 @@ public:
         tVertexViews.reserve(2);
         D3D12_INDEX_BUFFER_VIEW indexView;
         int indexCount = -1;
-        cache.ComputeElementData(bindings, mCmdList.Get(), tVertexViews, indexView, indexCount);
+        cache.ComputeElementData(bindings, mCmdList.Get(), mFrameHandle, tVertexViews, indexView, indexCount);
         mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
         mCmdList->IASetIndexBuffer(&indexView);
         
@@ -423,7 +364,7 @@ public:
     void Execute() override
     {
         InplaceVector<D3D12_RESOURCE_BARRIER, 10> barriers;
-        auto& backBuffer = mDevice->GetBackBuffer();
+        auto& backBuffer = mSurface->GetBackBuffer();
         backBuffer.RequireState(barriers, D3D12_RESOURCE_STATE_PRESENT, 0);
         if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
 
@@ -438,21 +379,15 @@ public:
 
 GraphicsDeviceD3D12::GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window)
     : mWindow(window)
-    , mDevice(*window)
+    , mDevice()
+    , mPrimarySurface(mDevice, window->GetHWND())
     , mCache(mDevice, mStatistics)
 {
     auto mD3DDevice = mDevice.GetD3DDevice();
-    auto mSwapChain = mDevice.GetSwapChain();
-    // Create fence for frame synchronisation
-    mBackBufferIndex = mSwapChain->GetCurrentBackBufferIndex();
-    for (int i = 0; i < FrameCount; ++i) mFenceValues[i] = 0;
-    ThrowIfFailed(mD3DDevice->CreateFence(mFenceValues[mBackBufferIndex], D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
-    ++mFenceValues[mBackBufferIndex];
-    mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-    if (mFenceEvent == nullptr) ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+    auto mSwapChain = mPrimarySurface.GetSwapChain();
     //WaitForGPU();
 
-    auto resolution = mDevice.GetResolution();
+    auto resolution = mPrimarySurface.GetResolution();
     SetResolution(resolution);
 }
 GraphicsDeviceD3D12::~GraphicsDeviceD3D12()
@@ -477,64 +412,14 @@ void GraphicsDeviceD3D12::CheckDeviceState() const
 
 void GraphicsDeviceD3D12::SetResolution(Int2 resolution) {
     auto mD3DDevice = mDevice.GetD3DDevice();
-    auto mSwapChain = mDevice.GetSwapChain();
+    auto mSwapChain = mPrimarySurface.GetSwapChain();
     WaitForGPU();
     mCache.depthBufferPool.clear();
-    for (UINT n = 0; n < FrameCount; n++) {
-        if (mFrameBuffers[n].mBuffer != nullptr)
-            mFrameBuffers[n].mBuffer.Reset();
-        if (mCmdAllocator[n] != nullptr)
-            mCmdAllocator[n]->Reset();
-    }
-    mDevice.SetResolution(resolution);
-    // Create a RTV for each frame.
-    for (UINT n = 0; n < FrameCount; n++) {
-        auto& frameBuffer = mFrameBuffers[n];
-        if (mCmdAllocator[n] == nullptr) {
-            ThrowIfFailed(mD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCmdAllocator[n])));
-            frameBuffer.RequireSubResource(0).mRTVOffset = mCache.mRTOffset;
-            mCache.mRTOffset += mDevice.GetDescriptorHandleSizeRTV();
-        }
-        ThrowIfFailed(mSwapChain->GetBuffer(n, IID_PPV_ARGS(&frameBuffer.mBuffer)));
-        frameBuffer.mWidth = (int)resolution.x;
-        frameBuffer.mHeight = (int)resolution.y;
-        frameBuffer.mFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-        frameBuffer.mBuffer->SetName(L"Frame Buffer");
-        auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice.GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), frameBuffer.RequireSubResource(0).mRTVOffset);
-        mD3DDevice->CreateRenderTargetView(frameBuffer.mBuffer.Get(), nullptr, handle);
-    }
-    const UINT64 currentFenceValue = mFenceValues[mBackBufferIndex];
-    mBackBufferIndex = mDevice.GetSwapChain()->GetCurrentBackBufferIndex();
-    mFenceValues[mBackBufferIndex] = currentFenceValue;
-    
-    // Create the depth buffer
-    /*{
-        ComPtr<ID3D12Resource> depthTarget;
-        auto heapParams = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto dsvDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, (long)clientSize.x, (long)clientSize.y, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-        auto depthOptimizedClearValue = CD3DX12_CLEAR_VALUE(dsvDesc.Format, 1.0f, 0);
-        ThrowIfFailed(mD3DDevice->CreateCommittedResource(
-            &heapParams,
-            D3D12_HEAP_FLAG_NONE,
-            &dsvDesc,
-            D3D12_RESOURCE_STATE_DEPTH_WRITE,
-            &depthOptimizedClearValue,
-            IID_PPV_ARGS(&depthTarget)
-        ));
-        mD3DDevice->CreateDepthStencilView(depthTarget.Get(), nullptr, mDevice.GetDSVHeap()->GetCPUDescriptorHandleForHeapStart());
-        for (UINT n = 0; n < FrameCount; ++n) {
-            auto& depthBuffer = mFrameBuffers[n].mDepthBuffer;
-            depthBuffer.mBuffer = depthTarget;
-            depthBuffer.mRTVOffset = mCache.mDSOffset;
-            depthBuffer.mWidth = (int)clientSize.x;
-            depthBuffer.mHeight = (int)clientSize.y;
-        }
-        mCache.mDSOffset += mDevice.GetDescriptorHandleSizeDSV();
-    }*/
+    mPrimarySurface.SetResolution(resolution);
 }
 CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
 {
-    return CommandBuffer(new D3DCommandBuffer(this));
+    return CommandBuffer(new D3DCommandBuffer(this, &mPrimarySurface));
 }
 
 const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
@@ -546,7 +431,7 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
     CheckDeviceState();
 
     InplaceVector<DXGI_FORMAT> fbFormats;
-    fbFormats.push_back(GetBackBuffer().mFormat);
+    fbFormats.push_back(mPrimarySurface.GetBackBuffer().mFormat);
     auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, macros, renderPass,
         fbFormats, DXGI_FORMAT_D24_UNORM_S8_UINT);
     if (pipelineState->mLayout == nullptr)
@@ -563,60 +448,11 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
 }
 
 // Flip the backbuffer and wait until a frame is available to be rendered
-void GraphicsDeviceD3D12::Present()
-{
-    auto hr = mDevice.GetSwapChain()->Present(1, 0);
-
-    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
-    {
-        CheckDeviceState();
-        return;
-
-        // Reset all cached resources
-        //mCache = D3DResourceCache(mDevice);
-        // Reset the entire d3d device
-        //mDevice = D3DGraphicsDevice(*mWindow);
-    }
-    else
-    {
-        ThrowIfFailed(hr);
-    }
-    WaitForFrame();
-}
-
-// Wait for the earliest submitted frame to be finished and ready to be rendered into
-void GraphicsDeviceD3D12::WaitForFrame()
-{
-    // Schedule a Signal command in the queue.
-    const UINT64 currentFenceValue = mFenceValues[mBackBufferIndex];
-    ThrowIfFailed(mDevice.GetCmdQueue()->Signal(mFence.Get(), currentFenceValue));
-
-    // Update the frame index.
-    mBackBufferIndex = mDevice.GetSwapChain()->GetCurrentBackBufferIndex();
-
-    // If the next frame is not ready to be rendered yet, wait until it is ready.
-    auto fenceVal = mFence->GetCompletedValue();
-    if (fenceVal < mFenceValues[mBackBufferIndex])
-    {
-        ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mBackBufferIndex], mFenceEvent));
-        WaitForSingleObjectEx(mFenceEvent, INFINITE, FALSE);
-    }
-
-    // Set the fence value for the next frame.
-    mFenceValues[mBackBufferIndex] = currentFenceValue + 1;
-    mCmdAllocator[mBackBufferIndex]->Reset();
-    mCache.SetResourceLockIds(fenceVal, currentFenceValue);
+void GraphicsDeviceD3D12::Present() {
+    int disposedFrame = mPrimarySurface.Present();
+    mCache.UnlockFrame((size_t)&mPrimarySurface + disposedFrame);
 }
 // Wait for all GPU operations? Taken from the samples
-void GraphicsDeviceD3D12::WaitForGPU()
-{
-    // Schedule a Signal command in the queue.
-    ThrowIfFailed(mDevice.GetCmdQueue()->Signal(mFence.Get(), mFenceValues[mBackBufferIndex]));
-
-    // Wait until the fence has been processed.
-    ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mBackBufferIndex], mFenceEvent));
-    WaitForSingleObjectEx(mFenceEvent, INFINITE, FALSE);
-
-    // Increment the fence value for the current frame.
-    mFenceValues[mBackBufferIndex]++;
+void GraphicsDeviceD3D12::WaitForGPU() {
+    mPrimarySurface.WaitForGPU();
 }

@@ -74,14 +74,17 @@ const ResolvedMaterialSets::ResolvedMaterialSet& ResolvedMaterialSets::GetResolv
 
 
 RetainedScene::RetainedScene()
-	: mGPUBuffer(1024)
-	, mResolvedMats(&mMatCollection)
+	: mResolvedMats(&mMatCollection)
 {
-	mFreeGPUBuffer.Return(0, mGPUBuffer.GetCount());
+	mGPUBuffer.AppendElement(BufferLayout::Element("Data", BufferFormat::FORMAT_R32G32B32A32_FLOAT));
+	mGPUBuffer.AllocResize(1024 * 16);
+	mGPUBuffer.mCount = 1024 * 16;
+	mFreeGPUBuffer.Return(0, mGPUBuffer.mCount);
 }
 
 std::span<const Vector4> RetainedScene::GetInstanceData(int instanceId) const {
-	return mGPUBuffer.GetValues(mInstances[instanceId].mData);
+	auto& instance = mInstances[instanceId];
+	return std::span<const Vector4>((const Vector4*)mGPUBuffer.mElements[0].mData + instance.mData.start, instance.mData.length);
 }
 
 int RetainedScene::AllocateInstance(int instanceDataSize) {
@@ -95,18 +98,19 @@ int RetainedScene::AllocateInstance(int instanceDataSize) {
 		instance.mData = mFreeGPUBuffer.Allocate(instanceDataCount);
 		if (instance.mData.start >= 0) break;
 		// Allocate failed, try to resize
-		int oldCount = mGPUBuffer.SetCount(std::max(mGPUBuffer.GetCount() * 2, 1024));
-		mFreeGPUBuffer.Return(oldCount, mGPUBuffer.GetCount() - oldCount);
+		int oldCount = mGPUBuffer.mCount;
+		mGPUBuffer.mCount = (std::max(mGPUBuffer.mCount * 2, 1024));
+		mFreeGPUBuffer.Return(oldCount, mGPUBuffer.mCount - oldCount);
 	}
 	return id;
 }
 // Add user data for a mesh instance
 bool RetainedScene::UpdateInstanceData(int instanceId, int offset, std::span<const uint8_t> tdata) {
 	auto& instance = mInstances[instanceId];
-	auto data = mGPUBuffer.GetValues(instance.mData);
+	std::span<Vector4> data((Vector4*)mGPUBuffer.mElements[0].mData + instance.mData.start, instance.mData.length);
 	if (std::memcmp((uint8_t*)data.data() + offset, tdata.data(), tdata.size()) == 0) return false;
 	std::memcpy((uint8_t*)data.data() + offset, tdata.data(), tdata.size());
-	mGPUBuffer.MarkChanged(instance.mData);
+	mGPUBuffer.mRevision++;
 	mGPUDelta.AppendRegion(instance.mData);
 	return true;
 }
@@ -121,7 +125,7 @@ void RetainedScene::RemoveInstance(int instanceId) {
 void RetainedScene::SubmitGPUMemory(CommandBuffer& cmdBuffer) {
 	auto regions = mGPUDelta.GetRegions();
 	if (regions.empty()) return;
-	cmdBuffer.CopyBufferData(&mGPUBuffer, regions);
+	cmdBuffer.CopyBufferData(mGPUBuffer, regions);
 	mGPUDelta.Clear();
 }
 
@@ -136,7 +140,7 @@ RetainedRenderer::RetainedRenderer() {
 }
 void RetainedRenderer::SetScene(const std::shared_ptr<RetainedScene>& scene) {
 	mGPUScene = scene;
-	mInstanceMaterial.SetUniformTexture("instanceData", &mGPUScene->GetGPUBuffer());
+	mInstanceMaterial.SetUniformTexture("instanceData", (void*)mGPUScene->GetGPUBuffer().mIdentifier);
 }
 const std::shared_ptr<RetainedScene>& RetainedRenderer::GetScene() const { return mGPUScene; }
 int RetainedRenderer::AppendInstance(const Mesh* mesh, std::span<const Material*> materials, int sceneId) {

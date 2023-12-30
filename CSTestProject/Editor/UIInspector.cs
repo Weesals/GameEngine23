@@ -28,7 +28,7 @@ namespace Weesals.Editor {
         ScenePassManager IToolServiceProvider<ScenePassManager>.Service => scenePassManager;
         BrushConfiguration IToolServiceProvider<BrushConfiguration>.Service => brushConfig;
 
-        private UXBrushTool activeTool;
+        private UXBrushTool? activeTool;
 
         public void Initialize(UIGameView gameView) {
             scenePassManager = gameView.Scene;
@@ -48,9 +48,11 @@ namespace Weesals.Editor {
         }
 
         private void SetActiveTool(UXBrushTool? tool) {
+            if (activeTool != null) activeTool.SetActive(false);
             if (activeTool is IInteraction otool) InputDispatcher.RemoveInteraction(otool);
             activeTool = tool;
             if (activeTool is IInteraction ntool) InputDispatcher.AddInteraction(ntool);
+            if (activeTool != null) activeTool.SetActive(true);
             HeightButton.Text.Text = activeTool == CliffTool ? "End" : "Edit Height";
             WaterButton.Text.Text = activeTool == WaterTool ? "End" : "Edit Water";
         }

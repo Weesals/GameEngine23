@@ -143,12 +143,12 @@ namespace Weesals.Engine {
         public override void EvaluateValue(Span<byte> output, ref MaterialEvaluatorContext context) {
             var evalcontext = new ComputedContext(ref context);
             var value = Lambda(ref evalcontext);
-            MemoryMarshal.Write(output, ref value);
+            MemoryMarshal.Write(output, in value);
         }
         public override void SourceValue(Span<byte> output, ref MaterialCollectorContext context) {
             var evalcontext = new ComputedContext(ref context);
             var value = Lambda(ref evalcontext);
-            MemoryMarshal.Write(output, ref value);
+            MemoryMarshal.Write(output, in value);
         }
     }
     public class Material {

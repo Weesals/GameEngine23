@@ -97,6 +97,7 @@ namespace Weesals.Landscape.Editor {
     }
 
     public class UXBrushTool {
+        public bool Active { get; private set; }
         public ToolContext Context;
         public LandscapeData LandscapeData => Context.LandscapeData;
         public CanvasRenderable Viewport => Context.Viewport;
@@ -129,6 +130,10 @@ namespace Weesals.Landscape.Editor {
             );
             if (!active) reticleAngle += Time.deltaTime;
             brushConfig.DrawBrush(scene, landscapeData, context, pos, radMin, radMax, reticleAngle);
+        }
+
+        public virtual void SetActive(bool active) {
+            Active = active;
         }
     }
     public struct TileIterator {

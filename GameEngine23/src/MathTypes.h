@@ -98,7 +98,7 @@ struct Int2
 	inline Int2 operator *(const int o) const { return Int2(x * o, y * o); }
 	inline Int2 operator /(const int o) const { return Int2(x / o, y / o); }
 	inline bool operator ==(Int2 o) const noexcept { return x == o.x && y == o.y; }
-	inline bool operator !=(Int2 o) const noexcept { return x == o.x && y == o.y; }
+	inline bool operator !=(Int2 o) const noexcept { return x != o.x || y != o.y; }
 
 	static Int2 Min(Int2 v1, Int2 v2);
 	static Int2 Max(Int2 v1, Int2 v2);

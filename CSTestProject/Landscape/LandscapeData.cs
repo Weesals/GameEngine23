@@ -33,7 +33,7 @@ namespace Weesals.Landscape {
             WaterMapChanged = waterMap;
         }
         public LandscapeChangeEvent(Int2 min, Int2 max, bool heightMap = false, bool controlMap = false, bool waterMap = false) {
-            if (min.X < max.X || min.Y < max.Y) {
+            if (min.X <= max.X || min.Y <= max.Y) {
                 Range = new RectI(min.X, min.Y, max.X - min.X + 1, max.Y - min.Y + 1);
                 HeightMapChanged = heightMap;
                 ControlMapChanged = controlMap;

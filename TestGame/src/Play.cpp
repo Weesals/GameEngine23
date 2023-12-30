@@ -199,7 +199,13 @@ void Play::Render(CommandBuffer& cmdBuffer)
     for (auto* pass : mRenderPasses->mPasses)
     {
         pass->mRetainedRenderer->SubmitToRenderQueue(cmdBuffer, pass->mRenderQueue, pass->mFrustum);
-        cmdBuffer.SetRenderTarget(pass->mRenderTarget.get());
+        RenderTargetBinding bindings[] = { pass->mRenderTarget.get() };
+        if (bindings->mTarget != nullptr && BufferFormatType::GetIsDepthBuffer(bindings->mTarget->GetFormat())) {
+            cmdBuffer.SetRenderTargets({ }, *bindings);
+        }
+        else {
+            cmdBuffer.SetRenderTargets(bindings, { });
+        }
         cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
 
         pass->mRenderQueue.Render(cmdBuffer);

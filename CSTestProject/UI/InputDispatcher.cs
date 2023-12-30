@@ -105,6 +105,11 @@ namespace Weesals.UI {
                 if (CheckInvokeInteraction(events, ostate)) { events.SetActive(ostate.Interaction); return true; }
                 state.CombineWith(ostate);
             }
+            for (int i = 0; i < interactions.Count; i++) {
+                if (interactions[i] is IPointerEventsRaw oraw) {
+                    oraw.ProcessPointer(events);
+                }
+            }
             if (!state.Score.IsPotential && hitIterator.Current is IPointerEventsRaw raw) {
                 raw.ProcessPointer(events);
                 return true;

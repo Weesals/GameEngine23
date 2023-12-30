@@ -454,9 +454,6 @@ CSSpan CSGraphics::ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bind
 void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span) {
 	return graphics->mCmdBuffer.RequireConstantBuffer(std::span<uint8_t>((uint8_t*)span.mData, span.mSize));
 }
-void CSGraphics::CopyBufferData(NativeGraphics* graphics, NativeBuffer* buffer, CSSpan ranges) {
-	graphics->mCmdBuffer.CopyBufferData(buffer, std::span<const RangeInt>((const RangeInt*)ranges.mData, ranges.mSize));
-}
 void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* buffer, CSSpan ranges) {
 	graphics->mCmdBuffer.CopyBufferData(*(const BufferLayout*)buffer, std::span<const RangeInt>((const RangeInt*)ranges.mData, ranges.mSize));
 }
@@ -604,7 +601,7 @@ NativeTexture* CSScene::GetGPUBuffer(NativeScene* scene) {
 	return (NativeTexture*)&scene->mScene->GetGPUBuffer();
 }
 int CSScene::GetGPURevision(NativeScene* scene) {
-	return scene->mScene->GetGPUBuffer().GetRevision();
+	return scene->mScene->GetGPUBuffer().mRevision;
 }
 void CSScene::SubmitToGPU(NativeScene* scene, NativeGraphics* graphics) {
 	auto& cmdBuffer = graphics->mCmdBuffer;

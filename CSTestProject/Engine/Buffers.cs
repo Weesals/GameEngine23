@@ -207,6 +207,7 @@ namespace Weesals.Engine {
         public int Count => BufferLayout.mCount;     // How many elements to make current
         public CSBufferElement* ElementsBuffer => BufferLayout.mElements;
         public int ElementCount => BufferLayout.mElementCount;
+        public int Revision => BufferLayout.revision;
         private int mBufferAllocCount = 0;
         private int mBufferStride = 0;
         private int mElementAllocCount = 0;

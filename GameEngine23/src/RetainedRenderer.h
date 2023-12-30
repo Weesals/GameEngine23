@@ -72,7 +72,8 @@ class RetainedScene {
 	SparseArray<Instance> mInstances;
 
 	// Used to store per-instance data
-	GraphicsBuffer<Vector4> mGPUBuffer;
+	//GraphicsBuffer<Vector4> mGPUBuffer;
+	BufferLayoutPersistent mGPUBuffer;
 	// Track which regions of the buffer are free
 	SparseIndices mFreeGPUBuffer;
 	GraphicsBufferDelta mGPUDelta;
@@ -83,7 +84,7 @@ public:
 
 	ResolvedMaterialSets mResolvedMats;
 
-	const GraphicsBuffer<Vector4>& GetGPUBuffer() { return mGPUBuffer; }
+	const BufferLayoutPersistent& GetGPUBuffer() { return mGPUBuffer; }
 	std::span<const Vector4> GetInstanceData(int instanceId) const;
 
 	// Allocate an instance in that batch

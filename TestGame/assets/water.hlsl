@@ -158,7 +158,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     const float3 GroundColor = float3(0.25, 0.3, 0.1);
     const float3 HorizonColor = float3(.5, .35, .2);
     const half3 ExtinctCoefs = half3(0.35, 0.09, 0.03) * -20;
-    const half3 ScatterCoefs = half3(0.0007, 0.0021, 0.0025) * -15;
+    const half3 ScatterCoefs = half3(0.007, 0.021, 0.025) * -20;
     const float3 FoamColor = float3(0.9, 0.9, 0.9);
         
     const float3 mainLightColor = 0.8;
@@ -168,7 +168,14 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
     half4 color = 1;
     
-    float opticalDepth = max(0, SceneDepth[input.position.xy].r - input.position.z) / (Projection._33 - 1);
+    float near = Projection._34 / Projection._33;
+    float far = Projection._34 / (Projection._33 - 1);
+    float4 _ZBufferParams = float2(1 - far / near, far / near).xyxy;
+    _ZBufferParams.zw /= far;
+    float opticalDepth = max(0,
+        -1.0 / (_ZBufferParams.z * SceneDepth[input.position.xy].r + _ZBufferParams.w) -
+        -1.0 / (_ZBufferParams.z * input.position.z + _ZBufferParams.w)
+    );
     transmittance = exp2(opticalDepth * ExtinctCoefs);
 
     half3 scatterLum = (ScatterCoefs / ExtinctCoefs) * mainLightColor;

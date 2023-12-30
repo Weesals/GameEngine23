@@ -53,7 +53,7 @@ inline void ThrowIfFailed(HRESULT hr)
 }
 
 // Initialise D3D with the specified window
-D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
+D3DGraphicsDevice::D3DGraphicsDevice()
 {
 #if PIX
     if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0) {
@@ -62,8 +62,6 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
     }
 #endif
     CoInitialize(nullptr);
-
-    auto hWnd = window.GetHWND();
 
     UINT dxgiFactoryFlags = 0;
 
@@ -78,13 +76,12 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
     }
     dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
-    ComPtr<IDXGIFactory4> d3dFactory;
-    ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&d3dFactory)));
+    ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&mD3DFactory)));
 
     // Find adapters
     std::vector<ComPtr<IDXGIAdapter1>> adapters;
     ComPtr<IDXGIAdapter1> pAdapter = nullptr;
-    for (UINT adapterIndex = 0; d3dFactory->EnumAdapters1(adapterIndex, &pAdapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex)
+    for (UINT adapterIndex = 0; mD3DFactory->EnumAdapters1(adapterIndex, &pAdapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex)
     {
         DXGI_ADAPTER_DESC1 adapterDesc;
         if (SUCCEEDED(pAdapter->GetDesc1(&adapterDesc)))
@@ -139,36 +136,23 @@ D3DGraphicsDevice::D3DGraphicsDevice(const WindowWin32& window)
         mDescriptorHandleSizeDSV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
         mDescriptorHandleSizeSRV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     }
-
-    // Check the window for how large the backbuffer should be
-    mResolution = window.GetClientSize();
-
-    // Create the swap chain
-    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-    swapChainDesc.BufferCount = FrameCount;
-    swapChainDesc.Width = mResolution.x;
-    swapChainDesc.Height = mResolution.y;
-    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-    swapChainDesc.SampleDesc.Count = 1;
-
-    ComPtr<IDXGISwapChain1> swapChain;
-    ThrowIfFailed(d3dFactory->CreateSwapChainForHwnd(mCmdQueue.Get(), hWnd, &swapChainDesc, nullptr, nullptr, &swapChain));
-    ThrowIfFailed(swapChain.As(&mSwapChain));
-    mSwapChain->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
 }
 
 D3DGraphicsDevice::~D3DGraphicsDevice()
 {
     CoUninitialize();
 }
-void D3DGraphicsDevice::SetResolution(Int2 res) {
-    if (mResolution == res) return;
-    mResolution = res;
-    ResizeSwapBuffers();
-}
-void D3DGraphicsDevice::ResizeSwapBuffers() {
-    auto hr = mSwapChain->ResizeBuffers(0, (UINT)mResolution.x, (UINT)mResolution.y, DXGI_FORMAT_UNKNOWN, 0);
-    ThrowIfFailed(hr);
+void D3DGraphicsDevice::CheckDeviceState() const
+{
+    auto remove = mD3DDevice->GetDeviceRemovedReason();
+    if (remove != S_OK)
+    {
+        WCHAR* errorString = nullptr;
+        auto reason = mD3DDevice->GetDeviceRemovedReason();
+        FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS,
+            nullptr, reason, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (LPWSTR)&errorString, 0, nullptr);
+        OutputDebugStringW(errorString);
+        throw "Device is lost!";
+    }
 }

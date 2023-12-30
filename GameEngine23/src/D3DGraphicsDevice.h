@@ -12,11 +12,9 @@ using Microsoft::WRL::ComPtr;
 // It should never be used directly by the client application
 class D3DGraphicsDevice
 {
-    // This renderer supports 2 backbuffers
-    static const int FrameCount = 2;
-
+private:
     ComPtr<ID3D12Device> mD3DDevice;
-    ComPtr<IDXGISwapChain3> mSwapChain;
+    ComPtr<IDXGIFactory4> mD3DFactory;
     ComPtr<ID3D12CommandQueue> mCmdQueue;
 
     ComPtr<ID3D12DescriptorHeap> mRTVHeap;
@@ -27,24 +25,20 @@ class D3DGraphicsDevice
     int mDescriptorHandleSizeRTV;
     int mDescriptorHandleSizeSRV;
     int mDescriptorHandleSizeDSV;
-    // Size of the client rect of the window
-    Int2 mResolution;
 
 public:
-    D3DGraphicsDevice(const WindowWin32& window);
+    D3DGraphicsDevice();
     ~D3DGraphicsDevice();
 
+    void CheckDeviceState() const;
+
     ID3D12Device* GetD3DDevice() const { return mD3DDevice.Get(); }
+    IDXGIFactory4* GetFactory() const { return mD3DFactory.Get(); }
     ID3D12DescriptorHeap* GetRTVHeap() const { return mRTVHeap.Get(); }
     ID3D12DescriptorHeap* GetDSVHeap() const { return mDSVHeap.Get(); }
     ID3D12DescriptorHeap* GetSRVHeap() const { return mSRVHeap.Get(); }
     int GetDescriptorHandleSizeRTV() const { return mDescriptorHandleSizeRTV; }
     int GetDescriptorHandleSizeDSV() const { return mDescriptorHandleSizeDSV; }
     int GetDescriptorHandleSizeSRV() const { return mDescriptorHandleSizeSRV; }
-    IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
     ID3D12CommandQueue* GetCmdQueue() const { return mCmdQueue.Get(); }
-
-    Int2 GetResolution() const { return mResolution; }
-    void SetResolution(Int2 res);
-    void ResizeSwapBuffers();
 };

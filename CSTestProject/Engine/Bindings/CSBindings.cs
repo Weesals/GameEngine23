@@ -427,6 +427,7 @@ namespace Weesals.Engine {
         unsafe public Span<CSConstantBuffer> GetConstantBuffers() { return GetConstantBuffers(mPipeline).AsSpan<CSConstantBuffer>(); }
         unsafe public CSSpanPtr<CSResourceBinding> GetResources() { return new CSSpanPtr<CSResourceBinding>(GetResources(mPipeline)); }
         unsafe public static implicit operator NativePipeline*(CSPipeline p) { return p.mPipeline; }
+        public override unsafe int GetHashCode() { return (int)mPipeline ^ (int)((ulong)mPipeline >> 32); }
     }
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
@@ -489,14 +490,13 @@ namespace Weesals.Engine {
         unsafe public CSPipeline RequirePipeline(CSSpan bindings, CSSpan materials, CSIdentifier renderPass) {
             return new CSPipeline(RequirePipeline(mGraphics, bindings, materials));
         }
-        unsafe public void CopyBufferData(CSTexture buffer, List<RangeInt> ranges) {
-            fixed (RangeInt* rangesPtr = CollectionsMarshal.AsSpan(ranges)) {
-                CopyBufferData(mGraphics, (NativeBuffer*)buffer.mTexture, new CSSpan(rangesPtr, ranges.Count));
-            }
-        }
         unsafe public void CopyBufferData(CSBufferLayout buffer, List<RangeInt> ranges) {
-            fixed (RangeInt* rangesPtr = CollectionsMarshal.AsSpan(ranges)) {
-                CopyBufferData(mGraphics, &buffer, new CSSpan(rangesPtr, ranges.Count));
+            CopyBufferData(buffer, CollectionsMarshal.AsSpan(ranges));
+        }
+        unsafe public void CopyBufferData(CSBufferLayout buffer, Span<RangeInt> ranges) {
+            if (ranges.Length == 0) return;
+            fixed (RangeInt* rangesPtr = ranges) {
+                CopyBufferData(mGraphics, &buffer, new CSSpan(rangesPtr, ranges.Length));
             }
         }
         unsafe public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
@@ -629,6 +629,7 @@ namespace Weesals.Engine {
         public RasterMode(CullModes mode = CullModes.Back) { mCullMode = mode; }
         public RasterMode SetCull(CullModes mode) { mCullMode = mode; return this; }
         public static RasterMode MakeDefault() { return new RasterMode() { mCullMode = CullModes.Back, }; }
+        public static RasterMode MakeNoCull() { return new RasterMode() { mCullMode = CullModes.None, }; }
 
         public override bool Equals(object? obj) { return obj is RasterMode mode && Equals(mode); }
         public bool Equals(RasterMode other) { return mCullMode == other.mCullMode; }

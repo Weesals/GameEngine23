@@ -11,7 +11,7 @@ using Weesals.Utility;
 namespace Weesals.Landscape {
     public class LandscapeRenderer {
 
-        public const int TileResolution = 8;
+        public const int TileSize = 4;
         public const int HeightScale = LandscapeData.HeightScale;
 
         public interface ILandscapeDataListener {
@@ -35,6 +35,9 @@ namespace Weesals.Landscape {
             public int HeightRange;
             public int HeightMedian => MinHeight + HeightRange / 2;
             public int MaxHeight => MinHeight + HeightRange;
+            public float MinHeightF => (float)MinHeight / HeightScale;
+            public float MaxHeightF => (float)MaxHeight / HeightScale;
+            public float HeightRangeF => (float)HeightRange / HeightScale;
             public bool IsValid => HeightRange >= 0;
             public static readonly HeightMetaData Invalid = new HeightMetaData() { MinHeight = int.MaxValue, HeightRange = -1, };
 
@@ -121,21 +124,22 @@ namespace Weesals.Landscape {
                 runtimeData.BumpTextures.MarkChanged();
                 runtimeData.BumpTextures.GenerateMips();
             }
-            if (tileMesh == null) tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileResolution, TileResolution);
-            if (edgeMesh == null) edgeMesh = LandscapeUtility.GenerateSubdividedQuad(TileResolution, 1, false, true, true);
+            if (tileMesh == null) tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
+            if (edgeMesh == null) edgeMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, 1, false, true, true);
 
             LandMaterial = new Material("./assets/landscape.hlsl");
             if (rootMaterial != null) LandMaterial.InheritProperties(rootMaterial);
             LandMaterial.SetTexture("BaseMaps", runtimeData.BaseTextures);
             LandMaterial.SetTexture("BumpMaps", runtimeData.BumpTextures);
             landscapeDraw = new MeshDrawInstanced(tileMesh, LandMaterial);
-            landscapeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
+            landscapeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             EdgeMaterial = new Material(LandMaterial);
             EdgeMaterial.SetMacro("EDGE", "1");
             EdgeMaterial.SetTexture("EdgeTex", CSResources.LoadTexture("./assets/T_WorldsEdge.jpg"));
+            //EdgeMaterial.SetRasterMode(RasterMode.MakeNoCull());
             edgeDraw = new MeshDrawInstanced(edgeMesh, EdgeMaterial);
-            edgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
+            edgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             WaterMaterial = new("./assets/water.hlsl", LandMaterial);
             WaterMaterial.SetTexture("NoiseTex", CSResources.LoadTexture("./assets/Noise.jpg"));
@@ -143,12 +147,12 @@ namespace Weesals.Landscape {
             WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
             WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
             waterDraw = new MeshDrawInstanced(tileMesh, WaterMaterial);
-            waterDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
+            waterDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             WaterEdgeMaterial = new Material(WaterMaterial);
             WaterEdgeMaterial.SetMacro("EDGE", "1");
             waterEdgeDraw = new MeshDrawInstanced(edgeMesh, WaterEdgeMaterial);
-            waterEdgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_UINT);
+            waterEdgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             LandscapeData.OnLandscapeChanged += LandscapeChanged;
         }
@@ -176,12 +180,12 @@ namespace Weesals.Landscape {
                 UpdateRange(runtimeData.Changed);
                 runtimeData.Changed = LandscapeChangeEvent.MakeNone();
                 var metadata = runtimeData.LandscapeMeta;
+                // Sub 1 because 1x1 cell requires 2x2 texels
+                var size = LandscapeData.Size - 1;
+                var scaleF = 1024f / LandscapeData.Sizing.Scale1024;
                 runtimeData.Properties = new PropertiesData(
-                    new Vector4(LandscapeData.Size.X, LandscapeData.Size.Y, 1f / LandscapeData.Size.X, 1f / LandscapeData.Size.Y),
-                    new Vector4(
-                        1024f / LandscapeData.Sizing.Scale1024, LandscapeData.Sizing.Scale1024 / 1024f,
-                        (float)metadata.MinHeight / HeightScale, (float)metadata.HeightRange / HeightScale
-                    )
+                    new Vector4(size.X, size.Y, 1f / size.X, 1f / size.Y),
+                    new Vector4(scaleF, 1f / scaleF, metadata.MinHeightF, metadata.HeightRangeF)
                 );
                 requireMaterialUpdates = true;
             }
@@ -251,7 +255,7 @@ namespace Weesals.Landscape {
 
         unsafe private void UpdateMetadata(LandscapeChangeEvent changed) {
             // Get the heightmap data
-            var chunkCount = (LandscapeData.Size - 1) / TileResolution + 1;
+            var chunkCount = (LandscapeData.Size - 2) / TileSize + 1;
             if (chunkCount != runtimeData.ChunkCount) {
                 runtimeData.ChunkCount = chunkCount;
                 runtimeData.LandscapeChunkMeta = new HeightMetaData[chunkCount.X * chunkCount.Y];
@@ -260,19 +264,19 @@ namespace Weesals.Landscape {
                 Array.Fill(runtimeData.WaterChunkMeta, HeightMetaData.Invalid);
             }
 
-            var chunkMin = changed.Range.Min / TileResolution;
-            var chunkMax = (changed.Range.Max - 1) / TileResolution;
+            var chunkMin = changed.Range.Min / TileSize;
+            var chunkMax = (changed.Range.Max - 2) / TileSize;
             var heightMap = LandscapeData.GetHeightMap();
             var waterMap = LandscapeData.GetWaterMap();
             for (int cy = chunkMin.Y; cy <= chunkMax.Y; ++cy) {
                 for (int cx = chunkMin.X; cx <= chunkMax.X; ++cx) {
                     if (changed.HeightMapChanged) {
                         runtimeData.LandscapeChunkMeta[cx + cy * chunkCount.X] =
-                            ComputeMetadata(heightMap, new RectI(cx * TileResolution, cy * TileResolution, TileResolution, TileResolution));
+                            ComputeMetadata(heightMap, new RectI(cx * TileSize, cy * TileSize, TileSize, TileSize));
                     }
                     if (changed.WaterMapChanged) {
                         runtimeData.WaterChunkMeta[cx + cy * chunkCount.X] =
-                            ComputeMetadata(waterMap, new RectI(cx * TileResolution, cy * TileResolution, TileResolution, TileResolution));
+                            ComputeMetadata(waterMap, new RectI(cx * TileSize, cy * TileSize, TileSize, TileSize));
                     }
                 }
             }
@@ -303,10 +307,7 @@ namespace Weesals.Landscape {
                 }
             }
             // Allow the shader to reconstruct the height range
-            return new HeightMetaData() {
-                MinHeight = heightMin,
-                HeightRange = heightMax - heightMin,
-            };
+            return new HeightMetaData() { MinHeight = heightMin, HeightRange = heightMax - heightMin, };
         }
         unsafe private HeightMetaData ComputeMetadata(LandscapeData.WaterMapReadOnly heightMap, RectI range) {
             // Calculate min/max height range
@@ -332,16 +333,17 @@ namespace Weesals.Landscape {
             // Get the heightmap data
             var heightmap = LandscapeData.GetRawHeightMap();
             var sizing = LandscapeData.GetSizing();
-            var heightMin = runtimeData.LandscapeMeta.MinHeight;
-            var heightRange = Math.Max(1, runtimeData.LandscapeMeta.HeightRange);
+            var metadata = runtimeData.LandscapeMeta;
+            var heightScale = 255f / MathF.Max(0.01f, (metadata.MaxHeight - metadata.MinHeight));
+            var heightBias = -metadata.MinHeight * heightScale;
             // Get the inner texture data
             var pxHeightData = runtimeData.HeightMap.GetTextureData();
             for (int y = range.Min.Y; y < range.Max.Y; ++y) {
                 for (int x = range.Min.X; x < range.Max.X; ++x) {
                     var px = sizing.ToIndex(new Int2(x, y));
-                    uint *c = &((uint*)pxHeightData.Data)[px];
+                    uint* c = &((uint*)pxHeightData.Data)[px];
                     // Pack height into first byte
-                    ((byte*)c)[0] = (byte)(255 * (heightmap[px].Height - heightMin) / heightRange);
+                    ((byte*)c)[0] = (byte)(heightmap[px].Height * heightScale + heightBias);
                     {
                         var h01 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x - 1, y), 0, sizing.Size - 1))];
                         var h21 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x + 1, y), 0, sizing.Size - 1))];
@@ -424,7 +426,7 @@ namespace Weesals.Landscape {
             runtimeData.HeightMap.MarkChanged();
         }
         unsafe private void UpdateChunkInstances(MeshDrawInstanced draw, Frustum localFrustum, HeightMetaData[] metadata, Int2 visMinI, Int2 visMaxI) {
-            var items = stackalloc UShort2[Int2.CMul(visMaxI - visMinI)];
+            var items = stackalloc Short2[Int2.CMul(visMaxI - visMinI)];
             int count = 0;
             int drawHash = 0;
             // Render the generated instances
@@ -432,9 +434,9 @@ namespace Weesals.Landscape {
                 for (int x = visMinI.X; x < visMaxI.X; ++x) {
                     var chunk = metadata[x + y * runtimeData.ChunkCount.X];
                     if (!chunk.IsValid) continue;
-                    var value = new UShort2((ushort)(x * TileResolution), (ushort)(y * TileResolution));
-                    var ctr = new Vector3((x + 0.5f) * TileResolution + 0.5f, 0f, (y + 0.5f) * TileResolution + 0.5f);
-                    var ext = new Vector3((TileResolution + 1) / 2.0f, 0f, (TileResolution + 1) / 2.0f);
+                    var value = new Short2((short)(x * TileSize), (short)(y * TileSize));
+                    var ctr = new Vector3((x + 0.5f) * TileSize + 0.5f, 0f, (y + 0.5f) * TileSize + 0.5f);
+                    var ext = new Vector3((TileSize + 1) / 2.0f, 0f, (TileSize + 1) / 2.0f);
                     ctr.Y = (float)chunk.HeightMedian / HeightScale;
                     ext.Y = (float)chunk.HeightRange / 2f / HeightScale;
                     if (localFrustum.GetIsVisible(ctr, ext)) {
@@ -446,32 +448,28 @@ namespace Weesals.Landscape {
             draw.SetInstanceData(items, count, 0, drawHash);
         }
         unsafe private void UpdateEdgeInstances(MeshDrawInstanced draw, Frustum localFrustum, HeightMetaData[] metadata, Int2 imin, Int2 imax) {
-            var items = stackalloc UShort2[Int2.CSum(imax - imin) * 4 + 2];
+            var items = stackalloc Short2[Int2.CSum(imax - imin) * 4 + 2];
             int count = 0;
             int drawHash = 0;
-            var lmax = runtimeData.ChunkCount - 1;
+            var lmax = runtimeData.ChunkCount;
             for (int a = 0; a < 2; a++) {
                 var amin = a == 0 ? imin : imin.YX;
                 var amax = a == 0 ? imax : imax.YX;
                 var lsize = a == 0 ? lmax : lmax.YX;
                 for (int d = 0; d < 2; d++) {
-                    var apnt = d == 0 ? amin.Y : amax.Y;
-                    if (apnt != (d == 0 ? 0 : lsize.Y)) continue;
-                    var adir = d == 0 ? 1 : -1;
-                    var afrm = d == 0 ? amin.X : amax.X;
-                    var ato = d == 0 ? amax.X : amin.X;
-                    for (int i = afrm; ; i += adir) {
-                        var pnt = new Int2(i + ((d ^ a) == 0 ? 0 : 1), apnt + (d == 1 ? 1 : 0));
+                    var apnt = d == 0 ? amin.Y : amax.Y - 1;
+                    if (apnt != (d == 0 ? 0 : lsize.Y - 1)) continue;
+                    for (int i = amin.X; i < amax.X; ++i) {
+                        var pnt = new Int2(i, apnt);
                         if (a == 1) pnt = pnt.YX;
                         var chunk = metadata[pnt.X + pnt.Y * runtimeData.ChunkCount.X];
                         if (chunk.IsValid) {
-                            pnt.X = i * TileResolution;
+                            pnt.X = (i + (a ^ d)) * TileSize * ((a ^ d) == 0 ? 1 : -1);
                             pnt.Y = a + d * 2;
-                            var value = new UShort2((ushort)pnt.X, (ushort)pnt.Y);
+                            var value = new Short2((short)pnt.X, (short)pnt.Y);
                             items[count++] = value;
                             drawHash = HashCode.Combine(drawHash, value);
                         }
-                        if (i == ato) break;
                     }
                 }
             }
@@ -487,20 +485,18 @@ namespace Weesals.Landscape {
             // Calculate the min/max AABB of the projected frustum 
             Int2 visMinI, visMaxI;
             {
-                var heightMin = (float)runtimeData.LandscapeMeta.MinHeight / HeightScale;
-                var heightMax = (float)runtimeData.LandscapeMeta.MaxHeight / HeightScale;
+                var meta = runtimeData.LandscapeMeta;
                 Span<Vector3> points = stackalloc Vector3[8];
-                localFrustum.IntersectPlane(Vector3.UnitY, heightMin, points.Slice(0, 4));
-                localFrustum.IntersectPlane(Vector3.UnitY, heightMax, points.Slice(4, 4));
+                localFrustum.IntersectPlane(Vector3.UnitY, meta.MinHeightF, points.Slice(0, 4));
+                localFrustum.IntersectPlane(Vector3.UnitY, meta.MaxHeightF, points.Slice(4, 4));
                 Vector2 visMin = points[0].toxz();
                 Vector2 visMax = points[0].toxz();
                 foreach (var point in points) {
                     visMin = Vector2.Min(visMin, point.toxz());
                     visMax = Vector2.Max(visMax, point.toxz());
                 }
-                Int2 tileCount = (LandscapeData.GetSize() + TileResolution - 1) / TileResolution;
-                visMinI = Int2.Max(Int2.FloorToInt(visMin / TileResolution), 0);
-                visMaxI = Int2.Min(Int2.CeilToInt(visMax / TileResolution), tileCount - 1);
+                visMinI = Int2.Max(Int2.FloorToInt(visMin / TileSize), 0);
+                visMaxI = Int2.Min(Int2.CeilToInt(visMax / TileSize), runtimeData.ChunkCount);
             }
             if (visMaxI.X <= visMinI.X || visMaxI.Y <= visMinI.Y) return;
 

@@ -32,11 +32,16 @@ namespace Weesals.Engine {
     public class RenderGraph {
         public struct PassData {
             public RenderPass RenderPass;
-            public RangeInt InputsRange;
-            public RangeInt OutputsRange;
+            public RangeInt InputsRange = new(-1, -1);
+            public RangeInt OutputsRange = new(-1, -1);
             public RectI Viewport;
             public Int2 OutputSize;
+            public PassData(RenderPass pass) { RenderPass = pass; }
             public override string ToString() { return $"{RenderPass}[{InputsRange}]"; }
+
+            public RectI RequireViewport() {
+                return Viewport.Width > 0 ? Viewport : new RectI(Int2.Zero, OutputSize);
+            }
         }
         public struct RPInput {
             public RenderPass.PassInput Input;
@@ -53,35 +58,29 @@ namespace Weesals.Engine {
         }
         public struct Builder {
             public readonly RenderGraph Graph;
-            public readonly RenderPass Pass;
             private readonly int passId;
             public Builder(RenderGraph graph, RenderPass pass) {
                 Graph = graph;
-                Pass = pass;
                 Debug.Assert(pass != null, "Pass is null");
                 passId = Graph.passes.Count;
-                Graph.passes.Add(new PassData() { RenderPass = Pass, });
+                Graph.passes.Add(new PassData(pass));
             }
             public Builder SetDependency(CSIdentifier identifier, RenderPass other, int outputId = -1) {
+                if (outputId != -1) Debug.Assert(other != null, "Cannot specify an output id without pass");
                 int otherPassId;
-                if (other != null) {
-                    for (otherPassId = passId - 1; otherPassId >= 0; --otherPassId) {
-                        if (Graph.passes[otherPassId].RenderPass == other) break;
-                    }
-                } else {
-                    Debug.Assert(outputId == -1, "Cannot specify an output id without pass");
-                    for (otherPassId = passId - 1; otherPassId >= 0; --otherPassId) {
-                        other = Graph.passes[otherPassId].RenderPass;
-                        outputId = other.FindOutputI(identifier);
-                        if (outputId >= 0) break;
-                    }
-                    Debug.Assert(outputId >= 0, "Failed to find pass for input " + identifier);
+                for (otherPassId = passId - 1; otherPassId >= 0; --otherPassId) {
+                    Graph.RequireIO(otherPassId);
+                    var pass = Graph.passes[otherPassId].RenderPass;
+                    if (other != null && pass != other) continue;
+                    if (outputId == -1) outputId = pass.FindOutputI(identifier);
+                    if (outputId != -1 || pass == other) break;
                 }
+                Debug.Assert(outputId >= 0, "Failed to find pass for input " + identifier);
                 return SetDependency(identifier, otherPassId, outputId);
             }
             private Builder SetDependency(CSIdentifier identifier, int otherPassId, int outputId = -1) {
+                Graph.RequireIO(passId);
                 var pass = Graph.passes[passId];
-                //if (outputId == -1) outputId = Graph.passes[otherPassId].RenderPass.FindOutputI(identifier);
                 var deps = Graph.dependencies.Slice(pass.InputsRange).AsSpan();
                 int input = deps.Length - 1;
                 for (; input >= 0; --input) if (deps[input].Input.Name == identifier) break;
@@ -159,22 +158,38 @@ namespace Weesals.Engine {
         }
         private void RequireIO(int passId) {
             var selfPassData = passes[passId];
-            var selfPass = selfPassData.RenderPass;
+            // Already allocated
+            if (selfPassData.InputsRange.Length != -1) return;
             var iocontext = new RenderPass.IOContext(this, passId);
-            selfPass.GetInputOutput(ref iocontext);
-            var inputs = iocontext.GetInputs();
-            var selfOutputs = iocontext.GetOutputs();
-            var deps = dependencies.Allocate(inputs.Length);
-            var outs = outputs.Allocate(selfOutputs.Length);
-            dependencies.Slice(deps).AsSpan().Fill(RPInput.Invalid);
-            outputs.Slice(outs).AsSpan().Fill(RPOutput.Invalid);
-            for (int i = 0; i < inputs.Length; ++i) dependencies[deps.Start + i].Input = inputs[i];
-            for (int i = 0; i < selfOutputs.Length; ++i) outputs[outs.Start + i].Output = selfOutputs[i];
-            foreach (var input in inputs) Debug.Assert(input.Name.IsValid());
-            foreach (var output in selfOutputs) Debug.Assert(output.Name.IsValid());
-            selfPassData.InputsRange = deps;
-            selfPassData.OutputsRange = outs;
+            selfPassData.RenderPass.GetInputOutput(ref iocontext);
+            var newInputs = iocontext.GetInputs();
+            var newOutputs = iocontext.GetOutputs();
+            ValidateInputOutput(newInputs, newOutputs);
+            selfPassData.InputsRange = dependencies.Allocate(newInputs.Length);
+            selfPassData.OutputsRange = outputs.Allocate(newOutputs.Length);
+            var selfInputs = dependencies.Slice(selfPassData.InputsRange).AsSpan();
+            var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
+            selfInputs.Fill(RPInput.Invalid);
+            selfOutputs.Fill(RPOutput.Invalid);
+            for (int i = 0; i < newInputs.Length; ++i) selfInputs[i].Input = newInputs[i];
+            for (int i = 0; i < newOutputs.Length; ++i) selfOutputs[i].Output = newOutputs[i];
             passes[passId] = selfPassData;
+        }
+        [Conditional("DEBUG")]
+        private void ValidateInputOutput(Span<RenderPass.PassInput> newInputs, Span<RenderPass.PassOutput> newOutputs) {
+            for (int i = 0; i < newInputs.Length; ++i)
+                for (int i2 = i + 1; i2 < newInputs.Length; ++i2)
+                    Debug.Assert(newInputs[i].Name != newInputs[i2].Name, "Input appears twice");
+            for (int i = 0; i < newOutputs.Length; ++i)
+                for (int i2 = i + 1; i2 < newOutputs.Length; ++i2)
+                    Debug.Assert(newOutputs[i].Name != newOutputs[i2].Name, "Output appears twice");
+            foreach (var output in newOutputs) {
+                if (output.PassthroughInput == -1) continue;
+                int match = newInputs.Length - 1;
+                for (; match >= 0; --match) if (newInputs[match].Name == output.Name) break;
+                Debug.Assert(match == -1 || match == output.PassthroughInput,
+                    "Input has passthrough id mismatch");
+            }
         }
         private void FillDependencies(int passId) {
             RequireIO(passId);
@@ -208,7 +223,6 @@ namespace Weesals.Engine {
             public readonly CSGraphics Graphics;
             private PooledList<BufferItem> buffers;
             private PooledList<ExecuteItem> executeList;
-            private PooledList<CSRenderTarget> tempTargets;
             private readonly List<PassData> passes => Graph.passes;
             private readonly SparseArray<RPInput> dependencies => Graph.dependencies;
             private readonly SparseArray<RPOutput> outputs => Graph.outputs;
@@ -219,7 +233,6 @@ namespace Weesals.Engine {
                 Graphics = graphics;
                 buffers = new();
                 executeList = new();
-                tempTargets = new();
                 executeList.Add(new ExecuteItem() { PassId = FindPass(RootPass), });
             }
             private int FindPass(RenderPass pass) {
@@ -252,8 +265,6 @@ namespace Weesals.Engine {
                         ++processedTo;
                     }
                     var selfPassData = passes[selfExec.PassId];
-                    var selfPass = selfPassData.RenderPass;
-                    Debug.Assert(selfPassData.OutputsRange.Length == selfPass.Outputs.Length);
                     var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
                     var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
                     uint passthroughMask = 0;
@@ -328,12 +339,13 @@ namespace Weesals.Engine {
                         var selfDep = selfInputs[i];
                         var selfInput = selfDep.Input;
                         if (selfInput.RequireAttachment) {
-                            int otherI = FindEvaluator(selfDep.OtherPassId);
-                            Debug.Assert(otherI >= 0);
-                            ref var otherExec = ref executeList[otherI];
+                            int otherEvalI = FindEvaluator(selfDep.OtherPassId);
+                            Debug.Assert(otherEvalI >= 0, "Could not find valid pass for input");
+                            ref var otherExec = ref executeList[otherEvalI];
                             var otherOutputs = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
-                            Debug.Assert(otherOutputs[selfDep.OtherOutput].TargetId >= 0);
-                            buffers[otherOutputs[selfDep.OtherOutput].TargetId].RequireAttachment |= selfInput.RequireAttachment;
+                            ref var output = ref otherOutputs[selfDep.OtherOutput];
+                            Debug.Assert(output.TargetId >= 0);
+                            buffers[output.TargetId].RequireAttachment |= selfInput.RequireAttachment;
                         }
                     }
                 }
@@ -380,37 +392,6 @@ namespace Weesals.Engine {
                         executeList[best] = tmp;
                     }
                 }
-                /*for (int i = 0; i < executeList.Count; i++) {
-                    var selfExec = executeList[i];
-                    var selfOutputIds = outputs.AsSpan().Slice(passes[selfExec.PassId].OutputsRange);
-                    var selfInputIds = inputBufferIds.AsSpan().Slice(passes[selfExec.PassId].InputsRange);
-                    uint idsMask = 0;
-                    for (int i2 = i + 1; i2 < executeList.Count; i2++) {
-                        var otherExec = executeList[i2];
-                        var otherOutputIds = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
-                        var otherInputIds = inputBufferIds.AsSpan().Slice(passes[otherExec.PassId].InputsRange);
-                        bool sharesRT = false;
-                        uint otherIdsMask = 0;
-                        for (int t = 0; t < otherOutputIds.Length; t++) {
-                            foreach (var item in selfOutputIds) if (otherOutputIds[t].TargetId == item.TargetId) sharesRT = true;
-                            if (selfInputIds.Contains(otherOutputIds[t].TargetId)) otherIdsMask = 0xffffffff;
-                            otherIdsMask |= 1u << otherOutputIds[t].TargetId;
-                        }
-                        bool hasDependencies = (idsMask & otherIdsMask) != 0;
-                        idsMask |= otherIdsMask;
-                        // This item is irrelevant
-                        if (!sharesRT) continue;
-                        // This item is already well positioned
-                        if (i2 == i + 1) break;
-                        // Another dependency is blocking this move
-                        if (hasDependencies) break;
-
-                        var tmp = executeList[i + 1];
-                        executeList[i + 1] = otherExec;
-                        executeList[i2] = tmp;
-                        break;
-                    }
-                }*/
             }
             public void ReconcileSizing() {
                 uint customUpdatedMask = 0;
@@ -518,25 +499,26 @@ namespace Weesals.Engine {
                     output += $"  Outputs(";
                     for (int i = 0; i < selfOutputs.Length; i++) {
                         if (i > 0) output += ", ";
-                        output += $"{selfOutputs[i].Output.Name}:{selfOutputs[i].TargetId}";
+                        var target = buffers[selfOutputs[i].TargetId];
+                        output += $"{selfOutputs[i].Output.Name}:{selfOutputs[i].TargetId}:{target.Description.Size}";
                     }
                     output += $")\n";
                 }
                 Debug.WriteLine(output);
             }
-            public void AllocateTemporaryBuffers() {
-                foreach (ref var buffer in buffers) {
+            public void RenderPasses() {
+                using var tempTargets = new PooledList<int>(16);
+                for (int i = 0; i < buffers.Count; i++) {
+                    ref var buffer = ref buffers[i];
                     if (buffer.Target.IsValid()) continue;
                     if (buffer.RequireAttachment) {
                         var desc = buffer.Description;
                         if (desc.Size.X == -1) desc.Size = Graphics.GetResolution();
                         if (desc.Format == BufferFormat.FORMAT_UNKNOWN) desc.Format = BufferFormat.FORMAT_R8G8B8A8_UNORM;
                         buffer.Target.Texture = rtPool.RequireTarget(desc);
-                        tempTargets.Add(buffer.Target.Texture);
+                        tempTargets.Add(i);
                     }
                 }
-            }
-            public void RenderPasses() {
                 using var targetsSpan = new PooledList<RenderPass.Target>(16);
                 // Invoke render passes
                 for (int r = executeList.Count - 1; r >= 0; --r) {
@@ -549,9 +531,7 @@ namespace Weesals.Engine {
                     for (int i = 0; i < selfInputs.Length; ++i) {
                         var input = selfInputs[i].Input;
                         var dep = selfInputs[i];
-                        int index = FindEvaluator(dep.OtherPassId);
-                        if (index < 0) continue;
-                        var otherTarget = outputs.AsSpan().Slice(passes[executeList[index].PassId].OutputsRange)[dep.OtherOutput];
+                        var otherTarget = outputs.AsSpan().Slice(passes[dep.OtherPassId].OutputsRange)[dep.OtherOutput];
                         selfPass.GetPassMaterial().SetTexture(input.Name, buffers[otherTarget.TargetId].Target.Texture);
                     }
 
@@ -571,15 +551,14 @@ namespace Weesals.Engine {
                     selfPassData.RenderPass.Render(Graphics, ref context);
                     targetsSpan.Clear();
                 }
-            }
-            public void Dispose() {
                 // Clean up temporary RTs
                 foreach (var item in tempTargets) {
-                    if (item.IsValid()) rtPool.Return(item);
+                    if (buffers[item].Target.IsValid()) rtPool.Return(buffers[item].Target.Texture);
                 }
+            }
+            public void Dispose() {
                 buffers.Dispose();
                 executeList.Dispose();
-                tempTargets.Dispose();
             }
         }
         public void Execute(RenderPass pass, CSGraphics graphics) {
@@ -588,9 +567,8 @@ namespace Weesals.Engine {
             evaluator.CollectAndMergeDescriptors();
             evaluator.MarkAttachments();
             evaluator.ReconcileSizing();
-            evaluator.AllocateTemporaryBuffers();
-            //evaluator.DebugLogState();
             evaluator.OptimizeOrder();
+            //evaluator.DebugLogState();
             evaluator.RenderPasses();
         }
 

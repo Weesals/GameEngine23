@@ -9,7 +9,7 @@ using Weesals.Engine;
 using Weesals.UI;
 
 namespace Weesals.Landscape.Editor {
-    public class BrushWaterTool : UXBrushTool, IInteraction, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler {
+    public class BrushWaterTool : UXBrushTool, IInteraction, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerEventsRaw {
 
         public const float InvalidHeight = -999f;
 
@@ -38,76 +38,111 @@ namespace Weesals.Landscape.Editor {
             if (!isBtnDown) { events.Yield(); return; }
             surfaceHeight = InvalidHeight;
         }
-        public void OnDrag(PointerEvent events) {
-            bool invert = events.GetIsButtonDown(1);
-            bool alternate = false;
-            bool smoothing = invert && alternate;
-
+        public void OnDrag(PointerEvent events) { }
+        public void ProcessPointer(PointerEvent events) {
             var layout = Viewport.GetComputedLayout();
             var m = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
             var mray = Camera.ViewportToRay(m);
             var cursorPosition = mray.ProjectTo(new Plane(Vector3.UnitY, 0f));
 
-            var changed = LandscapeChangeEvent.MakeNone();
+            if (!events.IsButtonDown) {
+                surfaceHeight = InvalidHeight;
+            } else {
+                bool invert = events.GetIsButtonDown(1);
+                bool alternate = false;
+                bool smoothing = invert && alternate;
 
-            LandscapeData.SetWaterEnabled(true);
+                var changed = LandscapeChangeEvent.MakeNone();
 
-            // Compute the target height to pull the terrain towards
-            if (surfaceHeight == InvalidHeight || smoothing) {
-                var theightMap = LandscapeData.GetHeightMap();
-                var twaterMap = LandscapeData.GetWaterMap();
-                surfaceHeight = theightMap.GetHeightAtF(cursorPosition.toxz());
-                surfaceHeight = MathF.Round(surfaceHeight) + WaterHeightDelta;
-                surfaceHeight = Math.Max(surfaceHeight, (float)twaterMap.GetHeightAt(cursorPosition.toxz()) / LandscapeData.HeightScale);
-            }
+                LandscapeData.SetWaterEnabled(true);
 
-            var brushConfig = CreateBrushContext(Context).BrushConfiguration;
-            var it = new TileIterator(LandscapeData, cursorPosition, brushConfig.BrushSize);
-            var itSml = new TileIterator(LandscapeData, cursorPosition, brushConfig.BrushSize - 1);
-
-            //Context.GetService<MapMakerUndoStack>().RecordLandscape(it.RangeRect);
-
-            var floorHeight = !invert ? surfaceHeight - WaterDepth : surfaceHeight - WaterHeightDelta;
-            UXLandscapeCliffTool.ExtrudeCliffArea(LandscapeData, itSml, floorHeight, null, ref changed);
-
-            if (!invert) {
-                var floorId = LandscapeData.Layers.FindLayerId(WaterFloorTypeName);
-                var fringeId = LandscapeData.Layers.FindLayerId(WaterFringeTypeName);
-                var waterMap = LandscapeData.GetRawWaterMap();
-                var heightMap = LandscapeData.GetRawHeightMap();
-                var controlMap = LandscapeData.GetRawControlMap();
-                var surfaceHeightTerrain = (int)(surfaceHeight * LandscapeData.HeightScale);
-                Int2 changeMin = int.MaxValue;
-                Int2 changeMax = int.MinValue;
-                for (int y = it.RangeMin.Y; y <= it.RangeMax.Y; y++) {
-                    for (int x = it.RangeMin.X; x <= it.RangeMax.X; x++) {
-                        var terrainPos = new Int2(x, y);
-                        var terrainIndex = it.Sizing.ToIndex(terrainPos);
-                        var dstL = it.GetNormalizedDistance(terrainPos);
-                        if (dstL >= 0.99f) continue;
-                        waterMap[terrainIndex] = new LandscapeData.WaterCell() { Height = (short)surfaceHeightTerrain, };
-                        var delta = (float)(heightMap[terrainIndex].Height - waterMap[terrainIndex].Height) / LandscapeData.HeightScale;
-                        var desiredId = delta < PaintFloorHeight ? floorId : delta < PaintFringeHeight ? fringeId : -2;
-                        ref var controlCell = ref controlMap[terrainIndex];
-                        if (desiredId == -2 || controlCell.TypeId == desiredId) continue;
-                        controlCell.TypeId = (byte)desiredId;
-                        changeMin = Int2.Min(changeMin, terrainPos);
-                        changeMax = Int2.Max(changeMax, terrainPos);
-                    }
+                // Compute the target height to pull the terrain towards
+                if (surfaceHeight == InvalidHeight || smoothing) {
+                    var theightMap = LandscapeData.GetHeightMap();
+                    var twaterMap = LandscapeData.GetWaterMap();
+                    surfaceHeight = theightMap.GetHeightAtF(cursorPosition.toxz());
+                    surfaceHeight = MathF.Round(surfaceHeight) + WaterHeightDelta;
+                    surfaceHeight = Math.Max(surfaceHeight, (float)twaterMap.GetHeightAt(cursorPosition.toxz()) / LandscapeData.HeightScale);
                 }
-                changed.CombineWith(new LandscapeChangeEvent(changeMin, changeMax, controlMap: true, waterMap: true));
-            }
-            BrushWaterTool.RepairWaterArea(LandscapeData, it, ref changed);
 
-            // Update terrain dependencies
-            if (changed.HasChanges) LandscapeData.NotifyLandscapeChanged(changed);
+                var brushConfig = CreateBrushContext(Context).BrushConfiguration;
+                var it = new TileIterator(LandscapeData, cursorPosition, brushConfig.BrushSize);
+                var itSml = new TileIterator(LandscapeData, cursorPosition, brushConfig.BrushSize - 1);
+
+                //Context.GetService<MapMakerUndoStack>().RecordLandscape(it.RangeRect);
+
+                var floorHeight = !invert ? surfaceHeight - WaterDepth : surfaceHeight - WaterHeightDelta;
+                UXLandscapeCliffTool.ExtrudeCliffArea(LandscapeData, itSml, floorHeight, null, ref changed);
+
+                if (!invert) {
+                    BrushWaterTool.PaintWater(LandscapeData, it, (int)(surfaceHeight * LandscapeData.HeightScale), ref changed);
+                    BrushWaterTool.StyleWater(LandscapeData, it, (int)(PaintFloorHeight * LandscapeData.HeightScale), (int)(PaintFringeHeight * LandscapeData.HeightScale), WaterFloorTypeName, WaterFringeTypeName, ref changed);
+                }
+                BrushWaterTool.RepairWaterArea(LandscapeData, it, ref changed);
+
+                // Update terrain dependencies
+                if (changed.HasChanges) LandscapeData.NotifyLandscapeChanged(changed);
+            }
             DrawBrush(LandscapeData, Context, cursorPosition, events.ButtonState != 0);
         }
         public void OnEndDrag(PointerEvent events) { }
 
+        public static void PaintWater(LandscapeData landscapeData, TileIterator it, int surfaceHeight, ref LandscapeChangeEvent changed) {
+            var waterMap = landscapeData.GetRawWaterMap();
+            var heightMap = landscapeData.GetRawHeightMap();
+            Int2 changeMin = int.MaxValue;
+            Int2 changeMax = int.MinValue;
+            for (int y = it.RangeMin.Y; y <= it.RangeMax.Y; y++) {
+                for (int x = it.RangeMin.X; x <= it.RangeMax.X; x++) {
+                    var terrainPos = new Int2(x, y);
+                    var terrainIndex = it.Sizing.ToIndex(terrainPos);
+                    var dstL = it.GetNormalizedDistance(terrainPos);
+                    if (dstL >= 0.99f) continue;
+                    var minHeight = int.MaxValue;
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            var dpnt = terrainPos + new Int2(dx, dy);
+                            if (!it.Sizing.IsInBounds(dpnt)) continue;
+                            minHeight = Math.Min(minHeight, heightMap[it.Sizing.ToIndex(dpnt)].Height);
+                        }
+                    }
+                    if (minHeight >= surfaceHeight) continue;
+                    waterMap[terrainIndex] = new LandscapeData.WaterCell() { Height = (short)surfaceHeight, };
+                    changeMin = Int2.Min(changeMin, terrainPos);
+                    changeMax = Int2.Max(changeMax, terrainPos);
+                }
+            }
+            changed.CombineWith(new LandscapeChangeEvent(changeMin, changeMax, waterMap: true));
+        }
+        public static void StyleWater(LandscapeData landscapeData, TileIterator it, int floorHeight, int fringeHeight, string waterFloor, string waterFringe, ref LandscapeChangeEvent changed) {
+            var floorId = landscapeData.Layers.FindLayerId(waterFringe);
+            var fringeId = landscapeData.Layers.FindLayerId(waterFringe);
+            var waterMap = landscapeData.GetRawWaterMap()!;
+            var heightMap = landscapeData.GetRawHeightMap();
+            var controlMap = landscapeData.GetRawControlMap();
+            Int2 changeMin = int.MaxValue;
+            Int2 changeMax = int.MinValue;
+            for (int y = it.RangeMin.Y; y <= it.RangeMax.Y; y++) {
+                for (int x = it.RangeMin.X; x <= it.RangeMax.X; x++) {
+                    var terrainPos = new Int2(x, y);
+                    var terrainIndex = it.Sizing.ToIndex(terrainPos);
+                    var dstL = it.GetNormalizedDistance(terrainPos);
+                    if (dstL >= 0.99f) continue;
+                    var delta = heightMap[terrainIndex].Height - waterMap[terrainIndex].Height;
+                    var desiredId = delta < floorHeight ? floorId : delta < fringeHeight ? fringeId : -2;
+                    ref var controlCell = ref controlMap[terrainIndex];
+                    if (desiredId == -2 || controlCell.TypeId == desiredId) continue;
+                    controlCell.TypeId = (byte)desiredId;
+                    changeMin = Int2.Min(changeMin, terrainPos);
+                    changeMax = Int2.Max(changeMax, terrainPos);
+                }
+            }
+            changed.CombineWith(new LandscapeChangeEvent(changeMin, changeMax, controlMap: true));
+        }
+
         public static void RepairWaterArea(LandscapeData landscapeData, in TileIterator it, ref LandscapeChangeEvent changed) {
             if (!landscapeData.WaterEnabled) return;
-            var waterMapRaw = landscapeData.GetRawWaterMap();
+            var waterMapRaw = landscapeData.GetRawWaterMap()!;
             var heightMapRaw = landscapeData.GetRawHeightMap();
             Int2 repairMin = int.MaxValue;
             Int2 repairMax = int.MinValue;

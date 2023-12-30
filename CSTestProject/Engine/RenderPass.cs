@@ -59,7 +59,7 @@ namespace Weesals.Engine {
                 outputs = new();
             }
             public RectI GetViewport() {
-                return Graph.GetPassData(PassId).Viewport;
+                return Graph.GetPassData(PassId).RequireViewport();
             }
 
             public void AddInput(PassInput input) { inputs.Add(input); }
@@ -74,9 +74,9 @@ namespace Weesals.Engine {
         }
 
         public readonly string Name;
-        public PassInput[] Inputs { get; set; } = Array.Empty<PassInput>();
+        protected PassInput[] Inputs { get; set; } = Array.Empty<PassInput>();
         // First item is always Depth
-        public PassOutput[] Outputs { get; set; } = Array.Empty<PassOutput>();
+        protected PassOutput[] Outputs { get; set; } = Array.Empty<PassOutput>();
 
         //public CSRenderTarget RenderTarget { get; protected set; }
         public Material OverrideMaterial { get; protected set; }
@@ -91,15 +91,9 @@ namespace Weesals.Engine {
         }
 
         public virtual void GetInputOutput(ref IOContext context) {
-            var viewport = context.GetViewport();
-            foreach (var input in Inputs) {
-                context.AddInput(input);
-            }
+            foreach (var input in Inputs) context.AddInput(input);
             foreach (var output in Outputs) context.AddOutput(output);
         }
-        /*public virtual void AdjustParameters(ref ParamContext context) {
-
-        }*/
 
         public Material GetPassMaterial() {
             return OverrideMaterial;
@@ -348,14 +342,12 @@ namespace Weesals.Engine {
         public DeferredPass.RenderPassEvaluator? OnRender;
         private Material temporalMaterial;
         CSRenderTarget[] targets = new CSRenderTarget[2];
-        CSRenderTarget accumulation;
         int frame = 0;
         private Matrix4x4 previousViewProj;
         public TemporalJitter(string name) : base(name) {
             Inputs = new[] { new RenderPass.PassInput("SceneDepth"), new RenderPass.PassInput("SceneColor", true), new RenderPass.PassInput("SceneVelId", true), };
             Outputs = new[] { new RenderPass.PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }), };
             temporalMaterial = new Material("./assets/temporal.hlsl", GetPassMaterial());
-            //temporalMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
         }
         public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
             ++frame;
@@ -366,13 +358,6 @@ namespace Weesals.Engine {
                 targets[targetId].SetSize(context.Viewport.Size);
                 targets[targetId].SetFormat(BufferFormat.FORMAT_R11G11B10_FLOAT);
             }
-            /*if (!accumulation.IsValid() || accumulation.GetSize() != context.Viewport.Size) {
-                if (accumulation.IsValid()) accumulation.Dispose();
-                accumulation = CSRenderTarget.Create();
-                accumulation.SetSize(context.Viewport.Size);
-                accumulation.SetFormat(BufferFormat.FORMAT_R11G11B10_FLOAT);
-            }*/
-            //context.OverwriteInput(context.Inputs[1], targets[targetId]);
             context.OverwriteOutput(context.Outputs[0], targets[targetId]);
             OnBegin?.Invoke(context.Viewport.Size);
             return true;
@@ -386,14 +371,11 @@ namespace Weesals.Engine {
             temporalMaterial.SetValue("CurrentVP", invVP);
             temporalMaterial.SetValue("TemporalJitter", ScenePasses.TemporalOffset * 0.5f);
             OnRender?.Invoke(graphics, ref context);
-            //var targetId = frame % 2;
-            //DrawQuad(graphics, GetPassMaterial().GetUniformTexture("SceneColor"));
             var sceneColor = GetPassMaterial().GetUniformTexture("SceneColor");
-            var target0 = frame % 2;
-            var target1 = (frame - 1) % 2;
-            if (targets[target1].IsValid()) {
+            var prevTargetId = (frame - 1) % 2;
+            if (targets[prevTargetId].IsValid()) {
                 temporalMaterial.SetTexture("CurrentFrame", sceneColor);
-                temporalMaterial.SetTexture("PreviousFrame", targets[target1]);
+                temporalMaterial.SetTexture("PreviousFrame", targets[prevTargetId]);
                 DrawQuad(graphics, default, temporalMaterial);
             } else {
                 DrawQuad(graphics, sceneColor);
@@ -414,7 +396,8 @@ namespace Weesals.Engine {
             firstPassMaterial = new Material("./assets/highz.hlsl", GetPassMaterial());
             firstPassMaterial.SetPixelShader(Resources.LoadShader("./assets/highz.hlsl", "FirstPassPS"));
             firstPassMaterial.SetBlendMode(BlendMode.MakeOpaque());
-            firstPassMaterial.SetDepthMode(new DepthMode(DepthMode.Comparisons.Always, true));
+            //firstPassMaterial.SetDepthMode(new DepthMode(DepthMode.Comparisons.Always, true));
+            firstPassMaterial.SetDepthMode(DepthMode.MakeOff());
             highZMaterial = new Material(firstPassMaterial);
             highZMaterial.SetPixelShader(Resources.LoadShader("./assets/highz.hlsl", "HighZPassPS"));
         }
@@ -427,16 +410,39 @@ namespace Weesals.Engine {
             return true;
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
-            var sceneDepth = context.ResolvedDepth;
-            var size = sceneDepth.Texture.GetSize();
-            for (int m = 1; m < sceneDepth.Texture.GetMipCount(); ++m) {
+            var sceneDepth = GetPassMaterial().GetUniformTexture("SceneDepth");
+            var highZ = context.ResolvedTargets[0];
+            var size = highZ.Texture.GetSize();
+            for (int m = 0; m < highZ.Texture.GetMipCount(); ++m) {
                 bool isOdd = ((size.X | size.Y) & 0x01) != 0;
-                size = Int2.Max(size >> 1, Int2.One);
-                graphics.SetRenderTargets(default(CSRenderTargetBinding), new CSRenderTargetBinding(sceneDepth.Texture.mRenderTarget, m, 0));
-                graphics.SetViewport(new RectI(Int2.Zero, size));
-                firstPassMaterial.SetMacro("ODD", isOdd ? "1" : "0");
-                DrawQuad(graphics, sceneDepth.Texture, firstPassMaterial);
+                var mipSize = Int2.Max(size >> m, Int2.One);
+                graphics.SetRenderTargets(new CSRenderTargetBinding(highZ.Texture.mRenderTarget, m, 0), default(CSRenderTargetBinding));
+                var material = m == 1 ? firstPassMaterial : highZMaterial;
+                graphics.SetViewport(new RectI(Int2.Zero, mipSize));
+                //material.SetMacro("ODD", isOdd ? "1" : "0");
+                DrawQuad(graphics, m == 1 ? sceneDepth : highZ.Texture, material);
             }
+        }
+    }
+    public class AmbientOcclusionPass : RenderPass {
+        protected Material aoPass;
+        public AmbientOcclusionPass() : base("Ambient Occlusion") {
+            Inputs = new[] {
+                new PassInput("SceneDepth", true),
+                new PassInput("SceneColor", false),
+                new PassInput("HighZ", true),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneColor", 1),
+            };
+            aoPass = new Material("./assets/ambientocclusion.hlsl", GetPassMaterial());
+            aoPass.SetDepthMode(DepthMode.MakeOff());
+            aoPass.SetBlendMode(BlendMode.MakeAlphaBlend());
+        }
+        unsafe public override void Render(CSGraphics graphics, ref Context context) {
+            context.ResolvedDepth = default;
+            base.Render(graphics, ref context);
+            DrawQuad(graphics, default, aoPass);
         }
     }
     public class BloomPass : RenderPass {
@@ -451,11 +457,6 @@ namespace Weesals.Engine {
             bloomChainMaterial = new Material("./assets/bloomchain.hlsl");
             bloomChainMaterial.SetBlendMode(BlendMode.MakeOpaque());
             bloomChainMaterial.SetDepthMode(DepthMode.MakeOff());
-        }
-        public override void GetInputOutput(ref IOContext context) {
-            base.GetInputOutput(ref context);
-            //var desc = Outputs[0].TargetDesc;
-            //desc.MipCount = 
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
             var sceneColor = GetPassMaterial().GetUniformTexture("SceneColor");
@@ -522,6 +523,7 @@ namespace Weesals.Engine {
         private Matrix4x4 view, projection;
         private List<ScenePass> scenePasses = new();
         private List<CSInstance> dynamicInstances = new();
+        private int dynamicDrawHash = 0;
 
         public Matrix4x4 View => view;
         public Matrix4x4 Projection => projection;
@@ -574,6 +576,10 @@ namespace Weesals.Engine {
             return true;
         }
 
+        public int GetRenderHash() {
+            return Scene.GetGPURevision() + dynamicDrawHash;
+        }
+
         public void BeginRender(Int2 viewportSize) {
             ++frame;
             var jitter = TemporalOffset;
@@ -601,12 +607,14 @@ namespace Weesals.Engine {
                 RemoveInstance(instance);
             }
             dynamicInstances.Clear();
+            dynamicDrawHash = 0;
         }
         public CSInstance DrawDynamicMesh(Mesh mesh, Matrix4x4 transform, Material material) {
             var instance = Scene.CreateInstance();
             dynamicInstances.Add(instance);
             Scene.SetTransform(instance, transform);
             AddInstance(instance, mesh, material, RenderTags.Default);
+            dynamicDrawHash += HashCode.Combine(mesh.Revision, material.GetHashCode());
             return instance;
         }
     }

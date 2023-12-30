@@ -18,7 +18,7 @@ class Program {
 
         var editorWindow = new EditorWindow();
 
-        var scene = new Scene(core.GetScene());
+        var scene = new Scene();
 
         var play = new Play(scene);
 
@@ -33,6 +33,7 @@ class Program {
         timer.Start();
 
         float timeSinceRender = 0f;
+        int renderHash = 0;
 
         /*var triangleData = new Vector2[3 * 2048];
         var rnd = new Random(165);
@@ -75,8 +76,6 @@ class Program {
             }
             Debug.Assert(count == countOG);// */
 
-            int renderHash = play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.Scene.GetGPURevision();
-
             var dt = (float)timer.Elapsed.TotalSeconds;
             timer.Restart();
             Time.Update(dt);
@@ -94,26 +93,28 @@ class Program {
             play.PreRender(graphics);
 
             // If the frame hasnt changed, dont render anything
-            bool requireRender = renderHash != play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.Scene.GetGPURevision();
+            var newRenderHash = play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.ScenePasses.GetRenderHash();
+            bool requireRender = renderHash != newRenderHash;
             if (!requireRender && timeSinceRender < 0.25f) {
                 Thread.Sleep(6);
-                continue;
+            } else {
+                graphics.Reset();
+
+                // Render the game world and UI
+                play.Render(graphics);
+
+                // Render the editor chrome
+                graphics.SetViewport(new RectI(0, 0, windowRes.X, windowRes.Y));
+                editorWindow.Render(graphics);
+
+                // Flush render command buffer
+                graphics.Execute();
+                core.Present();
+                timeSinceRender = 0f;
+                renderHash = newRenderHash;
             }
 
-            graphics.Reset();
-
-            // Render the game world and UI
-            play.Render(graphics);
-
-            // Render the editor chrome
-            graphics.SetViewport(new RectI(0, 0, windowRes.X, windowRes.Y));
-            editorWindow.Render(graphics);
-
-            // Flush render command buffer
-            graphics.Execute();
-            core.Present();
-
-            timeSinceRender = 0f;
+            play.PostRender();
         }
 
         // Clean up

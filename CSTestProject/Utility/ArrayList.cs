@@ -79,9 +79,13 @@ namespace Weesals.Utility {
         public void CopyTo(Span<T> dest) { AsSpan().CopyTo(dest); }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Length}>"; }
-
         public static implicit operator Span<T>(MemoryBlock<T> block) { return block.AsSpan(); }
         public static implicit operator CSSpan(MemoryBlock<T> block) { return new CSSpan(block.Data, block.Length); }
+        public int GetContentsHash() {
+            int hash = 0;
+            foreach (var item in AsSpan()) hash = hash * 668265263 + item.GetHashCode();
+            return hash;
+        }
     }
     public struct PooledArray<T> : IDisposable {
         public T[] Data;

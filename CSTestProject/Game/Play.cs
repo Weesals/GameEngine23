@@ -51,6 +51,7 @@ namespace Weesals.Game {
         BasePass basePass;
         TransparentPass transPass;
         HiZPass highZPass;
+        AmbientOcclusionPass aoPass;
         BloomPass bloomPass;
         TemporalJitter temporalJitter;
         PostProcessPass postProcessPass;
@@ -115,6 +116,7 @@ namespace Weesals.Game {
                 }
             };
             highZPass = new();
+            aoPass = new();
             bloomPass = new();
             temporalJitter = new TemporalJitter("TJitter") {
                 ScenePasses = scenePasses,
@@ -185,6 +187,8 @@ namespace Weesals.Game {
                 Input.GetSignedAxis(KeyCode.DownArrow, KeyCode.UpArrow) + Input.GetSignedAxis(KeyCode.S, KeyCode.W)
             ) * (dt * Camera.Position.Y);
             Camera.Position += move.AppendY(0f);
+            Camera.FarPlane = 45f;
+            Camera.NearPlane = 12f;
 
             Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
         }
@@ -199,19 +203,17 @@ namespace Weesals.Game {
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics) {
-            var velTgtDsc = basePass.Outputs[2].TargetDesc;
-            velTgtDsc.Format = Input.GetKeyDown(KeyCode.Z) ? BufferFormat.FORMAT_R16G16_FLOAT : BufferFormat.FORMAT_R8G8B8A8_SNORM;
-            basePass.Outputs[2].SetTargetDesc(velTgtDsc);
-
+            //Camera.FarPlane = 45f + (0.5f + 0.5f * MathF.Sin(UnityEngine.Time.time * 10.0f)) * 400.0f;
             renderGraph.Clear();
+
             // Render shadows
             renderGraph.BeginPass(shadowPass);
 
             // Render scene color
             renderGraph.BeginPass(clearPass);
-
             renderGraph.BeginPass(basePass);
-            renderGraph.BeginPass(highZPass);
+            //renderGraph.BeginPass(highZPass);
+            //renderGraph.BeginPass(aoPass);
             renderGraph.BeginPass(transPass);
 
             // Intercept render to set up jitter offset
@@ -225,9 +227,11 @@ namespace Weesals.Game {
             renderGraph.BeginPass(canvasPass)
                 .SetViewport(GameViewport);
             renderGraph.Execute(canvasPass, graphics);
-
+        }
+        public void PostRender() {
             // Copy current matrices into previous frame slots
             Scene.PostRender();
+            // Clear dynamic meshes
             ScenePasses.EndRender();
         }
 

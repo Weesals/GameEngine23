@@ -20,23 +20,11 @@ using Microsoft::WRL::ComPtr;
 class GraphicsDeviceD3D12 :
     public GraphicsDeviceBase
 {
-    static const int FrameCount = 2;
     std::shared_ptr<WindowWin32> mWindow;
 
     D3DGraphicsDevice mDevice;
+    D3DGraphicsSurface mPrimarySurface;
     D3DResourceCache mCache;
-
-    // Current frame being rendered (wraps to the number of back buffers)
-    int mBackBufferIndex;
-    // Fence to wait for frames to render
-    HANDLE mFenceEvent;
-    ComPtr<ID3D12Fence> mFence;
-    // Used to track when a frame is complete
-    UINT64 mFenceValues[FrameCount];
-
-    // Each frame needs its own allocator
-    ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
-    D3DResourceCache::D3DRenderSurface mFrameBuffers[FrameCount];
 
 public:
     GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window);
@@ -52,15 +40,11 @@ public:
     int GetDescriptorHandleSizeRTV() const { return mDevice.GetDescriptorHandleSizeRTV(); }
     int GetDescriptorHandleSizeDSV() const { return mDevice.GetDescriptorHandleSizeDSV(); }
     int GetDescriptorHandleSizeSRV() const { return mDevice.GetDescriptorHandleSizeSRV(); }
-    IDXGISwapChain3* GetSwapChain() const { return mDevice.GetSwapChain(); }
-
-    ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
-    const D3DResourceCache::D3DRenderSurface& GetBackBuffer() const { return mFrameBuffers[mBackBufferIndex]; }
+    IDXGISwapChain3* GetSwapChain() const { return mPrimarySurface.GetSwapChain(); }
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 
-    int GetBackBufferIndex() const { return mBackBufferIndex; }
-    Int2 GetResolution() const override { return mDevice.GetResolution(); }
+    Int2 GetResolution() const override { return mPrimarySurface.GetResolution(); }
     void SetResolution(Int2 res) override;
 
     CommandBuffer CreateCommandBuffer() override;
@@ -70,7 +54,6 @@ public:
         std::span<const MacroValue> macros, const IdentifierWithName& renderPass
     ) override;
     void Present() override;
-    void WaitForFrame();
     void WaitForGPU();
 
 };

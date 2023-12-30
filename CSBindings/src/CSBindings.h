@@ -293,9 +293,8 @@ private:
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static CSSpan ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bindings);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
-	static void CopyBufferData(NativeGraphics* graphics, NativeBuffer* buffer, CSSpan ranges);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
-	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount = 1);
+	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
 	static void Reset(NativeGraphics* graphics);
 	static void Clear(NativeGraphics* graphics);
 	static void Execute(NativeGraphics* graphics);

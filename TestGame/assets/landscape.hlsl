@@ -88,7 +88,7 @@ struct VSInput {
     uint instanceId : SV_InstanceID;
     float4 position : POSITION;
     float3 normal : NORMAL;
-    uint2 offset : INSTANCE;
+    int2 offset : INSTANCE;
 };
 
 struct PSInput {
@@ -102,7 +102,6 @@ struct PSInput {
 };
 
 PSInput VSMain(VSInput input) {
-    const float Scale = 15;
     PSInput result;
 
     float3 worldPos = input.position.xyz;

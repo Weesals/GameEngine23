@@ -96,7 +96,7 @@ public:
 		Material::ParameterContext context(materialStack);
 		// Get constant buffer data for this batch
 		for (auto* cb : pipeline->mConstantBuffers) {
-			uint8_t tmpData[512];
+			uint8_t tmpData[2048];
 			auto count = (int)(uint32_t)(cb->mSize + sizeof(uint64_t)) / sizeof(uint64_t);
 			for (int i = 0; i < count; ++i) ((uint64_t*)tmpData)[i] = 0;
 			for (auto& val : cb->mValues) {

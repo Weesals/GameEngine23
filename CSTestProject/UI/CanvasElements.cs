@@ -823,7 +823,7 @@ namespace Weesals.UI {
                     int reqCount = oldRange.Length + inds.mCount;
                     reqCount += Math.Max(reqCount / 2, 128);
                     // Try to use an existing block
-                    batch.mIndexAlloc = mUnusedIndices.Allocate(reqCount);
+                    batch.mIndexAlloc = mUnusedIndices.Take(reqCount);
                     // Otherwise allocate a new block at the end of mIndices
                     if (batch.mIndexAlloc.Start == -1) {
                         batch.mIndexAlloc = new RangeInt(mIndices.Count, reqCount);
@@ -841,7 +841,7 @@ namespace Weesals.UI {
                 if (batch.mIndexAlloc.Start != oldRange.Start && batch.mIndexCount > 0) {
                     mIndices.CopyRange(oldRange.Start, batch.mIndexAlloc.Start, batch.mIndexCount);
                     //mIndices.InvalidateRange(oldRange.Start, oldRange.Length);
-                    mUnusedIndices.Return(ref oldRange);
+                    mUnusedIndices.Add(ref oldRange);
                     mIndices.BufferLayout.mCount -= mUnusedIndices.Compact(mIndices.BufferLayout.mCount);
                 }
             }
@@ -1049,7 +1049,7 @@ namespace Weesals.UI {
             int cindex = 0;
             foreach (ref var batch in mBatches) {
                 if (batch.mIndexAlloc.Length > batch.mIndexCount) {
-                    mUnusedIndices.Return(batch.mIndexAlloc.Start + batch.mIndexCount, batch.mIndexAlloc.Length - batch.mIndexCount);
+                    mUnusedIndices.Add(batch.mIndexAlloc.Start + batch.mIndexCount, batch.mIndexAlloc.Length - batch.mIndexCount);
                     batch.mIndexAlloc.Length = batch.mIndexCount;
                 }
             }
