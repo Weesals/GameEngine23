@@ -476,9 +476,7 @@ namespace Weesals.Landscape {
             draw.SetInstanceData(items, count, 0, drawHash);
         }
         unsafe public void Render(CSGraphics graphics, ScenePass pass) {
-            var transform = GetWorldMatrix();
-            var frustum = pass.Frustum;
-            var localFrustum = frustum.TransformToLocal(transform);
+            var localFrustum = pass.Frustum.TransformToLocal(GetWorldMatrix());
 
             ApplyDataChanges();
 

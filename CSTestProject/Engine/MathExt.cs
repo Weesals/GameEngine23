@@ -12,12 +12,47 @@ namespace System {
         public static int FloorToInt(float v) { int i = (int)v; return i - (i > v ? 1 : 0); }
         public static int CeilToInt(float v) { int i = (int)v; return i + (i < v ? 1 : 0); }
         public static int RoundToInt(float v) { return (int)(v + (v >= 0f ? 0.5f : -0.5f)); }
+
+        public static uint SqrtFastI(uint val) {
+            if (val <= 1) return val;
+
+            uint place = 0x40000000;
+            while (place > val) { place >>= 2; }
+
+            uint remainder = val;
+            uint root = 0;
+            while (place != 0) {
+                if (remainder >= root + place) {
+                    remainder -= root + place;
+                    root |= place << 1;
+                }
+                root >>= 1;
+                place >>= 2;
+            }
+            // Rounding (remainder > (2 * root + 1) / 2)
+            // (2r+1) comes from (r+1)(r+1) - r*r
+            if (remainder > root) ++root;
+            return root;
+        }
+
+        public static Quaternion QuaternionFromDirection(Vector3 v1, Vector3 v2) {
+            var q = new Quaternion(Vector3.Cross(v1, v2),
+                MathF.Sqrt(v1.LengthSquared() * v2.LengthSquared()) + Vector3.Dot(v1, v2));
+            return Quaternion.Normalize(q);
+        }
     }
 }
 
 namespace Weesals.Engine {
 
-    public static class Vector4Ext {
+    public static class VectorExt {
+        public static Vector2 Round(this Vector2 v) { return new Vector2(MathF.Abs(v.X), MathF.Abs(v.Y)); }
+        public static Vector3 Round(this Vector3 v) { return new Vector3(MathF.Abs(v.X), MathF.Abs(v.Y), MathF.Abs(v.Z)); }
+
+        public static Vector2 Mod(this Vector2 v, float o) { return new Vector2(v.X % o, v.Y % o); }
+        public static Vector3 Mod(this Vector3 v, float o) { return new Vector3(v.X % o, v.Y % o, v.Z % o); }
+
+        public static Vector2 YX(this Vector2 v) { return new Vector2(v.Y, v.X); }
         public unsafe static Vector2 toxy(this Vector3 v) {
             return *(Vector2*)&v.X;
         }
@@ -133,6 +168,7 @@ namespace Weesals.Engine {
 	    public int X, Y;
         public int LengthSquared => (X * X + Y * Y);
         public float Length => MathF.Sqrt(LengthSquared);
+        public int LengthI => (int)MathExt.SqrtFastI((uint)LengthSquared);
         public Int2 YX => new Int2(Y, X);
         public Int2(int v) : this(v, v) { }
         public Int2(int _x, int _y) { X = _x; Y = _y; }
@@ -156,10 +192,12 @@ namespace Weesals.Engine {
 
         public static Int2 Min(Int2 v1, Int2 v2) { return new Int2(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y)); }
 	    public static Int2 Max(Int2 v1, Int2 v2) { return new Int2(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y)); }
+        public static Int2 Abs(Int2 v) { return new Int2(Math.Abs(v.X), Math.Abs(v.Y)); }
         public static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return new Int2(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y)); }
         public static int Dot(Int2 v1, Int2 v2) { return v1.X * v2.X + v1.Y * v2.Y; }
         public static int CSum(Int2 v) { return v.X + v.X; }
         public static int CMul(Int2 v) { return v.X * v.Y; }
+        public static int DistanceSquared(Int2 v1, Int2 v2) { v1 -= v2; return Dot(v1, v2); }
 
         public static Int2 FloorToInt(Vector2 v) { return new Int2(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y)); }
         public static Int2 RoundToInt(Vector2 v) { return new Int2(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y)); }
@@ -171,6 +209,7 @@ namespace Weesals.Engine {
         public override bool Equals([NotNullWhen(true)] object? obj) { return obj is Int2 i2 && i2 == this; }
         public override int GetHashCode() { return (X * 887) + Y; }
         public override string ToString() { return "<" + X + "," + Y + ">"; }
+
         public static readonly Int2 Zero = new Int2(0);
         public static readonly Int2 One = new Int2(1);
     }
@@ -180,6 +219,7 @@ namespace Weesals.Engine {
         public Int3(int _x, int _y, int _z) { X = _x; Y = _y; Z = _z; }
         public Int3(Vector3 o) : this((int)o.X, (int)o.Y, (int)o.Z) { }
         public bool Equals(Int3 o) { return X == o.X && Y == o.Y && Z == o.Z; }
+        public override string ToString() { return $"{X},{Y},{Z}"; }
         unsafe public Int2 XY { get => new Int2(X, Y); set { X = value.X; Y = value.Y; } }
         unsafe public Int2 XZ { get => new Int2(X, Z); set { X = value.X; Z = value.Y; } }
         public static Int3 operator +(Int3 v, Int3 o) { return new Int3(v.X + o.X, v.Y + o.Y, v.Z + o.Z); }
@@ -203,6 +243,7 @@ namespace Weesals.Engine {
 
         public static implicit operator Int3(int v) { return new Int3(v); }
         public static implicit operator Vector3(Int3 v) { return new Vector3((float)v.X, (float)v.Y, (float)v.Z); }
+        public static explicit operator Int3(Vector3 v) { return new Int3(v); }
     }
     public struct Int4 : IEquatable<Int4> {
         public int X, Y, Z, W;
@@ -280,6 +321,8 @@ namespace Weesals.Engine {
         public static implicit operator Vector3(Color c) {
             return new Vector3(c.R, c.G, c.B) * (1.0f / 255.0f);
         }
+        public static Color operator *(Color c, float v) { return new Color((Vector4)c * v); }
+        public static Color operator *(Color c1, Color c2) { return new Color((Vector4)c1 * c2); }
         public static readonly Color White = new Color(0xffffffff);
         public static readonly Color Gray = new Color(0xff888888);
         public static readonly Color Black = new Color(0xff000000);
@@ -288,6 +331,7 @@ namespace Weesals.Engine {
         public static readonly Color Orange = new Color(0xff0088ff);
         public static readonly Color Yellow = new Color(0xff00ffff);
         public static readonly Color Green = new Color(0xff00ff00);
+        public static readonly Color Cyan = new Color(0xffffff00);
         public static readonly Color Blue = new Color(0xffff0000);
         public static readonly Color Purple = new Color(0xffff00ff);
 
@@ -300,6 +344,10 @@ namespace Weesals.Engine {
 
         public static Color Lerp(Color from, Color to, float lerp) {
             return new Color(from + ((Vector4)to - from) * lerp);
+        }
+
+        public static Color FromFloat(float r, float g, float b) {
+            return new Color(new Vector3(r, g, b));
         }
     }
 

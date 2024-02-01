@@ -49,7 +49,7 @@ bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3
         L"ElementBuffer"
     );
     d3dBin.mGPUMemory = d3dBin.mBuffer->GetGPUVirtualAddress();
-    d3dBin.mSRVOffset = -1;
+    d3dBin.mSRVOffset = -1;     // TODO: Pool these
     return true;
 }
 void WriteBufferData(uint8_t* data, const BufferLayout& binding, int itemSize, int byteOffset, int byteSize) {
@@ -268,7 +268,7 @@ D3DResourceCache::D3DBinding* D3DResourceCache::GetBinding(uint64_t bindingIdent
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.NumElements = binding->mCount;
+        srvDesc.Buffer.NumElements = binding->mSize / binding->mStride;
         srvDesc.Buffer.StructureByteStride = binding->mStride;
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
@@ -335,7 +335,7 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
     if (d3dTex->mBuffer == nullptr) {
         // Create the texture resource
         auto texHeapType = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto textureDesc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, size.x, size.y, tex.GetArrayCount(), tex.GetMipCount());
+        auto textureDesc = CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)tex.GetBufferFormat(), size.x, size.y, tex.GetArrayCount(), tex.GetMipCount());
         //textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         ThrowIfFailed(device->CreateCommittedResource(
             &texHeapType,

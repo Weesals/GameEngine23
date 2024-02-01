@@ -22,6 +22,7 @@ namespace Weesals.Engine {
                 Resources.LoadTexture("./assets/ui/T_FileTxt.png"),
                 Resources.LoadTexture("./assets/ui/T_FileModel.png"),
                 Resources.LoadTexture("./assets/ui/T_FileImage.png"),
+                Resources.LoadTexture("./assets/ui/T_Tick.png"),
             });
             atlas.Sprites[0].Borders = RectF.Unit01.Inset(0.1f);
             atlas.Sprites[1].Borders = RectF.Unit01.Inset(0.2f);
@@ -33,6 +34,7 @@ namespace Weesals.Engine {
             loadedSprites.Add("FileText", atlas.Sprites[5]);
             loadedSprites.Add("FileModel", atlas.Sprites[6]);
             loadedSprites.Add("FileImage", atlas.Sprites[7]);
+            loadedSprites.Add("Tick", atlas.Sprites[8]);
         }
 
         public static ShaderBase LoadShader(string path, string entry) {
@@ -46,7 +48,7 @@ namespace Weesals.Engine {
 
         public static Model LoadModel(string path) {
             if (!loadedModels.TryGetValue(path, out var model)) {
-                model = Model.CreateFrom(CSResources.LoadModel(path));
+                model = Model.CreateFrom(Path.GetFileName(path), CSResources.LoadModel(path));
                 loadedModels.Add(path, model);
             }
             return model;

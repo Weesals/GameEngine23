@@ -5,12 +5,13 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Game;
 
 namespace Weesals.Utility {
     public struct RangeInt {
         public int Start;
         public int Length;
-        public int End => Start + Length;
+        public int End { get => Start + Length; set => Length = value - Start; }
         public RangeInt(int start, int length) { this.Start = start; this.Length = length; }
         public override string ToString() { return "[" + Start + "-" + End + "]"; }
         public static RangeInt FromBeginEnd(int begin, int end) { return new RangeInt(begin, end - begin); }
@@ -192,6 +193,11 @@ namespace Weesals.Utility {
         public Enumerator GetEnumerator(int count) { return new Enumerator(this, count); }
 
         public Span<RangeInt> RangesAsSpan() { return CollectionsMarshal.AsSpan(ranges); }
+
+        public void CopyTo(SparseIndices other) {
+            other.ranges.Clear();
+            other.ranges.AddRange(ranges);
+        }
     }
 
     public class SparseArray<T> : IEnumerable<T> {
@@ -199,8 +205,12 @@ namespace Weesals.Utility {
         public T[] Items;
         public int Capacity => Items.Length;
 
-        public SparseArray() {
+        public SparseArray(int capacity = 0) {
             Items = Array.Empty<T>();
+            if (capacity > 0) {
+                Items = new T[capacity];
+                Unused.Add(0, capacity);
+            }
         }
 
         public ref T this[int index] {
@@ -339,6 +349,11 @@ namespace Weesals.Utility {
 
         public SparseIndices.Enumerator GetIndexEnumerator() {
             return Unused.GetEnumerator(Items.Length);
+        }
+
+        public void CopyTo(SparseArray<T> other) {
+            other.Items = (T[])Items.Clone();
+            Unused.CopyTo(other.Unused);
         }
     }
 }

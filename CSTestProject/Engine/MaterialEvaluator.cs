@@ -73,8 +73,9 @@ namespace Weesals.Engine {
 			}
 		}
 		static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
-			foreach (var val in cb.GetValues()) {
-				var data = Material.GetUniformBinaryData(val.mName, materialStack);
+            using var collector = Material.BeginGetUniforms(materialStack);
+            foreach (var val in cb.GetValues()) {
+				var data = collector.GetUniformValue(val.mName);
                 if (data.Length > val.mSize)
                     data = data.Slice(0, val.mSize);
                 data.CopyTo(buffer.Slice(val.mOffset));
@@ -167,6 +168,14 @@ namespace Weesals.Engine {
                 if (!data.IsEmpty) return data;
             }
             return Collector.GetUniformSourceNull(name, this);
+        }
+    }
+    public ref struct MaterialGetter {
+        private MaterialCollectorContext context;
+        public MaterialGetter(MaterialCollectorContext context) { this.context = context; }
+        public void Dispose() { context.Collector.Clear(); }
+        public Span<byte> GetUniformValue(CSIdentifier name) {
+            return context.GetUniformSource(name);
         }
     }
     public class MaterialCollector {

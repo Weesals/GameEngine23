@@ -15,6 +15,7 @@ cbuffer WorldCB : register(b0)
     matrix View;
     matrix ViewProjection;
     matrix PreviousViewProjection;
+    float2 Resolution;
 }
 
 #endif

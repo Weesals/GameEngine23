@@ -202,18 +202,18 @@ namespace Weesals.Engine {
     unsafe public struct BufferLayoutPersistent : IDisposable {
         public enum Usages : byte { Vertex, Index, Instance, Uniform, };
         public CSBufferLayout BufferLayout;
-        public Usages Usage => (Usages)BufferLayout.mUsage;
-        public int Offset => BufferLayout.mOffset;    // Offset in count when binding a view to this buffer
-        public int Count => BufferLayout.mCount;     // How many elements to make current
-        public CSBufferElement* ElementsBuffer => BufferLayout.mElements;
-        public int ElementCount => BufferLayout.mElementCount;
-        public int Revision => BufferLayout.revision;
+        public readonly Usages Usage => (Usages)BufferLayout.mUsage;
+        public readonly int Offset => BufferLayout.mOffset;    // Offset in count when binding a view to this buffer
+        public readonly int Count => BufferLayout.mCount;     // How many elements to make current
+        public readonly CSBufferElement* ElementsBuffer => BufferLayout.mElements;
+        public readonly int ElementCount => BufferLayout.mElementCount;
+        public readonly int Revision => BufferLayout.revision;
         private int mBufferAllocCount = 0;
         private int mBufferStride = 0;
         private int mElementAllocCount = 0;
-        public int BufferCapacityCount => mBufferAllocCount;
-        public int BufferStride => mBufferStride;
-        public Span<CSBufferElement> Elements => new(BufferLayout.mElements, BufferLayout.mElementCount);
+        public readonly int BufferCapacityCount => mBufferAllocCount;
+        public readonly int BufferStride => mBufferStride;
+        public readonly Span<CSBufferElement> Elements => new(BufferLayout.mElements, BufferLayout.mElementCount);
         public BufferLayoutPersistent(Usages usage) {
             BufferLayout.identifier = MakeId();
             BufferLayout.mUsage = (byte)usage;
@@ -461,11 +461,13 @@ namespace Weesals.Engine {
         public ReadWriterPair ReadWriter;
         public void* mData = null;
         public ushort mCount = 0;
-        public ushort mStride = 0;
+        public byte mStride = 0;
+        public BufferFormat mFormat;
         public TypedBufferView(void* data, int stride, int count, BufferFormat fmt) {
             mData = data;
-            mStride = (ushort)stride;
+            mStride = (byte)stride;
             mCount = (ushort)count;
+            mFormat = fmt;
             ReadWriter = cachedReadWriters[(byte)fmt];
             if (ReadWriter.mWriter == null) {
                 ReadWriter = cachedReadWriters[(byte)fmt] = FindConverterFor<T>(fmt);
@@ -601,6 +603,22 @@ namespace Weesals.Engine {
                 for (int i = 0; i < mCount; ++i) destination[i] = this[i];
             }
         }
+        public TypedBufferView<T> Slice(int offset) {
+            return Slice(new RangeInt(offset, mCount - offset));
+        }
+        public TypedBufferView<T> Slice(RangeInt range) {
+            return new TypedBufferView<T>() {
+                ReadWriter = ReadWriter,
+                mData = (byte*)mData + mStride * range.Start,
+                mCount = (ushort)range.Length,
+                mStride = mStride,
+                mFormat = mFormat,
+            };
+        }
+        public TypedBufferView<NewT> Reinterpret<NewT>() where NewT : unmanaged {
+            Debug.Assert(sizeof(NewT) == sizeof(T));
+            return new TypedBufferView<NewT>(mData, mStride, mCount, mFormat);
+        }
         public struct Enumerator : IEnumerator<T> {
             public TypedBufferView<T> View;
             int index = 0;
@@ -613,6 +631,23 @@ namespace Weesals.Engine {
         }
         public Enumerator GetEnumerator() { return new Enumerator(this); }
         public override string ToString() { return "Count = " + mCount; }
+
+        public struct BufferSummary : IEnumerable {
+            public struct BufferEnumerator : IEnumerator {
+                TypedBufferView<T> buffer;
+                int index;
+                object IEnumerator.Current => *(T*)((byte*)buffer.mData + index * buffer.mStride);
+                public BufferEnumerator(TypedBufferView<T> view) { buffer = view; index = -1; }
+                public void Dispose() { }
+                public void Reset() { index = -1; }
+                public bool MoveNext() { return ++index < buffer.mCount; }
+            }
+            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+            public BufferEnumerator Enumerator;
+            public BufferSummary(TypedBufferView<T> view) { Enumerator = new(view); }
+            public IEnumerator GetEnumerator() => Enumerator;
+        }
+        public BufferSummary View => new(this);
     }
     unsafe public class BufferLayoutCollection : IDisposable {
         CSBufferLayout** mBuffers = null;

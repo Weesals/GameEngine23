@@ -221,6 +221,7 @@ namespace Weesals.UI {
         }
 
         public void PreserveAspect(ref CanvasLayout layout, Vector2 imageAnchor) {
+            if (!Texture.IsValid()) return;
             var size = layout.GetSize();
             var imgSize = (Vector2)Texture.GetSize() * UVRect.Size;
             var ratio = new Vector2(size.X * imgSize.Y, size.Y * imgSize.X);
@@ -290,23 +291,23 @@ namespace Weesals.UI {
             public Vector2 mLocalPosition;
         };
 
-        public string text = "";
+        string text = "";
         public string Text { get => text; set { SetText(value); } }
 
-        public CSFont font;
-        public bool dirty;
-        public GlyphStyle defaultStyle = GlyphStyle.Default;
+        CSFont font;
+        bool dirty;
+        GlyphStyle defaultStyle = GlyphStyle.Default;
         TextAlignment alignment = TextAlignment.Centre;
-        List<GlyphStyle> styles;
-        List<GlyphPlacement> glyphPlacements;
-        List<GlyphLayout> glyphLayout;
+        PooledList<GlyphStyle> styles;
+        PooledList<GlyphPlacement> glyphPlacements;
+        PooledList<GlyphLayout> glyphLayout;
         TextDisplayParameters displayParameters;
 
         public Color Color { get => defaultStyle.mColor; set { defaultStyle.mColor = value; dirty = true; } }
         public float FontSize { get => defaultStyle.mFontSize; set { defaultStyle.mFontSize = value; dirty = true; } }
         public CSFont Font { get => font; set { SetFont(value); dirty = true; } }
         public TextAlignment Alignment { get => alignment; set { alignment = value; dirty = true; } }
-        public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty = true; } }
+        public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty = true; if (element.Material != null) UpdateMaterialProperties(); } }
 
         public CanvasText() : this("") { }
         public CanvasText(string txt) {
@@ -318,7 +319,10 @@ namespace Weesals.UI {
         public void Initialize(Canvas canvas) {
         }
         public void Dispose(Canvas canvas) {
-			element.Dispose(canvas);
+            styles.Dispose();
+            glyphPlacements.Dispose();
+            glyphLayout.Dispose();
+            if (element.IsValid()) element.Dispose(canvas);
 		}
 
         private void SetText(string value) {
@@ -328,24 +332,7 @@ namespace Weesals.UI {
 		public void SetFont(CSFont _font) {
             font = _font;
 			dirty = true;
-            if (element.Material == null) element.SetMaterial(new Material("./assets/text.hlsl"));
-            element.Material!.SetTexture("Texture", font.GetTexture());
-            var textParams = displayParameters ?? TextDisplayParameters.Default;
-            element.Material.SetValue("_FaceColor", textParams.FaceColor);
-            element.Material.SetValue("_FaceDilate", textParams.FaceDilate);
-            var enableOutline = textParams.OutlineColor.W > 0.0f;
-            var enableUnderlay = textParams.UnderlayColor.W > 0.0f;
-            if (enableOutline) {
-                element.Material.SetValue("_OutlineColor", textParams.OutlineColor);
-                element.Material.SetValue("_OutlineWidth", textParams.OutlineWidth);
-                element.Material.SetMacro("OUTLINE_ON", "1");
-            }
-            if (enableUnderlay) {
-                element.Material.SetValue("_UnderlayColor", textParams.UnderlayColor);
-                element.Material.SetValue("_UnderlayOffset", textParams.UnderlayOffset / 256.0f);
-                element.Material.SetValue("_UnderlaySoftness", textParams.UnderlaySoftness);
-                element.Material.SetMacro("UNDERLAY_ON", "1");
-            }
+            if (element.Material != null) UpdateMaterialProperties();
         }
         public void SetFont(CSFont _font, float fontSize) {
             SetFont(_font); FontSize = fontSize;
@@ -438,29 +425,31 @@ namespace Weesals.UI {
 			float lineHeight = (float)font.GetLineHeight();
 			glyphLayout.Clear();
             var pos = Vector2.Zero;
-			var size = Vector2.Zero;
+            var min = new Vector2(10000.0f);
+			var max = Vector2.Zero;
 			for (int c = 0; c < glyphPlacements.Count; ++c) {
 				var placement = glyphPlacements[c];
                 var glyph = font.GetGlyph(placement.mGlyphId);
 				var style = styles[placement.mStyleId];
 				var scale = style.mFontSize / lineHeight;
-				var glyphSize2 = new Vector2((float)glyph.mAdvance, lineHeight) * scale;
+				var glyphSize2 = new Vector2(glyph.mSize.X, lineHeight) * scale;
 
-				if (pos.X + glyphSize2.X >= layout.AxisX.W) {
+				if (pos.X + glyphSize2.X > layout.AxisX.W) {
 					pos.X = 0;
 					pos.Y += lineHeight * scale;
 					if (pos.Y + glyphSize2.Y > layout.AxisY.W) break;
-					if (pos.X + glyphSize2.X >= layout.AxisX.W) break;
+					if (pos.X + glyphSize2.X > layout.AxisX.W) break;
 				}
 				glyphLayout.Add(new GlyphLayout{
 					mVertexOffset = -1,
 					mLocalPosition = pos + glyphSize2 / 2.0f,
 				});
-				size = Vector2.Max(size, new Vector2(pos.X + glyphSize2.X, pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
+                min = Vector2.Min(min, new Vector2(pos.X, pos.Y + (float)(glyph.mOffset.Y) * scale));
+                max = Vector2.Max(max, new Vector2(pos.X + glyphSize2.X, pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
                 pos.X += placement.mAdvance;
 			}
-            var sizeDelta = layout.GetSize() - size;
-            var offset = new Vector2(0f, sizeDelta.Y / 2.0f);
+            var sizeDelta = layout.GetSize() - (max - min);
+            var offset = new Vector2(0f, sizeDelta.Y / 2.0f) - min;
             switch (alignment) {
                 case TextAlignment.Centre: offset.X = sizeDelta.X * 0.5f; break;
                 case TextAlignment.Right: offset.X = sizeDelta.X * 1.0f; break;
@@ -480,18 +469,85 @@ namespace Weesals.UI {
             }
             return posX;
         }
-        public float GetPreferredHeight() {
+        public float GetPreferredHeight(float width = float.MaxValue) {
 			return defaultStyle.mFontSize;
         }
         public void MarkLayoutDirty() {
             dirty = true;
+        }
+        public void FillVertexBuffers(in CanvasLayout layout, TypedBufferView<Vector3> positions, TypedBufferView<Vector2> uvs, TypedBufferView<SColor> colors) {
+            var atlasTexelSize = 1.0f / font.GetTexture().GetSize().X;
+            var lineHeight = (float)font.GetLineHeight();
+            int vindex = 0;
+            var dilate = (displayParameters ?? TextDisplayParameters.Default).GetDilation();
+            for (int c = 0; c < glyphLayout.Count; ++c) {
+                var gplacement = glyphPlacements[c];
+                var glayout = glyphLayout[c];
+                var glyph = font.GetGlyph(gplacement.mGlyphId);
+                var style = styles[gplacement.mStyleId];
+                var scale = style.mFontSize / lineHeight;
+                glayout.mVertexOffset = vindex;
+                var uv_1 = ((Vector2)glyph.mAtlasOffset - dilate.toxy()) * atlasTexelSize;
+                var uv_2 = ((Vector2)(glyph.mAtlasOffset + glyph.mSize) + dilate.tozw()) * atlasTexelSize;
+                var size2 = ((Vector2)glyph.mSize + (dilate.toxy() + dilate.tozw()));
+                var glyphOffMin = (Vector2)glyph.mOffset - new Vector2(glyph.mSize.X, lineHeight) / 2.0f - dilate.toxy();
+                var glyphPos0 = layout.TransformPosition2D(glayout.mLocalPosition + glyphOffMin * scale);
+                var glyphDeltaX = layout.AxisX.toxyz() * (size2.X * scale);
+                var glyphDeltaY = layout.AxisY.toxyz() * (size2.Y * scale);
+                colors[vindex] = style.mColor;
+                uvs[vindex] = new Vector2(uv_1.X, uv_1.Y);
+                positions[vindex++] = glyphPos0;
+                colors[vindex] = style.mColor;
+                uvs[vindex] = new Vector2(uv_2.X, uv_1.Y);
+                positions[vindex++] = glyphPos0 + glyphDeltaX;
+                colors[vindex] = style.mColor;
+                uvs[vindex] = new Vector2(uv_1.X, uv_2.Y);
+                positions[vindex++] = glyphPos0 + glyphDeltaY;
+                colors[vindex] = style.mColor;
+                uvs[vindex] = new Vector2(uv_2.X, uv_2.Y);
+                positions[vindex++] = glyphPos0 + glyphDeltaY + glyphDeltaX;
+            }
+            for (; vindex < positions.mCount; ++vindex) positions[vindex] = default;
+        }
+        public void FillIndexBuffers(TypedBufferView<uint> indices, int vertOffset) {
+            for (int v = 0, i = 0; i < indices.mCount; i += 6, v += 4) {
+                indices[i + 0] = (uint)(vertOffset + v + 0);
+                indices[i + 1] = (uint)(vertOffset + v + 1);
+                indices[i + 2] = (uint)(vertOffset + v + 2);
+                indices[i + 3] = (uint)(vertOffset + v + 1);
+                indices[i + 4] = (uint)(vertOffset + v + 3);
+                indices[i + 5] = (uint)(vertOffset + v + 2);
+            }
+        }
+        public RangeInt WriteToMesh(Mesh mesh, in CanvasLayout layout) {
+            if (dirty) {
+                UpdateGlyphPlacement();
+                UpdateGlyphLayout(layout);
+            }
+            int vcount = (int)glyphLayout.Count * 4;
+            int icount = (int)glyphLayout.Count * 6;
+            int vstart = mesh.VertexCount;
+            var istart = mesh.IndexCount;
+            mesh.SetVertexCount(vstart + vcount);
+            mesh.SetIndexCount(istart + icount);
+            FillVertexBuffers(layout,
+                mesh.GetPositionsV().Slice(vstart),
+                mesh.GetTexCoordsV().Slice(vstart),
+                mesh.GetColorsV().Slice(vstart).Reinterpret<SColor>()
+            );
+            FillIndexBuffers(mesh.GetIndicesV().Slice(istart).Reinterpret<uint>(), vstart);
+            return RangeInt.FromBeginEnd(istart, mesh.IndexCount);
         }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
             if (!dirty) return;
             UpdateGlyphPlacement();
 			UpdateGlyphLayout(layout);
 
-			var elementId = element.ElementId;
+            if (element.Material == null) {
+                if (element.Material == null) element.SetMaterial(new Material("./assets/text.hlsl"));
+                UpdateMaterialProperties();
+            }
+            var elementId = element.ElementId;
 
 			int vcount = (int)glyphLayout.Count * 4;
             int icount = (int)glyphLayout.Count * 6;
@@ -500,56 +556,39 @@ namespace Weesals.UI {
                 element.SetElementId(elementId);
                 var tbuffers = mBuilder.MapVertices(elementId);
 				var indices = tbuffers.GetIndices();
-				for (int v = 0, i = 0; i < indices.mCount; i += 6, v += 4) {
-					indices[i + 0] = (uint)(tbuffers.VertexOffset + v + 0);
-					indices[i + 1] = (uint)(tbuffers.VertexOffset + v + 1);
-					indices[i + 2] = (uint)(tbuffers.VertexOffset + v + 2);
-					indices[i + 3] = (uint)(tbuffers.VertexOffset + v + 1);
-					indices[i + 4] = (uint)(tbuffers.VertexOffset + v + 3);
-					indices[i + 5] = (uint)(tbuffers.VertexOffset + v + 2);
-				}
+                FillIndexBuffers(indices, tbuffers.VertexOffset);
                 tbuffers.MarkIndicesChanged();
             }
 			var buffers = mBuilder.MapVertices(elementId);
             var positions = buffers.GetPositions();
             var uvs = buffers.GetTexCoords();
             var colors = buffers.GetColors();
-            var atlasTexelSize = 1.0f / font.GetTexture().GetSize().X;
-            var lineHeight = (float)font.GetLineHeight();
-			int vindex = 0;
-            var dilate = (displayParameters ?? TextDisplayParameters.Default).GetDilation();
-            for (int c = 0; c < glyphLayout.Count; ++c) {
-                var gplacement = glyphPlacements[c];
-                var glayout = glyphLayout[c];
-                var glyph = font.GetGlyph(gplacement.mGlyphId);
-				var style = styles[gplacement.mStyleId];
-				var scale = style.mFontSize / lineHeight;
-                glayout.mVertexOffset = vindex;
-                var uv_1 = ((Vector2)glyph.mAtlasOffset - dilate.toxy()) * atlasTexelSize;
-                var uv_2 = ((Vector2)(glyph.mAtlasOffset + glyph.mSize) + dilate.tozw()) * atlasTexelSize;
-                var size2 = ((Vector2)glyph.mSize + (dilate.toxy() + dilate.tozw())) * scale;
-                var glyphOffMin = (Vector2)glyph.mOffset - new Vector2((float)glyph.mAdvance, lineHeight) / 2.0f - dilate.toxy();
-                var glyphPos0 = layout.TransformPosition2D(glayout.mLocalPosition + glyphOffMin * scale);
-                var glyphDeltaX = layout.AxisX.toxyz() * size2.X;
-                var glyphDeltaY = layout.AxisY.toxyz() * size2.Y;
-				colors[vindex] = style.mColor;
-				uvs[vindex] = new Vector2(uv_1.X, uv_1.Y);
-				positions[vindex++] = glyphPos0;
-				colors[vindex] = style.mColor;
-				uvs[vindex] = new Vector2(uv_2.X, uv_1.Y);
-				positions[vindex++] = glyphPos0 + glyphDeltaX;
-				colors[vindex] = style.mColor;
-				uvs[vindex] = new Vector2(uv_1.X, uv_2.Y);
-				positions[vindex++] = glyphPos0 + glyphDeltaY;
-				colors[vindex] = style.mColor;
-				uvs[vindex] = new Vector2(uv_2.X, uv_2.Y);
-				positions[vindex++] = glyphPos0 + glyphDeltaY + glyphDeltaX;
-			}
-			for (; vindex < positions.mCount; ++vindex) positions[vindex] = default;
+            FillVertexBuffers(layout, positions, uvs, colors);
 			buffers.MarkVerticesChanged();
             dirty = false;
 		}
-		public void Append(ref CanvasCompositor.Context compositor) {
+
+        private void UpdateMaterialProperties() {
+            element.Material!.SetTexture("Texture", font.GetTexture());
+            var textParams = displayParameters ?? TextDisplayParameters.Default;
+            element.Material.SetValue("_FaceColor", textParams.FaceColor);
+            element.Material.SetValue("_FaceDilate", textParams.FaceDilate);
+            var enableOutline = textParams.OutlineColor.W > 0.0f;
+            var enableUnderlay = textParams.UnderlayColor.W > 0.0f;
+            if (enableOutline) {
+                element.Material.SetValue("_OutlineColor", textParams.OutlineColor);
+                element.Material.SetValue("_OutlineWidth", textParams.OutlineWidth);
+                element.Material.SetMacro("OUTLINE_ON", "1");
+            }
+            if (enableUnderlay) {
+                element.Material.SetValue("_UnderlayColor", textParams.UnderlayColor);
+                element.Material.SetValue("_UnderlayOffset", textParams.UnderlayOffset / 256.0f);
+                element.Material.SetValue("_UnderlaySoftness", textParams.UnderlaySoftness);
+                element.Material.SetMacro("UNDERLAY_ON", "1");
+            }
+        }
+
+        public void Append(ref CanvasCompositor.Context compositor) {
 			compositor.Append(element);
         }
     }

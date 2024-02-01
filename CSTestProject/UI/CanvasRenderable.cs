@@ -20,7 +20,7 @@ namespace Weesals.UI {
         public Vector2 MinimumSize;
         public Vector2 PreferredSize;
         public Vector2 MaximumSize;
-        public static readonly SizingParameters Default = new SizingParameters() { MinimumSize = Vector2.Zero, PreferredSize = new Vector2(80f), MaximumSize = new Vector2(float.MaxValue), };
+        public static readonly SizingParameters Default = new SizingParameters() { MinimumSize = Vector2.Zero, PreferredSize = new Vector2(20f), MaximumSize = new Vector2(float.MaxValue), };
 
         public void SetFixedXSize(float size) {
             MinimumSize.X = MaximumSize.X = PreferredSize.X = size;
@@ -32,6 +32,32 @@ namespace Weesals.UI {
         public SizingParameters SetPreferredSize(Vector2 size) {
             PreferredSize = size;
             return this;
+        }
+
+        public void Unapply(CanvasTransform transform) {
+            var anchorSize = transform.AnchorMax - transform.AnchorMin;
+            var offsetSize = transform.OffsetMax - transform.OffsetMin;
+            if (anchorSize.X == 0f) anchorSize.X = 1.0f;
+            if (anchorSize.Y == 0f) anchorSize.Y = 1.0f;
+            MinimumSize = Vector2.Max(Vector2.Zero, MinimumSize * anchorSize - offsetSize);
+            PreferredSize = Vector2.Max(Vector2.Zero, PreferredSize * anchorSize - offsetSize);
+            MaximumSize = Vector2.Max(Vector2.Zero, MaximumSize * anchorSize - offsetSize);
+        }
+        public void Apply(CanvasTransform transform) {
+            var anchorSize = transform.AnchorMax - transform.AnchorMin;
+            var offsetSize = transform.OffsetMax - transform.OffsetMin;
+            MinimumSize += offsetSize;
+            PreferredSize += offsetSize;
+            MaximumSize += offsetSize;
+            if (anchorSize.X > 0f) { MinimumSize.X /= anchorSize.X; PreferredSize.X /= anchorSize.X; MaximumSize.X /= anchorSize.X; }
+            if (anchorSize.Y > 0f) { MinimumSize.Y /= anchorSize.Y; PreferredSize.X /= anchorSize.X; MaximumSize.X /= anchorSize.X; }
+        }
+
+        public float ClampWidth(float width) {
+            return Math.Clamp(width, MinimumSize.X, MaximumSize.X);
+        }
+        public float ClampHeight(float height) {
+            return Math.Clamp(height, MinimumSize.Y, MaximumSize.Y);
         }
     }
 
@@ -70,6 +96,7 @@ namespace Weesals.UI {
         public virtual void Initialise(CanvasBinding binding) {
             mBinding = binding;
             if (mBinding.mCanvas != null) {
+                SetHitTestEnabled(true);
                 var next = Parent?.FindNext(this);
                 var nextOrderId = next != null ? next.mOrderId : mOrderId + 0x1000000;
                 int step = (nextOrderId - mOrderId) / (mChildren.Count + 1);
@@ -197,17 +224,18 @@ namespace Weesals.UI {
             return null;
         }
         protected virtual void NotifyTransformChanged() {
-            if (hitBinding.IsEnabled) {
-                var p0 = mLayoutCache.TransformPosition2DN(new Vector2(0.0f, 0.0f));
-                var p1 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 0.0f));
-                var p2 = mLayoutCache.TransformPosition2DN(new Vector2(0.0f, 1.0f));
-                var p3 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 1.0f));
-                RectI bounds = new RectI((int)p0.X, (int)p0.Y, 0, 0);
-                bounds = bounds.ExpandToInclude(new Int2((int)p1.X, (int)p1.Y));
-                bounds = bounds.ExpandToInclude(new Int2((int)p2.X, (int)p2.Y));
-                bounds = bounds.ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
-                Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, bounds);
-            }
+            if (hitBinding.IsEnabled) UpdateHitBinding();
+        }
+        private void UpdateHitBinding() {
+            var p0 = mLayoutCache.TransformPosition2DN(new Vector2(0.0f, 0.0f));
+            var p1 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 0.0f));
+            var p2 = mLayoutCache.TransformPosition2DN(new Vector2(0.0f, 1.0f));
+            var p3 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 1.0f));
+            RectI bounds = new RectI((int)p0.X, (int)p0.Y, 0, 0);
+            bounds = bounds.ExpandToInclude(new Int2((int)p1.X, (int)p1.Y));
+            bounds = bounds.ExpandToInclude(new Int2((int)p2.X, (int)p2.Y));
+            bounds = bounds.ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
+            Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, bounds);
         }
         protected void MarkTransformDirty() {
             dirtyFlags |= DirtyFlags.Transform;
@@ -245,7 +273,15 @@ namespace Weesals.UI {
         }
 
         public virtual Vector2 GetDesiredSize(SizingParameters sizing) {
-            return sizing.PreferredSize;
+            var childSizing = sizing;
+            childSizing.Unapply(Transform);
+            var childSize = Vector2.Zero;
+            for (int i = 0; i < Children.Count; i++) {
+                childSize = Vector2.Max(childSize, Children[i].GetDesiredSize(childSizing));
+            }
+            childSizing.PreferredSize = Vector2.Max(childSizing.PreferredSize, childSize);
+            childSizing.Apply(Transform);
+            return Vector2.Clamp(childSizing.PreferredSize, sizing.MinimumSize, sizing.MaximumSize);
         }
 
         internal CanvasLayout GetComputedLayout() {

@@ -14,13 +14,14 @@ namespace Weesals.Landscape.Editor {
         T Service { get; }
     }
     public struct ToolContext {
-        public readonly LandscapeData LandscapeData;
+        public readonly LandscapeRenderer Landscape;
+        public readonly LandscapeData LandscapeData => Landscape.LandscapeData;
         public readonly CanvasRenderable Viewport;
         public readonly Camera Camera;
         public readonly object Services;
         public T? GetService<T>() { return Services is IToolServiceProvider<T> provider ? provider.Service : default; }
-        public ToolContext(LandscapeData landscapeData, CanvasRenderable viewport, Camera camera, object services) {
-            LandscapeData = landscapeData;
+        public ToolContext(LandscapeRenderer landscape, CanvasRenderable viewport, Camera camera, object services) {
+            Landscape = landscape;
             Viewport = viewport;
             Camera = camera;
             Services = services;
@@ -40,10 +41,10 @@ namespace Weesals.Landscape.Editor {
         public Material BrushMaterial = new();
         public float BrushMeshWith = 0.3f;
 
-        private Mesh brushMesh;
+        private DynamicMesh brushMesh;
 
         public void DrawBrush(ScenePassManager scene, LandscapeData landscapeData, ToolContext context, Vector3 pos, float radiusMin, float radiusMax, float angle) {
-            if (brushMesh == null) brushMesh = new Mesh("Brush");
+            if (brushMesh == null) brushMesh = new DynamicMesh("Brush");
             using var vertices = new PooledList<Vector3>();
             using var uvs = new PooledList<Vector2>();
             using var indices = new PooledList<ushort>();

@@ -9,6 +9,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.XPath;
 using Weesals.Engine;
+using Weesals.Game;
+using Weesals.Landscape;
 using Weesals.UI;
 
 namespace Weesals.Editor {
@@ -102,10 +104,18 @@ namespace Weesals.Editor {
             Canvas.AppendChild(flex);
         }
 
-        public void ActivateLandscapeTools() {
-            Inspector.LandscapeTools.Initialize(GameView);
-            Inspector.AppendChild(Inspector.LandscapeTools);
+        public void ActivateLandscapeTools(LandscapeRenderer landscape) {
+            Inspector.LandscapeTools.Initialize(GameView, landscape);
+            Inspector.SetInspector(Inspector.LandscapeTools);
             GameView.AppendChild(Inspector.LandscapeTools.InputDispatcher);
+        }
+        public void ActivateEntityInspector(GenericTarget entity) {
+            if (entity.IsValid) {
+                Inspector.SetInspector(Inspector.EntityInspector);
+                Inspector.EntityInspector.Initialise(entity);
+            } else {
+                Inspector.SetInspector(default);
+            }
         }
 
         public void Update(float dt, Int2 size) {

@@ -145,11 +145,15 @@ namespace Weesals.Editor {
                     process.StartInfo.Arguments = Path.GetFullPath(Filename);
                     process.Start();
                 }
-                public override string ToString() { return Filename; }
 
                 public void Apply(CanvasRenderable renderable, ref TransformerContext context) {
                     if (animator != null) animator.Apply(renderable, ref context);
                     else context.IsComplete = true;
+                }
+
+                public override string ToString() { return Filename; }
+                public override Vector2 GetDesiredSize(SizingParameters sizing) {
+                    return new Vector2(80f);
                 }
             }
 

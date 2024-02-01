@@ -276,6 +276,9 @@ namespace Weesals.Engine {
             MarkChanged();
             return r;
         }
+        public T GetValue<T>(CSIdentifier name) where T : unmanaged {
+            return MemoryMarshal.Cast<byte, T>(GetUniformBinaryData(name))[0];
+        }
 
         // Set various uniform values
         unsafe public Span<byte> SetValue<T>(CSIdentifier name, T v) where T : unmanaged {
@@ -334,6 +337,7 @@ namespace Weesals.Engine {
 
         // Get the binary data for a specific parameter
         private static MaterialCollector collector = new();
+        public static MaterialGetter BeginGetUniforms(Span<Material> materialStack) { return new MaterialGetter(new MaterialCollectorContext(materialStack, collector)); }
         unsafe public static Span<byte> GetUniformBinaryData(CSIdentifier name, Span<Material> materialStack) {
             var context = new MaterialCollectorContext(materialStack, collector);
             var ret = context.GetUniformSource(name);

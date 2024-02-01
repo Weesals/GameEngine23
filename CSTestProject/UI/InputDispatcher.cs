@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -93,49 +94,77 @@ namespace Weesals.UI {
                 ;
             return forceResolve;
         }
-        public bool IntlProcessPointer(PointerEvent events) {
-            var state = GetBestInteraction(events);
-            if (CheckInvokeInteraction(events, state)) { events.SetActive(state.Interaction); return true; }
-            var hitIterator = Canvas.HitTestGrid.BeginHitTest(events.CurrentPosition);
+        public PointerEvent? RequireDeferred(PointerEvent events) {
+            if (!deferredPointers.TryGetValue(events, out var deferred)) {
+                deferred = new(events);
+                deferredPointers.Add(events, deferred);
+            }
+            return deferred;
+        }
+        private struct Target {
+            public object? Active;
+            public ActivationState State;
+        }
+        private Target FindTarget(PointerEvent deferred, ref HittestGrid.HitEnumerator hitIterator) {
+            Target target = default;
+            ref var state = ref target.State;
+            state = GetBestInteraction(deferred);
+            if (CheckInvokeInteraction(deferred, state)) { target.Active = state.Interaction; return target; }
             // Skip to find self
             while (hitIterator.MoveNext() && hitIterator.Current != this) ;
             // Iterate any other InputDispatchers immediately following
             while (hitIterator.MoveNext() && hitIterator.Current is InputDispatcher odispatcher) {
-                var ostate = odispatcher.GetBestInteraction(events);
-                if (CheckInvokeInteraction(events, ostate)) { events.SetActive(ostate.Interaction); return true; }
+                var ostate = odispatcher.GetBestInteraction(deferred);
+                if (CheckInvokeInteraction(deferred, ostate)) { target.Active = ostate.Interaction; return target; }
                 state.CombineWith(ostate);
             }
+            return target;
+        }
+        public PointerEvent? IntlProcessPointer(PointerEvent events) {
+            if (!deferredPointers.TryGetValue(events, out var deferred)) return null;
+            var update = deferred.StepPre(events);
+            var hitIterator = Canvas.HitTestGrid.BeginHitTest(deferred.CurrentPosition);
+            var target = FindTarget(deferred, ref hitIterator);
+            if (deferred.Active == null) {
+                if (target.Active != null) deferred.SetActive(target.Active);
+            }
+            deferred.StepPost(events, update);
+            //else deferred.SetPress(target.State.Interaction);
+            if (deferred.Active != null) return deferred;
             for (int i = 0; i < interactions.Count; i++) {
                 if (interactions[i] is IPointerEventsRaw oraw) {
-                    oraw.ProcessPointer(events);
+                    oraw.ProcessPointer(deferred);
                 }
             }
-            if (!state.Score.IsPotential && hitIterator.Current is IPointerEventsRaw raw) {
-                raw.ProcessPointer(events);
-                return true;
+            if (!target.State.Score.IsPotential && hitIterator.Current is IPointerEventsRaw raw) {
+                raw.ProcessPointer(deferred);
+                return deferred;
             }
             // If nothing is even potential, defer to the next control
-            if (!state.Score.IsPotential) {
-                if (!deferredPointers.TryGetValue(events, out var deferred)) {
-                    deferred = new(events);
-                    deferredPointers.Add(events, deferred);
-                }
-                deferred.Step(events);
-                deferred.SetActive(hitIterator.Current);
+            if (!target.State.Score.IsPotential) {
+                deferred.SetHover(hitIterator.Current);
             }
-            return false;
+            return null;
         }
         public void OnPointerEnter(PointerEvent events) {
+            var deferred = new PointerEvent(events);
+            deferredPointers.Add(events, deferred);
         }
         public void OnPointerExit(PointerEvent events) {
             if (deferredPointers.TryGetValue(events, out var deferred)) {
-                deferred.SetActive(null);
+                deferred.Dispose();
                 deferredPointers.Remove(events);
             }
         }
         public void ProcessPointer(PointerEvent events) {
-            if (IntlProcessPointer(events)) {
-                OnPointerExit(events);
+            var deferred = IntlProcessPointer(events);
+            //if(deferred == null) OnPointerExit(events);
+            // On mouse-up, clear the active action
+            // (implicit hover/press may remain)
+            if (deferred != null && deferred.Active != null) {
+                if (events.PreviousButtonState != 0 && events.ButtonState == 0) {
+                    deferred.SetActive(null);
+                }
             }
         }
 
@@ -144,6 +173,10 @@ namespace Weesals.UI {
         }
         public bool RemoveInteraction(IInteraction interaction) {
             return interactions.Remove(interaction);
+        }
+
+        public override string ToString() {
+            return $"Dispatcher: Count={interactions.Count} Active={deferredPointers.Count}";
         }
 
     }

@@ -1,5 +1,4 @@
-﻿using Flecs.NET.Core;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -10,12 +9,23 @@ using Weesals.Engine;
 using Weesals.Landscape;
 using Weesals.UI;
 using Weesals.Utility;
+using Weesals.ECS;
+using System.Diagnostics;
+using Weesals.Rendering;
+using Weesals.Game.Gameplay;
+using Navigation;
+
+/*
+ * TODO:
+ * - Picking
+ * - Entity selection compatibility
+ * - Compute Shader
+ * - GPU Driven Rendering
+ * - Animation
+ * - Gameplay
+ */
 
 namespace Weesals.Game {
-
-    public struct Position {
-        public Vector3 Value;
-    }
 
     public interface IUpdatable {
         void Update(float dt);
@@ -31,6 +41,36 @@ namespace Weesals.Game {
         }
     }
 
+    public class SelectionManager {
+        public Action<GenericTarget, bool>? OnEntitySelected;
+        public Action<ICollection<GenericTarget>>? OnSelectionChanged;
+        private HashSet<GenericTarget> selected = new();
+
+        public IReadOnlyCollection<GenericTarget> Selected => selected;
+
+        public void ClearSelected() {
+            using var toDeselect = new PooledList<GenericTarget>(selected.Count);
+            foreach (var item in selected) toDeselect.Add(item);
+            selected.Clear();
+            foreach (var item in toDeselect) NotifySelected(item, false);
+        }
+        public void SetSelected(GenericTarget item) {
+            ClearSelected();
+            if (item.IsValid) AppendSelected(item);
+        }
+        private void AppendSelected(GenericTarget item) {
+            selected.Add(item);
+            NotifySelected(item, true);
+        }
+
+        private void NotifySelected(GenericTarget item, bool selected) {
+            if (item.Owner is IEntitySelectable selectable)
+                selectable.NotifySelected(item.Data, selected);
+            if (OnEntitySelected != null) OnEntitySelected(item, selected);
+            if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
+        }
+    }
+
     public class Play : IDisposable {
 
         LandscapeData landscape;
@@ -41,10 +81,18 @@ namespace Weesals.Game {
         public RectI GameViewport { get; private set; }
         public Camera Camera { get; private set; }
         public Scene Scene { get; private set; }
-        public World World { get; private set; }
         public Canvas Canvas { get; private set; }
         public LandscapeData Landscape => landscape;
         public int RenderRevision;
+
+        public World RenderWorld { get; private set; }
+        public Simulation Simulation { get; private set; }
+        public World World => Simulation.World;
+
+        public SelectionManager SelectionManager = new();
+        public EntityHighlighting EntityHighlighting;
+
+        public NavDebug NavDebug;
 
         ShadowPass shadowPass;
         DeferredPass clearPass;
@@ -61,7 +109,8 @@ namespace Weesals.Game {
         ScenePassManager scenePasses;
         public ScenePassManager ScenePasses => scenePasses;
 
-        private WorldObject testObject;
+        RenderWorldBinding renderBindings;
+        float time = 0;
 
         public Play(Scene scene) {
             Scene = scene;
@@ -76,7 +125,7 @@ namespace Weesals.Game {
                 new LandscapeLayer("TL_Tiles") { BaseColor = "./assets/T_Tiles_BaseColor.jpg", NormalMap = "./assets/T_Tiles_Normal.jpg", },
                 new LandscapeLayer("TL_WaterFloor") { BaseColor = "./assets/T_Dirt_BaseColor.jpg", NormalMap = "./assets/T_Dirt_Normal.jpg", },
                 new LandscapeLayer("TL_Sand") { BaseColor = "./assets/T_Dirt_BaseColor.jpg", NormalMap = "./assets/T_Dirt_Normal.jpg", },
-                new LandscapeLayer("TL_Cliff") { BaseColor = "./assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f,},
+                new LandscapeLayer("TL_Cliff") { BaseColor = "./assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
             }; 
             landscape.Initialise(128, layers);
             landscapeRenderer = new LandscapeRenderer();
@@ -105,13 +154,11 @@ namespace Weesals.Game {
                 });
             basePass = new BasePass(scene) {
                 PreRender = (graphics) => {
-                    //graphics.SetViewport(GameViewport);
                     RenderBasePass(graphics, basePass);
                 },
             };
             transPass = new TransparentPass(scene) {
                 PreRender = (graphics) => {
-                    //graphics.SetViewport(GameViewport);
                     RenderBasePass(graphics, transPass);
                 }
             };
@@ -133,7 +180,6 @@ namespace Weesals.Game {
                 new[] { new RenderPass.PassInput("SceneColor", false) },
                 new[] { new RenderPass.PassOutput("SceneColor", 0), },
                 (CSGraphics graphics, ref RenderPass.Context context) => {
-                    //graphics.SetViewport(GameViewport);
                     Canvas.Render(graphics, Canvas.Material);
                 });
 
@@ -141,25 +187,23 @@ namespace Weesals.Game {
             scenePasses.AddPass(basePass);
             scenePasses.AddPass(transPass);
 
-            testObject = new();
-            var model = Resources.LoadModel("./assets/SM_Barracks.fbx");
-            foreach (var mesh in model.Meshes) {
-                var instance = scene.CreateInstance();
-                testObject.Meshes.Add(instance);
-                scenePasses.AddInstance(instance, mesh);
-            };
-            Scene.SetTransform(testObject, Matrix4x4.CreateRotationY(MathF.PI));
-
             Canvas = new Canvas();
             Canvas.AppendChild(new UIPlay(this));
 
-            World = World.Create();
+            Simulation = new(landscape);
+            NavDebug = new();
+            NavDebug.Initialise(Simulation.NavBaker);
+            NavDebug.ShowCornerLabels = false;
+            NavDebug.ShowTriangleLabels = false;
 
-            var test = World.Entity()
-                .Set(new Position());
+            RenderWorld = new World();
 
-            World.Query();
+            renderBindings = new(World, RenderWorld, Scene, scenePasses);
+            EntityHighlighting = new(renderBindings);
+
+            Simulation.GenerateWorld();
         }
+
         public void Dispose() {
             Canvas.Dispose();
         }
@@ -173,13 +217,19 @@ namespace Weesals.Game {
         }
 
         public void Update(float dt) {
+            time += dt;
+            EntityHighlighting.Update((uint)(time * 1000f));
+
+            if (dt > 0.02f) dt = 0.02f;
+            Simulation.Simulate((int)MathF.Round(dt * 1000));
+
             Updatables.Invoke(dt);
 
             Canvas.Update(dt);
 
             // Control visibility with Spacebar
-            basePass.SetVisible(testObject.Meshes[0], !Input.GetKeyDown(KeyCode.Space));
-            transPass.SetVisible(testObject.Meshes[0], !Input.GetKeyDown(KeyCode.Space));
+            //basePass.SetVisible(testObject.Meshes[0], !Input.GetKeyDown(KeyCode.Space));
+            //transPass.SetVisible(testObject.Meshes[0], !Input.GetKeyDown(KeyCode.Space));
 
             // Move camera with WASD/UDLR
             var move = new Vector2(
@@ -191,6 +241,8 @@ namespace Weesals.Game {
             Camera.NearPlane = 12f;
 
             Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
+
+            NavDebug.OnDrawGizmosSelected();
         }
 
         public void PreRender(CSGraphics graphics) {
@@ -200,6 +252,10 @@ namespace Weesals.Game {
             if (shadowPass.UpdateShadowFrustum(scenePasses.Frustum)) {
                 RenderRevision++;
             }
+            foreach (var pass in scenePasses.ScenePasses) {
+                if (pass.GetHasSceneChanges()) ++RenderRevision;
+            }
+            renderBindings.UpdateChanged();
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics) {
@@ -233,14 +289,32 @@ namespace Weesals.Game {
             Scene.PostRender();
             // Clear dynamic meshes
             ScenePasses.EndRender();
+
+            Handles.Reset();
         }
 
         private void RenderBasePass(CSGraphics graphics, ScenePass pass) {
             landscapeRenderer.Render(graphics, pass);
+            Handles.Render(graphics, pass);
         }
 
-        public WorldObject? HitTest(Ray ray) {
-            return testObject;
+
+        // Notify the current play session of an action
+        // invoked by the local player
+        // eg. Moving a unit or attacking a target
+        public void PushLocalCommand(ActionRequest request) {
+            foreach (var selected in SelectionManager.Selected) {
+                Simulation.EnqueueAction(selected.GetEntity(), request);
+            }
+        }
+
+        public GenericTarget HitTest(Ray ray) {
+            var entityHit = Simulation.HitTest(ray);
+            if (entityHit.IsValid) return entityHit;
+            if (landscape.Raycast(ray, out var landscapeHit)) {
+                return new GenericTarget(landscapeRenderer);
+            }
+            return default;
         }
 
     }

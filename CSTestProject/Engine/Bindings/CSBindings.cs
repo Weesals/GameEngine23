@@ -527,6 +527,7 @@ namespace Weesals.Engine {
     }
     public partial struct CSInstance {
         public override string ToString() { return GetInstanceId().ToString(); }
+        public static implicit operator int(CSInstance instance) { return instance.mInstanceId; }
     }
     public partial struct CSRenderPass {
         public readonly unsafe Frustum GetFrustum() { return *GetFrustum(mRenderPass); }

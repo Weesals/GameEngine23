@@ -10,7 +10,7 @@ using Weesals.Game;
 using Weesals.UI;
 
 namespace Weesals.Landscape.Editor {
-    public class UXLandscapeCliffTool : UXBrushTool, IInteraction, IPointerDownHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerEventsRaw {
+    public class UXLandscapeCliffTool : UXBrushTool, IInteraction, IPointerDownHandler, IPointerUpHandler, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerEventsRaw {
 
         public const float InvalidHeight = -999f;
 
@@ -34,6 +34,9 @@ namespace Weesals.Landscape.Editor {
         }
         public void OnPointerDown(PointerEvent events) {
             events.SetState(PointerEvent.States.Drag, true);
+        }
+        public void OnPointerUp(PointerEvent events) {
+            events.Cancel(this);
         }
         public void OnBeginDrag(PointerEvent events) {
             bool isBtnDown = events.HasButton(0) || events.HasButton(1);

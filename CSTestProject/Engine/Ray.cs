@@ -32,4 +32,13 @@ namespace Weesals.Engine {
             return $"<{Origin} <> {Direction}>";
         }
     }
+    public static class RayExt {
+        public static Vector3 Raycast(this Plane plane, Ray ray) {
+            return ray.ProjectTo(plane);
+        }
+        public static Vector3 Raycast(this Plane plane, Ray ray, out float dst) {
+            dst = (plane.D - Vector3.Dot(plane.Normal, ray.Origin)) / Vector3.Dot(plane.Normal, ray.Direction);
+            return ray.GetPoint(dst);
+        }
+    }
 }

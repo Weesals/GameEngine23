@@ -16,6 +16,20 @@ namespace Weesals.Engine {
 			Max = max;
 		}
 		public static BoundingBox FromMinMax(Vector3 min, Vector3 max) { return new BoundingBox(min, max); }
-	};
+
+        public float RayCast(Ray ray) {
+            var invRayDir = Vector3.Divide(Vector3.One, ray.Direction);
+            var d0 = (Min - ray.Origin) * invRayDir;
+            var d1 = (Max - ray.Origin) * invRayDir;
+
+            var min = Vector3.Min(d0, d1);
+            var max = Vector3.Max(d0, d1);
+
+            var rmin = MathF.Max(MathF.Max(min.X, min.Y), min.Z);
+            var rmax = MathF.Min(MathF.Min(max.X, max.Y), max.Z);
+
+            return rmin <= rmax ? rmin : -1f;
+        }
+    };
 
 }

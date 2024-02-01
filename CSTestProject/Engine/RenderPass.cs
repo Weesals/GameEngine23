@@ -145,7 +145,7 @@ namespace Weesals.Engine {
             public Context(Target depth, Span<Target> targets) { ResolvedDepth = depth; ResolvedTargets = targets; }
         }
         protected void BindRenderTargets(CSGraphics graphics, ref Context context) {
-            var colorTargets = new PooledList<CSRenderTarget>();
+            using var colorTargets = new PooledList<CSRenderTarget>();
             foreach (var item in context.ResolvedTargets) colorTargets.Add(item.Texture);
             graphics.SetRenderTargets(colorTargets, context.ResolvedDepth.Texture);
             if (context.Viewport.Width > 0) graphics.SetViewport(context.Viewport);
@@ -238,10 +238,15 @@ namespace Weesals.Engine {
             RenderScene(graphics, ref context);
         }
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
+            OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
             PreRender?.Invoke(graphics);
             RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
             Scene.SubmitToGPU(graphics);
             RenderQueue.Render(graphics);
+        }
+
+        public bool GetHasSceneChanges() {
+            return RetainedRenderer.GetHasSceneChanges();
         }
     }
 
@@ -515,9 +520,6 @@ namespace Weesals.Engine {
         }
     }
 
-    public class WorldObject {
-        public List<CSInstance> Meshes = new();
-    }
     public class ScenePassManager {
         public readonly Scene Scene;
         private Matrix4x4 view, projection;
@@ -540,6 +542,8 @@ namespace Weesals.Engine {
 
         public Vector2 TemporalOffset => offsets[frame % offsets.Length];
 
+        public IReadOnlyList<ScenePass> ScenePasses => scenePasses;
+
         public ScenePassManager(Scene scene) {
             Scene = scene;
         }
@@ -559,7 +563,7 @@ namespace Weesals.Engine {
                 pass.AddInstance(instance, mesh, materials);
             }
         }
-        private void RemoveInstance(CSInstance instance) {
+        public void RemoveInstance(CSInstance instance) {
             foreach (var pass in scenePasses) {
                 pass.RemoveInstance(instance);
             }
@@ -577,7 +581,7 @@ namespace Weesals.Engine {
         }
 
         public int GetRenderHash() {
-            return Scene.GetGPURevision() + dynamicDrawHash;
+            return /*Scene.GetGPURevision() + */dynamicDrawHash;
         }
 
         public void BeginRender(Int2 viewportSize) {

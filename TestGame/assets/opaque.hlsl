@@ -89,6 +89,7 @@ void PSMain(PSInput input
 
     OutColor = float4(o, tex.a);
     OutVelocity = float4(input.velocity * 16.0, instance.Selected, 1);
+    //OutColor.rg = OutVelocity.rg * 10.0 + 0.5;
 }
 
 //#include "include/shadowcast.hlsl"

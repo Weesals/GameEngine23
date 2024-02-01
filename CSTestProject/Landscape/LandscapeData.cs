@@ -69,7 +69,7 @@ namespace Weesals.Landscape {
 
     // A raycast result
     public struct LandscapeHit {
-        public Vector3 mHitPosition;
+        public Vector3 HitPosition;
     }
 
     // A terrain
@@ -149,7 +149,7 @@ namespace Weesals.Landscape {
                 mSizing = sizing;
                 mCells = cells;
             }
-            public ref CellType this[int p] => ref mCells[mSizing.ToIndex(p)];
+            public ref CellType this[int p] => ref mCells[p];
             public ref CellType this[Int2 p] => ref mCells[mSizing.ToIndex(p)];
         }
         public struct HeightMapReadOnly : IHeightmapReader {
@@ -175,9 +175,11 @@ namespace Weesals.Landscape {
             }
             public ref ControlCell this[int p] => ref Reader[p];
             public ref ControlCell this[Int2 p] => ref Reader[p];
+            public byte GetTypeAt(Int2 p) => this[p].TypeId;
         }
         public struct WaterMapReadOnly : IHeightmapReader, IValidCellReader {
             internal DataReader<WaterCell> Reader;
+            public bool IsValid => Reader.mCells != null;
             public Int2 Size => Reader.Size;
             public SizingData Sizing => Reader.mSizing;
             internal WaterMapReadOnly(SizingData sizing, WaterCell[] cells) {
@@ -319,7 +321,7 @@ namespace Weesals.Landscape {
                 ) {
                     // If a hit was found, return the data
                     hit = new LandscapeHit {
-                        mHitPosition = ray.Origin + ray.Direction * t,
+                        HitPosition = ray.Origin + ray.Direction * t,
                     };
                     return true;
                 }
@@ -327,8 +329,8 @@ namespace Weesals.Landscape {
                 float xNext = maxDst;
                 float yNext = maxDst;
                 var nextEdgeDelta = (Vector2)(fromC + dirEdge) * terScale - from;
-                if (dir.X != 0.0f) xNext = Math.Max(xNext, nextEdgeDelta.X / dir.X);
-                if (dir.Y != 0.0f) yNext = Math.Max(yNext, nextEdgeDelta.Y / dir.Y);
+                if (dir.X != 0.0f) xNext = Math.Min(xNext, nextEdgeDelta.X / dir.X);
+                if (dir.Y != 0.0f) yNext = Math.Min(yNext, nextEdgeDelta.Y / dir.Y);
                 fromC.X += xNext < yNext ? dirSign.X : 0;
                 fromC.Y += xNext < yNext ? 0 : dirSign.Y;
                 dst = Math.Min(xNext, yNext);
@@ -368,6 +370,26 @@ namespace Weesals.Landscape {
         public static Vector3 GetNormalAt<T>(this T heightmap, Int2 pnt) where T : IHeightmapReader {
             var dd = heightmap.GetDerivative(pnt);
             return Vector3.Normalize(new Vector3(-dd.X, LandscapeData.HeightScale * 2f, -dd.Y));
+        }
+        public static int GetInterpolatedHeightAt<T>(this T heightmap, Int2 pos) where T : IHeightmapReader {
+            if (heightmap.Sizing.Scale1024 != 1024) pos = pos * 1024 / heightmap.Sizing.Scale1024;
+            return heightmap.GetInterpolatedHeightAt1024(pos);
+        }
+        public static int GetInterpolatedHeightAt1024<T>(this T heightMap, Int2 pos) where T : IHeightmapReader {
+            Int2 pnt0 = pos >> 10;
+            var sizing = heightMap.Sizing;
+            if (!sizing.IsInBounds(pos)) return 0;
+            pnt0 = Int2.Min(pnt0, sizing.Size - 2);
+            var h00 = heightMap.GetHeightAt(sizing.ToIndex(pnt0));
+            var h01 = heightMap.GetHeightAt(sizing.ToIndex(pnt0 + new Int2(1, 0)));
+            var h10 = heightMap.GetHeightAt(sizing.ToIndex(pnt0 + new Int2(0, 1)));
+            var h11 = heightMap.GetHeightAt(sizing.ToIndex(pnt0 + new Int2(1, 1)));
+            Int2 pntF = pos - (pnt0 << 10);
+            var hL = (h00 * (1024 - pntF.Y) + h10 * (pntF.Y));
+            var hR = (h01 * (1024 - pntF.Y) + h11 * (pntF.Y));
+            hL /= LandscapeData.HeightScale;    // hL and hR are in 1024 space (because above is 1024 range)
+            hR /= LandscapeData.HeightScale;
+            return (hL * (1024 - pntF.X) + hR * (pntF.X)) / 1024;
         }
     }
 

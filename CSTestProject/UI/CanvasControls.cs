@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.ECS;
 using Weesals.Engine;
 
 namespace Weesals.UI {
@@ -79,7 +81,7 @@ namespace Weesals.UI {
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
             Element.Initialize(Canvas);
-            if (!Element.font.IsValid())
+            if (!Element.Font.IsValid())
                 Element.SetFont(Resources.LoadFont("./assets/Roboto-Regular.ttf"));
         }
         public override void Uninitialise(CanvasBinding binding) {
@@ -95,6 +97,16 @@ namespace Weesals.UI {
             Element.UpdateLayout(Canvas, layout);
             Element.Append(ref composer);
             base.Compose(ref composer);
+        }
+        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            var width = Element.GetPreferredWidth();
+            var height = Element.GetPreferredHeight(width);
+            var size = new Vector2(width, height);
+            size += Transform.OffsetMax - Transform.OffsetMin;
+            var anchorDelta = Transform.AnchorMax - Transform.AnchorMin;
+            if (anchorDelta.X > 0f) size.X /= anchorDelta.X;
+            if (anchorDelta.Y > 0f) size.Y /= anchorDelta.Y;
+            return size;
         }
     }
     public abstract class Selectable : CanvasRenderable, ISelectable {
@@ -189,13 +201,16 @@ namespace Weesals.UI {
         }
         public void OnPointerClick(PointerEvent events) {
             SetState(States.Active, true);
+            InvokeClick();
+        }
+        public virtual void InvokeClick() {
             OnClick?.Invoke();
         }
 
         private bool SetState(States flag, bool enable) {
             if (enable == ((state & flag) != 0)) return false;
             if (enable) state |= flag; else state &= ~flag;
-            Canvas.Tweens.RegisterTweenable(this);
+            if (Canvas != null) Canvas.Tweens.RegisterTweenable(this);
             return true;
         }
 
@@ -253,9 +268,15 @@ namespace Weesals.UI {
             Text.Append(ref composer);
             base.Compose(ref composer);
         }
+        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            sizing.PreferredSize.X = sizing.ClampWidth(Text.GetPreferredWidth());
+            sizing.PreferredSize.Y = sizing.ClampHeight(Text.GetPreferredHeight(sizing.PreferredSize.X) + 4);
+            return base.GetDesiredSize(sizing);
+        }
     }
     public class ImageButton : Button {
         public CanvasImage Icon;
+        protected bool drawIcon = true;
 
         public ImageButton(CSTexture texture) {
             Icon = new CanvasImage(texture, new RectF(0f, 0f, 1f, 1f));
@@ -279,14 +300,49 @@ namespace Weesals.UI {
         public override void Compose(ref CanvasCompositor.Context composer) {
             DrawBackground(ref composer);
 
-            if (Icon.HasDirtyFlags) {
-                var imglayout = mLayoutCache;
-                Icon.PreserveAspect(ref imglayout, new Vector2(0.5f, 0.5f));
-                Icon.UpdateLayout(Canvas, imglayout);
+            if (drawIcon) {
+                if (Icon.HasDirtyFlags) {
+                    var imglayout = mLayoutCache;
+                    Icon.PreserveAspect(ref imglayout, new Vector2(0.5f, 0.5f));
+                    Icon.UpdateLayout(Canvas, imglayout);
+                }
+                Icon.Append(ref composer);
             }
-
-            Icon.Append(ref composer);
             base.Compose(ref composer);
+        }
+    }
+    public class ToggleButton : ImageButton {
+        private bool state = true;
+        public bool State {
+            get => state;
+            set => SetState(value);
+        }
+        public Action<bool>? OnStateChanged;
+        public ToggleButton() : this(Resources.TryLoadSprite("Tick")!) { }
+        public ToggleButton(CSTexture texture) : base(texture) { }
+        public ToggleButton(Sprite sprite) : base(sprite) { }
+        public override void InvokeClick() {
+            base.InvokeClick();
+            State = !State;
+        }
+        protected virtual void SetState(bool _state) {
+            if (state == _state) return;
+            state = _state;
+            drawIcon = state;
+            OnStateChanged?.Invoke(state);
+            MarkComposeDirty();
+        }
+        public void BindValue(PropertyPath path) {
+            State = path.GetValueAs<bool>();
+            OnStateChanged = (newValue) => path.SetValueAs<bool>(newValue);
+        }
+        public void BindValue(object owner, FieldInfo field) {
+            Debug.Assert(field.FieldType == typeof(bool));
+            State = (bool)field.GetValue(owner)!;
+            OnStateChanged = (newValue) => field.SetValue(owner, newValue);
+        }
+        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            return new Vector2(20f, 20f);
         }
     }
     public class GridLayout : CanvasRenderable {
@@ -367,7 +423,7 @@ namespace Weesals.UI {
             if (ItemSize == 0f) {
                 var sizing = SizingParameters.Default;
                 if (Axis == Axes.Horizontal) sizing.SetFixedYSize(layout.GetHeight());
-                else if (Axis == Axes.Horizontal) sizing.SetFixedXSize(layout.GetWidth());
+                else if (Axis == Axes.Vertical) sizing.SetFixedXSize(layout.GetWidth());
                 for (int c = 0; c < mChildren.Count; ++c) {
                     sizeMasked = mChildren[c].GetDesiredSize(sizing);
                     itemSizes[c] = sizeAxis;
@@ -387,6 +443,23 @@ namespace Weesals.UI {
                 child.UpdateLayout(layout);
                 layout.Position += axisVec * axisVec4.W;
             }
+        }
+        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            if (ItemSize != 0f) {
+                if (Axis == Axes.Horizontal) sizing.SetFixedXSize(ItemSize * Children.Count);
+                else if (Axis == Axes.Vertical) sizing.SetFixedYSize(ItemSize * Children.Count);
+            }
+            //sizing.PreferredSize = new Vector2(80f, 80f);
+            float minSize = 0f;
+            foreach (var child in Children) {
+                var size = child.GetDesiredSize(sizing);
+                minSize = MathF.Max(minSize,
+                    Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f);
+            }
+            // Set other axis
+            if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = minSize;
+            else if (Axis == Axes.Vertical) sizing.PreferredSize.X = minSize;
+            return base.GetDesiredSize(sizing);
         }
     }
     public class FlexLayout : CanvasRenderable {

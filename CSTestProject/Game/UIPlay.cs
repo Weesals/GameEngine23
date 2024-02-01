@@ -8,106 +8,9 @@ using UnityEngine;
 using Weesals.Engine;
 using Weesals.Landscape;
 using Weesals.UI;
+using Weesals.UI.Interaction;
 
 namespace Weesals.Game {
-    public class UXCameraControls : IInteraction, IBeginDragHandler, IDragHandler, IEndDragHandler {
-        public readonly UIPlay PlayUI;
-        private TimedEvent<Vector2> rubberband;
-
-        public UXCameraControls(UIPlay playUI) {
-            PlayUI = playUI;
-        }
-
-        public ActivationScore GetActivation(PointerEvent events) {
-            if (PlayUI.Play.Camera == null) return ActivationScore.None;
-            if (events.HasButton(1) && events.IsDrag) return ActivationScore.Active;
-            return ActivationScore.Potential;
-        }
-
-        public void OnBeginDrag(PointerEvent events) {
-            if (!events.GetIsButtonDown(1)) { events.Yield(); return; }
-            rubberband.Clear();
-        }
-        public void OnDrag(PointerEvent events) {
-            var camera = PlayUI.Play.Camera;
-            var layout = PlayUI.GetComputedLayout();
-            var m0 = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
-            var m1 = layout.InverseTransformPosition2D(events.CurrentPosition) / layout.GetSize();
-            if (m0 == m1) return;
-            var ray0 = camera.ViewportToRay(m0);
-            var ray1 = camera.ViewportToRay(m1);
-            // TODO: Project onto the coarse terrain
-            var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
-            var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
-            var delta = pos1 - pos0;
-            camera.Position -= delta;
-        }
-        public void OnEndDrag(PointerEvent events) {
-        }
-    }
-
-    public class UXEntityDrag : IInteraction, IBeginDragHandler, IDragHandler, IEndDragHandler {
-        public readonly UIPlay PlayUI;
-        public Play Play => PlayUI.Play;
-
-        public struct Instance {
-            public WorldObject Target;
-        }
-        private Dictionary<PointerEvent, Instance> instances = new();
-
-        public UXEntityDrag(UIPlay playUI) {
-            PlayUI = playUI;
-        }
-
-        public ActivationScore GetActivation(PointerEvent events) {
-            if (!CanInteract(events)) return ActivationScore.None;
-            if (events.IsDrag && events.HasButton(0)) return ActivationScore.Active;
-            return ActivationScore.Potential;
-        }
-        public bool CanInteract(PointerEvent events) {
-            var target = FindTarget(events);
-            return target != null;
-        }
-        private WorldObject? FindTarget(PointerEvent events) {
-            var layout = PlayUI.GetComputedLayout();
-            var m = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
-            var mray = PlayUI.Play.Camera.ViewportToRay(m);
-            return PlayUI.Play.HitTest(mray);
-        }
-        public void OnBeginDrag(PointerEvent events) {
-            if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
-            var entity = FindTarget(events);
-            if (entity == null) { events.Yield(); return; }
-            SetSelected(entity, true);
-            instances.Add(events, new Instance() { Target = entity, });
-        }
-        public void OnDrag(PointerEvent events) {
-            if (!instances.TryGetValue(events, out var instance)) return;
-            var camera = PlayUI.Play.Camera;
-            var layout = PlayUI.GetComputedLayout();
-            var m0 = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
-            var m1 = layout.InverseTransformPosition2D(events.CurrentPosition) / layout.GetSize();
-            var ray0 = camera.ViewportToRay(m0);
-            var ray1 = camera.ViewportToRay(m1);
-            var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
-            var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
-            var delta = pos1 - pos0;
-            var transform = PlayUI.Play.Scene.GetTransform(instance.Target);
-            transform.Translation += delta;
-            PlayUI.Play.Scene.SetTransform(instance.Target, transform);
-        }
-        public void OnEndDrag(PointerEvent events) {
-            SetSelected(instances[events].Target, false);
-            instances.Remove(events);
-        }
-
-        unsafe private void SetSelected(WorldObject entity, bool selected) {
-            foreach (var instance in entity.Meshes) {
-                float value = selected ? 1.0f : 0.0f;
-                Play.Scene.UpdateInstanceData(instance, sizeof(float) * (16 + 16 + 4), &value, sizeof(float));
-            }
-        }
-    }
 
     public class UIPlay : CanvasRenderable, IUpdatable {
 
@@ -116,6 +19,9 @@ namespace Weesals.Game {
         private InputDispatcher inputDispatcher;
         private UXCameraControls cameraControls;
         private UXEntityDrag entityDrag;
+        private UXEntityTap entityTap;
+        private UXEntityOrder entityOrder;
+        private UXPlacement placement;
 
         public UIPlay(Play play) {
             Play = play;
@@ -125,13 +31,16 @@ namespace Weesals.Game {
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
             AppendChild(inputDispatcher = new());
-            inputDispatcher.AddInteraction(cameraControls = new UXCameraControls(this));
-            inputDispatcher.AddInteraction(entityDrag = new UXEntityDrag(this));
+            inputDispatcher.AddInteraction(cameraControls = new(this));
+            inputDispatcher.AddInteraction(entityDrag = new(this));
+            inputDispatcher.AddInteraction(entityTap = new(this));
+            inputDispatcher.AddInteraction(entityOrder = new(this));
+            inputDispatcher.AddInteraction(placement = new(this));
 
             var btn = new TextButton();
             btn.SetTransform(CanvasTransform.MakeAnchored(new Vector2(128, 128), new Vector2(0.5f, 1.0f), new Vector2(0.0f, 0.0f)));
             btn.OnClick += () => { Console.WriteLine("Hello"); };
-            AppendChild(btn);
+            //AppendChild(btn);
 
             var spriteRenderer = new SpriteRenderer();
             var atlas = spriteRenderer.Generate(new[] {
@@ -166,11 +75,18 @@ namespace Weesals.Game {
 
             var list = new ListLayout() {
                 Transform = CanvasTransform.MakeAnchored(new Vector2(256, 256), new Vector2(0.0f, 1.0f)),
+                ScaleMode = ListLayout.ScaleModes.StretchOrClamp,
             };
             for (int i = 0; i < 5; ++i) {
-                list.AppendChild(new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
+                var imgBtn = new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
                     Transform = CanvasTransform.MakeDefault().Inset(1),
-                });
+                };
+                imgBtn.OnClick += () => {
+                    var entities = Play.World.GetEntities();
+                    if (entities.MoveNext())
+                        placement.BeginPlacement(entities.Current);
+                };
+                list.AppendChild(imgBtn);
             }
             AppendChild(list);
         }

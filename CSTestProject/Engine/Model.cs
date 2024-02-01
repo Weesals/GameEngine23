@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 namespace Weesals.Engine {
     public class Model {
 
+        public string Name;
+
         private List<Mesh> meshes = new();
 
         public IReadOnlyList<Mesh> Meshes => meshes;
@@ -15,13 +17,15 @@ namespace Weesals.Engine {
             meshes.Add(mesh);
         }
 
-        public static Model CreateFrom(CSModel other) {
-            var model = new Model();
+        public static Model CreateFrom(string name, CSModel other) {
+            var model = new Model() { Name = name, };
             foreach (var mesh in other.Meshes) {
                 model.AppendMesh(Mesh.CreateFrom(mesh));
             }
             return model;
         }
+
+        public override string ToString() { return Name; }
 
     }
 }

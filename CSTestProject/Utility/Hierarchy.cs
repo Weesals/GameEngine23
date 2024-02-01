@@ -58,10 +58,12 @@ namespace Weesals.Utility {
             return item is IWithParent withParent ? withParent.Parent : default;
         }
         public static bool TryGetRecursive<Self>(object? item, out Self result) where Self : class{
+            if (item is Self value) { result = value; return true; }
             result = default!;
-            return item is IWithParent withParent && TryGetRecursive(withParent, out result);
+            return item is IWithParent withParent && TryGetRecursive(withParent.Parent, out result);
         }
         public static Self? TryGetRecursive<Self>(object? item) where Self : IWithParent {
+            if (item is Self value) { return value; }
             return item is IWithParent withParent && TryGetRecursive(withParent, out Self result) ? result : default;
         }
 

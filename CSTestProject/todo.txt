@@ -1,0 +1,2 @@
+//Add sparse components to queries
+//Add sparse listener for CSelectable, use to insert bit mutate listener for tables (if they exist)

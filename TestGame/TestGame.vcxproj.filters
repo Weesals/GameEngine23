@@ -191,7 +191,7 @@
     <Image Include="assets\T_Spear.png" />
     <Image Include="assets\T_Staff.png" />
     <Image Include="assets\T_Sword.png" />
-    <Image Include="assets\T_Tick.png" />
+    <Image Include="assets\ui\T_Tick.png" />
     <Image Include="assets\T_Wand.png" />
     <Image Include="assets\T_Wheat.png" />
     <Image Include="assets\T_Axe.png" />

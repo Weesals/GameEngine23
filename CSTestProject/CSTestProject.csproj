@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Flecs.NET.Release" Version="3.2.9" />
+    <ProjectReference Include="..\Weesals.ECS\Weesals.ECS.csproj" />
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">

@@ -2,8 +2,10 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using UnityEngine;
+using Weesals.ECS;
 using Weesals.Editor;
 using Weesals.Engine;
+using Weesals.Engine.Jobs;
 using Weesals.Game;
 using Weesals.Landscape;
 using Weesals.UI;
@@ -11,7 +13,58 @@ using Weesals.Utility;
 
 class Program {
 
-    unsafe static void Main() {
+    public static void TestDynamicBitField() {
+        var rnd1 = new Random(0);
+        var rnd2 = new Random(0);
+        int count1 = 0, count2 = 0, count3 = 0;
+
+        const int Iterations = 30000000;
+        const int MinValue = 10000;
+        const int MaxValue = 20000;
+
+        var bitField1 = new DynamicBitField();
+        var timer1 = new Stopwatch();
+        timer1.Start();
+        //for (int z = 0; z < 500; z++) {
+            for (int i = 0; i < 20; i++) {
+                bitField1.Add(rnd1.Next(0, MaxValue));
+            }
+            for (int i = 0; i < Iterations; i++) {
+                if (bitField1.Contains(rnd1.Next(MinValue, MaxValue))) ++count1;
+            }
+            var set1 = new HashSet<int>();
+            foreach (var item in bitField1) set1.Add(item);
+        //}
+        timer1.Stop();
+        Trace.WriteLine($"Run1 {timer1.ElapsedMilliseconds} ms {count1}");
+
+        var bitField2 = new DynamicBitField2();
+        var timer2 = new Stopwatch();
+        timer2.Start();
+        //for (int z = 0; z < 500; z++) {
+            for (int i = 0; i < 20; i++) {
+                bitField2.Add(rnd2.Next(0, MaxValue));
+            }
+            for (int i = 0; i < Iterations; i++) {
+                if (bitField2.Contains(rnd2.Next(MinValue, MaxValue))) ++count2;
+            }
+            var set2 = new HashSet<int>();
+            foreach (var item in bitField2) set2.Add(item);
+        //}
+        timer2.Stop();
+        Trace.WriteLine($"Run2 {timer2.ElapsedMilliseconds} ms {count2}");
+
+        var rnd3 = new Random(0);
+        var set = new HashSet<int>();
+        for (int i = 0; i < Iterations; i++) {
+            set.Add(rnd3.Next(0, MaxValue));
+            if (set.Contains(rnd3.Next(0, MaxValue))) ++count3;
+        }
+    }
+    public static void Main() {
+        MainIntl();
+    }
+    unsafe static void MainIntl() {
         var core = new Core();
         Core.ActiveInstance = core;
         Resources.LoadDefaultUIAssets();
@@ -25,23 +78,27 @@ class Program {
         var eventSystem = new EventSystem(play.Canvas);
         editorWindow.GameView.EventSystem = eventSystem;
         editorWindow.GameView.Camera = play.Camera;
-        editorWindow.GameView.Landscape = play.Landscape;
         editorWindow.GameView.Scene = play.ScenePasses;
-        editorWindow.ActivateLandscapeTools();
+
+        play.SelectionManager.OnSelectionChanged += (selection) => {
+            foreach (var entity in selection) {
+                if (entity.Owner is LandscapeRenderer landscape) {
+                    editorWindow.ActivateLandscapeTools(landscape);
+                    return;
+                }
+                if (entity.IsValid) {
+                    editorWindow.ActivateEntityInspector(entity);
+                    return;
+                }
+            }
+            editorWindow.Inspector.SetInspector(default);
+        };
 
         Stopwatch timer = new();
         timer.Start();
 
         float timeSinceRender = 0f;
         int renderHash = 0;
-
-        /*var triangleData = new Vector2[3 * 2048];
-        var rnd = new Random(165);
-        for (int i = 0; i < triangleData.Length; i++) {
-            triangleData[i] = new Vector2(
-                (float)rnd.NextDouble() * 100,
-                (float)rnd.NextDouble() * 100);
-        }*/
 
         // Loop while the window is valid
         while (core.MessagePump() == 0) {
@@ -55,26 +112,10 @@ class Program {
                 graphics.SetResolution(windowRes);
                 continue;
             }
-            /*int count = 0;
-            for (int i1 = 0; i1 < triangleData.Length; i1 += 3) {
-                for (int i2 = 0; i2 < triangleData.Length; i2 += 3) {
-                    var r = Geometry.GetTrianglesOverlap(
-                        triangleData[i1], triangleData[i1 + 1], triangleData[i1 + 2],
-                        triangleData[i2], triangleData[i2 + 1], triangleData[i2 + 2]);
-                    if (r) ++count;
-                }
-            }
 
-            int countOG = 0;
-            for (int i1 = 0; i1 < triangleData.Length; i1 += 3) {
-                for (int i2 = 0; i2 < triangleData.Length; i2 += 3) {
-                    var r = Geometry.GetTrianglesOverlapOG(
-                        triangleData[i1], triangleData[i1 + 1], triangleData[i1 + 2],
-                        triangleData[i2], triangleData[i2 + 1], triangleData[i2 + 2]);
-                    if (r) ++countOG;
-                }
+            if (Input.GetKeyPressed(KeyCode.Escape)) {
+                play.SelectionManager.ClearSelected();
             }
-            Debug.Assert(count == countOG);// */
 
             var dt = (float)timer.Elapsed.TotalSeconds;
             timer.Restart();
@@ -93,9 +134,9 @@ class Program {
             play.PreRender(graphics);
 
             // If the frame hasnt changed, dont render anything
-            var newRenderHash = play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.ScenePasses.GetRenderHash();
+            var newRenderHash = play.Canvas.Revision + play.RenderRevision + editorWindow.Canvas.Revision + play.ScenePasses.GetRenderHash() + Handles.RenderHash;
             bool requireRender = renderHash != newRenderHash;
-            if (!requireRender && timeSinceRender < 0.25f) {
+            if (!requireRender && timeSinceRender < 10.25f) {
                 Thread.Sleep(6);
             } else {
                 graphics.Reset();
@@ -118,6 +159,7 @@ class Program {
         }
 
         // Clean up
+        JobScheduler.Instance.Dispose();
         editorWindow.Dispose();
         play.Dispose();
         core.Dispose();

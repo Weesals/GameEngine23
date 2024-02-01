@@ -2,9 +2,12 @@
 using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.ECS;
 using Weesals.Engine;
 
 namespace Weesals.Utility {
@@ -109,10 +112,18 @@ namespace Weesals.Utility {
         public override string ToString() { return $"<count={Count}>"; }
 
         public static implicit operator Span<T>(PooledArray<T> pool) { return pool.AsSpan(); }
+        public static PooledArray<T> FromEnumerator<En>(En en) where En : IEnumerable<T> {
+            var arr = new PooledArray<T>(en.Count());
+            int index = 0;
+            foreach (var item in en) arr[index++] = item;
+            return arr;
+        }
     }
     public struct PooledList<T> : IDisposable {
         public T[] Data;
         public int Count;
+        public bool IsCreated => Data != null;
+        public bool IsEmpty => Count == 0;
         public PooledList() : this(4) { }
         public PooledList(int capacity) {
             Data = ArrayPool<T>.Shared.Rent(capacity);
@@ -122,11 +133,16 @@ namespace Weesals.Utility {
         public ref T this[int index] { get => ref Data[index]; }
         public void Clear() { Count = 0; }
         public void Add(T value) { Reserve(Count + 1); Data[Count++] = value; }
+        public bool Contains(T value) { return Array.IndexOf(Data, value, 0, Count) >= 0; }
         public void Insert(int index, T item) {
             Reserve(Count + 1);
             Array.Copy(Data, index, Data, index + 1, Count - index);
             Data[index] = item;
             ++Count;
+        }
+        public void RemoveRange(int index, int count) {
+            Count -= count;
+            if (index < Count) Array.Copy(Data, index + count, Data, index, Count - index);
         }
         public void RemoveAt(int index) { Array.Copy(Data, index + 1, Data, index, Count - index - 1); --Count; }
         private void Reserve(int capacity) {

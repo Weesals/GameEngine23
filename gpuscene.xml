@@ -1,0 +1,4 @@
+<BufferFormats>
+  <BufferFormat Name="Globals" IsGlobals="true" Format="// Structure definitions added here will be available in all format definitions&#xD;&#xA;" SavedFormat="// Structure definitions added here will be available in all format definitions&#xD;&#xA;" />
+  <BufferFormat Name="GPUScene" Format="" SavedFormat="" />
+</BufferFormats>

@@ -79,7 +79,7 @@ struct ExpandableMemoryArena {
         {
             mData = malloc(capacity);
         }
-        Page(Page&& o) : mData(o.mData) { o.mData = nullptr; }
+        Page(Page&& o) : mSize(o.mSize), mConsumed(o.mConsumed), mData(o.mData) { o.mData = nullptr; }
         ~Page() {
             if (mData != nullptr) free(mData);
         }
