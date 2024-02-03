@@ -5,16 +5,16 @@ using System.Reflection;
 
 namespace Weesals.ECS {
     public class SparseComponentAttribute : Attribute { }
-    public class NoCopyComponentAttribute : Attribute { }
+    public class NoCloneComponentAttribute : Attribute { }
 
     // Uniquely allocated for each unique component type
     public abstract class ComponentType {
-        public enum ComponentFlags { None = 0, Sparse = 1, NoCopy = 2, Tag = 4, }
+        public enum ComponentFlags { None = 0, Sparse = 1, NoClone = 2, Tag = 4, }
         public readonly Type Type;
         public readonly TypeId TypeId;
         public readonly ComponentFlags Flags;
         public bool IsSparse => (Flags & ComponentFlags.Sparse) != 0;
-        public bool IsNoCopy => (Flags & ComponentFlags.NoCopy) != 0;
+        public bool IsNoClone => (Flags & ComponentFlags.NoClone) != 0;
         public bool IsTag => (Flags & ComponentFlags.Tag) != 0;
         public ComponentType(Type type, TypeId id, ComponentFlags flags) {
             Type = type;
@@ -26,8 +26,8 @@ namespace Weesals.ECS {
         public static bool GetIsFloating(Type type) {
             return type.GetCustomAttribute<SparseComponentAttribute>() != null;
         }
-        public static bool GetIsNoCopy(Type type) {
-            return type.GetCustomAttribute<NoCopyComponentAttribute>() != null;
+        public static bool GetIsNoClone(Type type) {
+            return type.GetCustomAttribute<NoCloneComponentAttribute>() != null;
         }
     }
     public readonly struct TypeId {
@@ -57,15 +57,15 @@ namespace Weesals.ECS {
         }
 
         public new static readonly bool IsSparse;
-        public new static readonly bool IsNoCopy;
+        public new static readonly bool IsNoClone;
         static ComponentType() {
             IsSparse = ComponentType.GetIsFloating(typeof(Component));
-            IsNoCopy = ComponentType.GetIsNoCopy(typeof(Component));
+            IsNoClone = ComponentType.GetIsNoClone(typeof(Component));
         }
         static ComponentFlags GetFlags() {
             return ComponentFlags.None
                 | (IsSparse ? ComponentFlags.Sparse : default)
-                | (IsNoCopy ? ComponentFlags.NoCopy : default);
+                | (IsNoClone ? ComponentFlags.NoClone : default);
         }
     }
 

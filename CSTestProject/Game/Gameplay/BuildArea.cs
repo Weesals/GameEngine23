@@ -51,7 +51,7 @@ namespace Weesals.Game.Gameplay {
         }
         public static bool operator ==(Placement left, Placement right) { return left.Equals(right); }
         public static bool operator !=(Placement left, Placement right) { return !(left == right); }
-        public override bool Equals(object other) { return other is Placement placement && Equals(placement); }
+        public override bool Equals(object? other) { return other is Placement placement && Equals(placement); }
         public override int GetHashCode() { return HashCode.Combine(Position, Size, Orientation); }
         public static readonly Placement Invalid = new Placement() { Size = -1, };
 

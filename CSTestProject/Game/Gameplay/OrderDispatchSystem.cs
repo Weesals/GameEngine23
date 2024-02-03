@@ -18,17 +18,17 @@ namespace Weesals.Game {
         , LifeSystem.IDestroyListener
         , IActionContainer {
 
-        public enum ActionTypes { Train, Upgrade, Interact, }
+        public enum OrderTypes { Train, Upgrade, Interact, }
 
         // An action request for a specific Entity
-        public struct ActionInstance {
+        public struct OrderInstance {
             // The location/target/type of the request
             public ActionRequest Request;
             public RequestId RequestId;
             public bool IsValid => RequestId.IsValid;
             public bool IsReady => RequestId.ActionId != 0;
             public override string ToString() { return RequestId.ToString(); }
-            public static readonly ActionInstance Invalid = new ActionInstance() { RequestId = RequestId.Invalid, };
+            public static readonly OrderInstance Invalid = new OrderInstance() { RequestId = RequestId.Invalid, };
         }
 
         public OrderQueueSystem ActionQueueSystem { get; private set; }
@@ -48,7 +48,7 @@ namespace Weesals.Game {
             public bool Equals(ActionActivation other) { return RequestId == other.RequestId && Request.Equals(other.Request); }
         }
 
-        private List<OrderSystemBase> registeredActions = new();
+        private List<OrderSystemBase> registeredOrders = new();
         private MultiHashMap<Entity, ActionActivation> activeActionsByEntityId;
 
         private int requestCounter;
@@ -69,20 +69,20 @@ namespace Weesals.Game {
         protected override void OnUpdate() {
         }
 
-        public ActionInstance GetActivation(Entity entity, ActionInstance action, OrderSystemBase.TrackStates trackStates) {
-            var actionSystem = GetActionForRequest(entity, action);
+        public OrderInstance GetActivation(Entity entity, OrderInstance order, OrderSystemBase.TrackStates trackStates) {
+            var actionSystem = GetOrderForRequest(entity, order);
             if (actionSystem == null) return default;
-            action.RequestId = action.RequestId.WithActionId(actionSystem.Id);
+            order.RequestId = order.RequestId.WithActionId(actionSystem.Id);
             trackStates.SetIsFlagging(true);
-            actionSystem.GetTrackStates(entity, action.Request, ref trackStates);
+            actionSystem.GetTrackStates(entity, order.Request, ref trackStates);
             if (trackStates.Flagging == 2) return default;
-            return action;
+            return order;
         }
         // Find the relevant ActionSystem and attempt to begin executing the action
-        public bool BeginAction(Entity entity, ActionInstance action) {
-            if (!action.IsValid) return false;
-            var actionSystem = registeredActions[action.RequestId.ActionId];
-            var activation = new ActionActivation(action.Request, action.RequestId);
+        public bool BeginOrder(Entity entity, OrderInstance order) {
+            if (!order.IsValid) return false;
+            var actionSystem = registeredOrders[order.RequestId.ActionId];
+            var activation = new ActionActivation(order.Request, order.RequestId);
             if (!actionSystem.Begin(entity, activation)) return false;
             ForceActivatedAction(entity, activation);
             return true;
@@ -92,30 +92,30 @@ namespace Weesals.Game {
         }
 
         // Register an ActionSystem capable of handling action reuests
-        public void RegisterAction(OrderSystemBase action, bool enable) {
-            action.RegisterCompletionListener(this, enable);
+        public void RegisterOrder(OrderSystemBase order, bool enable) {
+            order.RegisterCompletionListener(this, enable);
             if (enable) {
-                while (action.Id >= registeredActions.Count) registeredActions.Add(default);
-                Debug.Assert(registeredActions[action.Id] == null, "Invalid action!");
+                while (order.Id >= registeredOrders.Count) registeredOrders.Add(default);
+                Debug.Assert(registeredOrders[order.Id] == null, "Invalid action!");
             }
-            registeredActions[action.Id] = enable ? action : default;
+            registeredOrders[order.Id] = enable ? order : default;
         }
 
         internal RequestId AllocateRequestId(int id) {
             return new RequestId((id << 24) | ((++requestCounter) & 0x00ffffff));
         }
         // Find the most ideal ActionSystem for a given request
-        public OrderSystemBase GetActionForRequest(Entity entity, ActionInstance request) {
-            if (request.Request.ActionId != -1) return registeredActions[request.Request.ActionId];
+        public OrderSystemBase GetOrderForRequest(Entity entity, OrderInstance request) {
+            if (request.Request.ActionId != -1) return registeredOrders[request.Request.ActionId];
             var bestScore = 0f;
             OrderSystemBase bestSystem = default;
-            for (int i = 0; i < registeredActions.Count; i++) {
-                var action = registeredActions[i];
+            for (int i = 0; i < registeredOrders.Count; i++) {
+                var action = registeredOrders[i];
                 if (action == null) continue;
                 var score = action.ScoreRequest(entity, request);
                 if (score > bestScore) {
                     bestScore = score;
-                    bestSystem = registeredActions[i];
+                    bestSystem = registeredOrders[i];
                 }
             }
             return bestSystem;
@@ -127,7 +127,7 @@ namespace Weesals.Game {
         // required tracks are busy
         public void GetTrackState(Entity entity, ref OrderSystemBase.TrackStates trackStates) {
             foreach (var activation in activeActionsByEntityId.GetValuesForKey(entity)) {
-                var action = registeredActions[activation.ActionIndex];
+                var action = registeredOrders[activation.ActionIndex];
                 action.GetTrackStates(entity, activation.Request, ref trackStates);
             }
         }
@@ -180,7 +180,7 @@ namespace Weesals.Game {
                 if (item.ActionIndex != actionId) continue;
                 if (completion.RequestId.IsValid && !item.RequestId.Equals(completion.RequestId)) continue;
 
-                registeredActions[item.ActionIndex].Cancel(completion.Entity, completion.RequestId);
+                registeredOrders[item.ActionIndex].Cancel(completion.Entity, completion.RequestId);
                 it.RemoveSelf();
                 break;
             }
@@ -213,7 +213,7 @@ namespace Weesals.Game {
                 var activation = it.Current;
                 if (!requestId.IsAll && activation.RequestId != requestId) continue;
 
-                var actionSystem = registeredActions[activation.ActionIndex];
+                var actionSystem = registeredOrders[activation.ActionIndex];
                 actionSystem.Cancel(entity, activation.RequestId);
                 it.RemoveSelf();
             }

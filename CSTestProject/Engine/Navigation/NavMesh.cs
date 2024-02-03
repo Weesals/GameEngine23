@@ -141,10 +141,10 @@ namespace Navigation {
                         if (insideC == 2) return from;
                         ++insideC;
                     } else {
-                        var edp = Int2.Dot(edge, c0D);
-                        var eL2 = Int2.Dot(edge, edge);
+                        var edp = (int)Int2.Dot(edge, c0D);
+                        var eL2 = (int)Int2.Dot(edge, edge);
                         if (edp > 0 && edp < eL2) {
-                            var proj = c0 + edge * edp / eL2;
+                            var proj = c0 + FixedMath.MultiplyRatio(edge, edp, eL2);
                             var projD = from - proj;
                             dst2 = Int2.Dot(projD, projD);
                             if (dst2 < nearestDst2) {
@@ -164,9 +164,9 @@ namespace Navigation {
                 var c0 = (Int2)corners[c0i];
                 var c1 = (Int2)corners[c1i];
                 var cD = c1 - c0;
-                int num = Int2.Dot(cD, position - c0);
+                int num = (int)Int2.Dot(cD, position - c0);
                 if (num <= 0) return c0;
-                int div = Int2.Dot(cD, cD);
+                int div = (int)Int2.Dot(cD, cD);
                 if (num >= div) return c1;      // Covers case of div == 0
                 return NavUtility.Lerp(c0, c1, num, div);
             }
@@ -285,7 +285,7 @@ namespace Navigation {
                     return;
                 }
                 var delta = ro.GetNearestPointInTriangle(triI, p) - p;
-                var dst2 = Int2.Dot(delta, delta);
+                var dst2 = (int)Int2.Dot(delta, delta);
                 if (dst2 >= bestDst2) return;
                 bestDst2 = dst2;
                 bestTri = triI;

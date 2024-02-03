@@ -194,10 +194,10 @@ namespace Weesals.Engine {
 	    public static Int2 Max(Int2 v1, Int2 v2) { return new Int2(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y)); }
         public static Int2 Abs(Int2 v) { return new Int2(Math.Abs(v.X), Math.Abs(v.Y)); }
         public static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return new Int2(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y)); }
-        public static int Dot(Int2 v1, Int2 v2) { return v1.X * v2.X + v1.Y * v2.Y; }
+        public static long Dot(Int2 v1, Int2 v2) { return (long)v1.X * v2.X + (long)v1.Y * v2.Y; }
         public static int CSum(Int2 v) { return v.X + v.X; }
         public static int CMul(Int2 v) { return v.X * v.Y; }
-        public static int DistanceSquared(Int2 v1, Int2 v2) { v1 -= v2; return Dot(v1, v2); }
+        public static long DistanceSquared(Int2 v1, Int2 v2) { v1 -= v2; return Dot(v1, v1); }
 
         public static Int2 FloorToInt(Vector2 v) { return new Int2(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y)); }
         public static Int2 RoundToInt(Vector2 v) { return new Int2(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y)); }

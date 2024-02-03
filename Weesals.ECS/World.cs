@@ -213,6 +213,13 @@ namespace Weesals.ECS {
             var index = archetype.RequireTypeIndex(componentTypeId, Context);
             return ref archetype.GetValueAs<T>(index, entityData.Row);
         }
+        public bool TryGetComponent<T>(EntityAddress entityData, out T component) {
+            var componentTypeId = Context.RequireComponentTypeId<T>();
+            var archetype = archetypes[entityData.ArchetypeId];
+            if (!archetype.TryGetTypeIndex(componentTypeId, out var index, Context)) { component = default; return false; }
+            component = archetype.GetValueAs<T>(index, entityData.Row);
+            return true;
+        }
         public ref T GetComponentRef<T>(Entity entity) {
             return ref GetComponentRef<T>(RequireEntityAddress(entity));
         }
@@ -234,24 +241,29 @@ namespace Weesals.ECS {
             if (markDirty) archetype.NotifyMutation(index, entityData.Row);
             return new NullableRef<T>(ref archetype.GetValueAs<T>(index, entityData.Row));
         }
-        unsafe public bool RemoveComponent<T>(Entity entity) {
+        unsafe public bool TryRemoveComponent<T>(Entity entity) {
             var entityData = RequireEntityAddress(entity);
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityData.ArchetypeId];
             if (ComponentType<T>.IsSparse) {
                 var column = archetype.RequireSparseComponent(componentTypeId, Context);
-                Debug.Assert(archetype.GetHasSparseComponent(column, entityData.Row));
+                if (!archetype.GetHasSparseComponent(column, entityData.Row)) return false;
                 archetype.ClearSparseIndex(column, entityData.Row);
                 return true;
             }
             if (!archetype.TypeMask.Contains(componentTypeId))
-                throw new Exception($"Entity doesnt have component {typeof(T).Name}");
+                return false;//throw new Exception($"Entity doesnt have component {typeof(T).Name}");
             var builder = new StageContext.TypeInfoBuilder(Context);
             builder.Append(archetype.TypeMask);
             builder.RemoveComponent(componentTypeId);
             MoveEntity(entity,
                 RequireArchetypeIndex(builder.Build()));
             return true;
+        }
+        unsafe public bool RemoveComponent<T>(Entity entity) {
+            bool result = TryRemoveComponent<T>(entity);
+            Trace.Assert(result);
+            return result;
         }
 
         public QueryId RequireQueryIndex(BitField withTypes, BitField withoutTypes, BitField withSparseTypes) {
@@ -331,8 +343,10 @@ namespace Weesals.ECS {
             var newData = oldData;
             newData.Address = newAddr;
             entities[(int)entity.Index] = newData;
-            archetypes[oldData.ArchetypeId].CopyRowTo(oldData.Row,
-                archetypes[newData.ArchetypeId], newData.Row);
+            if (newData.Row >= 0) {
+                archetypes[oldData.ArchetypeId].CopyRowTo(oldData.Row,
+                    archetypes[newData.ArchetypeId], newData.Row);
+            }
             NotifyEntityChange(entity, oldData, newData);
             RemoveRow(oldData);
             return newData;
@@ -698,7 +712,7 @@ namespace Weesals.ECS {
             var instanceArchetype = Stage.GetArchetype(instanceAddr.ArchetypeId);
             foreach (var prefabCmp in Stage.GetEntityComponents(prefab)) {
                 var instanceCmp = new ComponentRef(Context, instanceArchetype, instanceAddr.Row, prefabCmp.TypeId);
-                if (instanceCmp.GetComponentType().IsNoCopy) continue;
+                if (instanceCmp.GetComponentType().IsNoClone) continue;
                 prefabCmp.CopyTo(instanceCmp);
                 instanceCmp.NotifyMutation();
             }
@@ -725,6 +739,9 @@ namespace Weesals.ECS {
         public ref readonly T GetComponent<T>(Entity entity) {
             return ref Stage.GetComponent<T>(entity);
         }
+        public bool TryGetComponent<T>(Entity entity, out T component) {
+            return Stage.TryGetComponent<T>(Stage.RequireEntityAddress(entity), out component);
+        }
         public ref T GetComponentRef<T>(Entity entity) {
             return ref Stage.GetComponentRef<T>(entity);
         }
@@ -733,6 +750,9 @@ namespace Weesals.ECS {
         }
         public bool RemoveComponent<T>(Entity entity) {
             return Stage.RemoveComponent<T>(entity);
+        }
+        public bool TryRemoveComponent<T>(Entity entity) {
+            return Stage.TryRemoveComponent<T>(entity);
         }
 
         public void OnRegister<C1>(Action<Entity, bool> callback) {

@@ -71,7 +71,7 @@ namespace Weesals.Game {
                     from = Int2.Abs(from);
                     from -= Separation / 2;
                     from = Int2.Max(from, 0);
-                    return Int2.Dot(from, from);
+                    return (int)Int2.Dot(from, from);
                 }
             }
             public SpiralIterator CreateSpiralIterator(Int2 pnt) {

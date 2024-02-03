@@ -10,7 +10,7 @@ using Weesals.Game;
 using Weesals.Game.Gameplay;
 
 namespace Weesals.Rendering {
-    [SparseComponent, NoCopyComponent]
+    [SparseComponent, NoCloneComponent]
     public struct SceneRenderable {
         public CSInstance[] SceneIndex;
         public override string ToString() { return SceneIndex.ToString(); }
@@ -25,7 +25,6 @@ namespace Weesals.Rendering {
             public Entity[] SceneEntities = Array.Empty<Entity>();
             public ArchetypeComponentLookup<CModel> ModelLookup;
             public ArchetypeComponentLookup<ECTransform> TransformLookup;
-            public ArchetypeComponentLookup<CPosition> PositionLookup;
             public ArchetypeComponentLookup<CSelectable> SelectedLookup;
             public DynamicBitField ChangedModels = new();
             public DynamicBitField ChangedTransforms = new();
@@ -36,8 +35,6 @@ namespace Weesals.Rendering {
                 ModelLookup.GetColumn(table).AddModificationListener(ChangedModels);
                 TransformLookup = new(context, table);
                 TransformLookup.GetColumn(table).AddModificationListener(ChangedTransforms);
-                PositionLookup = new(context, table);
-                PositionLookup.GetColumn(table).AddModificationListener(ChangedPositions);
                 SelectedLookup = new(context, table);
                 if (SelectedLookup.IsValid)
                     SelectedLookup.GetColumn(table).AddModificationListener(ChangedSelected);
@@ -50,7 +47,7 @@ namespace Weesals.Rendering {
             Scene = scene;
             ScenePasses = scenePasses;
 
-            var renderables = World.BeginQuery().With<CPosition>().With<CModel>().Build();
+            var renderables = World.BeginQuery().With<ECTransform>().With<CModel>().Build();
             World.Stage.AddListener(renderables, new ArchetypeListener() {
                 OnCreate = (entityAddr) => {
                     //var renEntity = renderWorld.CreateEntity();
@@ -90,7 +87,10 @@ namespace Weesals.Rendering {
         }
         private void RemoveEntityScene(EntityAddress entityAddr) {
             ref var sceneProxy = ref World.Stage.GetComponentRef<SceneRenderable>(entityAddr);
-            foreach (var index in sceneProxy.SceneIndex) Scene.RemoveInstance(index);
+            foreach (var index in sceneProxy.SceneIndex) {
+                ScenePasses.RemoveInstance(index);
+                Scene.RemoveInstance(index);
+            }
             sceneProxy.SceneIndex = Array.Empty<CSInstance>();
         }
         public ref Entity RequireEntitySlot(EntityAddress entityAddr) {
@@ -119,7 +119,6 @@ namespace Weesals.Rendering {
             binding.ChangedPositions.TryRemove(entityAddr.Row);
             binding.ChangedSelected.TryRemove(entityAddr.Row);
             if (binding.TransformLookup.IsValid) UpdateTransform(entityAddr);
-            if (binding.PositionLookup.IsValid) UpdatePosition(entityAddr);
             if (binding.SelectedLookup.IsValid) UpdateSelected(entityAddr);
         }
         public void UpdateTransform(EntityAddress entityAddr) {
@@ -129,15 +128,6 @@ namespace Weesals.Rendering {
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             foreach (var index in sceneProxy.SceneIndex)
                 Scene.SetTransform(index, epos.AsMatrix());
-        }
-        public void UpdatePosition(EntityAddress entityAddr) {
-            var binding = Bindings[entityAddr.ArchetypeId];
-            var epos = binding.PositionLookup.GetValue(World.Stage, entityAddr);
-            var sceneProxy = World//RenderWorld
-                .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
-            foreach (var index in sceneProxy.SceneIndex)
-                Scene.SetTransform(index,
-                    Matrix4x4.CreateRotationY(MathF.PI) * Matrix4x4.CreateTranslation(epos.Value));
         }
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
@@ -158,9 +148,6 @@ namespace Weesals.Rendering {
                 }
                 foreach (var row in binding.ChangedTransforms) {
                     UpdateTransform(new EntityAddress(new ArchetypeId(i), row));
-                }
-                foreach (var row in binding.ChangedPositions) {
-                    UpdatePosition(new EntityAddress(new ArchetypeId(i), row));
                 }
                 foreach (var row in binding.ChangedSelected) {
                     UpdateSelected(new EntityAddress(new ArchetypeId(i), row));

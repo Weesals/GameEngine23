@@ -39,7 +39,7 @@ namespace Weesals.Game {
             AccumulationSystem.RegisterCompleteListener(this, enable);
         }
 
-        public override float ScoreRequest(Entity entity, OrderDispatchSystem.ActionInstance action) {
+        public override float ScoreRequest(Entity entity, OrderDispatchSystem.OrderInstance action) {
             return 0f;
         }
         public override bool Begin(Entity entity, in OrderDispatchSystem.ActionActivation action) {
@@ -62,7 +62,7 @@ namespace Weesals.Game {
             var cmdBuffer = new EntityCommandBuffer(Stage);
             var spawnedEntities = new PooledList<SpawnedEntity>(32);
             foreach (var completion in completions) {
-                var action = ActionDispatchSystem.GetAction(completion.Entity, completion.RequestId);
+                var action = OrderDispatchSystem.GetAction(completion.Entity, completion.RequestId);
                 if (!action.IsValid) continue;
                 var spawnerTform = tformLookup[completion.Entity];
                 var ownerId = ownerLookup[completion.Entity].SlotId;
@@ -86,7 +86,7 @@ namespace Weesals.Game {
             }
             cmdBuffer.Commit();
             if (!spawnedEntities.IsEmpty) {
-                var queueCopy = new PooledList<OrderDispatchSystem.ActionInstance>(8);
+                var queueCopy = new PooledList<OrderDispatchSystem.OrderInstance>(8);
                 foreach (var item in spawnedEntities) {
                     var queue = ActionQueueSystem.GetQueueForEntity(item.Owner);
                     queueCopy.Clear();

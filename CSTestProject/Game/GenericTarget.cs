@@ -31,6 +31,9 @@ namespace Weesals.Game {
     interface IEntityRedirect {
         GenericTarget GetOwner(ulong id);
     }
+    interface IEntityStringifier {
+        string ToString(ulong id);
+    }
 
     public struct GenericTarget : IEquatable<GenericTarget> {
 
@@ -50,7 +53,11 @@ namespace Weesals.Game {
         public static bool operator !=(GenericTarget t1, GenericTarget t2) { return !t1.Equals(t2); }
         // Never box this type
         public override bool Equals(object? obj) { throw new NotImplementedException(); }
-        public override string ToString() { return Owner + ":" + Data; }
+        public override string ToString() {
+            if (Owner is IEntityStringifier stringifier) return stringifier.ToString(Data);
+            if (Owner is World) return GetEntity().ToString();
+            return Owner + ":" + Data;
+        }
         public override int GetHashCode() { return (Owner != null ? Owner.GetHashCode() : 0) + (int)Data; }
 
         public static GenericTarget FromLocation(Int2 wpnt) {

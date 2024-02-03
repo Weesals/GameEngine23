@@ -31,22 +31,30 @@ namespace Weesals.Game {
         public override string ToString() { return $"Selected {Selected}"; }
     }
 
-    public class EntityProxy : IEntityPosition, IEntitySelectable, IEntityRedirect {
+    public class EntityProxy : IEntityPosition, IEntitySelectable, IEntityRedirect, IEntityStringifier {
 
         public readonly World World;
+        public EntityMapSystem EntityMapSystem;
+        private EntityMapSystem.MoveContract moveContract;
 
-        public EntityProxy(World world) { World = world; }
+        public EntityProxy(World world) {
+            World = world;
+            EntityMapSystem = World.GetOrCreateSystem<EntityMapSystem>();
+            moveContract = EntityMapSystem.AllocateContract();
+        }
 
         public Vector3 GetPosition(ulong id = ulong.MaxValue) {
-            return World.GetComponent<CPosition>(GenericTarget.UnpackEntity(id)).Value;
+            //return World.GetComponent<CPosition>(GenericTarget.UnpackEntity(id)).Value;
+            return World.GetComponent<ECTransform>(GenericTarget.UnpackEntity(id)).GetWorldPosition();
         }
         public Quaternion GetRotation(ulong id = ulong.MaxValue) {
             return Quaternion.Identity;
         }
         public void SetPosition(Vector3 pos, ulong id = ulong.MaxValue) {
             ref var tform = ref World.GetComponentRef<ECTransform>(GenericTarget.UnpackEntity(id));
-            tform.Position = SimulationWorld.WorldToSimulation(pos).XZ;
-            World.GetComponentRef<CPosition>(GenericTarget.UnpackEntity(id)).Value = pos;
+            moveContract.MoveEntity(GenericTarget.UnpackEntity(id), ref tform, SimulationWorld.WorldToSimulation(pos).XZ);
+            EntityMapSystem.CommitContract(moveContract);
+            moveContract.Clear();
         }
         public void SetRotation(Quaternion rot, ulong id = ulong.MaxValue) {
         }
@@ -58,6 +66,10 @@ namespace Weesals.Game {
         }
         public GenericTarget GetOwner(ulong id) {
             return GenericTarget.FromEntity(World, GenericTarget.UnpackEntity(id));
+        }
+
+        public string ToString(ulong id) {
+            return GenericTarget.UnpackEntity(id).ToString();
         }
     }
 
@@ -86,20 +98,10 @@ namespace Weesals.Game {
             entityMapSystem = World.GetOrCreateSystem<EntityMapSystem>();
             navigationSystem = World.GetOrCreateSystem<NavigationSystem>();
             World.GetOrCreateSystem<OrderMoveSystem>();
+            World.GetOrCreateSystem<OrderAttackSystem>();
 
             entityMapSystem.SetLandscape(landscape);
             navigationSystem.SetLandscape(landscape);
-
-            /*NavBaker.InsertRectangle(new RectI(0, 0, 2048, 2048), new TriangleType() { TypeId = 0, });
-            var mutator = new NavMesh2Baker.Mutator(NavBaker);
-            var vertMutator = mutator.CreateVertexMutator();
-            var v1 = vertMutator.RequireVertexId(new Coordinate(64, 32));
-            var v2 = vertMutator.RequireVertexId(new Coordinate(128, 73));
-            var v3 = vertMutator.RequireVertexId(new Coordinate(23, 50));
-            mutator.PinEdge(v1, v2);
-            mutator.PinEdge(v2, v3);
-            mutator.PinEdge(v3, v1);
-            mutator.SetTriangleTypeByEdge(v1, v2, new TriangleType() { TypeId = 1, }, true);*/
         }
 
         public void GenerateWorld() {
@@ -120,17 +122,18 @@ namespace Weesals.Game {
 
             var houseModel = Resources.LoadModel("./assets/SM_House.fbx");
             var command = new EntityCommandBuffer(World.Stage);
-            const int Count = 500;
+            const int Count = 10;
             var SqrtCount = (int)MathF.Sqrt(Count);
             for (int i = 0; i < Count; i++) {
                 var newEntity = command.CreateDeferredEntity();
-                var pos = new Vector3(i / SqrtCount, 0f, i % SqrtCount) * 10.0f;
-                command.AddComponent<CPosition>(newEntity) = new CPosition() { Value = pos, };
+                var pos = new Vector3(i / SqrtCount, 0f, i % SqrtCount) * 40.0f;
                 command.AddComponent<CModel>(newEntity) = new() { Model = houseModel, };
-                command.AddComponent<CTargetPosition>(newEntity);
                 command.AddComponent<CSelectable>(newEntity);
-                command.AddComponent<ECTransform>(newEntity) = new() { Position = new Int2(i / SqrtCount, i % SqrtCount) * 2000 };
+                command.AddComponent<CHitPoints>(newEntity) = new() { Current = 10, };
+                command.AddComponent<ECTransform>(newEntity) = new() { Position = new Int2(i / SqrtCount, i % SqrtCount) * 6000 };
                 command.AddComponent<ECMobile>(newEntity) = new() { MovementSpeed = 10000, TurnSpeed = 500, NavMask = 1, };
+                command.AddComponent<ECTeam>(newEntity) = new() { SlotId = (byte)i };
+                command.AddComponent<ECAbilityAttackMelee>(newEntity) = new() { Damage = 1, Interval = 10, };
                 //command.AddComponent<ECActionMove>(newEntity) = new() { Location = 5000, };
             }
             command.Commit();
@@ -154,6 +157,8 @@ namespace Weesals.Game {
             var timeSystem = World.GetSystem<TimeSystem>();
             timeSystem.Step(dtMS);
             World.Step();
+
+            World.GetOrCreateSystem<LifeSystem>().PurgeDead();
 
 #if false
             var newEntities = World.BeginQuery().With<Position>().Without<SceneRenderable>().Build();

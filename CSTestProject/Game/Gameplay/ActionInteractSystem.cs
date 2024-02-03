@@ -61,7 +61,7 @@ namespace Weesals.Game {
             return true;
         }
         public override void Cancel(Entity entity, RequestId requestId) {
-            World.RemoveComponent<ECActionInteractMelee>(entity);
+            World.TryRemoveComponent<ECActionInteractMelee>(entity);
         }
 
         protected override void OnUpdate() {
@@ -102,14 +102,15 @@ namespace Weesals.Game {
                                 Ticks = ticks,
                             });
                         }
-                        return;
+                        continue;
                     }
                 }
                 // Failed to attack, remove action
                 cmdBuffer.RemoveComponent<ECActionInteractMelee>(entity);
                 completions.Add(new CompletionInstance(entity, interact.RequestId));
             }
-            if (!Stage.QueryMightHaveMatches(query)) {
+            cmdBuffer.Commit();
+            if (Stage.QueryMightHaveMatches(query)) {
                 JobHandle strikeResponse = default;
                 foreach (var listener in strikeListeners) {
                     strikeResponse = JobHandle.CombineDependencies(

@@ -35,7 +35,7 @@ namespace Weesals.Utility {
                     var ocell = cell + new Int2(x, y);
                     var pnt = (ocell << BitShift) + PermuteS512(ocell);
                     var delta = pnt - from1024;
-                    var dst2 = Int2.Dot(delta, delta);
+                    var dst2 = (int)Int2.Dot(delta, delta);
                     if (dst2 >= nearest.Z) continue;
                     nearest.Z = dst2;
                     nearest.XY = pnt;
@@ -62,7 +62,7 @@ namespace Weesals.Utility {
         }
 
         private static int DotGradient(Int2 from1024, Int2 cell) {
-            return Int2.Dot(from1024 - (cell << BitShift), PermuteS512(cell));
+            return (int)Int2.Dot(from1024 - (cell << BitShift), PermuteS512(cell));
         }
     }
 }

@@ -8,6 +8,7 @@ using Weesals.ECS;
 namespace Weesals.Game {
     using CompletionInstance = OrderSystemBase.CompletionInstance;
 
+    // Formerly CombatSystem
     public abstract partial class ActionSystemBase : SystemBase
         , ILateUpdateSystem
         , LifeSystem.IDestroyListener {

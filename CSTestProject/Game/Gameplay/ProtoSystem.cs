@@ -35,7 +35,7 @@ namespace Weesals.Game {
             return GetPrototypeData(World.Stage.UnsafeGetEntityByIndex(entityIndex));
         }
         public PrototypeData GetPrototypeData(Entity entity) {
-            return World.GetComponent<PrototypeData>(entity);
+            return World.TryGetComponent<PrototypeData>(entity, out var protoData) ? protoData : PrototypeData.Default;
         }
 
     }

@@ -49,23 +49,23 @@ namespace Weesals.Game {
         }
 
         public abstract int Id { get; }
-        public OrderDispatchSystem ActionDispatchSystem { get; private set; }
+        public OrderDispatchSystem OrderDispatchSystem { get; private set; }
         private List<ICompletionListener> completionListeners = new();
 
         protected override void OnCreate() {
             base.OnCreate();
-            ActionDispatchSystem = World.GetOrCreateSystem<OrderDispatchSystem>();
-            ActionDispatchSystem.RegisterAction(this, true);
+            OrderDispatchSystem = World.GetOrCreateSystem<OrderDispatchSystem>();
+            OrderDispatchSystem.RegisterOrder(this, true);
         }
         protected override void OnDestroy() {
-            ActionDispatchSystem.RegisterAction(this, false);
+            OrderDispatchSystem.RegisterOrder(this, false);
             base.OnDestroy();
         }
         protected override void OnUpdate() { }
 
         // Return 1 or higher if we are capable of fulfilling this request
         // The system with the highest (>0) response will be selected
-        public virtual float ScoreRequest(Entity entity, OrderDispatchSystem.ActionInstance action) {
+        public virtual float ScoreRequest(Entity entity, OrderDispatchSystem.OrderInstance action) {
             return 0f;
         }
         public virtual void GetTrackStates(Entity entity, in ActionRequest request, ref TrackStates trackStates) {

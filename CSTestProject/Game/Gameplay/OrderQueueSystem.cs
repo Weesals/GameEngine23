@@ -9,7 +9,7 @@ using Weesals.ECS;
 using Weesals.Utility;
 
 namespace Weesals.Game {
-    using ActionInstance = OrderDispatchSystem.ActionInstance;
+    using OrderInstance = OrderDispatchSystem.OrderInstance;
     /// <summary>
     /// Allow arbitrary actions to be pushed onto a list to be executed
     /// when the appropriate track(s) are available.
@@ -51,7 +51,7 @@ namespace Weesals.Game {
         // Each entity can have its own queue of action requests
         //private Dictionary<Entity, EntityQueue> entityQueue = new();
         // The data store for action request instances
-        private SparseArray<ActionInstance> actions = new();
+        private SparseArray<OrderInstance> actions = new();
 
         protected override void OnCreate() {
             base.OnCreate();
@@ -69,15 +69,15 @@ namespace Weesals.Game {
             actions.Slice(queue.Queue);
         }
 
-        public ActionInstance CreateActionInstance(ActionRequest request) {
+        public OrderInstance CreateActionInstance(ActionRequest request) {
             request.Time = (uint)TimeSystem.TimeCurrentMS;
-            return new ActionInstance() {
+            return new OrderInstance() {
                 Request = request,
                 RequestId = ActionDispatchSystem.AllocateRequestId(request.ActionId),
             };
         }
         // Add an action request to be fulfilled at a later date
-        public void EnqueueAction(Entity entity, ActionInstance action) {
+        public void EnqueueAction(Entity entity, OrderInstance action) {
             ref var queue = ref Stage.RequireComponent<EntityQueue>(entity, false);
             if (action.Request.TargetEntity != Entity.Null) {
                 if (!Stage.IsValid(action.Request.TargetEntity)) {
@@ -89,7 +89,7 @@ namespace Weesals.Game {
             actions[queue.Queue.End - 1] = action;
             VerifyQueue(queue);
         }
-        public Span<ActionInstance> GetQueueForEntity(Entity entity) {
+        public Span<OrderInstance> GetQueueForEntity(Entity entity) {
             ref var queue = ref Stage.RequireComponent<EntityQueue>(entity, false);
             if (queue.Queue.Length <= 0) return default;
             return actions.Slice(queue.Queue);
@@ -112,7 +112,7 @@ namespace Weesals.Game {
                     action = ActionDispatchSystem.GetActivation(entity, action, trackStates);
                     if (!action.IsValid) continue;
                     VerifyQueue(queue);
-                    ActionDispatchSystem.BeginAction(entity, action);
+                    ActionDispatchSystem.BeginOrder(entity, action);
                     VerifyQueue(queue);
 
                     actions.Splice(ref queue.Queue, q, 1, 0);
@@ -169,7 +169,7 @@ namespace Weesals.Game {
 
         public struct RequestEnumerator : IEnumerator<Entity> {
             private TypedQueryIterator<EntityQueue> entityQueue;
-            private SparseArray<ActionInstance> actions;
+            private SparseArray<OrderInstance> actions;
             public Entity Current => entityQueue.Current;
             object IEnumerator.Current => Current;
             public RequestId RequestId { get; private set; }

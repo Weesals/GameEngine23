@@ -142,7 +142,7 @@ public class NavGrid : IDisposable {
                             var pntT1 = map[pnt1.X + pnt1.Y * Size.X];
                             if (pntT0 == pntT1) continue;
                             int c = 1;
-                            int cMax = Int2.Dot(dir, Size - pnt0);
+                            int cMax = checked((int)Int2.Dot(dir, Size - pnt0));
                             var nxt0 = pnt0;
                             var nxt1 = pnt1;
                             for (; c < cMax; c++) {

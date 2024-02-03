@@ -114,7 +114,7 @@ namespace Weesals.Utility {
 
         public bool Equals(XRT other) { return other.RawValue == RawValue; }
         public bool Equals(XRT r1, XRT r2) { return r1.RawValue == r2.RawValue; }
-        public override bool Equals(object obj) { return obj is XRT value && value.RawValue == this.RawValue; }
+        public override bool Equals(object? obj) { return obj is XRT value && value.RawValue == this.RawValue; }
         public int GetHashCode(XRT r) { return r.GetHashCode(); }
 
         public override int GetHashCode() { return RawValue.GetHashCode(); }

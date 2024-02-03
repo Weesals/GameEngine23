@@ -605,7 +605,7 @@ namespace Weesals.ECS {
         public bool Equals(Entity other) { return Index == other.Index; }
         public override bool Equals(object? obj) { throw new NotImplementedException(); }
         public override int GetHashCode() { return (int)Index; }
-        public override string ToString() { return $"Entity #{Index}"; }
+        public override string ToString() { return IsValid ? $"Entity #{Index}" : "None"; }
         public static bool operator ==(Entity left, Entity right) { return left.Equals(right); }
         public static bool operator !=(Entity left, Entity right) { return !(left == right); }
         public static readonly Entity Null = new();

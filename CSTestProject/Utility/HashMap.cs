@@ -104,6 +104,7 @@ namespace Weesals.Utility {
 
         public int Count => count;
         public int Capacity => map.Capacity;
+        public bool IsEmpty => count == 0;
 
         public PooledHashSet(int capacity = 16) { map = new(capacity); }
         public void Dispose() { map.Dispose(); }

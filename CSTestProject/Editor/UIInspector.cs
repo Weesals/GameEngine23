@@ -75,6 +75,7 @@ namespace Weesals.Editor {
             if (entity.Owner is IEntityRedirect redirect)
                 entity = redirect.GetOwner(entity.Data);
             if (entity.Owner is World world) {
+                List.AppendChild(new TextBlock(entity.ToString()) { FontSize = 14, Color = Color.Black, DisplayParameters = TextDisplayParameters.Flat });
                 foreach (var component in world.GetEntityComponents(GenericTarget.UnpackEntity(entity.Data))) {
                     var type = component.GetComponentType();
                     var value = component.GetValue();

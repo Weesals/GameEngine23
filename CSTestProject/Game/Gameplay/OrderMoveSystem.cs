@@ -32,7 +32,7 @@ namespace Weesals.Game {
         }
 
         // If the request was for movement, then signal that we are able to handle it
-        public override float ScoreRequest(Entity entity, OrderDispatchSystem.ActionInstance action) {
+        public override float ScoreRequest(Entity entity, OrderDispatchSystem.OrderInstance action) {
             if (action.Request.HasType(ActionTypes.Move)) {
                 if (Stage.HasComponent<ECMobile>(entity)) return 1f;
             }
@@ -49,7 +49,7 @@ namespace Weesals.Game {
         }
         public bool Begin(Entity entity, OrderDispatchSystem.ActionActivation action, int range) {
             base.Begin(entity, action);
-            var group = ActionDispatchSystem.GetActionGroup(entity, action.RequestId);
+            var group = OrderDispatchSystem.GetActionGroup(entity, action.RequestId);
             var location = action.Request.TargetLocation;
             if (group.Count > 1) {
                 var theta = (2 * Fixed16_16.PI / Fixed16_16.Phi) * group.Index;

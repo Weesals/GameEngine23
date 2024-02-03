@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -32,6 +33,13 @@ namespace Weesals.Engine.Jobs {
         }
         public static JobHandle Schedule(Action<object> value, object context, JobHandle dependency) {
             return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateJob(value, context), dependency);
+        }
+
+        public void Complete() {
+            while (!JobDependencies.Instance.GetIsComplete(this)) {
+                Thread.Sleep(0);
+            }
+            //throw new NotImplementedException();
         }
 
         public static readonly JobHandle None = new();

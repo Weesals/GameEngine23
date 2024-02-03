@@ -29,6 +29,13 @@ namespace Weesals.ECS {
         public bool HasComponent(Entity entity) {
             return Stage.HasComponent<T>(entity);
         }
+
+        public bool TryGetComponent(Entity entity, out T component) {
+            if (!HasComponent(entity)) { component = default; return false; }
+            component = this[entity];
+            return true;
+        }
+
         public T this[Entity entity] {
             get => Stage.GetComponent<T>(entity);
             set => GetRefRW(entity) = value;

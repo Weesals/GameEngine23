@@ -93,7 +93,7 @@ namespace Weesals.Game {
         }
         public void Cancel(Entity entity, RequestId requestId) {
             //Debug.WriteLine($"REM {requestId} {new StackTrace().ToString()}");
-            World.RemoveComponent<ECActionMove>(entity);
+            World.TryRemoveComponent<ECActionMove>(entity);
             RemoveCache(entity);
         }
 
@@ -167,12 +167,12 @@ namespace Weesals.Game {
             var waterMap = EntityMapSystem.LandscapeData.GetWaterMap();
             var disableMovements = this.disableMovements;
             EntityCommandBuffer cmdBuffer = new(Stage);
-            foreach (var accessor in World.QueryAll<ECMobile, ECActionMove>()) {
+            foreach (var accessor in World.QueryAll<ECMobile, ECActionMove, ECTransform>()) {
                 Entity entity = accessor;
-                ref ECMobile mobile = ref accessor.Component1Ref;
-                ref ECActionMove move = ref accessor.Component2Ref;
+                ECMobile mobile = accessor;
+                ECActionMove move = accessor;
+                ref ECTransform tform = ref accessor.Component3Ref;
                 var dt = time.DeltaTimeMS;
-                var tform = tformLookup[entity];
                 var stopPos = move.Location;
                 if (move.Range > 0) stopPos = FixedMath.MoveToward(stopPos, tform.Position, move.Range);
                 var nextPos = stopPos;
@@ -255,7 +255,7 @@ namespace Weesals.Game {
                         if (other == entity) continue;
                         var otform = tformLookup[other];
                         var odelta = newPos - otform.Position;
-                        var len2 = Int2.Dot(odelta, odelta);
+                        var len2 = (int)Int2.Dot(odelta, odelta);
                         if (len2 == 0) continue;
                         const int AvoidRange = 700;
                         if (len2 < AvoidRange * AvoidRange) {
@@ -274,12 +274,12 @@ namespace Weesals.Game {
                 if (Int2.Dot(delta, delta) > 1) {
                     RotateTowardFacing(ref tform, delta, mobile, dt);
                 }
-                tformLookup[entity] = tform;
                 if (stopPos.Equals(newPos)) {
                     cmdBuffer.RemoveComponent<ECActionMove>(entity);
                     completions.Add(new CompletionInstance(entity, move.RequestId));
                 }
             }
+            cmdBuffer.Commit();
             foreach (var completion in completions) {
                 RemoveCache(completion.Entity);
             }
@@ -353,14 +353,14 @@ namespace Weesals.Game {
 
             var eTform = World.GetComponent<ECTransform>(entity);
             var tTform = World.GetComponent<ECTransform>(target);
-            var protoData = World.GetComponent<PrototypeData>(target);
+            if (!World.TryGetComponent<PrototypeData>(target, out var protoData)) protoData = PrototypeData.Default;
             var targetLocation = Int2.Clamp(
                 eTform.Position,
                 tTform.Position - protoData.Footprint.Size / 2,
                 tTform.Position + protoData.Footprint.Size / 2
             );
 
-            var dst2 = Int2.Dot(eTform.Position, targetLocation);
+            var dst2 = Int2.DistanceSquared(eTform.Position, targetLocation);
             if (dst2 <= range * range) {
                 return MoveResults.Arrived;
             } else {
@@ -408,7 +408,7 @@ namespace Weesals.Game {
             Int2 nearest = default;
             for (int i = 0; i < 3; i++) {
                 var corner = NavMesh.GetCorner(tri.GetCorner(i));
-                var dst2 = Int2.DistanceSquared(corner, nfrom);
+                var dst2 = (int)Int2.DistanceSquared(corner, nfrom);
                 if (dst2 < nearestDst2) {
                     nearestDst2 = dst2;
                     nearest = (Int2)corner;

@@ -153,9 +153,19 @@ namespace Weesals.ECS {
             }
         }
         public void CopyRowTo(int srcRow, Archetype dest, int dstRow) {
-            var it1 = TypeMask.GetEnumerator();
-            var it2 = dest.TypeMask.GetEnumerator();
+            CopyColumns(srcRow, dest, dstRow, TypeMask, dest.TypeMask, 1, 1);
+            CopyColumns(srcRow, dest, dstRow, SparseTypeMask, dest.SparseTypeMask, ColumnCount, dest.ColumnCount);
+            if (MaxItem >= 0) {
+                dest.Entities[dstRow] = Entities[srcRow];
+                ++Revision;
+            }
+        }
+
+        private void CopyColumns(int srcRow, Archetype dest, int dstRow, BitField srcTypes, BitField dstTypes, int srcColBegin, int dstColBegin) {
+            var it1 = srcTypes.GetEnumerator();
+            var it2 = dstTypes.GetEnumerator();
             int i1 = -1, i2 = -1;
+            bool isSparse = srcColBegin >= ColumnCount;
             while (it1.MoveNext()) {
                 ++i1;
                 // Try to find the matching bit
@@ -166,14 +176,19 @@ namespace Weesals.ECS {
                 // If no matching bit was found
                 if (it2.Current != it1.Current) continue;
                 // Otherwise copy the value
-                dest.Columns[1 + i2].CopyValue(dstRow, Columns[1 + i1], srcRow);
+                if (isSparse) {
+                    if (!GetHasSparseComponent(srcColBegin + i1, srcRow)) {
+                        // TODO: Probably need to remove sparse components on entity delete
+                        // (otherwise they could leak into this moved entity)
+                        Debug.Assert(!dest.GetHasSparseComponent(dstColBegin + i2, dstRow));
+                        continue;
+                    }
+                    dest.RequireSparseIndex(dstColBegin + i2, dstRow);
+                }
+                dest.Columns[dstColBegin + i2].CopyValue(dstRow, Columns[srcColBegin + i1], srcRow);
             }
-            if (MaxItem >= 0) {
-                dest.Entities[dstRow] = Entities[srcRow];
-                ++Revision;
-            }
-            // TODO: SparseColumns
         }
+
         public void CopyComponentTo(int componentId, int srcRow, Archetype dest, int dstRow) {
             var srcColumn = TypeMask.GetBitIndex(componentId);
             if (!dest.TypeMask.TryGetBitIndex(componentId, out var dstColumn)) return;
