@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Weesals.Engine {
-    public enum KeyCode {
+    public enum KeyCode : ushort {
         Backspace = 0x08,
         Tab = 0x09,
         Return = 0x0D,
@@ -118,6 +118,12 @@ namespace Weesals.Engine {
         Play = 0xFA,
         Zoom = 0xFB,
         Clear = 0xFE,
+    }
+    public enum Modifiers : ushort {
+        None = 0x00,
+        Shift = 0x01,
+        Control = 0x02,
+        Alt = 0x04,
     }
     public static class Input {
 

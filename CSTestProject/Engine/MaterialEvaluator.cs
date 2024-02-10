@@ -85,12 +85,18 @@ namespace Weesals.Engine {
             return ResolveResources(graphics, pipeline, CollectionsMarshal.AsSpan(materialStack));
         }
 		public static MemoryBlock<nint> ResolveResources(CSGraphics graphics, CSPipeline pipeline, Span<Material> materialStack) {
-			var resources = graphics.RequireFrameData<nint>(pipeline.GetConstantBufferCount() + pipeline.GetResourceCount());
+            int resCount = pipeline.GetConstantBufferCount() + pipeline.GetResourceCount();
+            if (pipeline.GetHasStencilState()) ++resCount;
+            var resources = graphics.RequireFrameData<nint>(resCount);
 			ResolveResources(graphics, pipeline, materialStack, resources);
 			return resources;
 		}
 		unsafe public static void ResolveResources(CSGraphics graphics, CSPipeline pipeline, Span<Material> materialStack, Span<nint> outResources) {
 			int r = 0;
+            if (pipeline.GetHasStencilState()) {
+                var realtimeState = ResolveRealtimeState(materialStack);
+                outResources[r++] = realtimeState.StencilRef;
+            }
 			// Get constant buffer data for this batch
 			foreach (var cb in pipeline.GetConstantBuffers()) {
 				Span<byte> tmpData = stackalloc byte[cb.mSize];
@@ -105,16 +111,28 @@ namespace Weesals.Engine {
 				}
 			}
 		}
-        private static void MergeState(ref Material.StateData state, Material mat) {
+        private static void MergePipelineState(ref Material.StateData state, Material mat) {
             state.MergeWith(mat.State);
             foreach (var inherit in mat.InheritParameters) {
-                MergeState(ref state, inherit);
+                MergePipelineState(ref state, inherit);
             }
         }
-        public static Material.StateData ResolveState(Span<Material> materials) {
+        private static void MergeRealtimeState(ref Material.RealtimeStateData state, Material mat) {
+            state.MergeWith(mat.RealtimeData);
+            foreach (var inherit in mat.InheritParameters) {
+                MergeRealtimeState(ref state, inherit);
+            }
+        }
+        public static Material.StateData ResolvePipelineState(Span<Material> materials) {
             Material.StateData r = default;
-            foreach (var mat in materials) MergeState(ref r, mat);
+            foreach (var mat in materials) MergePipelineState(ref r, mat);
             r.MergeWith(Material.StateData.Default);
+            return r;
+        }
+        public static Material.RealtimeStateData ResolveRealtimeState(Span<Material> materials) {
+            Material.RealtimeStateData r = default;
+            foreach (var mat in materials) MergeRealtimeState(ref r, mat);
+            r.MergeWith(Material.RealtimeStateData.Default);
             return r;
         }
         public static int ResolveMacros(Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, Span<Material> materials) {
@@ -144,7 +162,7 @@ namespace Weesals.Engine {
         unsafe public static CSPipeline ResolvePipeline(CSGraphics graphics, Span<CSBufferLayout> pbuffLayout, Span<Material> materials) {
             var macros = stackalloc KeyValuePair<CSIdentifier, CSIdentifier>[32];
             int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macros, 32), materials);
-            var materialState = ResolveState(materials);
+            var materialState = ResolvePipelineState(materials);
             var pipeline = graphics.RequirePipeline(pbuffLayout,
                 materialState.VertexShader, materialState.PixelShader,
                 &materialState.BlendMode,

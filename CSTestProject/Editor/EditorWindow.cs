@@ -8,8 +8,8 @@ using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.XPath;
+using Weesals.ECS;
 using Weesals.Engine;
-using Weesals.Game;
 using Weesals.Landscape;
 using Weesals.UI;
 
@@ -81,18 +81,16 @@ namespace Weesals.Editor {
         public UIInspector Inspector;
         public UIGameView GameView;
         public UIProjectView ProjectView;
-
-        private EventSystem eventSystem;
+        public EventSystem EventSystem;
         public Canvas Canvas;
         public bool RequireRepaint;
 
         public EditorWindow() {
             Editor = new();
-            Editor.DefaultFont = CSResources.LoadFont("./assets/Roboto-Regular.ttf");
+            Editor.DefaultFont = CSResources.LoadFont("./Assets/Roboto-Regular.ttf");
 
             Canvas = new();
-            eventSystem = new EventSystem(Canvas);
-            eventSystem.SetInput(Core.ActiveInstance.GetInput());
+            EventSystem = new EventSystem(Canvas);
             var flex = new FlexLayout();
             Inspector = new(Editor) { };
             GameView = new(Editor) { };
@@ -109,10 +107,10 @@ namespace Weesals.Editor {
             Inspector.SetInspector(Inspector.LandscapeTools);
             GameView.AppendChild(Inspector.LandscapeTools.InputDispatcher);
         }
-        public void ActivateEntityInspector(GenericTarget entity) {
+        public void ActivateEntityInspector(World world, Entity entity) {
             if (entity.IsValid) {
                 Inspector.SetInspector(Inspector.EntityInspector);
-                Inspector.EntityInspector.Initialise(entity);
+                Inspector.EntityInspector.Initialise(world, entity);
             } else {
                 Inspector.SetInspector(default);
             }
@@ -120,7 +118,7 @@ namespace Weesals.Editor {
 
         public void Update(float dt, Int2 size) {
             Canvas.SetSize(size);
-            eventSystem.Update(dt);
+            EventSystem.Update(dt);
             Canvas.Update(dt);
             Canvas.RequireComposed();
         }

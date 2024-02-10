@@ -339,6 +339,18 @@ namespace Weesals.Landscape {
             return false;
         }
 
+        public void PaintRectangle(int typeId, RectI range) {
+            for (int y = range.Min.Y; y < range.Max.Y; y++) {
+                var yI = Sizing.ToIndex(new Int2(0, y));
+                for (int x = range.Min.X; x < range.Max.X; x++) {
+                    int i = yI + x;
+                    var cell = mControlMap[i];
+                    cell.TypeId = (byte)typeId;
+                    mControlMap[i] = cell;
+                }
+            }
+            NotifyLandscapeChanged(new LandscapeChangeEvent(range, controlMap: true));
+        }
     }
 
     public static class HeightMapExt {

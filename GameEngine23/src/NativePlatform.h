@@ -17,6 +17,9 @@ public:
 	void Initialize();
 
 	// Use to access platform systems
+	std::shared_ptr<WindowBase> CreateWindow(const std::wstring_view& name);
+	std::shared_ptr<GraphicsSurface> CreateGraphicsSurface(WindowBase& window);
+
 	const std::shared_ptr<WindowBase>& GetWindow() const { return mWindow; }
 	const std::shared_ptr<GraphicsDeviceBase>& GetGraphics() const { return mGraphics; }
 	const std::shared_ptr<Input>& GetInput() const { return mInput; }

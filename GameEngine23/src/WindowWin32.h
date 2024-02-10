@@ -9,6 +9,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#undef CreateWindow
 
 // A Windows window (using old desktop win32 APIs)
 class WindowWin32 :

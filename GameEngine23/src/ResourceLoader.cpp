@@ -32,17 +32,20 @@ const std::shared_ptr<Texture>& ResourceLoader::LoadTexture(const std::wstring_v
 		//auto data = SOIL_load_image(pathStr.c_str(), &size.x, &size.y, 0, SOIL_LOAD_RGBA);
 		stbi_set_flip_vertically_on_load(true);
 		auto data = stbi_load(pathStr.c_str(), &size.x, &size.y, 0, STBI_rgb_alpha);
-		auto tex = std::make_shared<Texture>();
-		tex->SetSize(size);
-		std::transform((const uint32_t*)data, (const uint32_t*)data + size.x * size.y, (uint32_t*)tex->GetRawData().data(), [](auto p)
-			{
-				return p;
-			}
-		);
-		tex->MarkChanged();
+		std::shared_ptr<Texture> tex;
+		if (data != nullptr) {
+			tex = std::make_shared<Texture>();
+			tex->SetSize(size);
+			std::transform((const uint32_t*)data, (const uint32_t*)data + size.x * size.y, (uint32_t*)tex->GetRawData().data(), [](auto p)
+				{
+					return p;
+				}
+			);
+			tex->MarkChanged();
+			//SOIL_free_image_data(data);
+			stbi_image_free(data);
+		}
 		i = mLoadedTextures.insert(std::make_pair(std::wstring(path), tex)).first;
-		//SOIL_free_image_data(data);
-		stbi_image_free(data);
 	}
 	return i->second;
 }

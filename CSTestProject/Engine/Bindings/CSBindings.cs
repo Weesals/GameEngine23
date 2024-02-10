@@ -141,6 +141,10 @@ namespace Weesals.Engine {
     }
     public partial struct CSTexture : IEquatable<CSTexture> {
         unsafe public bool IsValid() { return mTexture != null; }
+        public BufferFormat Format => IsValid() ? GetFormat() : default;
+        public Int2 Size => IsValid() ? GetSize() : default;
+        public int MipCount => IsValid() ? GetMipCount() : default;
+        public int ArrayCount => IsValid() ? GetArrayCount() : default;
         unsafe public CSTexture SetSize(Int2 size) { SetSize(mTexture, size); return this; }
         unsafe public Int2 GetSize() { return GetSize(mTexture); }
         unsafe public CSTexture SetFormat(BufferFormat fmt) { SetFormat(mTexture, fmt); return this; }
@@ -156,6 +160,7 @@ namespace Weesals.Engine {
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSTexture other) { return mTexture == other.mTexture; }
         unsafe public override int GetHashCode() { return HashCode.Combine((ulong)mTexture); }
+        public override string ToString() { return $"Size<{Size}> Fmt<{Format}>"; }
         unsafe public static bool operator ==(CSTexture left, CSTexture right) { return left.mTexture == right.mTexture; }
         unsafe public static bool operator !=(CSTexture left, CSTexture right) { return left.mTexture != right.mTexture; }
 
@@ -402,9 +407,14 @@ namespace Weesals.Engine {
     public partial struct CSInput {
         unsafe public bool IsValid() { return mPlatform != null; }
         unsafe public CSSpanSPtr<CSPointer> GetPointers() { return new CSSpanSPtr<CSPointer>(GetPointers(null, mPlatform)); }
-        unsafe public bool GetKeyDown(char key) { return GetKeyDown(null, mPlatform, (sbyte)key); }
-        unsafe public bool GetKeyPressed(char key) { return GetKeyPressed(null, mPlatform, (sbyte)key); }
-        unsafe public bool GetKeyReleased(char key) { return GetKeyReleased(null, mPlatform, (sbyte)key); }
+        unsafe public bool GetKeyDown(char key) { return GetKeyDown(null, mPlatform, (byte)key); }
+        unsafe public bool GetKeyPressed(char key) { return GetKeyPressed(null, mPlatform, (byte)key); }
+        unsafe public bool GetKeyReleased(char key) { return GetKeyReleased(null, mPlatform, (byte)key); }
+        unsafe public Span<CSKey> GetPressKeys() { return GetPressKeys(null, mPlatform).AsSpan<CSKey>(); }
+        unsafe public Span<CSKey> GetDownKeys() { return GetDownKeys(null, mPlatform).AsSpan<CSKey>(); }
+        unsafe public Span<CSKey> GetReleaseKeys() { return GetReleaseKeys(null, mPlatform).AsSpan<CSKey>(); }
+        unsafe public Span<ushort> GetCharBuffer() { return GetCharBuffer(null, mPlatform).AsSpan<ushort>(); }
+        unsafe public void ReceiveTickEvent() { ReceiveTickEvent(null, mPlatform); }
     }
     public partial struct CSConstantBuffer {
         unsafe public CSIdentifier mName => mConstantBuffer->mName;
@@ -421,6 +431,7 @@ namespace Weesals.Engine {
     }
     public partial struct CSPipeline {
         unsafe public bool IsValid() { return mPipeline != null; }
+        unsafe public bool GetHasStencilState() { return GetHasStencilState(mPipeline) != 0; }
         unsafe public int GetBindingCount() { return GetExpectedBindingCount(mPipeline); }
         unsafe public int GetConstantBufferCount() { return GetExpectedConstantBufferCount(mPipeline); }
         unsafe public int GetResourceCount() { return GetExpectedResourceCount(mPipeline); }
@@ -428,6 +439,9 @@ namespace Weesals.Engine {
         unsafe public CSSpanPtr<CSResourceBinding> GetResources() { return new CSSpanPtr<CSResourceBinding>(GetResources(mPipeline)); }
         unsafe public static implicit operator NativePipeline*(CSPipeline p) { return p.mPipeline; }
         public override unsafe int GetHashCode() { return (int)mPipeline ^ (int)((ulong)mPipeline >> 32); }
+    }
+    public partial struct CSGraphicsSurface {
+        unsafe public void RegisterDenyPresent(int delta = 1) { RegisterDenyPresent(mSurface, delta); }
     }
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
@@ -449,6 +463,7 @@ namespace Weesals.Engine {
         unsafe public void Clear() { Clear(mGraphics); }
         unsafe public void SetViewport(RectI viewport) { SetViewport(mGraphics, viewport); }
         unsafe public void Execute() { Execute(mGraphics); }
+        unsafe public CSGraphicsSurface GetPrimarySurface() { return new CSGraphicsSurface(GetPrimarySurface(mGraphics)); }
         unsafe public nint RequireConstantBuffer(Span<byte> data) {
             fixed (byte* dataPtr = data) {
                 return (nint)RequireConstantBuffer(mGraphics, new CSSpan(dataPtr, data.Length));
@@ -469,26 +484,9 @@ namespace Weesals.Engine {
                 ));
             }
         }
-        unsafe public CSPipeline RequirePipeline(List<CSBufferLayout> bindings, List<CSMaterial> materials, CSIdentifier renderPass) {
-            return RequirePipeline(CollectionsMarshal.AsSpan(bindings), CollectionsMarshal.AsSpan(materials), renderPass);
-        }
-        //[SuppressMessage("Reliability", "CA2014:Do not use stackalloc in loops", Justification = "Is fine bruh")]
-        unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings, Span<CSMaterial> materials, CSIdentifier renderPass) {
-            var usbindings = stackalloc CSBufferLayout[bindings.Length];
-            var usbindingPtrs = stackalloc CSBufferLayout*[bindings.Length];
-            for (int b = 0; b < bindings.Length; ++b) {
-                usbindings[b] = bindings[b];
-                usbindingPtrs[b] = &usbindings[b];
-            }
-            var usmaterials = stackalloc CSMaterial[materials.Length];
-            for (var m = 0; m < materials.Length; ++m) usmaterials[m] = materials[m];
-            return new CSPipeline(RequirePipeline(mGraphics,
-                new CSSpan(usbindingPtrs, bindings.Length),
-                new CSSpan(usmaterials, materials.Length)
-            ));
-        }
-        unsafe public CSPipeline RequirePipeline(CSSpan bindings, CSSpan materials, CSIdentifier renderPass) {
-            return new CSPipeline(RequirePipeline(mGraphics, bindings, materials));
+        unsafe public void CopyBufferData(CSBufferLayout buffer) {
+            Span<RangeInt> ranges = stackalloc RangeInt[] { new(0, buffer.mCount) };
+            CopyBufferData(buffer, ranges);
         }
         unsafe public void CopyBufferData(CSBufferLayout buffer, List<RangeInt> ranges) {
             CopyBufferData(buffer, CollectionsMarshal.AsSpan(ranges));
@@ -529,48 +527,6 @@ namespace Weesals.Engine {
         public override string ToString() { return GetInstanceId().ToString(); }
         public static implicit operator int(CSInstance instance) { return instance.mInstanceId; }
     }
-    public partial struct CSRenderPass {
-        public readonly unsafe Frustum GetFrustum() { return *GetFrustum(mRenderPass); }
-        unsafe public void SetViewProjection(Matrix4x4 view, Matrix4x4 proj) { SetViewProjection(mRenderPass, &view, &proj); }
-        unsafe public ref Matrix4x4 GetView() { return ref *GetView(mRenderPass); }
-        unsafe public ref Matrix4x4 GetProjection() { return ref *GetProjection(mRenderPass); }
-        unsafe public void AddInstance(CSInstance instance, CSMesh mesh, IList<CSMaterial> materials) {
-            var usmaterials = stackalloc CSMaterial[materials.Count];
-            for (int m = 0; m < materials.Count; ++m) usmaterials[m] = materials[m];
-            AddInstance(mRenderPass, instance, mesh, new CSSpan(usmaterials, materials.Count));
-        }
-        unsafe public void RemoveInstance(CSInstance instance) { RemoveInstance(mRenderPass, instance); }
-        unsafe public void SetVisible(CSInstance instance, bool visible) { SetVisible(mRenderPass, instance, (byte)(visible ? 1 : 0)); }
-        unsafe public CSMaterial GetOverrideMaterial() { return new CSMaterial(GetOverrideMaterial(mRenderPass)); }
-        unsafe public void SetTargetTexture(CSRenderTarget target) { SetTargetTexture(mRenderPass, target.mRenderTarget); }
-        unsafe public CSRenderTarget GetTargetTexture() { return new CSRenderTarget(GetTargetTexture(mRenderPass)); }
-        unsafe public void Bind(CSGraphics graphics) { Bind(mRenderPass, graphics); }
-        unsafe public void Render(CSGraphics graphics) { Render(mRenderPass, graphics); }
-        unsafe public void AppendDraw(CSGraphics graphics, CSPipeline pipeline, IList<CSBufferLayout> bindings, CSSpan resources, Int2 instanceRange) {
-            var usbindings = stackalloc CSBufferLayout[bindings.Count];
-            for (int b = 0; b < bindings.Count; ++b) usbindings[b] = bindings[b];
-            var ibindings = graphics.ImmortalizeBufferLayout(new CSSpan(usbindings, bindings.Count));
-            AppendDraw(mRenderPass, graphics, pipeline, ibindings, resources, instanceRange);
-        }
-    }
-    public partial struct CSScene {
-        unsafe public void Dispose() { Dispose(mScene); mScene = null; }
-        unsafe public CSTexture GetGPUBuffer() { return new CSTexture(GetGPUBuffer(mScene)); }
-        unsafe public int GetGPURevision() { return GetGPURevision(mScene); }
-        unsafe public CSMaterial GetRootMaterial() { return new CSMaterial(GetRootMaterial(mScene)); }
-        unsafe public CSInstance CreateInstance() { return new CSInstance(CreateInstance(mScene)); }
-        unsafe public void RemoveInstance(CSInstance instance) { RemoveInstance(mScene, instance); }
-        unsafe public void UpdateInstanceData(CSInstance instance, int offset, void* data, int dataLen) { UpdateInstanceData(mScene, instance, offset, (byte*)data, dataLen); }
-        unsafe public MemoryBlock<Vector4> GetInstanceData(CSInstance instance) { return GetInstanceData(mScene, instance).AsMemoryBlock<Vector4>(); }
-        unsafe public CSRenderPass GetBasePass() { return new CSRenderPass(GetBasePass(mScene)); }
-        unsafe public CSRenderPass GetShadowPass() { return new CSRenderPass(GetShadowPass(mScene)); }
-        public unsafe CSRenderPass CreateRenderPass(string name) {
-            fixed (char* namePtr = name) {
-                return new CSRenderPass(CSRenderPass.Create(mScene, new CSString(namePtr, name.Length)));
-            }
-        }
-        unsafe public void Render(CSGraphics graphics) { Render(mScene, graphics); }
-    }
     public partial struct CSWindow {
         unsafe public void Dispose() { Dispose(mWindow); mWindow = null; }
         unsafe public Int2 GetResolution() { return GetResolution(mWindow); }
@@ -581,7 +537,6 @@ namespace Weesals.Engine {
         unsafe public CSWindow GetWindow() { return new CSWindow(GetWindow(mPlatform)); }
         unsafe public CSResources GetResources() { return new CSResources(); }
         unsafe public CSGraphics CreateGraphics() { return new CSGraphics(CreateGraphics(mPlatform)); }
-        unsafe public CSScene CreateScene() { return new CSScene(CreateScene(mPlatform)); }
         unsafe public int MessagePump() { return MessagePump(mPlatform); }
         unsafe public void Present() { Present(mPlatform); }
     }
@@ -607,10 +562,6 @@ namespace Weesals.Engine {
             mBlendAlphaOp = blendAlpha;
             mBlendColorOp = blendColor;
         }
-        public static BlendMode MakeOpaque() { return new BlendMode(BlendArg.One, BlendArg.Zero, BlendArg.One, BlendArg.Zero, BlendOp.Add, BlendOp.Add); }
-        public static BlendMode MakeAlphaBlend() { return new BlendMode(BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
-        public static BlendMode MakeAdditive() { return new BlendMode(BlendArg.One, BlendArg.One, BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
-        public static BlendMode MakePremultiplied() { return new BlendMode(BlendArg.One, BlendArg.SrcInvAlpha, BlendArg.One, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
 
         public override bool Equals(object? obj) { return obj is BlendMode mode && Equals(mode); }
         public bool Equals(BlendMode other) {
@@ -621,8 +572,15 @@ namespace Weesals.Engine {
         public override int GetHashCode() {
             return HashCode.Combine(mSrcAlphaBlend, mDestAlphaBlend, mSrcColorBlend, mDestColorBlend, mBlendAlphaOp, mBlendColorOp);
         }
+
         public static bool operator ==(BlendMode left, BlendMode right) { return left.Equals(right); }
         public static bool operator !=(BlendMode left, BlendMode right) { return !(left == right); }
+
+        public static BlendMode MakeOpaque() { return new BlendMode(BlendArg.One, BlendArg.Zero, BlendArg.One, BlendArg.Zero, BlendOp.Add, BlendOp.Add); }
+        public static BlendMode MakeAlphaBlend() { return new BlendMode(BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendArg.SrcAlpha, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
+        public static BlendMode MakeAdditive() { return new BlendMode(BlendArg.One, BlendArg.One, BlendArg.SrcAlpha, BlendArg.One, BlendOp.Add, BlendOp.Add); }
+        public static BlendMode MakePremultiplied() { return new BlendMode(BlendArg.One, BlendArg.SrcInvAlpha, BlendArg.One, BlendArg.SrcInvAlpha, BlendOp.Add, BlendOp.Add); }
+        public static BlendMode MakeNone() { return new BlendMode(BlendArg.One, BlendArg.Zero, BlendArg.One, BlendArg.Zero, BlendOp.Add, BlendOp.Add); }
     }
     public struct RasterMode : IEquatable<RasterMode> {
         public enum CullModes : byte { None = 1, Front = 2, Back = 3, };
@@ -640,19 +598,67 @@ namespace Weesals.Engine {
     }
     public struct DepthMode : IEquatable<DepthMode> {
         public enum Comparisons : byte { Never = 1, Less, Equal, LEqual, Greater, NEqual, GEqual, Always, };
-        public Comparisons mComparison;
-        public bool mWriteEnable;
+        public enum Modes : byte { None = 0, DepthWrite = 1, StencilEnable = 2, };
+        public enum StencilOp : byte { Keep = 1, Zero = 2, Replace = 3, IncrementSaturate = 4, DecrementSaturate = 5, Invert = 6, Increment = 7, Decrement = 8, };
+
+        public struct StencilDesc {
+            public StencilOp StencilFailOp;
+            public StencilOp DepthFailOp;
+            public StencilOp PassOp;
+            public Comparisons Function;
+            public StencilDesc(StencilOp stencilFailOp, StencilOp depthFailOp, StencilOp passOp, Comparisons function) {
+                StencilFailOp = stencilFailOp;
+                DepthFailOp = depthFailOp;
+                PassOp = passOp;
+                Function = function;
+            }
+            public static StencilDesc MakeDontChange(Comparisons comparison) {
+                return new StencilDesc(StencilOp.Keep, StencilOp.Keep, StencilOp.Keep, comparison);
+            }
+            public static readonly StencilDesc DefaultBack = new() { StencilFailOp = StencilOp.Keep, DepthFailOp = StencilOp.Keep, PassOp = StencilOp.Replace, Function = Comparisons.Equal, };
+            public static readonly StencilDesc DefaultFront = new() { StencilFailOp = StencilOp.Keep, DepthFailOp = StencilOp.Keep, PassOp = StencilOp.Replace, Function = Comparisons.Equal, };
+        }
+
+        public Comparisons Comparison;
+        public Modes Mode;
+        public byte StencilReadMask = 0xff;
+        public byte StencilWriteMask = 0xff;
+        public StencilDesc StencilFront;
+        public StencilDesc StencilBack;
+        public bool DepthWrite { get => (Mode & Modes.DepthWrite) != 0; set => Mode = value ? Mode | Modes.DepthWrite : Mode & ~Modes.DepthWrite; }
+        public bool StencilEnable { get => (Mode & Modes.StencilEnable) != 0; set => Mode = value ? Mode | Modes.DepthWrite : Mode & ~Modes.StencilEnable; }
         public DepthMode(Comparisons c = Comparisons.Less, bool write = true) {
-            mComparison = c;
-            mWriteEnable = write;
+            Comparison = c;
+            DepthWrite = write;
+        }
+        public DepthMode SetStencil(byte readMask = 0xff, byte writeMask = 0xff) {
+            return SetStencil(readMask, writeMask, StencilDesc.DefaultFront, StencilDesc.DefaultBack, true);
+        }
+        public DepthMode SetStencil(byte readMask, byte writeMask, StencilDesc stencilFront, StencilDesc stencilBack, bool enable = true) {
+            if (enable) Mode |= Modes.StencilEnable; else Mode &= ~Modes.StencilEnable;
+            StencilReadMask = readMask;
+            StencilWriteMask = writeMask;
+            StencilFront = stencilFront;
+            StencilBack = stencilBack;
+            return this;
         }
         public static DepthMode MakeOff() { return new DepthMode(Comparisons.Always, false); }
         public static DepthMode MakeReadOnly(Comparisons comparison = Comparisons.LEqual) { return new DepthMode(comparison, false); }
         public static DepthMode MakeDefault(Comparisons comparison = Comparisons.LEqual) { return new DepthMode(comparison, true); }
+        public static DepthMode MakeWriteOnly(Comparisons comparison = Comparisons.Always) { return new DepthMode(comparison, true); }
 
         public override bool Equals(object? obj) { return obj is DepthMode mode && Equals(mode); }
-        public bool Equals(DepthMode other) { return mComparison == other.mComparison && mWriteEnable == other.mWriteEnable; }
-        public override int GetHashCode() { return HashCode.Combine(mComparison, mWriteEnable); }
+        public bool Equals(DepthMode other) {
+            bool same = Comparison == other.Comparison && Mode == other.Mode &&
+                (!StencilEnable || (StencilReadMask == other.StencilReadMask && StencilWriteMask == other.StencilWriteMask));
+            return same;
+        }
+        public override int GetHashCode() {
+            var hash = HashCode.Combine(Comparison, Mode);
+            if (StencilEnable) hash = HashCode.Combine(hash, StencilReadMask, StencilWriteMask);
+            return hash;
+        }
+
         public static bool operator ==(DepthMode left, DepthMode right) { return left.Equals(right); }
         public static bool operator !=(DepthMode left, DepthMode right) { return !(left == right); }
     }

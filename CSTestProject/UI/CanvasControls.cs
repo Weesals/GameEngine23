@@ -32,6 +32,7 @@ namespace Weesals.UI {
         public AspectModes AspectMode = AspectModes.PreserveAspectContain;
         public Vector2 ImageAnchor = new Vector2(0.5f, 0.5f);
 
+        public CSTexture Texture { get => Element.Texture; set { Element.SetTexture(value); MarkLayoutDirty(); } }
         public Color Color { get => Element.Color; set => Element.Color = value; }
         public CanvasBlending.BlendModes BlendMode { get => Element.BlendMode; set => Element.SetBlendMode(value); } 
 
@@ -67,42 +68,43 @@ namespace Weesals.UI {
         }
     }
     public class TextBlock : CanvasRenderable {
-        public CanvasText Element;
+        public CanvasText TextElement;
 
-        public Color Color { get => Element.Color; set { Element.Color = value; MarkComposeDirty(); } }
-        public float FontSize { get => Element.FontSize; set { Element.FontSize = value; MarkComposeDirty(); } }
-        public CSFont Font { get => Element.Font; set { Element.Font = value; MarkComposeDirty(); } }
-        public TextAlignment Alignment { get => Element.Alignment; set { Element.Alignment = value; MarkComposeDirty(); } }
-        public TextDisplayParameters DisplayParameters { get => Element.DisplayParameters; set { Element.DisplayParameters = value; MarkComposeDirty(); } }
+        public string Text { get => TextElement.Text; set { if (TextElement.Text == value) return; TextElement.Text = value; MarkComposeDirty(); MarkTransformDirty(); } }
+        public Color TextColor { get => TextElement.Color; set { TextElement.Color = value; MarkComposeDirty(); } }
+        public float FontSize { get => TextElement.FontSize; set { TextElement.FontSize = value; MarkComposeDirty(); MarkTransformDirty(); } }
+        public CSFont Font { get => TextElement.Font; set { TextElement.Font = value; MarkComposeDirty(); MarkTransformDirty(); } }
+        public TextAlignment Alignment { get => TextElement.Alignment; set { TextElement.Alignment = value; MarkComposeDirty(); } }
+        public TextDisplayParameters DisplayParameters { get => TextElement.DisplayParameters; set { TextElement.DisplayParameters = value; MarkComposeDirty(); } }
 
         public TextBlock(string text = "") {
-            Element = new CanvasText(text);
+            TextElement = new CanvasText(text);
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
-            Element.Initialize(Canvas);
-            if (!Element.Font.IsValid())
-                Element.SetFont(Resources.LoadFont("./assets/Roboto-Regular.ttf"));
+            TextElement.Initialize(Canvas);
+            if (!TextElement.Font.IsValid())
+                TextElement.SetFont(Resources.LoadFont("./Assets/Roboto-Regular.ttf"));
         }
         public override void Uninitialise(CanvasBinding binding) {
-            Element.Dispose(Canvas);
+            TextElement.Dispose(Canvas);
             base.Uninitialise(binding);
         }
         protected override void NotifyTransformChanged() {
             base.NotifyTransformChanged();
-            Element.MarkLayoutDirty();
+            TextElement.MarkLayoutDirty();
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
             var layout = mLayoutCache;
-            Element.UpdateLayout(Canvas, layout);
-            Element.Append(ref composer);
+            TextElement.UpdateLayout(Canvas, layout);
+            TextElement.Append(ref composer);
             base.Compose(ref composer);
         }
         public override Vector2 GetDesiredSize(SizingParameters sizing) {
-            var width = Element.GetPreferredWidth();
-            var height = Element.GetPreferredHeight(width);
+            var width = TextElement.GetPreferredWidth();
+            var height = TextElement.GetPreferredHeight(width);
             var size = new Vector2(width, height);
-            size += Transform.OffsetMax - Transform.OffsetMin;
+            size -= Transform.OffsetMax - Transform.OffsetMin;
             var anchorDelta = Transform.AnchorMax - Transform.AnchorMin;
             if (anchorDelta.X > 0f) size.X /= anchorDelta.X;
             if (anchorDelta.Y > 0f) size.Y /= anchorDelta.Y;
@@ -112,7 +114,7 @@ namespace Weesals.UI {
     public abstract class Selectable : CanvasRenderable, ISelectable {
         protected bool selected;
         public bool IsSelected => selected;
-        public virtual void OnSelected(bool _selected) { selected = _selected; }
+        public virtual void OnSelected(ISelectionGroup group, bool _selected) { selected = _selected; }
         public void OnPointerDown(PointerEvent events) {
             if (events.GetIsButtonDown(0)) this.Select();
         }
@@ -241,7 +243,7 @@ namespace Weesals.UI {
             if (SetState(States.Active, false)) return false;
             return true;
         }
-        public override void OnSelected(bool selected) {
+        public override void OnSelected(ISelectionGroup group, bool selected) {
             SetState(States.Selected, selected);
         }
     }
@@ -251,7 +253,7 @@ namespace Weesals.UI {
         public TextButton() : this("Button") { }
         public TextButton(string label) {
             Text.Text = label;
-            Text.SetFont(Resources.LoadFont("./assets/Roboto-Regular.ttf"));
+            Text.SetFont(Resources.LoadFont("./Assets/Roboto-Regular.ttf"));
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
@@ -273,6 +275,7 @@ namespace Weesals.UI {
             sizing.PreferredSize.Y = sizing.ClampHeight(Text.GetPreferredHeight(sizing.PreferredSize.X) + 4);
             return base.GetDesiredSize(sizing);
         }
+        public override string ToString() { return $"Button<{Text}>"; }
     }
     public class ImageButton : Button {
         public CanvasImage Icon;
@@ -311,7 +314,10 @@ namespace Weesals.UI {
             base.Compose(ref composer);
         }
     }
-    public class ToggleButton : ImageButton {
+    public interface IBindableValue {
+        void BindValue(PropertyPath path);
+    }
+    public class ToggleButton : ImageButton, IBindableValue {
         private bool state = true;
         public bool State {
             get => state;
@@ -411,6 +417,10 @@ namespace Weesals.UI {
         public Axes Axis = Axes.Vertical;
         public float ItemSize = 0f;
 
+        public new void InsertChild(int index, CanvasRenderable child) {
+            base.InsertChild(index, child);
+        }
+
         public override void UpdateChildLayouts() {
             base.UpdateChildLayouts();
             var layout = mLayoutCache;
@@ -450,15 +460,23 @@ namespace Weesals.UI {
                 else if (Axis == Axes.Vertical) sizing.SetFixedYSize(ItemSize * Children.Count);
             }
             //sizing.PreferredSize = new Vector2(80f, 80f);
-            float minSize = 0f;
+            float minSizeO = 0f;
+            float sizeA = 0f;
             foreach (var child in Children) {
                 var size = child.GetDesiredSize(sizing);
-                minSize = MathF.Max(minSize,
+                minSizeO = MathF.Max(minSizeO,
                     Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f);
+                if (ItemSize == 0f) {
+                    sizeA += Axis == Axes.Horizontal ? size.X : Axis == Axes.Vertical ? size.Y : 0f;
+                }
+            }
+            if (ItemSize == 0f) {
+                if (Axis == Axes.Horizontal) sizing.PreferredSize.X = sizing.ClampWidth(sizeA);
+                else sizing.PreferredSize.Y = sizing.ClampHeight(sizeA);
             }
             // Set other axis
-            if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = minSize;
-            else if (Axis == Axes.Vertical) sizing.PreferredSize.X = minSize;
+            if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = minSizeO;
+            else if (Axis == Axes.Vertical) sizing.PreferredSize.X = minSizeO;
             return base.GetDesiredSize(sizing);
         }
     }

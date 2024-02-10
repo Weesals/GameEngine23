@@ -6,7 +6,6 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 using Weesals.Engine;
-using Weesals.Game;
 using Weesals.UI;
 
 namespace Weesals.Landscape.Editor {

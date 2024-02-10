@@ -585,9 +585,6 @@ namespace Navigation {
             }
 
             private void PokeEdge(Edge edge, CornerId corner) {
-                if (pinnedEdges.Contains(edge)) {
-                    int a = 0;
-                }
                 var adjacent = adjacency[edge];
                 ValidTriangleAdjacency(adjacent.Triangle1);
                 ValidTriangleAdjacency(adjacent.Triangle2);

@@ -77,8 +77,8 @@ namespace Weesals.Landscape {
             for (int y = 0; y < ycount; ++y) {
                 for (int x = 0; x < xcount; ++x) {
                     int i = (x + y * xcount) * 6;
-                    int v0 = x + (y + 0) * (xcount + 1);
-                    int v1 = x + (y + 1) * (xcount + 1);
+                    uint v0 = (uint)(x + (y + 0) * (xcount + 1));
+                    uint v1 = (uint)(x + (y + 1) * (xcount + 1));
                     indices[i + 0] = v0;
                     indices[i + 1] = v1 + 1;
                     indices[i + 2] = v0 + 1;

@@ -112,6 +112,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&cbvSrvHeapDesc, IID_PPV_ARGS(&mSRVHeap)));
 
         // Describe and create a sampler descriptor heap.
+        // NOTE: Currently unused/unsupported
         D3D12_DESCRIPTOR_HEAP_DESC samplerHeapDesc = {};
         samplerHeapDesc.NumDescriptors = 64;
         samplerHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;

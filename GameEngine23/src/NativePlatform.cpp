@@ -20,6 +20,15 @@ void NativePlatform::Initialize()
     mInput = input;
 }
 
+std::shared_ptr<WindowBase> NativePlatform::CreateWindow(const std::wstring_view& name) {
+    auto window = std::make_shared<WindowWin32>(name.data());
+    window->SetInput(mInput);
+    return window;
+}
+std::shared_ptr<GraphicsSurface> NativePlatform::CreateGraphicsSurface(WindowBase& window) {
+    return std::make_shared<D3DGraphicsSurface>(((GraphicsDeviceD3D12&)*mGraphics).GetDevice(), ((WindowWin32&)window).GetHWND());
+}
+
 int NativePlatform::MessagePump()
 {
     return mWindow->MessagePump();

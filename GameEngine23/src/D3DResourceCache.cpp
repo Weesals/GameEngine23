@@ -1,3 +1,10 @@
+// vblank
+//#define NOMINMAX
+//#define WIN32_LEAN_AND_MEAN
+//#include <Windows.h>
+//#include <bcrypt.h>
+//#include <D3dkmthk.h>
+
 #include "D3DResourceCache.h"
 
 #include <d3dx12.h>
@@ -167,9 +174,10 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
         CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_POINT),
         CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
         CD3DX12_STATIC_SAMPLER_DESC(2, D3D12_FILTER_ANISOTROPIC),
-        CD3DX12_STATIC_SAMPLER_DESC(3, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, 0, 16, D3D12_COMPARISON_FUNC_LESS_EQUAL),
+        CD3DX12_STATIC_SAMPLER_DESC(3, D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_BORDER, D3D12_TEXTURE_ADDRESS_MODE_BORDER, D3D12_TEXTURE_ADDRESS_MODE_BORDER, 0, 16, D3D12_COMPARISON_FUNC_LESS_EQUAL),
         CD3DX12_STATIC_SAMPLER_DESC(4, D3D12_FILTER_MINIMUM_MIN_MAG_LINEAR_MIP_POINT),
         CD3DX12_STATIC_SAMPLER_DESC(5, D3D12_FILTER_MAXIMUM_MIN_MAG_LINEAR_MIP_POINT),
+        CD3DX12_STATIC_SAMPLER_DESC(6, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
     };
     rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
@@ -421,6 +429,7 @@ D3DResourceCache::D3DBufferWithSRV* D3DResourceCache::RequireCurrentTexture(cons
 }
 void D3DResourceCache::CopyBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize) {
     auto state = binding.mUsage == BufferLayout::Usage::Index ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    state |= D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
     auto beginWrite = { CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), state, D3D12_RESOURCE_STATE_COPY_DEST), };
     cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
     int size = (byteSize + BufferAlignment) & ~BufferAlignment;
@@ -555,6 +564,15 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
                 };
                 return mapping[(int)op];
             };
+        auto ToD3DStencilDesc = [](const DepthMode::StencilDesc& desc)
+            {
+                return D3D12_DEPTH_STENCILOP_DESC{
+                    .StencilFailOp = (D3D12_STENCIL_OP)desc.StecilFailOp,
+                    .StencilDepthFailOp = (D3D12_STENCIL_OP)desc.DepthFailOp,
+                    .StencilPassOp = (D3D12_STENCIL_OP)desc.PassOp,
+                    .StencilFunc = (D3D12_COMPARISON_FUNC)desc.Function,
+                };
+            };
 
         ComputeElementLayout(bindings, pipelineState->mInputElements);
 
@@ -576,7 +594,14 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         psoDesc.BlendState.RenderTarget[0].BlendOpAlpha = ToD3DBOp(materialState.mBlendMode.mBlendAlphaOp);
         psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC1(D3D12_DEFAULT);
         psoDesc.DepthStencilState.DepthFunc = (D3D12_COMPARISON_FUNC)materialState.mDepthMode.mComparison;
-        psoDesc.DepthStencilState.DepthWriteMask = materialState.mDepthMode.mWriteEnable ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+        psoDesc.DepthStencilState.DepthWriteMask = materialState.mDepthMode.GetDepthWrite() ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+        psoDesc.DepthStencilState.StencilEnable = materialState.mDepthMode.GetStencilEnable();
+        if (psoDesc.DepthStencilState.StencilEnable) {
+            psoDesc.DepthStencilState.StencilReadMask = materialState.mDepthMode.mStencilReadMask;
+            psoDesc.DepthStencilState.StencilWriteMask = materialState.mDepthMode.mStencilWriteMask;
+            psoDesc.DepthStencilState.FrontFace = ToD3DStencilDesc(materialState.mDepthMode.mStencilFront);
+            psoDesc.DepthStencilState.BackFace = ToD3DStencilDesc(materialState.mDepthMode.mStencilBack);
+        }
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = (uint32_t)frameBufferFormats.size();
@@ -735,10 +760,17 @@ D3DGraphicsSurface::D3DGraphicsSurface(D3DGraphicsDevice& device, HWND hWnd)
     ++mFenceValues[mBackBufferIndex];
     mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (mFenceEvent == nullptr) ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+
+    // This grabs references for the surface frame bufers
+    SetResolution(GetResolution());
+}
+D3DGraphicsSurface::~D3DGraphicsSurface() {
+    WaitForGPU();
 }
 void D3DGraphicsSurface::SetResolution(Int2 resolution) {
     auto* mD3DDevice = mDevice.GetD3DDevice();
     if (mResolution != resolution) {
+        WaitForGPU();
         for (UINT n = 0; n < FrameCount; n++) {
             mFrameBuffers[n] = { };
             if (mCmdAllocator[n] != nullptr)
@@ -764,12 +796,13 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
         if (frameBuffer.mBuffer == nullptr) {
             ThrowIfFailed(mSwapChain->GetBuffer(n, IID_PPV_ARGS(&frameBuffer.mBuffer)));
             wchar_t name[] = L"Frame Buffer 0";
-            name[_countof(name) - 1] = n;
+            name[_countof(name) - 2] = '0' + n;
             frameBuffer.mBuffer->SetName(name);
         }
     }
 }
 void D3DGraphicsSurface::ResizeSwapBuffers() {
+    //mSwapChain->Present(1, DXGI_PRESENT_RESTART);
     auto hr = mSwapChain->ResizeBuffers(0, (UINT)mResolution.x, (UINT)mResolution.y, DXGI_FORMAT_UNKNOWN, 0);
     ThrowIfFailed(hr);
 }
@@ -778,10 +811,60 @@ int D3DGraphicsSurface::GetBackFrameIndex() const {
     return (int)mFenceValues[mBackBufferIndex];
 }
 
+bool D3DGraphicsSurface::GetIsOccluded() const { return mIsOccluded; }
+void D3DGraphicsSurface::RegisterDenyPresent(int delta) {
+    mDenyPresentRef += delta;
+}
+
+
+//extern "C" NTSTATUS __cdecl D3DKMTWaitForVerticalBlankEvent(const D3DKMT_WAITFORVERTICALBLANKEVENT*);
+//extern "C" NTSTATUS __cdecl D3DKMTOpenAdapterFromHdc(D3DKMT_OPENADAPTERFROMHDC * lpParams);
+/*D3DKMT_WAITFORVERTICALBLANKEVENT getVBlankHandle() {
+    //https://docs.microsoft.com/en-us/windows/desktop/gdi/getting-information-on-a-display-monitor
+    DISPLAY_DEVICE dd;
+    dd.cb = sizeof(DISPLAY_DEVICE);
+
+    DWORD deviceNum = 0;
+    while (EnumDisplayDevices(NULL, deviceNum, &dd, 0)) {
+        if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) break;
+        deviceNum++;
+    }
+
+    HDC hdc = CreateDC(NULL, dd.DeviceName, NULL, NULL);
+    if (hdc == NULL) { }
+
+    D3DKMT_OPENADAPTERFROMHDC OpenAdapterData;
+    OpenAdapterData.hDc = hdc;
+    D3DKMTOpenAdapterFromHdc(&OpenAdapterData);
+    DeleteDC(hdc);
+    D3DKMT_WAITFORVERTICALBLANKEVENT we;
+    we.hAdapter = OpenAdapterData.hAdapter;
+    we.hDevice = 0; //optional. maybe OpenDeviceHandle will give it to us, https://docs.microsoft.com/en-us/windows/desktop/api/dxva2api/nf-dxva2api-idirect3ddevicemanager9-opendevicehandle
+    we.VidPnSourceId = OpenAdapterData.VidPnSourceId;
+
+    return we;
+}*/
+
 // Flip the backbuffer and wait until a frame is available to be rendered
 int D3DGraphicsSurface::Present() {
-    auto hr = mSwapChain->Present(1, 0);
+    if (mDenyPresentRef > 0) {
+        //static auto VBlankHandle = getVBlankHandle();
+        //D3DKMTWaitForVerticalBlankEvent(&VBlankHandle);
+        return WaitForFrame();
+    }
+    RECT rects = { 0, 0, 10, 10 };
+    DXGI_PRESENT_PARAMETERS params = { };
+    params.DirtyRectsCount = mDenyPresentRef > 0 ? 1 : 0;
+    params.pDirtyRects = &rects;
+    params.pScrollOffset = nullptr;
+    params.pScrollRect = nullptr;
+    //mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE | DXGI_PRESENT_TEST : 
+    auto hr = mSwapChain->Present(1, mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE : 0);
 
+    if ((hr == DXGI_STATUS_OCCLUDED) != mIsOccluded) {
+        mIsOccluded = hr == DXGI_STATUS_OCCLUDED;
+        mDenyPresentRef += mIsOccluded ? 1 : -1;
+    }
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
         mDevice.CheckDeviceState();
         return -1;

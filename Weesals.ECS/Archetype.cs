@@ -25,7 +25,7 @@ namespace Weesals.ECS {
     }
 
     public class ArchetypeListener {
-        public readonly QueryId QueryId;
+        public QueryId QueryId;
         public struct MoveEvent {
             public EntityAddress From;
             public EntityAddress To;
@@ -41,6 +41,71 @@ namespace Weesals.ECS {
                     Row = i,
                 });
             }
+        }
+    }
+
+    public class ArchetypeMutateListener : DynamicBitField, IDisposable {
+        public readonly Archetype Archetype;
+        public readonly int ColumnIndex;
+        public ComponentType ComponentType => Archetype.Columns[ColumnIndex].Type;
+        public ArchetypeMutateListener(Archetype archetype, int columnIndex) {
+            Archetype = archetype;
+            ColumnIndex = columnIndex;
+            Archetype.Columns[ColumnIndex].AddModificationListener(this);
+        }
+        public void Dispose() {
+            Archetype.Columns[ColumnIndex].RemoveModificationListener(this);
+        }
+    }
+    public class ComponentMutateListener : ArchetypeListener, IDisposable {
+        public readonly Stage Stage;
+        public readonly TypeId TypeId;
+        public readonly QueryId Query;
+        private List<ArchetypeMutateListener> bindings = new();
+        public ComponentMutateListener(Stage stage, QueryId query, TypeId typeId) {
+            Stage = stage;
+            TypeId = typeId;
+            Stage.AddListener(query, this);
+            OnCreate += (entityAddr) => {
+                var archetype = Stage.GetArchetype(entityAddr.ArchetypeId);
+                int index = 0;
+                for (; index < bindings.Count; ++index) if (bindings[index].Archetype == archetype) break;
+                if (index >= bindings.Count) {
+                    if (!archetype.TryGetTypeIndex(TypeId, out var typeIndex)) return;
+                    bindings.Add(new ArchetypeMutateListener(archetype, typeIndex));
+                }
+            };
+        }
+        public void Dispose() {
+            Debug.WriteLine("TODO: Implement");
+        }
+        public struct Enumerator : IEnumerator<ComponentRef> {
+            public readonly ComponentMutateListener Listener;
+            private int bindingIndex;
+            private DynamicBitField.Enumerator bitEnum;
+            public Archetype CurrentArchetype => Listener.bindings[bindingIndex].Archetype;
+            public ComponentRef Current => new ComponentRef(Listener.Stage.Context, CurrentArchetype, bitEnum.Current, Listener.TypeId);
+            object IEnumerator.Current => Current;
+            public Enumerator(ComponentMutateListener listener) {
+                Listener = listener;
+                bindingIndex = 0;
+                bitEnum = bindingIndex < Listener.bindings.Count ? Listener.bindings[bindingIndex].GetEnumerator() : default;
+            }
+            public void Dispose() { }
+            public void Reset() { }
+            public bool MoveNext() {
+                if (bitEnum.BitField == null) return false;
+                while (!bitEnum.MoveNext()) {
+                    ++bindingIndex;
+                    if (bindingIndex >= Listener.bindings.Count) return false;
+                }
+                return true;
+            }
+        }
+        public Enumerator GetEnumerator() { return new(this); }
+
+        public void Clear() {
+            foreach (var binding in bindings) binding.Clear();
         }
     }
 
@@ -103,7 +168,7 @@ namespace Weesals.ECS {
         public readonly int ColumnCount;
         public Column[] Columns;
         public BitField SparseTypeMask;
-        public SparseColumnMeta[] SparseColumns;
+        public SparseColumnMeta[] SparseColumns = Array.Empty<SparseColumnMeta>();
         public int MaxItem = -1;
         public int EntityCount => MaxItem + 1;
         public int Revision = 0;
@@ -263,6 +328,11 @@ namespace Weesals.ECS {
         public void ClearSparseIndex(int column, int row) {
             SparseColumns[column - ColumnCount].Occupied.Remove(row);
         }
+        public void ClearSparseRow(int row) {
+            for (int c = 0; c < SparseColumns.Length; ++c) {
+                SparseColumns[c].Occupied.TryRemove(row);
+            }
+        }
         public int GetDenseIndex(TypeId typeId, StageContext? context = default) {
             if (TypeMask.TryGetBitIndex(typeId, out var index)) return 1 + index;
             AssertComponentId(typeId, context);
@@ -338,6 +408,11 @@ namespace Weesals.ECS {
         public ref T GetValueRef(Stage stage, EntityAddress entityAddr) {
             return ref GetValueRef(stage.GetArchetype(entityAddr.ArchetypeId), entityAddr.Row);
         }
+        public bool GetHasSparseComponent(Stage stage, EntityAddress entityAddr) {
+            if (!IsValid) return false;
+            var archetype = stage.GetArchetype(entityAddr.ArchetypeId);
+            return archetype.GetHasSparseComponent(ComponentIndex, entityAddr.Row);
+        }
     }
     public struct ArchetypeId {
         public readonly int Index;
@@ -355,6 +430,8 @@ namespace Weesals.ECS {
         public readonly TypeId TypeId;
         public readonly int ColumnId => Archetype.GetColumnId(TypeId);
         public readonly ref Column Column => ref Archetype.Columns[ColumnId];
+        public readonly Entity Entity => Archetype.Entities[Row];
+        public readonly EntityAddress EntityAddress => new(Archetype.Id, Row);
         public ComponentRef(StageContext context, Archetype archetype, int row, TypeId typeId) {
             Context = context;
             Archetype = archetype;

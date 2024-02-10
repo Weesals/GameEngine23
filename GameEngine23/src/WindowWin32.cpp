@@ -78,6 +78,18 @@ std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
 
 LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    static auto UpdateModifiers = [](WindowWin32* window) {
+        static unsigned short keys[] = { VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU, };
+        static unsigned long long KeyMask = 0;
+        for (auto key : keys) {
+            auto keyMask = 1ull << (key - keys[0]);
+            auto state = GetKeyState(key) < 0;
+            auto prevState = (KeyMask & keyMask) != 0;
+            if (state == prevState) continue;
+            if (state) KeyMask |= keyMask; else KeyMask &= ~keyMask;
+            window->mInput->GetMutator().ReceiveKeyEvent(key, state);
+        }
+    };
     switch (message)
     {
     case WM_PAINT: {
@@ -114,13 +126,21 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     case WM_KEYDOWN: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         if (window != nullptr && window->mInput != nullptr) {
+            if (wParam <= VK_MENU) UpdateModifiers(window);
             window->mInput->GetMutator().ReceiveKeyEvent((int)wParam, true);
         }
     } break;
     case WM_KEYUP: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         if (window != nullptr && window->mInput != nullptr) {
+            if (wParam <= VK_MENU) UpdateModifiers(window);
             window->mInput->GetMutator().ReceiveKeyEvent((int)wParam, false);
+        }
+    } break;
+    case WM_CHAR: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        if (window != nullptr && window->mInput != nullptr) {
+            window->mInput->GetMutator().ReceiveCharEvent((wchar_t)wParam);
         }
     } break;
     case WM_DESTROY:

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <vector>
 #include <span>
+#include <string>
 
 #include "MathTypes.h"
 
@@ -89,6 +90,7 @@ class Input
 	std::vector<KeyState> mPressKeys;
 	std::vector<KeyState> mDownKeys;
 	std::vector<KeyState> mReleaseKeys;
+	std::wstring mCharBuffer;
 
 public:
 	// Called from something that receives input, to store and
@@ -121,6 +123,19 @@ public:
 		return std::any_of(mDownKeys.begin(), mDownKeys.end(), [=](auto key) { return key.KeyId == keyId; });
 	}
 
+	std::span<const KeyState> GetPressKeys() {
+		return mPressKeys;
+	}
+	std::span<const KeyState> GetDownKeys() {
+		return mDownKeys;
+	}
+	std::span<const KeyState> GetReleaseKeys() {
+		return mReleaseKeys;
+	}
+	const std::wstring& GetCharBuffer() {
+		return mCharBuffer;
+	}
+
 	// Hiding these mutator events inside a nested
 	// class to keep the API clean
 	// NOTE: Pointers can currently be mutated directly
@@ -145,11 +160,17 @@ public:
 				mInput->mReleaseKeys.push_back(key);
 			}
 		}
+		void ReceiveCharEvent(wchar_t chr) {
+			// Ignore system keys
+			if (chr == '\b') return;
+			mInput->mCharBuffer.push_back(chr);
+		}
 		// Notify of frame end; clear per-frame buffers
 		void ReceiveTickEvent()
 		{
 			mInput->mPressKeys.clear();
 			mInput->mReleaseKeys.clear();
+			mInput->mCharBuffer.clear();
 			for (auto pointer : mInput->mPointers)
 			{
 				pointer->ReceiveTickEvent();

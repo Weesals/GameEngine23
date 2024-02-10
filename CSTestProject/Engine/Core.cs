@@ -8,20 +8,16 @@ namespace Weesals.Engine {
     public class Core : IDisposable {
         private Platform platform;
         private CSGraphics graphics;
-        private CSScene scene;
 
         unsafe public Core() {
             platform = new Platform(Platform.Create());
             graphics = platform.CreateGraphics();
-            scene = platform.CreateScene();
         }
         unsafe public void Dispose() {
             graphics.Dispose();
-            scene.Dispose();
             platform.Dispose();
         }
 
-        public CSScene GetScene() { return scene; }
         public CSGraphics GetGraphics() { return graphics; }
         public CSWindow GetWindow() { return platform.GetWindow(); }
         public CSResources GetResources() { return platform.GetResources(); }

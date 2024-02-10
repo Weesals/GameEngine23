@@ -82,6 +82,7 @@ namespace Weesals.UI {
         protected List<CanvasRenderable> mChildren = new();
         protected List<ICustomTransformer>? customTransformers;
         protected int mOrderId = -1;
+        protected byte mDepth;
         protected DirtyFlags dirtyFlags;
         protected StateFlags stateFlags;
 
@@ -96,6 +97,7 @@ namespace Weesals.UI {
         public virtual void Initialise(CanvasBinding binding) {
             mBinding = binding;
             if (mBinding.mCanvas != null) {
+                mDepth = (byte)(binding.mParent == null ? 0 : (binding.mParent.mDepth + 1));
                 SetHitTestEnabled(true);
                 var next = Parent?.FindNext(this);
                 var nextOrderId = next != null ? next.mOrderId : mOrderId + 0x1000000;
@@ -204,6 +206,7 @@ namespace Weesals.UI {
             foreach (var child in mChildren) child.RequireLayout();
         }
         public virtual void UpdateChildLayouts() {
+            if (!hitBinding.IsValid) UpdateHitBinding();
             foreach (var child in mChildren) {
                 child.UpdateLayout(mLayoutCache);
             }
@@ -231,10 +234,10 @@ namespace Weesals.UI {
             var p1 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 0.0f));
             var p2 = mLayoutCache.TransformPosition2DN(new Vector2(0.0f, 1.0f));
             var p3 = mLayoutCache.TransformPosition2DN(new Vector2(1.0f, 1.0f));
-            RectI bounds = new RectI((int)p0.X, (int)p0.Y, 0, 0);
-            bounds = bounds.ExpandToInclude(new Int2((int)p1.X, (int)p1.Y));
-            bounds = bounds.ExpandToInclude(new Int2((int)p2.X, (int)p2.Y));
-            bounds = bounds.ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
+            RectI bounds = new RectI((int)p0.X, (int)p0.Y, 0, 0)
+                .ExpandToInclude(new Int2((int)p1.X, (int)p1.Y))
+                .ExpandToInclude(new Int2((int)p2.X, (int)p2.Y))
+                .ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
             Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, bounds);
         }
         protected void MarkTransformDirty() {
@@ -284,7 +287,7 @@ namespace Weesals.UI {
             return Vector2.Clamp(childSizing.PreferredSize, sizing.MinimumSize, sizing.MaximumSize);
         }
 
-        internal CanvasLayout GetComputedLayout() {
+        public CanvasLayout GetComputedLayout() {
             return mLayoutCache;
         }
 
@@ -297,6 +300,31 @@ namespace Weesals.UI {
             tform.Offsets.toxy(localPos.toxy());
             tform.Offsets.tozw(localPos.toxy() + source.GetSize());
             dst.SetTransform(tform);
+        }
+        public static CanvasRenderable? FindCommonAncestor(CanvasRenderable item1, CanvasRenderable item2) {
+            while (item1.mDepth > item2.mDepth) item1 = item1.Parent!;
+            while (item2.mDepth > item1.mDepth) item2 = item2.Parent!;
+            while (item1 != null && item1 != item2) {
+                item1 = item1.Parent!;
+                item2 = item2.Parent!;
+            }
+            return item1;
+        }
+        public static int GetGlobalOrder(CanvasRenderable item1, CanvasRenderable item2) {
+            if (item1 == item2) return 0;
+            while (item1.mDepth > item2.mDepth) item1 = item1.Parent!;
+            if (item1 == item2) return -1;
+            while (item2.mDepth > item1.mDepth) item2 = item2.Parent!;
+            if (item1 == item2) return 1;
+            while (item1 != null && item1 != item2) {
+                if (item1.Parent == item2.Parent) {
+                    var parent = item1.Parent!;
+                    return parent.mChildren.IndexOf(item2).CompareTo(parent.mChildren.IndexOf(item1));
+                }
+                item1 = item1.Parent!;
+                item2 = item2.Parent!;
+            }
+            return -1;
         }
 
     }

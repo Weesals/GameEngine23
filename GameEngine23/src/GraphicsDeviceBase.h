@@ -94,6 +94,7 @@ struct PipelineLayout {
     std::vector<const ShaderBase::ConstantBuffer*> mConstantBuffers;
     std::vector<const ShaderBase::ResourceBinding*> mResources;
     std::vector<const BufferLayout*> mBindings;
+    MaterialState mMaterialState;
     bool operator == (const PipelineLayout& o) const { return mPipelineHash == o.mPipelineHash; }
     bool operator < (const PipelineLayout& o) const { return mPipelineHash < o.mPipelineHash; }
     bool IsValid() const { return mPipelineHash != 0; }
@@ -217,15 +218,24 @@ struct RenderStatistics {
     }
 };
 
+class GraphicsSurface {
+public:
+    virtual bool GetIsOccluded() const { return false; }
+    virtual void RegisterDenyPresent(int delta = 1) { }
+    virtual int Present() = 0;
+    virtual int WaitForFrame() { return 0; }
+    virtual void WaitForGPU() { }
+};
+
 // Base class for a graphics device
-class GraphicsDeviceBase
-{
+class GraphicsDeviceBase {
 public:
     RenderStatistics mStatistics;
 
     virtual ~GraphicsDeviceBase() { }
 
     // Get the resolution of the client area
+    virtual GraphicsSurface* GetPrimarySurface() const { return nullptr; }
     virtual Int2 GetResolution() const = 0;
     virtual void SetResolution(Int2 res) = 0;
 
@@ -245,4 +255,3 @@ public:
     virtual void Present() = 0;
 
 };
-

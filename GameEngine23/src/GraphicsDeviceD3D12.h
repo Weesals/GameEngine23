@@ -23,7 +23,7 @@ class GraphicsDeviceD3D12 :
     std::shared_ptr<WindowWin32> mWindow;
 
     D3DGraphicsDevice mDevice;
-    D3DGraphicsSurface mPrimarySurface;
+    mutable D3DGraphicsSurface mPrimarySurface;
     D3DResourceCache mCache;
 
 public:
@@ -40,10 +40,10 @@ public:
     int GetDescriptorHandleSizeRTV() const { return mDevice.GetDescriptorHandleSizeRTV(); }
     int GetDescriptorHandleSizeDSV() const { return mDevice.GetDescriptorHandleSizeDSV(); }
     int GetDescriptorHandleSizeSRV() const { return mDevice.GetDescriptorHandleSizeSRV(); }
-    IDXGISwapChain3* GetSwapChain() const { return mPrimarySurface.GetSwapChain(); }
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 
+    GraphicsSurface* GetPrimarySurface() const override { return &mPrimarySurface; }
     Int2 GetResolution() const override { return mPrimarySurface.GetResolution(); }
     void SetResolution(Int2 res) override;
 
@@ -54,7 +54,6 @@ public:
         std::span<const MacroValue> macros, const IdentifierWithName& renderPass
     ) override;
     void Present() override;
-    void WaitForGPU();
 
 };
 

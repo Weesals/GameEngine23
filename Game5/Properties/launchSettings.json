@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Game5": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

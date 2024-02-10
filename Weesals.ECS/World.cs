@@ -192,8 +192,8 @@ namespace Weesals.ECS {
             if (markDirty) column.NotifyMutation(entityAddress.Row);
             return ref column.GetValueRef<T>(entityAddress.Row);
         }
-        public bool HasComponent<T>(Entity entity) {
-            var entityAddr = RequireEntityAddress(entity);
+        public bool HasComponent<T>(Entity entity) { return HasComponent<T>(RequireEntityAddress(entity)); }
+        public bool HasComponent<T>(EntityAddress entityAddr) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityAddr.ArchetypeId];
             if (ComponentType<T>.IsSparse) {
@@ -339,17 +339,48 @@ namespace Weesals.ECS {
             return MoveEntity(entity, new EntityAddress(newArchetypeI, newRow));
         }
         private EntityData MoveEntity(Entity entity, EntityAddress newAddr) {
-            var oldData = entities[(int)entity.Index];
-            var newData = oldData;
-            newData.Address = newAddr;
-            entities[(int)entity.Index] = newData;
-            if (newData.Row >= 0) {
-                archetypes[oldData.ArchetypeId].CopyRowTo(oldData.Row,
-                    archetypes[newData.ArchetypeId], newData.Row);
+            using var mover = new EntityMover(this, entity, newAddr);
+            return mover.Commit();
+        }
+        public EntityMover BeginMoveEntity(Entity entity, ArchetypeId newArchetypeI) {
+            var newRow = archetypes[newArchetypeI].AllocateRow(entity);
+            return new EntityMover(this, entity, new EntityAddress(newArchetypeI, newRow));
+        }
+        public struct EntityMover : IDisposable {
+            public readonly Stage Stage;
+            public readonly Entity Entity;
+            public readonly EntityData From;
+            public readonly EntityAddress To;
+            public EntityMover(Stage stage, Entity entity, EntityAddress to) {
+                Stage = stage;
+                Entity = entity;
+                From = Stage.entities[(int)entity.Index];
+                To = to;
+                var newData = From;
+                newData.Address = to;
+                Stage.entities[(int)entity.Index] = newData;
+                if (newData.Row >= 0) {
+                    Stage.archetypes[From.ArchetypeId].CopyRowTo(From.Row,
+                        Stage.archetypes[newData.ArchetypeId], newData.Row);
+                }
             }
-            NotifyEntityChange(entity, oldData, newData);
-            RemoveRow(oldData);
-            return newData;
+            public ref TComponent GetComponentRef<TComponent>() {
+                return ref Stage.GetComponentRef<TComponent>(To);
+            }
+            public ref Column GetColumn(TypeId typeId) {
+                var archetype = Stage.GetArchetype(To.ArchetypeId);
+                var columnId = archetype.RequireTypeIndex(new TypeId(typeId), Stage.Context);
+                return ref archetype.Columns[columnId];
+            }
+            public EntityData Commit() {
+                var newData = Stage.entities[(int)Entity.Index];
+                Stage.NotifyEntityChange(Entity, From, To);
+                Stage.RemoveRow(From);
+                return newData;
+            }
+            public void Dispose() {
+                // TODO: Verify that was committed
+            }
         }
 
         private void NotifyEntityChange(Entity entity, EntityAddress oldData, EntityAddress newData) {
@@ -384,6 +415,7 @@ namespace Weesals.ECS {
         }
         private void RemoveRow(EntityAddress entityData) {
             var archetype = archetypes[entityData.ArchetypeId];
+            archetype.ClearSparseRow(entityData.Row);
             if (archetype.MaxItem == entityData.Row) {
                 archetype.ReleaseRow(entityData.Row);
             } else {
@@ -416,6 +448,7 @@ namespace Weesals.ECS {
         }
         public void AddListener(QueryId query, ArchetypeListener listener) {
             var listenerId = archetypeListeners.Count;
+            listener.QueryId = query;
             archetypeListeners.Add(listener);
             foreach (var archI in GetArchetypes(query)) {
                 var archetype = archetypes[archI];

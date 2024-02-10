@@ -1,10 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Weesals.Game;
 
 namespace Weesals.UI {
     // Represents the "score" for an interaction which could be activated

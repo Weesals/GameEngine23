@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -108,7 +109,7 @@ namespace Weesals.UI {
         }
     }
     public interface ISelectable {
-        void OnSelected(bool selected);
+        void OnSelected(ISelectionGroup group, bool selected);
     }
     public interface ISelectionGroup {
         void SetSelected(ISelectable? selectable);
@@ -231,12 +232,17 @@ namespace Weesals.UI {
         private HashSet<ISelectable> selected = new();
 
         public IReadOnlyCollection<ISelectable> Selected => selected;
+        public EventSystem EventSystem { get; private set; }
+
+        public SelectionManager(EventSystem eventSystem) {
+            EventSystem = eventSystem;
+        }
 
         public void ClearSelected() {
             using var toDeselect = new PooledList<ISelectable>(selected.Count);
             foreach (var item in selected) toDeselect.Add(item);
             selected.Clear();
-            foreach (var item in toDeselect) item.OnSelected(false);
+            foreach (var item in toDeselect) item.OnSelected(this, false);
         }
         public void SetSelected(ISelectable? item) {
             ClearSelected();
@@ -244,7 +250,7 @@ namespace Weesals.UI {
         }
         private void AppendSelected(ISelectable item) {
             selected.Add(item);
-            item.OnSelected(true);
+            item.OnSelected(this, true);
         }
 
         public void OnPointerDown(PointerEvent events) {
@@ -260,12 +266,130 @@ namespace Weesals.UI {
         }
     }
 
-    public class EventSystem {
+    public class KeyboardFilter {
+
+        public const short NestedEventSystemPriority = 100;
+        public const short MaximumPriority = short.MaxValue;
+
+        public struct Entry : IComparable<Entry> {
+            public readonly object Filter;
+            public readonly short Priority;
+            public short RefCount;
+            public uint ActiveKeyMask;
+            public Entry(short priority, object filter) {
+                Priority = priority;
+                RefCount = 0;
+                Filter = filter;
+            }
+            public readonly int CompareTo(Entry other) { return Priority.CompareTo(other.Priority); }
+            public readonly override string ToString() { return Filter?.ToString() ?? "-none-"; }
+        }
+        private PooledList<Entry> filters = new();
+        private SparseArray<KeyCode> activeKeys = new();
+        private int FindIndex(Entry item) {
+            for (int i = 0; i < filters.Count; i++) {
+                if (filters[i].Filter == item.Filter) return i;
+            }
+            var index = filters.AsSpan().BinarySearch(item);
+            if (index >= 0 && item.Filter != filters[index].Filter) index = ~index;
+            return index;
+        }
+        public void Insert(short priority, object? filter) {
+            if (filter == null) return;
+            var item = new Entry(priority, filter);
+            var index = FindIndex(item);
+            if (index >= 0) filters[index].RefCount++;
+            else {
+                index = ~index;
+                item.RefCount++;
+                filters.Insert(index, item);
+            }
+        }
+        public bool Remove(short priority, object? filter) {
+            if (filter == null) return false;
+            var item = new Entry(priority, filter);
+            var index = FindIndex(item);
+            Debug.Assert(index >= 0);
+            if (--filters[index].RefCount > 0) return false;
+            var bits = filters[index].ActiveKeyMask;
+            while (bits != 0) {
+                var id = BitOperations.TrailingZeroCount(bits);
+                bits ^= 1u << id;
+                if (filters[index].Filter is not IKeyReleaseHandler handler) continue;
+                var keyEvent = new KeyEvent(activeKeys[id], Modifiers.None);
+                handler.OnKeyRelease(ref keyEvent);
+            }
+            filters.RemoveAt(index);
+            return true;
+        }
+        public ref struct Enumerator {
+            private Span<Entry>.Enumerator enumerator;
+            public ref uint KeyMask => ref enumerator.Current.ActiveKeyMask;
+            public object Current => enumerator.Current.Filter;
+            public Enumerator(Span<Entry>.Enumerator _en) { enumerator = _en; }
+            public void Dispose() { }
+            public bool MoveNext() { return enumerator.MoveNext(); }
+            public void Reset() { }
+        }
+        public Enumerator GetEnumerator() { return new(filters.GetEnumerator()); }
+
+        private int FindKeyIndex(KeyCode key) {
+            for (var it = activeKeys.GetEnumerator(); it.MoveNext();) if (it.Current == key) return it.Index;
+            return -1;
+        }
+        public void OnKeyPress(ref KeyEvent keyEvent) {
+            var id = activeKeys.Add(keyEvent.Key);
+            Debug.Assert(id <= 32, "Too many concurrent keys!");
+            for (var it = GetEnumerator(); it.MoveNext();) {
+                if (it.Current is not IKeyPressHandler handler) continue;
+                it.KeyMask |= 1u << id;
+                handler.OnKeyPress(ref keyEvent);
+                if (keyEvent.IsConsumed) break;
+            }
+        }
+        public void OnKeyDown(ref KeyEvent keyEvent) {
+            var id = FindKeyIndex(keyEvent.Key);
+            if (id == -1) return;
+            for (var it = GetEnumerator(); it.MoveNext();) {
+                if ((it.KeyMask & (1u << id)) == 0) continue;
+                if (it.Current is not IKeyDownHandler handler) continue;
+                handler.OnKeyDown(ref keyEvent);
+                if (keyEvent.IsConsumed) break;
+            }
+        }
+        public void OnKeyRelease(ref KeyEvent keyEvent) {
+            var id = FindKeyIndex(keyEvent.Key);
+            if (id == -1) return;
+            for (var it = GetEnumerator(); it.MoveNext();) {
+                if ((it.KeyMask & (1u << id)) == 0) continue;
+                it.KeyMask &= ~(1u << id);
+                if (it.Current is not IKeyReleaseHandler handler) continue;
+                handler.OnKeyRelease(ref keyEvent);
+                Debug.Assert(!keyEvent.IsConsumed, "Cannot consume a key up event");
+            }
+            activeKeys.Return(id);
+        }
+        public void OnCharInput(ref CharInputEvent chars) {
+            for (var it = GetEnumerator(); it.MoveNext();) {
+                if (it.Current is not ICharInputHandler handler) continue;
+                handler.OnCharInput(ref chars);
+                if (chars.IsConsumed) break;
+            }
+        }
+    }
+
+    public class EventSystem
+        : IKeyPressHandler
+        , IKeyDownHandler
+        , IKeyReleaseHandler
+        , ICharInputHandler
+        {
 
         public Canvas Canvas { get; private set; }
-        public readonly SelectionManager SelectionManager = new();
+        public readonly SelectionManager SelectionManager;
         public readonly DoubleClickManager DoubleClick = new();
         public readonly DragDropManager DragDropManager;
+        public readonly KeyboardFilter KeyboardFilter = new();
 
         private CSInput input;
         private Vector2 pointerOffset;
@@ -277,12 +401,17 @@ namespace Weesals.UI {
         private List<IPointerDownHandler> pointerDownHandlers = new();
         private Dictionary<uint, PointerEvent> pointerEvents = new();
 
-        private Dictionary<INestedEventSystem, List<CSPointer>> activeDeferred = new();
+        public class DeferredState : List<CSPointer> {
+            public ulong ActivePointers;
+        }
+        private Dictionary<INestedEventSystem, DeferredState> activeDeferred = new();
 
         public EventSystem(Canvas canvas) {
             input = default;
             Canvas = canvas;
+            SelectionManager = new(this);
             Canvas.SelectionGroup = SelectionManager;
+            Canvas.KeyboardFilter = KeyboardFilter;
             DragDropManager = new(Canvas);
             pointerDownHandlers.Add(SelectionManager);
         }
@@ -303,12 +432,42 @@ namespace Weesals.UI {
                 using var pointers = new PooledList<CSPointer>(inputPointers.Length);
                 foreach (var ptr in inputPointers) pointers.Add(ptr);
                 ProcessPointers(pointers);
+
+                var modifiers = Modifiers.None;
+                if (input.GetKeyDown((char)KeyCode.LeftShift) || input.GetKeyDown((char)KeyCode.RightShift)) modifiers |= Modifiers.Shift;
+                if (input.GetKeyDown((char)KeyCode.LeftControl) || input.GetKeyDown((char)KeyCode.RightControl)) modifiers |= Modifiers.Control;
+                if (input.GetKeyDown((char)KeyCode.LeftAlt) || input.GetKeyDown((char)KeyCode.RightAlt)) modifiers |= Modifiers.Alt;
+                foreach (var key in input.GetPressKeys()) {
+                    var keyEvent = KeyEvent.CreateEvent(key, modifiers);
+                    OnKeyPress(ref keyEvent);
+                }
+                foreach (var key in input.GetDownKeys()) {
+                    var keyEvent = KeyEvent.CreateEvent(key, modifiers);
+                    OnKeyDown(ref keyEvent);
+                }
+                foreach (var key in input.GetReleaseKeys()) {
+                    var keyEvent = KeyEvent.CreateEvent(key, modifiers);
+                    OnKeyRelease(ref keyEvent);
+                }
+                var charBuffer = input.GetCharBuffer();
+                if (charBuffer.Length > 0) {
+                    var builder = new StringBuilder();
+                    foreach (var c in charBuffer) builder.Append((char)c);
+                    var charEvent = new CharInputEvent(builder.ToString());
+                    OnCharInput(ref charEvent);
+                }
             }
         }
 
         public void ProcessPointers(Span<CSPointer> pointers) {
             using var seenPointers = new PooledList<uint>();
             foreach (var deferredPtrs in activeDeferred.Values) {
+                for (int i = deferredPtrs.Count - 1; i >= 0; --i) {
+                    if (deferredPtrs[i].mCurrentButtonState != 0) continue;
+                    if ((deferredPtrs.ActivePointers & 1ul << i) != 0) continue;
+                    deferredPtrs.RemoveAt(i);
+                }
+                deferredPtrs.ActivePointers = 0;
                 for (int i = 0; i < deferredPtrs.Count; ++i) {
                     var ptr = deferredPtrs[i];
                     ptr.mCurrentButtonState = 0;
@@ -333,6 +492,10 @@ namespace Weesals.UI {
                 }
 
                 UpdatePointerPost(events, pointer.mCurrentButtonState, update);
+            }
+            foreach (var ptr in pointerEvents) {
+                if (seenPointers.Contains(ptr.Key)) continue;
+                SetHover(ptr.Value, default);
             }
             using var toRelease = new PooledList<INestedEventSystem>();
             // Send pointers to nested systems
@@ -412,6 +575,7 @@ namespace Weesals.UI {
                 for (; index < list.Count; ++index) if (list[index].mDeviceId == events.DeviceId) break;
                 if (index < list.Count) list[index] = nestedPtr;
                 else list.Add(nestedPtr);
+                list.ActivePointers |= 1ul << index;
             }
         }
 
@@ -440,6 +604,12 @@ namespace Weesals.UI {
             }
             if (events.Targets.EffectiveActive != targets.EffectiveActive) {
                 cmn &= ~(PointerEvent.States.Active);
+            }
+            if (events.Targets.EffectiveDefer != targets.EffectiveDefer) {
+                if (events.Targets.EffectiveDefer is INestedEventSystem oldNested)
+                    KeyboardFilter.Remove(KeyboardFilter.NestedEventSystemPriority, oldNested.EventSystem);
+                if (targets.EffectiveDefer is INestedEventSystem newNested)
+                    KeyboardFilter.Insert(KeyboardFilter.NestedEventSystemPriority, newNested.EventSystem);
             }
             SetStates(events, cmn);
             events.Targets = targets;
@@ -552,9 +722,9 @@ namespace Weesals.UI {
             if (events.ButtonState == buttons) return;
             events.ButtonState = buttons;
             var isPress = buttons != 0;
-            if (SetState(events, PointerEvent.States.Press, isPress)) {
-                if (isPress) BeginPress(events); else EndPress(events);
-            }
+            if (isPress) BeginPress(events);
+            SetState(events, PointerEvent.States.Press, isPress);
+            if (!isPress) EndPress(events);
         }
 
         private void BeginPress(PointerEvent events) {
@@ -581,6 +751,19 @@ namespace Weesals.UI {
 
         internal void MarkYielded() {
             yielded = true;
+        }
+
+        public void OnKeyPress(ref KeyEvent keyEvent) {
+            KeyboardFilter.OnKeyPress(ref keyEvent);
+        }
+        public void OnKeyDown(ref KeyEvent keyEvent) {
+            KeyboardFilter.OnKeyDown(ref keyEvent);
+        }
+        public void OnKeyRelease(ref KeyEvent keyEvent) {
+            KeyboardFilter.OnKeyRelease(ref keyEvent);
+        }
+        public void OnCharInput(ref CharInputEvent chars) {
+            KeyboardFilter.OnCharInput(ref chars);
         }
     }
 
@@ -620,6 +803,44 @@ namespace Weesals.UI {
     }
     public interface IEndDragHandler : IEventSystemHandler {
         void OnEndDrag(PointerEvent events);
+    }
+
+    public struct KeyEvent {
+        public KeyCode Key;
+        private Modifiers modifiers;
+        public bool IsConsumed => Key == (KeyCode)0;
+        public bool Shift => (modifiers & Modifiers.Shift) != 0;
+        public bool Control => (modifiers & Modifiers.Control) != 0;
+        public bool Alt => (modifiers & Modifiers.Alt) != 0;
+        public KeyEvent(KeyCode key, Modifiers _modifiers) {
+            Key = key;
+            modifiers = _modifiers;
+        }
+        public void Consume() { Key = (KeyCode)0; }
+        public static implicit operator KeyCode(KeyEvent key) { return key.Key; }
+        public static KeyEvent CreateEvent(CSKey key, Modifiers modifiers) {
+            return new KeyEvent((KeyCode)key.mKeyId, modifiers);
+        }
+    }
+    public interface IKeyPressHandler : IEventSystemHandler {
+        void OnKeyPress(ref KeyEvent keyEvent);
+    }
+    public interface IKeyDownHandler : IEventSystemHandler {
+        void OnKeyDown(ref KeyEvent keyEvent);
+    }
+    public interface IKeyReleaseHandler : IEventSystemHandler {
+        void OnKeyRelease(ref KeyEvent keyEvent);
+    }
+    public struct CharInputEvent {
+        string? buffer;
+        public bool IsConsumed => buffer == null;
+        public int Length => buffer?.Length ?? 0;
+        public CharInputEvent(string _buffer) { buffer = _buffer; }
+        public void Consume() { buffer = null; }
+        public static implicit operator string(CharInputEvent e) { return e.buffer ?? ""; }
+    }
+    public interface ICharInputHandler : IEventSystemHandler {
+        void OnCharInput(ref CharInputEvent chars);
     }
 
     public interface INestedEventSystem : IEventSystemHandler {

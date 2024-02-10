@@ -231,6 +231,10 @@ namespace Weesals.UI {
             Anchors = new Vector4(xmin, ymin, xmax, ymax);
             return this;
         }
+        public CanvasTransform WithPivot(float x, float y) {
+            Pivot = new Vector2(x, y);
+            return this;
+        }
 
         public override bool Equals(object? obj) {
             return obj is CanvasTransform transform && Equals(transform);

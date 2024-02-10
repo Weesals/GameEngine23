@@ -48,20 +48,20 @@ namespace Weesals.Engine {
         private static List<Batch> batches = new();
 
         static Handles() {
-            Font = CSResources.LoadFont("./assets/Roboto-Regular.ttf");
+            Font = CSResources.LoadFont("./Assets/Roboto-Regular.ttf");
 
-            var lineMat = new Material(Resources.LoadShader("./assets/handles.hlsl", "VSLine"), Resources.LoadShader("./assets/handles.hlsl", "PSLine"));
+            var lineMat = new Material(Resources.LoadShader("./Assets/handles.hlsl", "VSLine"), Resources.LoadShader("./Assets/handles.hlsl", "PSLine"));
             lineMat.SetRasterMode(RasterMode.MakeNoCull());
             lineMat.SetBlendMode(BlendMode.MakeAlphaBlend());
             lineMat.SetDepthMode(DepthMode.MakeOff());
             lineBuffer = new(lineMat);
             lineBuffer.Mesh.RequireVertexTangents();
-            var polyMat = new Material(Resources.LoadShader("./assets/handles.hlsl", "VSMain"), Resources.LoadShader("./assets/handles.hlsl", "PSMain"));
+            var polyMat = new Material(Resources.LoadShader("./Assets/handles.hlsl", "VSMain"), Resources.LoadShader("./Assets/handles.hlsl", "PSMain"));
             polyMat.SetBlendMode(BlendMode.MakeAlphaBlend());
             polyMat.SetDepthMode(DepthMode.MakeOff());
             polygonBuffer = new(polyMat);
             polygonBuffer.Mesh.RequireVertexTangents();
-            var textMat = new Material(Resources.LoadShader("./assets/handles.hlsl", "VSText"), Resources.LoadShader("./assets/handles.hlsl", "PSText"));
+            var textMat = new Material(Resources.LoadShader("./Assets/handles.hlsl", "VSText"), Resources.LoadShader("./Assets/handles.hlsl", "PSText"));
             textMat.SetRasterMode(RasterMode.MakeNoCull());
             textMat.SetBlendMode(BlendMode.MakeAlphaBlend());
             textMat.SetDepthMode(DepthMode.MakeOff());
@@ -145,9 +145,9 @@ namespace Weesals.Engine {
             }
             var indices = indRange.GetIndices();
             for (int i = 0; i < vertices.Count - 2; ++i) {
-                indices[i * 3 + 0] = vertices.BaseVertex + i;
-                indices[i * 3 + 1] = vertices.BaseVertex + i + 1;
-                indices[i * 3 + 2] = vertices.BaseVertex + vertices.Count - 1;
+                indices[i * 3 + 0] = (uint)(vertices.BaseVertex + i);
+                indices[i * 3 + 1] = (uint)(vertices.BaseVertex + i + 1);
+                indices[i * 3 + 2] = (uint)(vertices.BaseVertex + vertices.Count - 1);
             }
             PushBatch(polygonBuffer, indRange.BaseIndex, indRange.Count,
                 renderHash);
@@ -170,8 +170,8 @@ namespace Weesals.Engine {
             to = Vector3.Transform(to, matrix);
             var vertices = lineBuffer.Mesh.AppendVerts(4);
             var indices = lineBuffer.Mesh.AppendIndices(6);
-            Span<int> quadInds = stackalloc[] { 0, 1, 3, 0, 3, 2, };
-            foreach (ref var i in quadInds) i += vertices.BaseVertex;
+            Span<uint> quadInds = stackalloc uint[] { 0, 1, 3, 0, 3, 2, };
+            foreach (ref var i in quadInds) i += (uint)vertices.BaseVertex;
             indices.GetIndices().Set(quadInds);
             Span<Vector2> quadUVs = stackalloc[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f), };
             vertices.GetTangents().Set(to - from);
@@ -205,6 +205,9 @@ namespace Weesals.Engine {
 
     public static class Gizmos {
         public static void DrawWireCube(Vector3 centre, Vector3 size) {
+            DrawWireCube(centre, size, Color.White);
+        }
+        public static void DrawWireCube(Vector3 centre, Vector3 size, Color color) {
             Vector3 min = centre - size / 2, max = centre + size / 2;
             for (int a = 0; a < 3; a++) {
                 var axis1 = (a + 1) % 3;
@@ -213,7 +216,7 @@ namespace Weesals.Engine {
                     Vector3 p0 = min, p1 = max;
                     p0[axis1] = p1[axis1] = (q < 2 ? min : max)[axis1];
                     p0[axis2] = p1[axis2] = ((q % 2) == 0 ? min : max)[axis2];
-                    Handles.DrawLine(p0, p1);
+                    Handles.DrawLine(p0, p1, color: color);
                 }
             }
         }

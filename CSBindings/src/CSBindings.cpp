@@ -28,89 +28,31 @@ template<class R> void delete_shared(R* ptr) {
 	memcpy(&del, &mat, sizeof(mat));
 }
 
-class TestBase
-{
-public:
-	virtual float TestF(float f1, float f2) = 0;
-};
-class TestSpec : public TestBase
-{
-	virtual float TestF(float f1, float f2) override
-	{
-		return f1 + f2;
-	}
-};
-
-
-TestBase* t = new TestSpec();
-float PerformanceTest::DoNothing()
-{
-	return 5.0f;
+template<class Item>
+CSSpan MakeSpan(std::span<Item> span) {
+	return CSSpan(span.data(), (int)span.size());
 }
-float PerformanceTest::CSDLLInvoke(float f1, float f2)
-{
-	return f1 + f2;
+template<class Item>
+CSSpan MakeSpan(std::span<const Item> span) {
+	return CSSpan(span.data(), (int)span.size());
 }
-float PerformanceTest::CPPVirtual()
-{
-	float v = 0;
-	for (int i = 0; i < 200000000; ++i)
-	{
-		v = t->TestF(v, (float)i);
-	}
-	return v;
+template<class Item>
+CSSpan MakeSpan(const std::vector<Item>& span) {
+	return CSSpan(span.data(), (int)span.size());
 }
-float PerformanceTest::CPPDirect()
-{
-	float v = 0;
-	for (int  i = 0; i < 200000000; ++i)
-	{
-		v = v + i;
-	}
-	return v;
+template<class Item>
+CSSpan MakeSpan(const std::vector<const Item>& span) {
+	return CSSpan(span.data(), (int)span.size());
+}
+template<class Item>
+CSSpanSPtr MakeSPtrSpan(std::span<std::shared_ptr<Item>> span) {
+	return CSSpanSPtr(span.data(), (int)span.size());
+}
+template<class Item>
+CSSpanSPtr MakeSPtrSpan(std::span<const std::shared_ptr<Item>> span) {
+	return CSSpanSPtr(span.data(), (int)span.size());
 }
 
-
-struct TestInt2 {
-	int x, y;
-};
-
-extern "C" {
-	__declspec(dllexport) Int2C InvokeTest() {
-		Int2 i;
-		i.x = 5;
-		i.y = 10;
-		return (Int2C&)i;
-	}
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class NativeScene {
-public:
-	std::shared_ptr<RenderPassList> mPassList;
-	std::shared_ptr<RetainedScene> mScene;
-	std::shared_ptr<RootMaterial> mDefaultMaterial;
-	std::shared_ptr<DirectionalLight> mSunLight;
-	std::shared_ptr<RenderPass> mBasePass;
-	std::shared_ptr<RenderPass> mShadowPass;
-	NativeScene() {
-		mScene = std::make_shared<RetainedScene>();
-		mPassList = std::make_shared<RenderPassList>(mScene);
-		mDefaultMaterial = std::make_shared<RootMaterial>(L"./assets/opaque.hlsl");
-	}
-};
 class NativeGraphics {
 public:
 	CommandBuffer mCmdBuffer;
@@ -131,8 +73,12 @@ std::wstring_view ToWString(CSString string) {
 }
 
 CSString8 CSIdentifier::GetName(uint16_t id) {
-	const auto& name = Identifier(id).GetName();
+	const auto& name = Identifier::GetName(Identifier(id));
 	return CSString8(name.c_str(), (int)name.size());
+}
+CSString CSIdentifier::GetWName(uint16_t id) {
+	const auto& name = Identifier::GetWName(Identifier(id));
+	return CSString(name.c_str(), (int)name.size());
 }
 uint16_t CSIdentifier::GetIdentifier(CSString str) {
 	return Identifier::RequireStringId(AllocString(str));
@@ -156,7 +102,7 @@ int CSTexture::GetArrayCount(NativeTexture* tex) {
 }
 CSSpan CSTexture::GetTextureData(NativeTexture* tex, int mip, int slice) {
 	auto data = tex->GetRawData(mip, slice);
-	return CSSpan(data.data(), (int)data.size());
+	return MakeSpan(data);
 }
 void CSTexture::MarkChanged(NativeTexture* tex) {
 	tex->MarkChanged();
@@ -199,7 +145,7 @@ void CSMaterial::SetRenderPass(NativeMaterial* material, CSIdentifier identifier
 }
 CSSpan CSMaterial::GetValueData(NativeMaterial* material, CSIdentifier identifier) {
 	auto data = material->GetUniformBinaryData(identifier.mId);
-	return CSSpan(data.data(), (int)data.size());
+	return MakeSpan(data);
 }
 int CSMaterial::GetValueType(NativeMaterial* material, CSIdentifier identifier) {
 	auto type = material->GetParametersRaw().GetValueType(identifier.mId);
@@ -237,7 +183,7 @@ CSSpan CSMaterial::ResolveResources(NativeGraphics* graphics, NativePipeline* pi
 		pomaterials.push_back(((const Material**)materials.mData)[i]);
 	}
 	auto result = MaterialEvaluator::ResolveResources(graphics->mCmdBuffer, (const PipelineLayout*)pipeline, pomaterials);
-	return CSSpan(result.data(), (int)result.size());
+	return MakeSpan(result);
 }
 NativeMaterial* CSMaterial::_Create(CSString shaderPath) {
 	if (shaderPath.mBuffer == nullptr) {
@@ -302,17 +248,6 @@ void CSMesh::GetMeshData(const NativeMesh* mesh, CSMeshData* data) {
 			.mFormat = element.mFormat,
 			.mData = element.mData,
 		};
-		/*auto type = BufferFormatType::GetType(element.mFormat);
-		target->mFormat = CSBufferFormat{
-			.mFormat = type.IsFloat() ? CSBufferFormat::Float :
-				type.GetSize() == BufferFormatType::Size32 ? CSBufferFormat::Int :
-				type.GetSize() == BufferFormatType::Size16 ? CSBufferFormat::Short :
-				type.GetSize() == BufferFormatType::Size8 ? CSBufferFormat::Byte :
-				(CSBufferFormat::Format)(-1),
-			.mComponents = (uint8_t)type.GetComponentCount(),
-		};
-		target->mStride = element.mBufferStride;
-		target->mData = element.mData;*/
 	}
 	for (auto& element : mesh->GetIndexBuffer().GetElements()) {
 		auto* target =
@@ -342,7 +277,7 @@ int CSModel::GetMeshCount(const NativeModel* model) {
 CSSpanSPtr CSModel::GetMeshes(const NativeModel* model) {
 	auto meshes = model->GetMeshes();
 	int psize = sizeof(*meshes.data());
-	return CSSpanSPtr(meshes.data(), (int)meshes.size());
+	return MakeSPtrSpan(meshes);
 }
 CSMesh CSModel::GetMesh(const NativeModel* model, int id) {
 	auto meshes = model->GetMeshes();
@@ -351,9 +286,12 @@ CSMesh CSModel::GetMesh(const NativeModel* model, int id) {
 
 CSSpan CSConstantBuffer::GetValues(const CSConstantBufferData* cb) {
 	auto* constantBuffer = ((ShaderBase::ConstantBuffer*)cb);
-	return CSSpan(constantBuffer->mValues.data(), (int)constantBuffer->mValues.size());
+	return MakeSpan(constantBuffer->mValues);
 }
 
+int CSPipeline::GetHasStencilState(const NativePipeline* pipeline) {
+	return pipeline->mMaterialState.mDepthMode.GetStencilEnable();
+}
 int CSPipeline::GetExpectedBindingCount(const NativePipeline* pipeline) {
 	return (int)pipeline->mBindings.size();
 }
@@ -364,13 +302,13 @@ int CSPipeline::GetExpectedResourceCount(const NativePipeline* pipeline) {
 	return (int)pipeline->mResources.size();
 }
 CSSpan CSPipeline::GetConstantBuffers(const NativePipeline* pipeline) {
-	return CSSpan(pipeline->mConstantBuffers.data(), (int)pipeline->mConstantBuffers.size());
+	return MakeSpan(pipeline->mConstantBuffers);
 }
 CSSpan CSPipeline::GetResources(const NativePipeline* pipeline) {
-	return CSSpan(pipeline->mResources.data(), (int)pipeline->mResources.size());
+	return MakeSpan(pipeline->mResources);
 }
 CSSpan CSPipeline::GetBindings(const NativePipeline* pipeline) {
-	return CSSpan(pipeline->mBindings.data(), (int)pipeline->mBindings.size());
+	return MakeSpan(pipeline->mBindings);
 }
 
 void CSGraphics::Dispose(NativeGraphics* graphics) {
@@ -378,6 +316,9 @@ void CSGraphics::Dispose(NativeGraphics* graphics) {
 		delete graphics;
 		graphics = nullptr;
 	}
+}
+NativeSurface* CSGraphics::GetPrimarySurface(const NativeGraphics* graphics) {
+	return graphics->mCmdBuffer.GetGraphics()->GetPrimarySurface();
 }
 Int2C CSGraphics::GetResolution(const NativeGraphics* graphics) {
 	auto* natgraphics = graphics->mCmdBuffer.GetGraphics();
@@ -395,29 +336,6 @@ void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets,
 		nativeTargets.push_back(RenderTargetBinding(binding.mTarget, binding.mMip, binding.mSlice));
 	}
 	graphics->mCmdBuffer.SetRenderTargets(nativeTargets, RenderTargetBinding(depthTarget.mTarget, depthTarget.mMip, depthTarget.mSlice));
-}
-const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials) {
-	return nullptr;
-	/*InplaceVector<BufferLayout, 8> bindingsData;
-	InplaceVector<const BufferLayout*, 8> pobindings;
-	InplaceVector<const Material*, 8> pomaterials;
-	for (int m = 0; m < bindings.mSize; ++m) {
-		auto& csbuffer = ((CSBufferLayout*)bindings.mData)[m];
-		BufferLayout buffer(
-			csbuffer.identifier, csbuffer.size,
-			(BufferLayout::Usage)csbuffer.mUsage, csbuffer.mCount);
-		buffer.mElements = (BufferLayout::Element*)csbuffer.mElements;
-		buffer.mElementCount = csbuffer.mElementCount;
-		bindingsData.push_back(buffer);
-		pobindings.push_back(&bindingsData.back());
-	}
-	for (int m = 0; m < materials.mSize; ++m) {
-		pomaterials.push_back(((const Material**)materials.mData)[m]);
-	}
-	auto pipeline = graphics->mCmdBuffer.GetGraphics()->RequirePipeline(
-		pobindings, pomaterials
-	);
-	return pipeline;*/
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
 	NativeShader* vertexShader, NativeShader* pixelShader, void* materialState,
@@ -449,7 +367,7 @@ CSSpan CSGraphics::ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bind
 	InplaceVector<const BufferLayout*> bindingsPtr;
 	for (int i = 0; i < bindings.mSize; ++i) bindingsPtr.push_back(&((const BufferLayout*)bindings.mData)[i]);
 	auto ibindings = RenderQueue::ImmortalizeBufferLayout(graphics->mCmdBuffer, bindingsPtr);
-	return CSSpan(ibindings.data(), (int)ibindings.size());
+	return MakeSpan(ibindings);
 }
 void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span) {
 	return graphics->mCmdBuffer.RequireConstantBuffer(std::span<uint8_t>((uint8_t*)span.mData, span.mSize));
@@ -500,6 +418,10 @@ uint64_t CSGraphics::GetGlobalPSOHash(NativeGraphics* graphics) {
 	return graphics->mCmdBuffer.GetGlobalPSOHash();
 }
 
+void CSGraphicsSurface::RegisterDenyPresent(NativeSurface* surface, int delta) {
+	surface->RegisterDenyPresent(delta);
+}
+
 void CSWindow::Dispose(NativeWindow* window) {
 	window->Close();
 }
@@ -507,148 +429,34 @@ Int2C CSWindow::GetResolution(const NativeWindow* window) {
 	return ToC(window->GetClientSize());
 }
 
-void CSScene::Dispose(NativeScene* scene) {
-	if (scene != nullptr) {
-		delete scene;
-		scene = nullptr;
-	}
-}
-CSString8 CSRenderPass::GetName(NativeRenderPass* renderPass) {
-	return CSString8(renderPass->mName.c_str(), (int)renderPass->mName.size());
-}
-const Frustum& CSRenderPass::GetFrustum(NativeRenderPass* renderPass) {
-	return renderPass->mFrustum;
-}
-void CSRenderPass::SetViewProjection(NativeRenderPass* renderPass, const Matrix& view, const Matrix& projection) {
-	renderPass->UpdateViewProj(view, projection);
-	static Identifier iView = "View";
-	static Identifier iProj = "Projection";
-	renderPass->mOverrideMaterial->SetUniform(iView, view);
-	renderPass->mOverrideMaterial->SetUniform(iProj, projection);
-}
-const Matrix& CSRenderPass::GetView(NativeRenderPass* renderPass) {
-	return renderPass->mView;
-}
-const Matrix& CSRenderPass::GetProjection(NativeRenderPass* renderPass) {
-	return renderPass->mProjection;
-}
-void CSRenderPass::SetVisible(NativeRenderPass* renderPass, CSInstance instance, bool visible) {
-	renderPass->mRetainedRenderer->SetVisible(instance.GetInstanceId(), visible);
-}
-NativeMaterial* CSRenderPass::GetOverrideMaterial(NativeRenderPass* renderPass) {
-	return renderPass->mOverrideMaterial.get();
-}
-void CSRenderPass::SetTargetTexture(NativeRenderPass* renderPass, NativeRenderTarget* target) {
-	renderPass->mRenderTarget = target->GetSharedPtr();
-}
-NativeRenderTarget* CSRenderPass::GetTargetTexture(NativeRenderPass* renderPass) {
-	return renderPass->mRenderTarget.get();
-}
-void CSRenderPass::AddInstance(NativeRenderPass* renderPass, CSInstance instance, CSMesh mesh, CSSpan materials) {
-	InplaceVector<const Material*, 10> pomaterials;
-	for (int i = 0; i < materials.mSize; ++i) {
-		pomaterials.push_back_if_not_null(((const Material**)materials.mData)[i]);
-	}
-	renderPass->mRetainedRenderer->AppendInstance((Mesh*)mesh.GetNativeMesh(), pomaterials, instance.GetInstanceId());
-}
-void CSRenderPass::RemoveInstance(NativeRenderPass* renderPass, CSInstance instance) {
-}
-void CSRenderPass::Bind(NativeRenderPass* renderPass, NativeGraphics* graphics) {
-	auto& cmdBuffer = graphics->mCmdBuffer;
-	InplaceVector<RenderTargetBinding, 1> targets(renderPass->mRenderTarget.get());
-	cmdBuffer.SetRenderTargets(targets, nullptr);
-	//cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
-	renderPass->mRenderQueue.Clear();
-}
-void CSRenderPass::AppendDraw(NativeRenderPass* renderPass, NativeGraphics* graphics, NativePipeline* pipeline, CSSpan bindings, CSSpan resources, Int2 instanceRange) {
-	auto& queue = renderPass->mRenderQueue;
-	queue.AppendMesh("UNKNOWN", pipeline, (const BufferLayout**)bindings.mData, (const void**)resources.mData, (RangeInt&)instanceRange);
-}
-void CSRenderPass::Render(NativeRenderPass* renderPass, NativeGraphics* graphics) {
-	auto& cmdBuffer = graphics->mCmdBuffer;
-	renderPass->mRetainedRenderer->SubmitToRenderQueue(cmdBuffer, renderPass->mRenderQueue, renderPass->mFrustum);
-	renderPass->mRenderQueue.Render(cmdBuffer);
-}
-NativeRenderPass* CSRenderPass::Create(NativeScene* scene, CSString name) {
-	auto* renderPass = new NativeRenderPass(AllocString(name));
-	renderPass->mRetainedRenderer->SetScene(scene->mScene);
-	renderPass->mOverrideMaterial = std::make_shared<Material>();
-	SetViewProjection(renderPass, Matrix::Identity, Matrix::Identity);
-	return renderPass;
-}
-NativeMaterial* CSScene::GetRootMaterial(NativeScene* scene) {
-	return scene->mDefaultMaterial.get();
-}
-int CSScene::CreateInstance(NativeScene* scene) {
-	std::array<Vector4, 10> instanceData;
-	*(Matrix*)instanceData.data() = Matrix::Identity;
-	auto sceneId = scene->mScene->AllocateInstance(sizeof(instanceData));
-	scene->mScene->UpdateInstanceData(sceneId, instanceData);
-	return sceneId;
-}
-void CSScene::RemoveInstance(NativeScene* scene, CSInstance instance) {
-	scene->mScene->RemoveInstance(instance.GetInstanceId());
-}
-void CSScene::UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, const uint8_t* data, int dataLen) {
-	scene->mScene->UpdateInstanceData(instance.GetInstanceId(),
-		offset, std::span<const uint8_t>(data, dataLen));
-}
-CSSpan CSScene::GetInstanceData(NativeScene* scene, CSInstance instance) {
-	auto data = scene->mScene->GetInstanceData(instance.GetInstanceId());
-	return CSSpan(data.data(), (int)data.size());
-}
-NativeTexture* CSScene::GetGPUBuffer(NativeScene* scene) {
-	return (NativeTexture*)&scene->mScene->GetGPUBuffer();
-}
-int CSScene::GetGPURevision(NativeScene* scene) {
-	return scene->mScene->GetGPUBuffer().mRevision;
-}
-void CSScene::SubmitToGPU(NativeScene* scene, NativeGraphics* graphics) {
-	auto& cmdBuffer = graphics->mCmdBuffer;
-	scene->mScene->SubmitGPUMemory(cmdBuffer);
-}
-NativeRenderPass* CSScene::GetBasePass(NativeScene* scene) {
-	return scene->mBasePass.get();
-}
-NativeRenderPass* CSScene::GetShadowPass(NativeScene* scene) {
-	return scene->mShadowPass.get();
-}
-void CSScene::Render(NativeScene* scene, NativeGraphics* graphics) {
-	SubmitToGPU(scene, graphics);
-	auto res = graphics->mCmdBuffer.GetGraphics()->GetResolution();
-	scene->mDefaultMaterial->SetResolution(res);
-	auto& cmdBuffer = graphics->mCmdBuffer;
-	//auto& matView = *(const Matrix*)scene->mDefaultMaterial->GetUniformBinaryData("View").data();
-	//auto& matProj = *(const Matrix*)scene->mDefaultMaterial->GetUniformBinaryData("Projection").data();
-	// Render the render passes
-	for (auto* pass : scene->mPassList->mPasses)
-	{
-		//pass->UpdateViewProj(matView, matProj);
-		pass->mRenderQueue.Clear();
-		pass->mRetainedRenderer->SubmitToRenderQueue(cmdBuffer, pass->mRenderQueue, pass->mFrustum);
-		InplaceVector<RenderTargetBinding, 1> targets(pass->mRenderTarget.get());
-		cmdBuffer.SetRenderTargets(targets, nullptr);
-		cmdBuffer.ClearRenderTarget(ClearConfig(Color(0.0f, 0.0f, 0.0f, 0.0f), 1.0f));
-
-		pass->mRenderQueue.Render(cmdBuffer);
-	}
-	//mScene->mDrawList.Clear();
-	//mScene->mRenderer->SubmitToRenderQueue(cmdBuffer, mScene->mDrawList, Frustum(viewProj));
-	//mScene->mDrawList.Render(cmdBuffer);
-}
-
 CSSpanSPtr CSInput::GetPointers(NativePlatform* platform) {
 	auto pointers = platform->GetInput()->GetPointers();
-	return CSSpanSPtr(pointers.data(), (int)pointers.size());
+	return MakeSPtrSpan(pointers);
 }
-Bool CSInput::GetKeyDown(NativePlatform* platform, char key) {
+Bool CSInput::GetKeyDown(NativePlatform* platform, unsigned char key) {
 	return platform->GetInput()->IsKeyDown(key);
 }
-Bool CSInput::GetKeyPressed(NativePlatform* platform, char key) {
+Bool CSInput::GetKeyPressed(NativePlatform* platform, unsigned char key) {
 	return platform->GetInput()->IsKeyPressed(key);
 }
-Bool CSInput::GetKeyReleased(NativePlatform* platform, char key) {
+Bool CSInput::GetKeyReleased(NativePlatform* platform, unsigned char key) {
 	return platform->GetInput()->IsKeyReleased(key);
+}
+CSSpan CSInput::GetPressKeys(NativePlatform* platform) {
+	return MakeSpan(platform->GetInput()->GetPressKeys());
+}
+CSSpan CSInput::GetDownKeys(NativePlatform* platform) {
+	return MakeSpan(platform->GetInput()->GetDownKeys());
+}
+CSSpan CSInput::GetReleaseKeys(NativePlatform* platform) {
+	return MakeSpan(platform->GetInput()->GetReleaseKeys());
+}
+CSSpan CSInput::GetCharBuffer(NativePlatform* platform) {
+	const auto& buffer = platform->GetInput()->GetCharBuffer();
+	return CSSpan(buffer.data(), (int)buffer.size());
+}
+void CSInput::ReceiveTickEvent(NativePlatform* platform) {
+	platform->GetInput()->GetMutator().ReceiveTickEvent();
 }
 
 NativeShader* CSResources::LoadShader(CSString path, CSString entryPoint) {
@@ -712,13 +520,10 @@ NativeWindow* Platform::GetWindow(const NativePlatform* platform) {
 NativeGraphics* Platform::CreateGraphics(const NativePlatform* platform) {
 	return new NativeGraphics(platform->GetGraphics()->CreateCommandBuffer());
 }
-NativeScene* Platform::CreateScene(const NativePlatform* platform) {
-	return new NativeScene();
-}
 
 int Platform::MessagePump(NativePlatform* platform) {
 	return platform->MessagePump();
 }
 void Platform::Present(NativePlatform* platform) {
-	platform->Present();
+	platform->GetGraphics()->Present();
 }

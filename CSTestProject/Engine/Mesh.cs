@@ -114,17 +114,20 @@ namespace Weesals.Engine {
             MarkChanged();
 	    }
 
-        public void SetIndices(Span<int> indices) {
-		    SetIndexCount((int)indices.Length);
+        public void SetIndices(Span<uint> indices) {
+		    SetIndexCount(indices.Length);
 		    GetIndicesV().Set(indices);
 	    }
         public void SetIndices(Span<ushort> indices) {
-            SetIndexCount((int)indices.Length);
+            SetIndexCount(indices.Length);
             GetIndicesV<ushort>().Set(indices);
         }
 
         public TypedBufferView<Vector3> GetPositionsV() {
             return new TypedBufferView<Vector3>(vertexBuffer.Elements[vertexPositionId], vertexBuffer.Count);
+        }
+        public TypedBufferView<T> GetPositionsV<T>() where T: unmanaged {
+            return new TypedBufferView<T>(vertexBuffer.Elements[vertexPositionId], vertexBuffer.Count);
         }
         public TypedBufferView<Vector3> GetNormalsV(bool require = false) {
             if (vertexNormalId == -1) { if (require) RequireVertexNormals(); else return default; }
@@ -142,8 +145,8 @@ namespace Weesals.Engine {
             if (vertexColorId == -1) { if (require) RequireVertexColors(); else return default; }
             return new TypedBufferView<Color>(vertexBuffer.Elements[vertexColorId], vertexBuffer.Count);
         }
-        public TypedBufferView<int> GetIndicesV() {
-            return new TypedBufferView<int>(indexBuffer.Elements[0], indexBuffer.Count);
+        public TypedBufferView<uint> GetIndicesV() {
+            return new TypedBufferView<uint>(indexBuffer.Elements[0], indexBuffer.Count);
         }
         public TypedBufferView<T> GetIndicesV<T>() where T : unmanaged {
             return new TypedBufferView<T>(indexBuffer.Elements[0], indexBuffer.Count);
@@ -180,6 +183,10 @@ namespace Weesals.Engine {
         public DynamicMesh(string _name) : base(_name) {
             isDynamic = true;
         }
+        public void Clear() {
+            SetVertexCount(0);
+            SetIndexCount(0);
+        }
         public struct VertexRange {
             public readonly DynamicMesh Mesh;
             public readonly RangeInt Range;
@@ -191,6 +198,9 @@ namespace Weesals.Engine {
             }
             public TypedBufferView<Vector3> GetPositions() {
                 return Mesh.GetPositionsV().Slice(Range);
+            }
+            public TypedBufferView<T> GetPositions<T>() where T : unmanaged {
+                return Mesh.GetPositionsV<T>().Slice(Range);
             }
             public TypedBufferView<Vector3> GetNormals(bool require = false) {
                 return Mesh.GetNormalsV(require).Slice(Range);
@@ -214,8 +224,11 @@ namespace Weesals.Engine {
                 Mesh = mesh;
                 Range = range;
             }
-            public TypedBufferView<int> GetIndices() {
+            public TypedBufferView<uint> GetIndices() {
                 return Mesh.GetIndicesV().Slice(Range);
+            }
+            public TypedBufferView<T> GetIndices<T>() where T : unmanaged {
+                return Mesh.GetIndicesV<T>().Slice(Range);
             }
         }
         public VertexRange AppendVerts(int count) {

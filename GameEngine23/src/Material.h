@@ -114,9 +114,23 @@ struct RasterMode
 struct DepthMode
 {
 	enum Comparisons : uint8_t { Never = 1, Less, Equal, LEqual, Greater, NEqual, GEqual, Always, };
+	enum Modes : uint8_t { None = 0, DepthWrite = 1, StencilEnable = 2, };
+	enum StencilOp : uint8_t { Keep = 1, Zero = 2, Replace = 3, IncrementSaturate = 4, DecrementSaturate = 5, Invert = 6, Increment = 7, Decrement = 8, };
+	struct StencilDesc {
+		StencilOp StecilFailOp;
+		StencilOp DepthFailOp;
+		StencilOp PassOp;
+		Comparisons Function;
+	};
 	Comparisons mComparison;
-	bool mWriteEnable;
-	DepthMode(Comparisons c = Comparisons::Less, bool write = true) : mComparison(c), mWriteEnable(write) { }
+	Modes mModes = Modes::None;
+	uint8_t mStencilReadMask = 0xff;
+	uint8_t mStencilWriteMask = 0xff;
+	StencilDesc mStencilFront;
+	StencilDesc mStencilBack;
+	DepthMode(Comparisons c = Comparisons::Less, bool write = true) : mComparison(c), mModes(write ? Modes::DepthWrite : Modes::None) { }
+	bool GetDepthWrite() const { return (mModes & Modes::DepthWrite); }
+	bool GetStencilEnable() const { return (mModes & Modes::StencilEnable); }
 	static DepthMode MakeOff() { return DepthMode(Comparisons::Always, false);}
 	static DepthMode MakeReadOnly(Comparisons comparison = Comparisons::LEqual) { return DepthMode(comparison, false); }
 };

@@ -156,7 +156,7 @@ namespace Weesals.Engine {
         unsafe protected void DrawQuad(CSGraphics graphics, CSTexture texture, Material material = null) {
             if (material == null) {
                 if (blitMaterial == null) {
-                    blitMaterial = new Material("./assets/blit.hlsl");
+                    blitMaterial = new Material("./Assets/blit.hlsl");
                     blitMaterial.SetBlendMode(BlendMode.MakeOpaque());
                     blitMaterial.SetDepthMode(DepthMode.MakeOff());
                 }
@@ -172,7 +172,7 @@ namespace Weesals.Engine {
                 quadMesh.GetPositionsV().Set(verts);
                 Span<Vector2> uvs = stackalloc Vector2[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f), };
                 quadMesh.GetTexCoordsV(0).Set(uvs);
-                Span<int> inds = stackalloc int[] { 0, 1, 2, 1, 3, 2, };
+                Span<uint> inds = stackalloc uint[] { 0, 1, 2, 1, 3, 2, };
                 quadMesh.SetIndices(inds);
             }
 
@@ -202,7 +202,7 @@ namespace Weesals.Engine {
         public RenderTags TagsToInclude = RenderTags.Default;
         public RenderTags TagsToExclude = RenderTags.None;
 
-        public Action<CSGraphics> PreRender;
+        public Action<CSGraphics> OnPreRender;
 
         public ScenePass(Scene scene, string name) : base(name) {
             RenderQueue = new();
@@ -239,7 +239,7 @@ namespace Weesals.Engine {
         }
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
             OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
-            PreRender?.Invoke(graphics);
+            OnPreRender?.Invoke(graphics);
             RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
             Scene.SubmitToGPU(graphics);
             RenderQueue.Render(graphics);
@@ -251,35 +251,42 @@ namespace Weesals.Engine {
     }
 
     public class ShadowPass : ScenePass {
+        public Action OnPostRender;
+
         public ShadowPass(Scene scene) : base(scene, "Shadows") {
             Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 1024, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }) };
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
+            TagsToInclude.Add(RenderTag.ShadowCast);
         }
-        public bool UpdateShadowFrustum(Frustum frustum) {
+        public bool UpdateShadowFrustum(Frustum frustum, BoundingBox relevantArea = default) {
             // Create shadow projection based on frustum near/far corners
             Span<Vector3> corners = stackalloc Vector3[8];
             frustum.GetCorners(corners);
             var lightViewMatrix = Matrix4x4.CreateLookAt(new Vector3(40, 50, -70), Vector3.Zero, Vector3.UnitY);
             foreach (ref var corner in corners) corner = Vector3.Transform(corner, lightViewMatrix);
-            var lightFMin = new Vector3(float.MaxValue);
-            var lightFMax = new Vector3(float.MinValue);
+            var lightMin = new Vector3(float.MaxValue);
+            var lightMax = new Vector3(float.MinValue);
             foreach (var corner in corners) {
-                lightFMin = Vector3.Min(lightFMin, corner);
-                lightFMax = Vector3.Max(lightFMax, corner);
+                lightMin = Vector3.Min(lightMin, corner);
+                lightMax = Vector3.Max(lightMax, corner);
             }
             // Or project onto terrain if smaller
-            frustum.IntersectPlane(Vector3.UnitY, 0.0f, corners);
-            frustum.IntersectPlane(Vector3.UnitY, 5.0f, corners.Slice(4));
-            foreach (ref var corner in corners) corner = Vector3.Transform(corner, lightViewMatrix);
-            var lightTMin = new Vector3(float.MaxValue);
-            var lightTMax = new Vector3(float.MinValue);
-            foreach (var corner in corners) {
-                lightTMin = Vector3.Min(lightTMin, corner);
-                lightTMax = Vector3.Max(lightTMax, corner);
+            if (relevantArea.Max.Y != relevantArea.Min.Y) {
+                frustum.IntersectPlane(Vector3.UnitY, relevantArea.Min.Y, corners);
+                frustum.IntersectPlane(Vector3.UnitY, relevantArea.Max.Y, corners.Slice(4));
+                foreach (ref var corner in corners) corner = Vector3.Clamp(corner, relevantArea.Min, relevantArea.Max);
+                foreach (ref var corner in corners) corner = Vector3.Transform(corner, lightViewMatrix);
+                var lightTMin = new Vector3(float.MaxValue);
+                var lightTMax = new Vector3(float.MinValue);
+                foreach (var corner in corners) {
+                    lightTMin = Vector3.Min(lightTMin, corner);
+                    lightTMax = Vector3.Max(lightTMax, corner);
+                }
+                lightMin = Vector3.Max(lightMin, lightTMin);
+                lightMax = Vector3.Min(lightMax, lightTMax);
             }
+            lightMax.Z += 10.0f;
 
-            var lightMin = Vector3.Max(lightFMin, lightTMin);
-            var lightMax = Vector3.Min(lightFMax, lightTMax);
             var lightSize = lightMax - lightMin;
 
             lightViewMatrix.Translation = lightViewMatrix.Translation - (lightMin + lightMax) / 2.0f;
@@ -292,6 +299,7 @@ namespace Weesals.Engine {
         public override void RenderScene(CSGraphics graphics, ref Context context) {
             graphics.Clear();
             base.RenderScene(graphics, ref context);
+            OnPostRender?.Invoke();
         }
     }
     public class MainPass : ScenePass {
@@ -349,10 +357,13 @@ namespace Weesals.Engine {
         CSRenderTarget[] targets = new CSRenderTarget[2];
         int frame = 0;
         private Matrix4x4 previousViewProj;
+        Vector2[] offsets = new Vector2[] { new Vector2(-0.8f, -0.266f), new Vector2(0.8f, 0.266f), new Vector2(-0.266f, 0.8f), new Vector2(0.266f, -0.8f), };
+        public Vector2 TemporalOffset => offsets[frame % offsets.Length];
+        public Material TemporalMaterial => temporalMaterial;
         public TemporalJitter(string name) : base(name) {
             Inputs = new[] { new RenderPass.PassInput("SceneDepth"), new RenderPass.PassInput("SceneColor", true), new RenderPass.PassInput("SceneVelId", true), };
             Outputs = new[] { new RenderPass.PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }), };
-            temporalMaterial = new Material("./assets/temporal.hlsl", GetPassMaterial());
+            temporalMaterial = new Material("./Assets/temporal.hlsl", GetPassMaterial());
         }
         public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
             ++frame;
@@ -364,6 +375,7 @@ namespace Weesals.Engine {
                 targets[targetId].SetFormat(BufferFormat.FORMAT_R11G11B10_FLOAT);
             }
             context.OverwriteOutput(context.Outputs[0], targets[targetId]);
+            ScenePasses.BeginRender(context.Viewport.Size, TemporalOffset, frame % 12);
             OnBegin?.Invoke(context.Viewport.Size);
             return true;
         }
@@ -374,7 +386,7 @@ namespace Weesals.Engine {
             Matrix4x4.Invert(viewProj, out var invVP);
             temporalMaterial.SetValue("PreviousVP", previousViewProj);
             temporalMaterial.SetValue("CurrentVP", invVP);
-            temporalMaterial.SetValue("TemporalJitter", ScenePasses.TemporalOffset * 0.5f);
+            temporalMaterial.SetValue("TemporalJitter", TemporalOffset * 0.5f);
             OnRender?.Invoke(graphics, ref context);
             var sceneColor = GetPassMaterial().GetUniformTexture("SceneColor");
             var prevTargetId = (frame - 1) % 2;
@@ -398,13 +410,13 @@ namespace Weesals.Engine {
             Outputs = new[] {
                 new PassOutput("HighZ").SetTargetDesc(new TextureDesc() { Size = -2, Format = BufferFormat.FORMAT_R8G8_UNORM, MipCount = 0, }),
             };
-            firstPassMaterial = new Material("./assets/highz.hlsl", GetPassMaterial());
-            firstPassMaterial.SetPixelShader(Resources.LoadShader("./assets/highz.hlsl", "FirstPassPS"));
+            firstPassMaterial = new Material("./Assets/highz.hlsl", GetPassMaterial());
+            firstPassMaterial.SetPixelShader(Resources.LoadShader("./Assets/highz.hlsl", "FirstPassPS"));
             firstPassMaterial.SetBlendMode(BlendMode.MakeOpaque());
             //firstPassMaterial.SetDepthMode(new DepthMode(DepthMode.Comparisons.Always, true));
             firstPassMaterial.SetDepthMode(DepthMode.MakeOff());
             highZMaterial = new Material(firstPassMaterial);
-            highZMaterial.SetPixelShader(Resources.LoadShader("./assets/highz.hlsl", "HighZPassPS"));
+            highZMaterial.SetPixelShader(Resources.LoadShader("./Assets/highz.hlsl", "HighZPassPS"));
         }
         public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
             var inputSize = context.FindInputSize(0);
@@ -440,7 +452,7 @@ namespace Weesals.Engine {
             Outputs = new[] {
                 new PassOutput("SceneColor", 1),
             };
-            aoPass = new Material("./assets/ambientocclusion.hlsl", GetPassMaterial());
+            aoPass = new Material("./Assets/ambientocclusion.hlsl", GetPassMaterial());
             aoPass.SetDepthMode(DepthMode.MakeOff());
             aoPass.SetBlendMode(BlendMode.MakeAlphaBlend());
         }
@@ -459,7 +471,7 @@ namespace Weesals.Engine {
             Outputs = new[] {
                 new PassOutput("BloomChain").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, MipCount = 7, }),
             };
-            bloomChainMaterial = new Material("./assets/bloomchain.hlsl");
+            bloomChainMaterial = new Material("./Assets/bloomchain.hlsl");
             bloomChainMaterial.SetBlendMode(BlendMode.MakeOpaque());
             bloomChainMaterial.SetDepthMode(DepthMode.MakeOff());
         }
@@ -489,7 +501,7 @@ namespace Weesals.Engine {
             Outputs = new[] {
                 new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }),
             };
-            postMaterial = new Material("./assets/postprocess.hlsl");
+            postMaterial = new Material("./Assets/postprocess.hlsl");
             postMaterial.SetBlendMode(BlendMode.MakePremultiplied());
         }
         public override void Render(CSGraphics graphics, ref Context context) {
@@ -531,16 +543,6 @@ namespace Weesals.Engine {
         public Matrix4x4 Projection => projection;
         public Frustum Frustum => new Frustum(view * projection);
         Matrix4x4 previousView, previousProj;
-
-        Vector2[] offsets = new Vector2[] {
-            new Vector2(-0.8f, -0.266f),
-            new Vector2(0.8f, 0.266f),
-            new Vector2(-0.266f, 0.8f),
-            new Vector2(0.266f, -0.8f),
-        };
-        int frame = 0;
-
-        public Vector2 TemporalOffset => offsets[frame % offsets.Length];
 
         public IReadOnlyList<ScenePass> ScenePasses => scenePasses;
 
@@ -584,9 +586,7 @@ namespace Weesals.Engine {
             return /*Scene.GetGPURevision() + */dynamicDrawHash;
         }
 
-        public void BeginRender(Int2 viewportSize) {
-            ++frame;
-            var jitter = TemporalOffset;
+        public void BeginRender(Int2 viewportSize, Vector2 jitter = default, int jitterFrame = default) {
             var jitteredProjection = projection;
             var jitteredPrevProj = previousProj;
             jitteredProjection.M31 += jitter.X / viewportSize.X;
@@ -598,7 +598,7 @@ namespace Weesals.Engine {
                 if (pass.TagsToInclude.Has(pass.Scene.TagManager.RequireTag("MainPass"))) {
                     pass.OverrideMaterial.SetValue("PreviousViewProjection", previousVP);
                     pass.OverrideMaterial.SetValue("TemporalJitter", Input.GetKeyDown(KeyCode.Q) ? default : jitter * 0.5f);
-                    pass.OverrideMaterial.SetValue("TemporalFrame", (float)(frame % 12));
+                    pass.OverrideMaterial.SetValue("TemporalFrame", (float)jitterFrame);
                     pass.SetViewProjection(view, jitteredProjection);
                 }
             }

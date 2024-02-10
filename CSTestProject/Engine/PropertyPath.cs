@@ -12,9 +12,16 @@ namespace Weesals.Engine {
 
         public int ArrayIndex = -1;
         public FieldInfo[] Fields = Array.Empty<FieldInfo>();
+        public PropertyInfo Property;
 
         public PropertyPath(object owner) {
             Owner = owner;
+        }
+        public PropertyPath(object owner, FieldInfo field) : this(owner) {
+            Fields = new[] { field, };
+        }
+        public PropertyPath(object owner, PropertyInfo property) : this(owner) {
+            Property = property;
         }
         public void DefrenceArray(int index) {
             ArrayIndex = index;
@@ -42,9 +49,10 @@ namespace Weesals.Engine {
         }*/
 
         public T? GetValueAs<T>() {
-            object head = Owner;
+            object? head = Owner;
             if (ArrayIndex >= 0) head = ((Array)head).GetValue(ArrayIndex)!;
-            for (int i = 0; i < Fields.Length; i++) head = Fields[i].GetValue(head)!;
+            for (int i = 0; i < Fields.Length; i++) if ((head = Fields[i].GetValue(head)) == null) return default;
+            if (Property != null) if ((head = Property.GetValue(head)) == null) return default;
             return head is T tval ? tval : default;
         }
         public void SetValueAs<T>(T value) {
@@ -55,9 +63,10 @@ namespace Weesals.Engine {
             for (int i = 0; i < Fields.Length - 1; i++) {
                 values[index++] = head = Fields[i].GetValue(head)!;
             }
-            head = value!;
+            if (Property != null) Property.SetValue(head, value);
+            else head = value!;
             for (int i = Fields.Length - 1; i >= 0; --i) {
-                var item = values[--index];
+                var item = index == 0 ? Owner : values[--index];
                 Fields[i].SetValue(item, head);
                 head = item;
             }
@@ -74,6 +83,15 @@ namespace Weesals.Engine {
             int nBegin = i;
             while (i < path.Length && char.IsLetterOrDigit(path[i])) ++i;
             return path.Substring(nBegin, i - nBegin);
+        }
+
+        public string GetPropertyName() {
+            if (Property != null) return Property.Name;
+            return Fields[^1].Name;
+        }
+        public Type GetPropertyType() {
+            if (Property != null) return Property.PropertyType;
+            return Fields[^1].FieldType;
         }
     }
 }

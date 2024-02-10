@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
@@ -164,6 +165,7 @@ namespace Weesals.Engine {
         public override string ToString() { return $"<{X}, {Y}, {Z}, {W}>"; }
     }
 
+    [TypeConverter(typeof(Converters.Int2Converter))]
     public struct Int2 : IEquatable<Int2> {
 	    public int X, Y;
         public int LengthSquared => (X * X + Y * Y);
@@ -209,7 +211,6 @@ namespace Weesals.Engine {
         public override bool Equals([NotNullWhen(true)] object? obj) { return obj is Int2 i2 && i2 == this; }
         public override int GetHashCode() { return (X * 887) + Y; }
         public override string ToString() { return "<" + X + "," + Y + ">"; }
-
         public static readonly Int2 Zero = new Int2(0);
         public static readonly Int2 One = new Int2(1);
     }

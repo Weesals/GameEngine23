@@ -157,13 +157,22 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 			}
 		}
 
-		auto TexLoader = [&](const ofbx::Texture* tex)->std::shared_ptr<Texture> {
-			if (tex == nullptr) return nullptr;
-			auto fbxFName = tex->getFileName();
+		auto TexLoader = [&](const ofbx::Texture* fbxtex)->std::shared_ptr<Texture> {
+			if (fbxtex == nullptr) return nullptr;
+			auto fbxFName = fbxtex->getFileName();
 			std::wstring texPath;
 			std::transform(fbxFName.begin, fbxFName.end, std::back_inserter(texPath), [](auto c) { return (wchar_t)c; });
 			auto& loader = ResourceLoader::GetSingleton();
-			return loader.LoadTexture(texPath);
+			auto tex = loader.LoadTexture(texPath);
+			if (tex == nullptr) {
+				auto end = texPath.find_last_of(L"/\\");
+				if (end >= 0) {
+					texPath = filename.substr(0, filename.find_last_of(L"/\\"))
+						+ texPath.substr(end);
+					tex = loader.LoadTexture(texPath);
+				}
+			}
+			return tex;
 		};
 
 		auto fbxMatCount = fbxMesh->getMaterialCount();

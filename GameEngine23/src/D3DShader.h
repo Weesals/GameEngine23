@@ -4,6 +4,8 @@
 #include <d3dcompiler.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
+#include <fstream>
+#include <filesystem>
 
 #include "Resources.h"
 #include "GraphicsDeviceBase.h"
@@ -43,15 +45,57 @@ public:
     ComPtr<ID3DBlob> mShader;
     ShaderReflection mReflection;
 
+    class StandardInclude : public ID3DInclude {
+        std::string mLocalPath;
+        std::string mAbsolutePath;
+    public:
+        void SetLocalPath(std::string&& path) {
+            mLocalPath = path;
+        }
+        void SetAbsolutePath(std::string&& path) {
+            mAbsolutePath = path;
+        }
+        HRESULT Open(D3D_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID* ppData, UINT* pBytes) override {
+            std::string filePath;
+            if (IncludeType == D3D_INCLUDE_LOCAL)
+                filePath = mLocalPath + pFileName;
+            else if (IncludeType == D3D_INCLUDE_SYSTEM)
+                filePath = mAbsolutePath + pFileName;
+            else
+                return E_FAIL;
+
+            HANDLE fileHandle = CreateFileA(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+            if (fileHandle == INVALID_HANDLE_VALUE) return E_FAIL;
+
+            LARGE_INTEGER fileSize;
+            GetFileSizeEx(fileHandle, &fileSize);
+            HANDLE mapHandle = CreateFileMappingA(fileHandle, nullptr, PAGE_READONLY, fileSize.HighPart, fileSize.LowPart, pFileName);
+            *ppData = mapHandle != INVALID_HANDLE_VALUE ? MapViewOfFile(mapHandle, FILE_MAP_READ, 0, 0, 0) : nullptr;
+            *pBytes = (UINT)fileSize.LowPart;
+
+            if (mapHandle != INVALID_HANDLE_VALUE) CloseHandle(mapHandle);
+            if (fileHandle != INVALID_HANDLE_VALUE) CloseHandle(fileHandle);
+
+            return *ppData != nullptr;
+        }
+        HRESULT Close(LPCVOID pData) override {
+            UnmapViewOfFile(pData);
+            return S_OK;
+        }
+    };
+
     // Compile shader and reflect uniform values / buffers
     void CompileFromFile(const std::wstring& path, const std::string& entry, const std::string& profile, const D3D_SHADER_MACRO* macros = nullptr)
     {
         ComPtr<ID3D10Blob> compilationErrors = nullptr;
         while (true) {
+            StandardInclude inc;
+            inc.SetLocalPath(std::filesystem::path(path).parent_path().string() + "/");
+            inc.SetAbsolutePath("Assets/include/");
             auto hr = D3DCompileFromFile(
                 path.c_str(),
                 macros,
-                D3D_COMPILE_STANDARD_FILE_INCLUDE,
+                &inc,
                 entry.c_str(),
                 profile.c_str(),
                 0,

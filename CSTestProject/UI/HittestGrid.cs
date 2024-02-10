@@ -67,7 +67,8 @@ namespace Weesals.UI {
 
         private class OrderComparer : IComparer<CanvasRenderable> {
             public int Compare(CanvasRenderable? x, CanvasRenderable? y) {
-                return x!.GetOrderId() - y!.GetOrderId();
+                return CanvasRenderable.GetGlobalOrder(y, x);
+                //return x!.GetOrderId() - y!.GetOrderId();
             }
             public static readonly OrderComparer Default = new();
         }

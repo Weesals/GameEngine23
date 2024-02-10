@@ -248,7 +248,7 @@ public:
 
 
 
-class D3DGraphicsSurface {
+class D3DGraphicsSurface : public GraphicsSurface {
     // This renderer supports 2 backbuffers
     static const int FrameCount = 2;
 
@@ -274,9 +274,12 @@ class D3DGraphicsSurface {
     HANDLE mFenceEvent;
     ComPtr<ID3D12Fence> mFence;
 
+    int mDenyPresentRef = 0;
+    bool mIsOccluded = false;
 public:
     ComPtr<IDXGISwapChain3> mSwapChain;
     D3DGraphicsSurface(D3DGraphicsDevice& device, HWND hWnd);
+    ~D3DGraphicsSurface();
     IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
     Int2 GetResolution() const { return mResolution; }
     void SetResolution(Int2 res);
@@ -288,8 +291,11 @@ public:
     int GetBackBufferIndex() const { return mBackBufferIndex; }
     int GetBackFrameIndex() const;
 
-    int Present();
-    int WaitForFrame();
-    void WaitForGPU();
+    bool GetIsOccluded() const override;
+    void RegisterDenyPresent(int delta = 1) override;
+
+    int Present() override;
+    int WaitForFrame() override;
+    void WaitForGPU() override;
 
 };

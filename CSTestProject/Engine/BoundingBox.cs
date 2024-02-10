@@ -30,6 +30,7 @@ namespace Weesals.Engine {
 
             return rmin <= rmax ? rmin : -1f;
         }
+        public static readonly BoundingBox Infinite = new BoundingBox(new Vector3(float.MinValue), new Vector3(float.MaxValue));
     };
 
 }

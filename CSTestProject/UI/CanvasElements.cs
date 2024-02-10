@@ -42,13 +42,13 @@ namespace Weesals.UI {
                     (sbyte)Math.Min(0, -128 + Color.R * 128 / 255),
                     (sbyte)Math.Min(0, -128 + Color.G * 128 / 255),
                     (sbyte)Math.Min(0, -128 + Color.B * 128 / 255),
-                    (sbyte)Math.Min(0, Color.A * 127 / 255)
+                    (sbyte)Math.Max(0, Color.A * 127 / 255)
                     ); break;
                 case BlendModes.Overlay: unified = new SColor(
                     (sbyte)(Color.R),
                     (sbyte)(Color.G),
                     (sbyte)(Color.B),
-                    (sbyte)Math.Min(0, Color.A * 127 / 255)
+                    (sbyte)Math.Max(0, Color.A * 127 / 255)
                     ); break;
             }
             return unified;
@@ -97,6 +97,7 @@ namespace Weesals.UI {
         private CanvasBlending blending;
         private RectF uvrect;
         private RectF border;
+        private float spriteScale = 1.0f;
         private DirtyFlags dirty;
 
         public CSTexture Texture { get; private set; }
@@ -126,6 +127,7 @@ namespace Weesals.UI {
             if (Texture.IsValid()) {
                 if (element.Material == null) element.SetMaterial(new Material());
                 element.Material!.SetTexture("Texture", Texture);
+                MarkLayoutDirty();
             }
         }
         public void SetSprite(Sprite? sprite) {
@@ -134,8 +136,9 @@ namespace Weesals.UI {
             var hash = UVRect.GetHashCode() + Border.GetHashCode();
             UVRect = sprite?.UVRect ?? new RectF(0f, 0f, 1f, 1f);
             Border = sprite?.Borders ?? new RectF(0f, 0f, 0f, 0f);
+            spriteScale = sprite?.Scale ?? 1.0f;
             bool wasNine = IsNinePatch;
-            IsNinePatch = Border != new RectF(0f, 0f, 0f, 0f);
+            IsNinePatch = Border != new RectF(0f, 0f, 1f, 1f);
             if (wasNine != IsNinePatch) dirty |= DirtyFlags.Indices;
             if (UVRect.GetHashCode() + Border.GetHashCode() == hash) {
                 dirty = (dirty & ~DirtyFlags.UV) | wasDirty;
@@ -196,7 +199,7 @@ namespace Weesals.UI {
                     ? stackalloc Vector2[] { new Vector2(0, 0), Vector2.Zero, Vector2.Zero, layout.GetSize(), }
                     : stackalloc Vector2[] { new Vector2(0, 0), layout.GetSize(), };
                 if (IsNinePatch && Texture.IsValid()) {
-                    var spriteSize = (Vector2)Texture.GetSize() * UVRect.Size;
+                    var spriteSize = (Vector2)Texture.GetSize() * UVRect.Size * spriteScale;
                     p[1] = Border.Min * spriteSize;
                     p[2] = p[3] - (Vector2.One - Border.Max) * spriteSize;
                 }
@@ -303,6 +306,8 @@ namespace Weesals.UI {
         PooledList<GlyphLayout> glyphLayout;
         TextDisplayParameters displayParameters;
 
+        public int ComputedGlyphCount => glyphLayout.Count;
+
         public Color Color { get => defaultStyle.mColor; set { defaultStyle.mColor = value; dirty = true; } }
         public float FontSize { get => defaultStyle.mFontSize; set { defaultStyle.mFontSize = value; dirty = true; } }
         public CSFont Font { get => font; set { SetFont(value); dirty = true; } }
@@ -328,6 +333,8 @@ namespace Weesals.UI {
         private void SetText(string value) {
             text = value;
             dirty = true;
+            glyphPlacements.Clear();
+            glyphLayout.Clear();
         }
 		public void SetFont(CSFont _font) {
             font = _font;
@@ -434,7 +441,7 @@ namespace Weesals.UI {
 				var scale = style.mFontSize / lineHeight;
 				var glyphSize2 = new Vector2(glyph.mSize.X, lineHeight) * scale;
 
-				if (pos.X + glyphSize2.X > layout.AxisX.W) {
+				if (pos.X + glyphSize2.X > layout.AxisX.W + 0.1f) {
 					pos.X = 0;
 					pos.Y += lineHeight * scale;
 					if (pos.Y + glyphSize2.Y > layout.AxisY.W) break;
@@ -445,7 +452,7 @@ namespace Weesals.UI {
 					mLocalPosition = pos + glyphSize2 / 2.0f,
 				});
                 min = Vector2.Min(min, new Vector2(pos.X, pos.Y + (float)(glyph.mOffset.Y) * scale));
-                max = Vector2.Max(max, new Vector2(pos.X + glyphSize2.X, pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
+                max = Vector2.Max(max, new Vector2(pos.X + Math.Max(placement.mAdvance, glyphSize2.X), pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
                 pos.X += placement.mAdvance;
 			}
             var sizeDelta = layout.GetSize() - (max - min);
@@ -463,14 +470,39 @@ namespace Weesals.UI {
         public float GetPreferredWidth() {
             if (glyphPlacements.Count == 0) UpdateGlyphPlacement();
             var posX = 0.0f;
-            for (int c = 0; c < glyphPlacements.Count; ++c) {
+            int c = 0;
+            for (; c < glyphPlacements.Count - 1; ++c) {
 				var placement = glyphPlacements[c];
                 posX += placement.mAdvance;
+            }
+            float lineHeight = (float)font.GetLineHeight();
+            for (; c < glyphPlacements.Count; ++c) {
+                var placement = glyphPlacements[c];
+                var glyph = font.GetGlyph(placement.mGlyphId);
+                var style = styles[placement.mStyleId];
+                var scale = style.mFontSize / lineHeight;
+                posX += Math.Max(placement.mAdvance, glyph.mSize.X * scale);
             }
             return posX;
         }
         public float GetPreferredHeight(float width = float.MaxValue) {
 			return defaultStyle.mFontSize;
+        }
+        public RectF GetComputedGlyphRect(int index) {
+            if (glyphLayout.Count == 0) return default;
+            if (index < glyphLayout.Count) {
+                var lineHeight = (float)font.GetLineHeight();
+                var placement = glyphPlacements[index];
+                var layout = glyphLayout[index];
+                var glyph = font.GetGlyph(placement.mGlyphId);
+                var style = styles[placement.mStyleId];
+                var scale = style.mFontSize / lineHeight;
+                var rect = new RectF(layout.mLocalPosition, (Vector2)glyph.mSize * scale);
+                rect.X -= rect.Width / 2.0f;
+                rect.Y -= rect.Height / 2.0f;
+                return rect;
+            }
+            return default;
         }
         public void MarkLayoutDirty() {
             dirty = true;
@@ -544,7 +576,7 @@ namespace Weesals.UI {
 			UpdateGlyphLayout(layout);
 
             if (element.Material == null) {
-                if (element.Material == null) element.SetMaterial(new Material("./assets/text.hlsl"));
+                if (element.Material == null) element.SetMaterial(new Material("./Assets/text.hlsl"));
                 UpdateMaterialProperties();
             }
             var elementId = element.ElementId;
@@ -590,6 +622,9 @@ namespace Weesals.UI {
 
         public void Append(ref CanvasCompositor.Context compositor) {
 			compositor.Append(element);
+        }
+        public override string ToString() {
+            return $"text<{Text}>";
         }
     }
 

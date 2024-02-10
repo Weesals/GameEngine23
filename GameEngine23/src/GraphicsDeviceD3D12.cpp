@@ -21,7 +21,10 @@ inline void ThrowIfFailed(HRESULT hr)
 {
     if (FAILED(hr))
     {
-        throw std::exception();
+        std::ostringstream err;
+        err << "Exception thrown, Code: " << std::hex << hr << std::endl;
+        OutputDebugStringA(err.str().c_str());
+        throw std::runtime_error(err.str());
     }
 }
 
@@ -288,6 +291,7 @@ public:
             pipelineState->mLayout->mConstantBuffers = pipelineState->mConstantBuffers;
             pipelineState->mLayout->mResources = pipelineState->mResourceBindings;
             for (auto& b : bindings) pipelineState->mLayout->mBindings.push_back(b);
+            pipelineState->mLayout->mMaterialState = materialState;
         }
         return pipelineState->mLayout.get();
     }
@@ -301,20 +305,23 @@ public:
 
         BindPipelineState(pipelineState);
 
+        int r = 0;
+        int stencilRef = -1;
+        if (pipelineState->mLayout->mMaterialState.mDepthMode.GetStencilEnable()) {
+            stencilRef = (int)(intptr_t)resources[r++];
+        }
         // Require and bind constant buffers
         for (int i = 0; i < pipelineState->mConstantBuffers.size(); ++i) {
             auto cb = pipelineState->mConstantBuffers[i];
-            auto d3dCB = (D3DConstantBuffer*)resources[i];
+            auto d3dCB = (D3DConstantBuffer*)resources[r++];
             if (mLastCBs[cb->mBindPoint] == d3dCB) continue;
             mLastCBs[cb->mBindPoint] = d3dCB;
             mCmdList->SetGraphicsRootConstantBufferView(cb->mBindPoint, d3dCB->mConstantBuffer->GetGPUVirtualAddress());
         }
         // Require and bind other resources (textures)
-        int roff = (int)pipelineState->mConstantBuffers.size();
-        for (int i = 0; i < pipelineState->mResourceBindings.size(); ++i)
-        {
+        for (int i = 0; i < pipelineState->mResourceBindings.size(); ++i) {
             auto* rb = pipelineState->mResourceBindings[i];
-            auto* resource = resources[roff + i];
+            auto* resource = resources[r++];
             int srvOffset = -1;
             if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
                 srvOffset = cache.GetBinding((uint64_t)resource)->mSRVOffset;
@@ -345,17 +352,30 @@ public:
             mLastResources[bindingId] = handle.ptr;
         }
 
-        tVertexViews.clear();
-        tVertexViews.reserve(2);
-        D3D12_INDEX_BUFFER_VIEW indexView;
         int indexCount = -1;
-        cache.ComputeElementData(bindings, mCmdList.Get(), mFrameHandle, tVertexViews, indexView, indexCount);
-        mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
-        mCmdList->IASetIndexBuffer(&indexView);
+        D3D12_INDEX_BUFFER_VIEW indexView{
+            .BufferLocation = 0,
+            .SizeInBytes = 0,
+            .Format = DXGI_FORMAT_UNKNOWN,
+        };
+        if (bindings.empty()) {
+            mCmdList->IASetIndexBuffer(&indexView);
+        }
+        else {
+            tVertexViews.clear();
+            tVertexViews.reserve(2);
+            cache.ComputeElementData(bindings, mCmdList.Get(), mFrameHandle, tVertexViews, indexView, indexCount);
+            mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
+            if (indexView.Format != DXGI_FORMAT_UNKNOWN) mCmdList->IASetIndexBuffer(&indexView);
+        }
         
         // Issue the draw calls
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
-        mCmdList->DrawIndexedInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0, 0);
+        if (stencilRef >= 0) mCmdList->OMSetStencilRef((UINT)stencilRef);
+        if (indexView.Format != DXGI_FORMAT_UNKNOWN)
+            mCmdList->DrawIndexedInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0, 0);
+        else
+            mCmdList->DrawInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0);
         cache.mStatistics.mDrawCount++;
         cache.mStatistics.mInstanceCount += instanceCount;
     }
@@ -383,16 +403,10 @@ GraphicsDeviceD3D12::GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& win
     , mPrimarySurface(mDevice, window->GetHWND())
     , mCache(mDevice, mStatistics)
 {
-    auto mD3DDevice = mDevice.GetD3DDevice();
-    auto mSwapChain = mPrimarySurface.GetSwapChain();
     //WaitForGPU();
-
-    auto resolution = mPrimarySurface.GetResolution();
-    SetResolution(resolution);
 }
 GraphicsDeviceD3D12::~GraphicsDeviceD3D12()
 {
-    WaitForGPU();
 }
 
 void GraphicsDeviceD3D12::CheckDeviceState() const
@@ -411,10 +425,7 @@ void GraphicsDeviceD3D12::CheckDeviceState() const
 }
 
 void GraphicsDeviceD3D12::SetResolution(Int2 resolution) {
-    auto mD3DDevice = mDevice.GetD3DDevice();
-    auto mSwapChain = mPrimarySurface.GetSwapChain();
-    WaitForGPU();
-    mCache.depthBufferPool.clear();
+    //mCache.depthBufferPool.clear();
     mPrimarySurface.SetResolution(resolution);
 }
 CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
@@ -451,8 +462,4 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
 void GraphicsDeviceD3D12::Present() {
     int disposedFrame = mPrimarySurface.Present();
     mCache.UnlockFrame((size_t)&mPrimarySurface + disposedFrame);
-}
-// Wait for all GPU operations? Taken from the samples
-void GraphicsDeviceD3D12::WaitForGPU() {
-    mPrimarySurface.WaitForGPU();
 }

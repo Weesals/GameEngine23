@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CSTestProject\WeesalsEngine.csproj" />
+    <ProjectReference Include="..\Weesals.ECS\Weesals.ECS.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <ContentWithTargetPath Include="$(SolutionDir)\x64\Debug\CSBindings.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>CSBindings.dll</TargetPath>
+    </ContentWithTargetPath>
+    <None Include="$(SolutionDir)\x64\Debug\CSBindings.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <ContentWithTargetPath Include="$(SolutionDir)\x64\Release\CSBindings.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>CSBindings.dll</TargetPath>
+    </ContentWithTargetPath>
+    <None Include="$(SolutionDir)\x64\Release\CSBindings.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Assets\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>  
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="Assets\ParticleAtlas.png" />
+  </ItemGroup>
+
+</Project>

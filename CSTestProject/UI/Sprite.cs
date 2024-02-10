@@ -24,10 +24,14 @@ namespace Weesals.UI {
     }
     public class Sprite {
         public CSTexture Texture;
-        public RectF Borders;
-        public RectF UVRect;
+        public RectF Borders = RectF.Unit01;
+        public RectF UVRect = RectF.Unit01;
+        public float Scale = 1.0f;
         public Vector2 Size;
         public SpritePolygon Polygon;
+        public override string ToString() {
+            return $"Size<{Size}> UV<{UVRect}>";
+        }
     }
 
     public class SpriteAtlas {
@@ -41,8 +45,8 @@ namespace Weesals.UI {
         public int Padding = 1;
         private class OrderByHeight : IComparer<CSTexture> {
             public int Compare(CSTexture x, CSTexture y) {
-                var height1 = x.GetSize().Y;
-                var height2 = y.GetSize().Y;
+                var height1 = x.IsValid() ? x.GetSize().Y : 0;
+                var height2 = y.IsValid() ? y.GetSize().Y : 0;
                 return height2 - height1;
             }
             public static OrderByHeight Default = new();
@@ -61,6 +65,7 @@ namespace Weesals.UI {
             int maxHeight = 0;
             for (int s = 0; s < insprites.Count; ++s) {
                 var sprite = sorted[s];
+                if (!sprite.IsValid()) continue;
                 var size = sprite.GetSize();
                 if (pos.X + size.X > atlasSize.X) {
                     pos.X = 0;

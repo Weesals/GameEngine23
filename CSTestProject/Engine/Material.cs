@@ -204,6 +204,33 @@ namespace Weesals.Engine {
             };
         }
         public StateData State;
+        public struct RealtimeStateData : IEquatable<RealtimeStateData> {
+            public enum Flags : byte { None = 0x00, StencilRef = 0x01, };
+
+            public byte StencilRef;
+            public Flags Valid;
+
+            public RealtimeStateData() { }
+
+            public void SetFlag(Flags flag, bool enable) {
+                if (enable) Valid |= flag; else Valid &= ~flag;
+            }
+
+            public void MergeWith(in RealtimeStateData other) {
+                var newFlags = other.Valid & ~Valid;
+                if (newFlags == 0) return;
+                if ((newFlags & Flags.StencilRef) != 0) StencilRef = other.StencilRef;
+                Valid |= newFlags;
+            }
+
+            public bool Equals(RealtimeStateData other) { return StencilRef == other.StencilRef; }
+            public override int GetHashCode() { return HashCode.Combine(StencilRef); }
+
+            public static readonly RealtimeStateData Default = new RealtimeStateData() {
+                Valid = Flags.None,
+            };
+        }
+        public RealtimeStateData RealtimeData;
 
         // Parameters to be set
         Parameters Parameters = new();
@@ -351,6 +378,7 @@ namespace Weesals.Engine {
         }
 
         unsafe public void CopyFrom(CSMaterial otherMat) {
+            if (!otherMat.IsValid()) return;
             var identifiers = stackalloc CSIdentifier[16];
             int identCount = CSMaterial.GetParameterIdentifiers(otherMat.GetNativeMaterial(), identifiers, 16);
             for (int i = 0; i < identCount; ++i) {
@@ -374,6 +402,11 @@ namespace Weesals.Engine {
         public override int GetHashCode() {
             if (hashCache == 0) hashCache = HashCode.Combine(State.GetHashCode(), Parameters.GetHashCode());
             return hashCache;
+        }
+
+        public void SetStencilRef(int systemId) {
+            RealtimeData.StencilRef = (byte)systemId;
+            RealtimeData.Valid |= RealtimeStateData.Flags.StencilRef;
         }
 
         public static NullMaterial NullInstance = new();
@@ -429,7 +462,7 @@ namespace Weesals.Engine {
             });
         }
 
-        public RootMaterial() : base("./assets/opaque.hlsl") {
+        public RootMaterial() : base("./Assets/opaque.hlsl") {
             InitialiseDefaults();
         }
 

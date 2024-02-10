@@ -105,6 +105,8 @@ namespace Weesals.Engine {
         public RenderTag(int id) { Id = id; }
         public static RenderTag Default = new RenderTag(0);
         public static RenderTag Transparent = new RenderTag(1);
+        public static RenderTag ShadowCast = new RenderTag(2);
+        public static RenderTags operator |(RenderTag t1, RenderTag t2) { RenderTags t = new(); t.Add(t1); t.Add(t2); return t; }
     }
     public struct RenderTags {
         public uint Mask;
@@ -115,6 +117,8 @@ namespace Weesals.Engine {
         public bool Has(RenderTag tag) { return (Mask & (1u << tag.Id)) != 0; }
         public bool HasAny(RenderTags tags) { return (Mask & tags.Mask) != 0; }
         public static implicit operator RenderTags(RenderTag tag) { var tags = new RenderTags(); tags.Add(tag); return tags; }
+        public static RenderTags operator |(RenderTags tags, RenderTag tag) { tags.Add(tag); return tags; }
+        public static RenderTags operator &(RenderTags tags, RenderTags tag) { tags.Mask &= tag.Mask; return tags; }
         public static RenderTags Default = new RenderTags(0b01);
         public static RenderTags None = new RenderTags(0b00);
     }
@@ -123,6 +127,7 @@ namespace Weesals.Engine {
         public RenderTagManager() {
             identifiers.Add("Default");
             identifiers.Add("Transparent");
+            identifiers.Add("ShadowCast");
         }
         public RenderTag RequireTag(CSIdentifier identifier) {
             var id = identifiers.IndexOf(identifier);

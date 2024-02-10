@@ -1,5 +1,8 @@
 #pragma once
 
+#define DLLCLASS __declspec(dllexport)
+#define DLLFUNC __cdecl
+
 #include <stdint.h>
 #include "Buffer.h"
 #include "BridgeTypes.h"
@@ -13,6 +16,7 @@ class Material;
 struct PipelineLayout;
 class FontInstance;
 class RenderPass;
+class GraphicsSurface;
 class WindowBase;
 class Shader;
 
@@ -26,18 +30,12 @@ typedef Material NativeMaterial;
 typedef PipelineLayout NativePipeline;
 typedef FontInstance NativeFont;
 typedef RenderPass NativeRenderPass;
+typedef GraphicsSurface NativeSurface;
 typedef WindowBase NativeWindow;
 
 class NativePlatform;
 class NativeScene;
 class NativeGraphics;
-
-struct __declspec(dllexport) PerformanceTest {
-	static float DoNothing();
-	static float CSDLLInvoke(float f1, float f2);
-	static float CPPVirtual();
-	static float CPPDirect();
-};
 
 struct Bool {
 	uint8_t mValue;
@@ -62,31 +60,32 @@ struct CSSpanSPtr {
 		: mData((Ptr*)data), mSize(size) { }
 };
 
-struct __declspec(dllexport) CSString {
+struct DLLCLASS CSString {
 	const wchar_t* mBuffer;
 	int mSize;
 };
-struct __declspec(dllexport) CSString8 {
+struct DLLCLASS CSString8 {
 	const char* mBuffer;
 	int mSize;
 	CSString8() : mBuffer(nullptr), mSize(0) { }
 	CSString8(const char* buffer, int size) : mBuffer(buffer), mSize(size) { }
 };
 
-struct __declspec(dllexport) CSIdentifier {
+struct DLLCLASS CSIdentifier {
 	uint16_t mId;
 	CSIdentifier(uint16_t id) : mId(id) { }
 	static CSString8 GetName(uint16_t id);
+	static CSString GetWName(uint16_t id);
 	static uint16_t GetIdentifier(CSString str);
 };
 
-struct __declspec(dllexport) CSBufferElement {
+struct DLLCLASS CSBufferElement {
 	CSIdentifier mBindName;
 	uint16_t mBufferStride;
 	BufferFormat mFormat;
 	void* mData;
 };
-struct __declspec(dllexport) CSBufferLayout {
+struct DLLCLASS CSBufferLayout {
 	uint64_t identifier; int revision; int size;
 	CSBufferElement* mElements;
 	uint8_t mElementCount;
@@ -94,24 +93,24 @@ struct __declspec(dllexport) CSBufferLayout {
 	int mOffset;
 	int mCount;
 };
-struct __declspec(dllexport) CSRenderTargetBinding {
+struct DLLCLASS CSRenderTargetBinding {
 	NativeRenderTarget* mTarget;
 	int mMip, mSlice;
 	CSRenderTargetBinding(NativeRenderTarget* target, int mip = 0, int slice = 0)
 		: mTarget(target), mMip(mip), mSlice(slice) { }
 };
-/*struct __declspec(dllexport) CSBufferFormat {
+/*struct DLLCLASS CSBufferFormat {
 	enum Format : uint8_t { Float, Int, Short, Byte, };
 	Format mFormat;
 	uint8_t mComponents;
 };
-struct __declspec(dllexport) CSBuffer {
+struct DLLCLASS CSBuffer {
 	CSIdentifier mBindName;
 	const void* mData;
 	int mStride;
 	CSBufferFormat mFormat;
 };*/
-struct __declspec(dllexport) CSTexture {
+struct DLLCLASS CSTexture {
 	NativeTexture* mTexture;
 public:
 	CSTexture() : mTexture(nullptr) { }
@@ -132,7 +131,7 @@ public:
 	static NativeTexture* _Create(CSString name);
 	static void Dispose(NativeTexture* tex);
 };
-struct __declspec(dllexport) CSRenderTarget {
+struct DLLCLASS CSRenderTarget {
 	NativeRenderTarget* mRenderTarget;
 public:
 	CSRenderTarget() : mRenderTarget(nullptr) { }
@@ -155,7 +154,7 @@ struct CSGlyph {
 	Int2 mOffset;
 	int mAdvance;
 };
-class __declspec(dllexport) CSFont {
+class DLLCLASS CSFont {
 	NativeFont* mFont;
 public:
 	CSFont(NativeFont* font) : mFont(font) { }
@@ -165,7 +164,7 @@ public:
 	static int GetGlyphId(const NativeFont* font, wchar_t chr);
 	static const CSGlyph& GetGlyph(const NativeFont* font, int id);
 };
-class __declspec(dllexport) CSMaterial {
+class DLLCLASS CSMaterial {
 	NativeMaterial* mMaterial;
 public:
 	CSMaterial(NativeMaterial* material) : mMaterial(material) { }
@@ -196,7 +195,7 @@ struct CSMeshData {
 	CSBufferElement mColors;
 	CSBufferElement mIndices;
 };
-class __declspec(dllexport) CSMesh {
+class DLLCLASS CSMesh {
 	NativeMesh* mMesh;
 public:
 	CSMesh(NativeMesh* mesh)
@@ -216,7 +215,7 @@ public:
 	NativeMesh* GetNativeMesh() const { return mMesh; }
 	static NativeMesh* _Create(CSString name);
 };
-class __declspec(dllexport) CSModel {
+class DLLCLASS CSModel {
 	NativeModel* mModel;
 public:
 	CSModel(NativeModel* mesh)
@@ -227,7 +226,7 @@ public:
 	NativeModel* GetNativeModel() const { return mModel; }
 };
 
-class __declspec(dllexport) CSInstance {
+class DLLCLASS CSInstance {
 	int mInstanceId;
 public:
 	CSInstance(int instanceId)
@@ -235,7 +234,7 @@ public:
 	int GetInstanceId() { return mInstanceId; }
 };
 
-struct __declspec(dllexport) CSUniformValue {
+struct DLLCLASS CSUniformValue {
 	CSIdentifier mName;
 	int mOffset;
 	int mSize;
@@ -245,31 +244,33 @@ struct CSConstantBufferData {
 	int mSize;
 	int mBindPoint;
 };
-class __declspec(dllexport) CSConstantBuffer {
+class DLLCLASS CSConstantBuffer {
 	CSConstantBufferData* mConstantBuffer;
 public:
 	CSConstantBuffer(CSConstantBufferData* data) : mConstantBuffer(data) { }
 	static CSSpan GetValues(const CSConstantBufferData* cb);
 };
-class __declspec(dllexport) CSResourceBinding {
+class DLLCLASS CSResourceBinding {
 public:
 	CSIdentifier mName;
 	int mBindPoint;
 	int mStride;
 	uint8_t mType;
 };
-class __declspec(dllexport) CSPipeline {
+class DLLCLASS CSPipeline {
 	const NativePipeline* mPipeline;
 public:
 	CSPipeline(const NativePipeline* pipeline)
 		: mPipeline(pipeline) { }
+	const NativePipeline* GetNativePipeline() const { return mPipeline; }
+private:
+	static int GetHasStencilState(const NativePipeline* pipeline);
 	static int GetExpectedBindingCount(const NativePipeline* pipeline);
 	static int GetExpectedConstantBufferCount(const NativePipeline* pipeline);
 	static int GetExpectedResourceCount(const NativePipeline* pipeline);
 	static CSSpan GetConstantBuffers(const NativePipeline* pipeline);
 	static CSSpan GetResources(const NativePipeline* pipeline);
 	static CSSpan GetBindings(const NativePipeline* pipeline);
-	const NativePipeline* GetNativePipeline() const { return mPipeline; }
 };
 struct CSDrawConfig {
 	int mIndexBase;
@@ -277,7 +278,7 @@ struct CSDrawConfig {
 	CSDrawConfig(int indexStart, int indexCount)
 		: mIndexBase(indexStart), mIndexCount(indexCount) { }
 };
-class __declspec(dllexport) CSGraphics {
+class DLLCLASS CSGraphics {
 	NativeGraphics* mGraphics = nullptr;
 public:
 	CSGraphics(NativeGraphics* graphics)
@@ -285,10 +286,10 @@ public:
 	NativeGraphics* GetNativeGraphics() const { return mGraphics; }
 private:
 	static void Dispose(NativeGraphics* graphics);
+	static NativeSurface* GetPrimarySurface(const NativeGraphics* graphics);
 	static Int2C GetResolution(const NativeGraphics* graphics);
 	static void SetResolution(const NativeGraphics* graphics, Int2 res);
 	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
-	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, CSSpan materials);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static CSSpan ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bindings);
@@ -302,53 +303,21 @@ private:
 	static bool IsTombstoned(NativeGraphics* graphics);
 	static uint64_t GetGlobalPSOHash(NativeGraphics* graphics);
 };
-class __declspec(dllexport) CSWindow {
+class DLLCLASS CSGraphicsSurface {
+	NativeSurface* mSurface;
+public:
+	CSGraphicsSurface(NativeSurface* surface)
+		: mSurface(surface) { }
+	NativeSurface* GetNativeSurface() const { return mSurface; }
+	static void RegisterDenyPresent(NativeSurface* surface, int delta);
+};
+class DLLCLASS CSWindow {
 	NativeWindow* mWindow = nullptr;
 public:
 	CSWindow(NativeWindow* window)
 		: mWindow(window) { }
 	static void Dispose(NativeWindow* window);
 	static Int2C GetResolution(const NativeWindow* window);
-};
-
-class __declspec(dllexport) CSRenderPass {
-	NativeRenderPass* mRenderPass;
-public:
-	CSRenderPass(NativeRenderPass* renderPass)
-		: mRenderPass(renderPass) { }
-	static CSString8 GetName(NativeRenderPass* renderPass);
-	static const Frustum& GetFrustum(NativeRenderPass* renderPass);
-	static void SetViewProjection(NativeRenderPass* renderPass, const Matrix& view, const Matrix& projection);
-	static const Matrix& GetView(NativeRenderPass* renderPass);
-	static const Matrix& GetProjection(NativeRenderPass* renderPass);
-	static void AddInstance(NativeRenderPass* renderPass, CSInstance instance, CSMesh mesh, CSSpan materials);
-	static void RemoveInstance(NativeRenderPass* renderPass, CSInstance instance);
-	static void SetVisible(NativeRenderPass* renderPass, CSInstance instance, bool visible);
-	static NativeMaterial* GetOverrideMaterial(NativeRenderPass* renderPass);
-	static void SetTargetTexture(NativeRenderPass* renderPass, NativeRenderTarget* target);
-	static NativeRenderTarget* GetTargetTexture(NativeRenderPass* renderPass);
-	static void Bind(NativeRenderPass* renderPass, NativeGraphics* graphics);
-	static void AppendDraw(NativeRenderPass* renderPass, NativeGraphics* graphics, NativePipeline* pipeline, CSSpan bindings, CSSpan resources, Int2 instanceRange);
-	static void Render(NativeRenderPass* renderPass, NativeGraphics* graphics);
-	static NativeRenderPass* Create(NativeScene* scene, CSString name);
-};
-class __declspec(dllexport) CSScene {
-	NativeScene* mScene;
-public:
-	CSScene(NativeScene* scene)
-		: mScene(scene) { }
-	static void Dispose(NativeScene* scene);
-	static NativeMaterial* GetRootMaterial(NativeScene* scene);
-	static int CreateInstance(NativeScene* scene);
-	static void RemoveInstance(NativeScene* scene, CSInstance instance);
-	static void UpdateInstanceData(NativeScene* scene, CSInstance instance, int offset, const uint8_t* data, int dataLen);
-	static CSSpan GetInstanceData(NativeScene* scene, CSInstance instance);
-	static NativeTexture* GetGPUBuffer(NativeScene* scene);
-	static int GetGPURevision(NativeScene* scene);
-	static void SubmitToGPU(NativeScene* scene, NativeGraphics* graphics);
-	static NativeRenderPass* GetBasePass(NativeScene* scene);
-	static NativeRenderPass* GetShadowPass(NativeScene* scene);
-	static void Render(NativeScene* scene, NativeGraphics* graphics);
 };
 
 struct CSPointer {
@@ -360,18 +329,27 @@ struct CSPointer {
 	unsigned int mCurrentButtonState;
 	unsigned int mPreviousButtonState;
 };
-class __declspec(dllexport) CSInput {
+struct CSKey {
+	unsigned char mKeyId;
+};
+class DLLCLASS CSInput {
 	NativePlatform* mPlatform = nullptr;
 public:
 	CSInput(NativePlatform* platform)
 		: mPlatform(platform) { }
+private:
 	CSSpanSPtr GetPointers(NativePlatform* platform);
-	Bool GetKeyDown(NativePlatform* platform, char key);
-	Bool GetKeyPressed(NativePlatform* platform, char key);
-	Bool GetKeyReleased(NativePlatform* platform, char key);
+	Bool GetKeyDown(NativePlatform* platform, unsigned char key);
+	Bool GetKeyPressed(NativePlatform* platform, unsigned char key);
+	Bool GetKeyReleased(NativePlatform* platform, unsigned char key);
+	CSSpan GetPressKeys(NativePlatform* platform);
+	CSSpan GetDownKeys(NativePlatform* platform);
+	CSSpan GetReleaseKeys(NativePlatform* platform);
+	CSSpan GetCharBuffer(NativePlatform* platform);
+	void ReceiveTickEvent(NativePlatform* platform);
 };
 
-class __declspec(dllexport) CSResources {
+class DLLCLASS CSResources {
 public:
 	static NativeShader* LoadShader(CSString path, CSString entryPoint);
 	static NativeModel* LoadModel(CSString path);
@@ -379,7 +357,7 @@ public:
 	static NativeFont* LoadFont(CSString path);
 };
 
-class __declspec(dllexport) Platform {
+class DLLCLASS Platform {
 	NativePlatform* mPlatform = nullptr;
 public:
 	Platform(NativePlatform* platform)
@@ -387,7 +365,6 @@ public:
 
 	static NativeWindow* GetWindow(const NativePlatform* platform);
 	static NativeGraphics* CreateGraphics(const NativePlatform* platform);
-	static NativeScene* CreateScene(const NativePlatform* platform);
 
 	static int MessagePump(NativePlatform* platform);
 	static void Present(NativePlatform* platform);

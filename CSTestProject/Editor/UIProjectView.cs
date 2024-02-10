@@ -27,12 +27,12 @@ namespace Weesals.Editor {
                     for (var p = ParentFolder; p != null; p = p.ParentFolder) ++depth;
                     SetTransform(CanvasTransform.MakeDefault().WithOffsets(5f + 5f * depth, 0f, 0f, 0f));
                 }
-                public override void OnSelected(bool _selected) {
-                    base.OnSelected(_selected);
+                public override void OnSelected(ISelectionGroup group, bool _selected) {
+                    base.OnSelected(group, _selected);
                     if (IsSelected) {
                         FindParent<UIProjectView>()?.SetContentPath(Filename);
                     }
-                    Text.Color = IsSelected ? Color.Yellow : Color.White;
+                    Text.TextColor = IsSelected ? Color.Yellow : Color.White;
                 }
                 public override Vector2 GetDesiredSize(SizingParameters sizing) {
                     return new Vector2(100f, 20f);
@@ -64,9 +64,9 @@ namespace Weesals.Editor {
             }
             public void SetSelected(ISelectable? selectable) {
                 if (selectedFolder == selectable) return;
-                if (selectedFolder != null) selectedFolder.OnSelected(false);
+                if (selectedFolder != null) selectedFolder.OnSelected(this, false);
                 selectedFolder = selectable as FolderView;
-                if (selectedFolder != null) selectedFolder.OnSelected(true);
+                if (selectedFolder != null) selectedFolder.OnSelected(this, true);
             }
         }
         public class FileGrid : CanvasRenderable {
@@ -106,7 +106,7 @@ namespace Weesals.Editor {
                     };
                     Text = new(Path.GetFileName(filename)) {
                         FontSize = 10,
-                        Color = Color.Black,
+                        TextColor = Color.Black,
                         DisplayParameters = TextDisplayParameters.Flat,
                     };
                     Icon.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 1f, 1f).WithOffsets(10f, 0f, -10f, -32f));
@@ -114,10 +114,10 @@ namespace Weesals.Editor {
                     AppendChild(Icon);
                     AppendChild(Text);
                 }
-                public override void OnSelected(bool _selected) {
-                    base.OnSelected(_selected);
+                public override void OnSelected(ISelectionGroup group, bool _selected) {
+                    base.OnSelected(group, _selected);
                     Icon.Color = IsSelected ? new Color(0xffaaaaaa) : Color.Gray;
-                    Text.Color = IsSelected ? Color.Orange : Color.Black;
+                    Text.TextColor = IsSelected ? Color.Orange : Color.Black;
                     MarkComposeDirty();
                 }
                 public void OnPointerClick(PointerEvent events) {
@@ -188,13 +188,13 @@ namespace Weesals.Editor {
         public UIProjectView(Editor editor) : base(editor, "Project") {
             folderList.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 0f, 1f).WithOffsets(0f, 0f, 200f, 0f));
             fileGrid.SetTransform(CanvasTransform.MakeDefault().WithOffsets(200f, 0f, 0f, 0f));
-            folderList.SetRoot("./assets/");
+            folderList.SetRoot("./Assets/");
             AppendChild(folderList);
             AppendChild(fileGrid);
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
-            SetContentPath("./assets/");
+            SetContentPath("./Assets/");
         }
         private void SetContentPath(string path) {
             folderList.SetContentPath(path);

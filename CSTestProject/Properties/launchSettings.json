@@ -2,7 +2,7 @@
   "profiles": {
     "CSTestProject": {
       "commandName": "Project",
-      "workingDirectory": "../TestGame",
+      "workingDirectory": "../TestGame/",
       "nativeDebugging": true
     }
   }

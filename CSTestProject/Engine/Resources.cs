@@ -14,27 +14,31 @@ namespace Weesals.Engine {
         public static void LoadDefaultUIAssets() {
             var spriteRenderer = new SpriteRenderer();
             var atlas = spriteRenderer.Generate(new[] {
-                Resources.LoadTexture("./assets/ui/T_ButtonBG.png"),
-                Resources.LoadTexture("./assets/ui/T_ButtonFrame.png"),
-                Resources.LoadTexture("./assets/ui/T_FileIcon.png"),
-                Resources.LoadTexture("./assets/ui/T_FolderIcon.png"),
-                Resources.LoadTexture("./assets/ui/T_FileShader.png"),
-                Resources.LoadTexture("./assets/ui/T_FileTxt.png"),
-                Resources.LoadTexture("./assets/ui/T_FileModel.png"),
-                Resources.LoadTexture("./assets/ui/T_FileImage.png"),
-                Resources.LoadTexture("./assets/ui/T_Tick.png"),
+                Resources.LoadTexture("./Assets/ui/T_ButtonBG.png"),
+                Resources.LoadTexture("./Assets/ui/T_ButtonFrame.png"),
+                Resources.LoadTexture("./Assets/ui/T_TextBox.png"),
+                Resources.LoadTexture("./Assets/ui/T_FileIcon.png"),
+                Resources.LoadTexture("./Assets/ui/T_FolderIcon.png"),
+                Resources.LoadTexture("./Assets/ui/T_FileShader.png"),
+                Resources.LoadTexture("./Assets/ui/T_FileTxt.png"),
+                Resources.LoadTexture("./Assets/ui/T_FileModel.png"),
+                Resources.LoadTexture("./Assets/ui/T_FileImage.png"),
+                Resources.LoadTexture("./Assets/ui/T_Tick.png"),
             });
             atlas.Sprites[0].Borders = RectF.Unit01.Inset(0.1f);
             atlas.Sprites[1].Borders = RectF.Unit01.Inset(0.2f);
+            atlas.Sprites[2].Borders = RectF.Unit01.Inset(0.3f);
+            atlas.Sprites[2].Scale = 0.5f;
             loadedSprites.Add("ButtonBG", atlas.Sprites[0]);
             loadedSprites.Add("ButtonFrame", atlas.Sprites[1]);
-            loadedSprites.Add("FileIcon", atlas.Sprites[2]);
-            loadedSprites.Add("FolderIcon", atlas.Sprites[3]);
-            loadedSprites.Add("FileShader", atlas.Sprites[4]);
-            loadedSprites.Add("FileText", atlas.Sprites[5]);
-            loadedSprites.Add("FileModel", atlas.Sprites[6]);
-            loadedSprites.Add("FileImage", atlas.Sprites[7]);
-            loadedSprites.Add("Tick", atlas.Sprites[8]);
+            loadedSprites.Add("TextBox", atlas.Sprites[2]);
+            loadedSprites.Add("FileIcon", atlas.Sprites[3]);
+            loadedSprites.Add("FolderIcon", atlas.Sprites[4]);
+            loadedSprites.Add("FileShader", atlas.Sprites[5]);
+            loadedSprites.Add("FileText", atlas.Sprites[6]);
+            loadedSprites.Add("FileModel", atlas.Sprites[7]);
+            loadedSprites.Add("FileImage", atlas.Sprites[8]);
+            loadedSprites.Add("Tick", atlas.Sprites[9]);
         }
 
         public static ShaderBase LoadShader(string path, string entry) {

@@ -44,6 +44,8 @@ namespace Weesals.UI {
         public Material Material;
         private Int2 mSize;
         public ISelectionGroup? SelectionGroup;
+        public Updatables Updatables = new();
+        public KeyboardFilter KeyboardFilter;
 
         public int Revision => Builder.VertexRevision + Compositor.GetIndices().BufferLayout.revision;
 
@@ -53,7 +55,7 @@ namespace Weesals.UI {
             HitTestGrid = new(new Int2(8, 8));
             Tweens = new();
             Initialise(new CanvasBinding(this));
-            Material = new Material("./assets/ui.hlsl");
+            Material = new Material("./Assets/ui.hlsl");
             Material.SetBlendMode(BlendMode.MakeAlphaBlend());
             Material.SetRasterMode(RasterMode.MakeNoCull());
             Material.SetDepthMode(DepthMode.MakeOff());
@@ -102,6 +104,7 @@ namespace Weesals.UI {
 
         public void Update(float dt) {
             Tweens.Update(dt);
+            Updatables.Invoke(dt);
         }
 
         public void Render(CSGraphics graphics, Material material) {
