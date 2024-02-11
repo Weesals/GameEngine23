@@ -403,3 +403,4 @@ FodyWeavers.xsd
 /CSBindings/scripts/*.dll
 /**/Ignore
 /.*
+/Game5/Assets/Generated
