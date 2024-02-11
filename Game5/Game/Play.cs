@@ -88,17 +88,6 @@ namespace Game5.Game {
         ParticleSystemManager particleManager;
         public ParticleSystemManager ParticleManager => particleManager;
 
-        [EditorField]
-        public float TemporalX = 0.4273f;//0.34731f;
-        [EditorField]
-        public float TemporalY = 0.6796f;//0.7656f;
-        [EditorField]
-        public float TemporalFrac = 188.1f;//651.5216f;
-        [EditorField]
-        public float TemporalFrac2 = 254.76f;//651.5216f;
-        [EditorField]
-        public float TemporalFrac3 = 0.11f;//651.5216f;
-
         public Play(GameRoot root) {
             GameRoot = root;
 
@@ -119,36 +108,23 @@ namespace Game5.Game {
             landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
             landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
 
-            var particleTest = new ParticleGenerator();
-            var particleSpawn = particleTest.GetStage(ParticleGenerator.Stage.Modes.ParticleSpawn);
-            particleSpawn.InsertModule(ParticleGenerator.FindModule("PositionInSphere")).SetInput("Radius", "1.0");
-            //particleSpawn.InsertModule(ParticleGenerator.FindModule("Custom")).SetInput("Code", "Position.z -= 20.0;");
-            particleSpawn.InsertModule(ParticleGenerator.FindModule("Custom")).SetInput("Code", "Position.z += 5.0;");
-            //particleSpawn.InsertModule(ParticleGenerator.FindModule("Custom")).SetInput("Code", "Velocity.y += 20.0;");
-            var particleStep = particleTest.GetStage(ParticleGenerator.Stage.Modes.ParticleStep);
-            particleStep.InsertModule(ParticleGenerator.FindModule("IncrementLifetime"));
-            //particleStep.InsertModule(ParticleGenerator.FindModule("ApplyGravity"));
-            particleStep.InsertModule(ParticleGenerator.FindModule("ApplyVelocity"));
-            particleStep.InsertModule(ParticleGenerator.FindModule("ApplyDrag")).SetInput("Drag", "0.2");
-            particleStep.InsertModule(ParticleGenerator.FindModule("Turbulence")).SetInput("Speed", "10.0");
-            particleStep.InsertModule(ParticleGenerator.FindModule("Custom")).SetInput("Code", "Velocity.x += 10.0 * DeltaTime;");
-            particleStep.InsertModule(ParticleGenerator.FindModule("KillDeadParticles"));
-            var particleVertex = particleTest.GetStage(ParticleGenerator.Stage.Modes.ParticleVertex);
-            particleVertex.InsertModule(ParticleGenerator.FindModule("UVRotate")).SetInput("Rotation", "Age * 1.0 + Seed * 6.0");
-            particleVertex.InsertModule(ParticleGenerator.FindModule("UVAtlas")).SetInput("AtlasCount", "2.0").SetInput("AtlasIndex", "0.0");
-            var particlePixel = particleTest.GetStage(ParticleGenerator.Stage.Modes.ParticlePixel);
-            particlePixel.InsertModule(ParticleGenerator.FindModule("Opacity")).SetInput("Opacity", "0.1");
-            particlePixel.InsertModule(ParticleGenerator.FindModule("TextureSample"));
-            var hlsl = particleTest.Generate();
-            Directory.CreateDirectory("./Assets/Generated/");
-            File.WriteAllText("./Assets/Generated/ParticleTest.hlsl", hlsl);
             particleManager = new ParticleSystemManager();
-            particleManager.Initialise(128);
-            var particleSystem = new ParticleSystem();
-            particleSystem.Generator = particleTest;
-            particleSystem.SpawnRate = 500;
-            particleSystem.DrawMaterial.SetTexture("Texture", Resources.LoadTexture("Assets/ParticleAtlas.png"));
-            particleManager.AppendSystem(particleSystem);
+            particleManager.Initialise(512);
+
+            var smokeParticleGenerator = new ParticleGenerator();
+            smokeParticleGenerator.LoadJSON("./Assets/Particles/Smoke.json");
+            var smokeParticles = smokeParticleGenerator.CreateParticleSystem("./Assets/Generated/ParticleTest.hlsl");
+            smokeParticles.SpawnRate = 1000;
+            smokeParticles.DrawMaterial.SetTexture("Texture", Resources.LoadTexture("Assets/ParticleAtlas.png"));
+            particleManager.AppendSystem(smokeParticles);
+
+            var fireParticleGenerator = new ParticleGenerator();
+            fireParticleGenerator.LoadJSON("./Assets/Particles/Fire.json");
+            var fireParticles = fireParticleGenerator.CreateParticleSystem("./Assets/Generated/ParticleFire.hlsl");
+            fireParticles.SpawnRate = 1000;
+            fireParticles.MaximumDuration = 0.5f;
+            fireParticles.DrawMaterial.SetTexture("Texture", Resources.LoadTexture("Assets/ParticleAtlas.png"));
+            particleManager.AppendSystem(fireParticles);
 
             Camera = new Camera() {
                 FOV = 3.14f * 0.25f,
@@ -189,12 +165,6 @@ namespace Game5.Game {
 
             NavDebug?.OnDrawGizmosSelected();
 
-            GameRoot.TemporalPass.TemporalMaterial.SetValue("RandomX", TemporalX);
-            GameRoot.TemporalPass.TemporalMaterial.SetValue("RandomY", TemporalY);
-            GameRoot.TemporalPass.TemporalMaterial.SetValue("TemporalFrac", TemporalFrac);
-            GameRoot.TemporalPass.TemporalMaterial.SetValue("TemporalFrac2", TemporalFrac2);
-            GameRoot.TemporalPass.TemporalMaterial.SetValue("TemporalFrac3", TemporalFrac3);
-
             var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
             particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
         }
@@ -209,17 +179,13 @@ namespace Game5.Game {
             }
         }
 
-        public void PreRender(CSGraphics graphics, float dt) {
+        public void PreRender() {
             renderBindings.UpdateChanged();
-            for (int i = 0; i < 1; i++) {
-                //particleManager.RootMaterial.SetValue("RandomMul", TemporalFrac);
-                //particleManager.RootMaterial.SetValue("RandomAdd", TemporalFrac2);
-                particleManager.Update(graphics, dt);
-            }
-        }
-        public void PostRender() {
         }
 
+        public void UpdateParticles(CSGraphics graphics, float dt) {
+            particleManager.Update(graphics, dt);
+        }
         public void RenderBasePass(CSGraphics graphics, ScenePass pass) {
             landscapeRenderer.Render(graphics, pass);
             if (pass.TagsToInclude.Has(RenderTag.Transparent)) {

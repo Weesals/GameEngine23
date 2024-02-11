@@ -107,8 +107,8 @@ namespace Weesals.UI {
             Updatables.Invoke(dt);
         }
 
-        public void Render(CSGraphics graphics, Material material) {
-            Compositor.Render(graphics, material);
+        public void Render(CSGraphics graphics) {
+            Compositor.Render(graphics, Material);
         }
 
     }

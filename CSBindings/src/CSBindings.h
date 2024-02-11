@@ -15,10 +15,10 @@ class RenderTarget2D;
 class Material;
 struct PipelineLayout;
 class FontInstance;
-class RenderPass;
 class GraphicsSurface;
 class WindowBase;
 class Shader;
+class Input;
 
 typedef Mesh NativeMesh;
 typedef Model NativeModel;
@@ -29,9 +29,9 @@ typedef Shader NativeShader;
 typedef Material NativeMaterial;
 typedef PipelineLayout NativePipeline;
 typedef FontInstance NativeFont;
-typedef RenderPass NativeRenderPass;
 typedef GraphicsSurface NativeSurface;
 typedef WindowBase NativeWindow;
+typedef Input NativeInput;
 
 class NativePlatform;
 class NativeScene;
@@ -180,7 +180,6 @@ public:
 	static void SetDepthMode(NativeMaterial* material, void* data);
 	static void InheritProperties(NativeMaterial* material, NativeMaterial* other);
 	static void RemoveInheritance(NativeMaterial* material, NativeMaterial* other);
-	static CSSpan ResolveResources(NativeGraphics* graphics, NativePipeline* pipeline, CSSpan materials);
 	static NativeMaterial* _Create(CSString shaderPath);
 	static void Dispose(NativeMaterial* material);
 	NativeMaterial* GetNativeMaterial() { return mMaterial; }
@@ -286,13 +285,12 @@ public:
 	NativeGraphics* GetNativeGraphics() const { return mGraphics; }
 private:
 	static void Dispose(NativeGraphics* graphics);
-	static NativeSurface* GetPrimarySurface(const NativeGraphics* graphics);
-	static Int2C GetResolution(const NativeGraphics* graphics);
-	static void SetResolution(const NativeGraphics* graphics, Int2 res);
+	static NativeSurface* CreateSurface(NativeGraphics* graphics, NativeWindow* window);
+	static void SetSurface(NativeGraphics* graphics, NativeSurface* surface);
+	static NativeSurface* GetSurface(NativeGraphics* graphics);
 	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
-	static CSSpan ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bindings);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
@@ -309,15 +307,24 @@ public:
 	CSGraphicsSurface(NativeSurface* surface)
 		: mSurface(surface) { }
 	NativeSurface* GetNativeSurface() const { return mSurface; }
+	static void Dispose(NativeSurface* surface);
+private:
+	static Int2C GetResolution(const NativeSurface* surface);
+	static void SetResolution(NativeSurface* surface, Int2 res);
 	static void RegisterDenyPresent(NativeSurface* surface, int delta);
+	static void Present(NativeSurface* surface);
 };
 class DLLCLASS CSWindow {
 	NativeWindow* mWindow = nullptr;
 public:
 	CSWindow(NativeWindow* window)
 		: mWindow(window) { }
+	NativeWindow* GetNativeWindow() { return mWindow; }
+private:
 	static void Dispose(NativeWindow* window);
-	static Int2C GetResolution(const NativeWindow* window);
+	static Int2C GetSize(const NativeWindow* window);
+	static void SetSize(NativeWindow* window, Int2 size);
+	static void SetInput(NativeWindow* window, NativeInput* input);
 };
 
 struct CSPointer {
@@ -333,20 +340,21 @@ struct CSKey {
 	unsigned char mKeyId;
 };
 class DLLCLASS CSInput {
-	NativePlatform* mPlatform = nullptr;
+	NativeInput* mInput = nullptr;
 public:
-	CSInput(NativePlatform* platform)
-		: mPlatform(platform) { }
+	CSInput(NativeInput* input)
+		: mInput(input) { }
+	NativeInput* GetNativeInput() { return mInput; }
 private:
-	CSSpanSPtr GetPointers(NativePlatform* platform);
-	Bool GetKeyDown(NativePlatform* platform, unsigned char key);
-	Bool GetKeyPressed(NativePlatform* platform, unsigned char key);
-	Bool GetKeyReleased(NativePlatform* platform, unsigned char key);
-	CSSpan GetPressKeys(NativePlatform* platform);
-	CSSpan GetDownKeys(NativePlatform* platform);
-	CSSpan GetReleaseKeys(NativePlatform* platform);
-	CSSpan GetCharBuffer(NativePlatform* platform);
-	void ReceiveTickEvent(NativePlatform* platform);
+	CSSpanSPtr GetPointers(NativeInput* platform);
+	Bool GetKeyDown(NativeInput* platform, unsigned char key);
+	Bool GetKeyPressed(NativeInput* platform, unsigned char key);
+	Bool GetKeyReleased(NativeInput* platform, unsigned char key);
+	CSSpan GetPressKeys(NativeInput* platform);
+	CSSpan GetDownKeys(NativeInput* platform);
+	CSSpan GetReleaseKeys(NativeInput* platform);
+	CSSpan GetCharBuffer(NativeInput* platform);
+	void ReceiveTickEvent(NativeInput* platform);
 };
 
 class DLLCLASS CSResources {
@@ -363,11 +371,11 @@ public:
 	Platform(NativePlatform* platform)
 		: mPlatform(platform) { }
 
-	static NativeWindow* GetWindow(const NativePlatform* platform);
-	static NativeGraphics* CreateGraphics(const NativePlatform* platform);
+	static NativeWindow* CreateWindow(NativePlatform* platform, CSString name);
+	static NativeInput* CreateInput(NativePlatform* platform);
+	static NativeGraphics* CreateGraphics(NativePlatform* platform);
 
 	static int MessagePump(NativePlatform* platform);
-	static void Present(NativePlatform* platform);
 	static void Dispose(NativePlatform* platform);
 
 	static NativePlatform* Create();

@@ -28,6 +28,7 @@ static struct {
 %Bootstrap%
 
 AppendStructuredBuffer<int> FreeParticleIds;
+StructuredBuffer<uint> ActiveBlocks;
 
 void KillParticle() {
     //FreeParticleIds.Append(GlobalParticle.id);
@@ -39,6 +40,40 @@ struct BlockSpawn
     uint Count;
 };
 StructuredBuffer<BlockSpawn> BlockBegins;
+
+
+
+struct VSBlankInput {
+    float4 position : POSITION;
+};
+
+struct PSBlankInput {
+    float4 position : SV_POSITION;
+};
+
+PSBlankInput VSBlank(VSBlankInput input)
+{
+    PSBlankInput result;
+    
+    result.position = float4(input.position.xy, LocalTimeZ, 1.0);
+    result.position.z = LocalTimeZ;
+#if defined(VULKAN)
+    result.position.y = -result.position.y;
+#endif
+
+    return result;
+}
+
+void PSBlank(PSBlankInput input
+, out float4 OutPosition : SV_Target0
+, out float4 OutVelocity : SV_Target1
+) 
+{
+    OutPosition = 0;
+    OutVelocity = 0;
+}
+
+
 
 struct VSSpawnInput {
     float4 position : POSITION;
@@ -71,7 +106,6 @@ void PSSpawn(PSSpawnInput input
     BlockSpawn blockSpawn = BlockBegins[input.uv.x];
     uint blockBegin = (uint)input.uv.x;
     uint blockEnd = (uint)input.uv.y;
-    uint blockId = (uint)input.position.x / 4 + (uint)input.position.y / 4 * 256;
     uint blockItem = (uint)input.position.x % 4 + ((uint)input.position.y % 4) * 4;
     // Out of range, should not spawn
     if (blockItem < blockBegin || blockItem >= blockEnd) discard;
@@ -87,6 +121,8 @@ void PSSpawn(PSSpawnInput input
     OutPosition = float4(Position, Seed);
     OutVelocity = float4(Velocity, Age);
 }
+
+
 
 
 
@@ -148,6 +184,7 @@ struct VSInput {
 struct PSInput {
     float4 position : SV_POSITION;
     float2 uv : TEXCOORD0;
+    float4 attributes : TEXCOORD1;
 };
 
 PSInput VSMain(VSInput input)
@@ -158,9 +195,13 @@ PSInput VSMain(VSInput input)
     uint blockId = quadId / (4 * 4);
     uint localId = quadId & (4 * 4 - 1);
     
+    blockId = ActiveBlocks[blockId];
+    
     uint2 blockAddr;
-    blockAddr.y = blockId >> BlockSizeBits;
-    blockAddr.x = blockId - (blockAddr.y << BlockSizeBits);
+    //blockAddr.y = blockId >> BlockSizeBits;
+    //blockAddr.x = blockId - (blockAddr.y << BlockSizeBits);
+    blockAddr.x = blockId & 0xffff;
+    blockAddr.y = blockId >> 16;
         
     uint2 localAddr = uint2(localId, localId >> 1) & 0x55;
     localAddr = (localAddr | (localAddr >> 1)) & 0x33;
@@ -174,14 +215,16 @@ PSInput VSMain(VSInput input)
     float Age = VelocityData.w;
     float2 UV = float2(input.vertexId % 2, input.vertexId / 2);
     float Seed = frac(frac(dot(address.xy, float2(0.6796, 0.4273))) * 188.1);
+    float SpriteSize = 1.0;
     
 %ParticleVertex%
 
     result.position = mul(ViewProjection, float4(Position, 1.0));
     
     result.position.xy += (float2(input.vertexId % 2, input.vertexId / 2) - 0.5) *
-        float2(Projection._11, Projection._22);
+        float2(Projection._11, Projection._22) * SpriteSize;
     result.uv = UV;
+    result.attributes = float4(Age, 0, 0, 0);
     //result.position.y += input.id * 0.02;
     //result.position.y += age * 0.05;
     
@@ -202,6 +245,7 @@ void PSMain(PSInput input
 {
     float2 UV = input.uv;
     float4 Color = float4(1.0, 1.0, 1.0, 1.0);
+    float Age = input.attributes.x;
     
 %ParticlePixel%
     

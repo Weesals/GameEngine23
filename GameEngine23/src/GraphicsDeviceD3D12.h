@@ -20,14 +20,11 @@ using Microsoft::WRL::ComPtr;
 class GraphicsDeviceD3D12 :
     public GraphicsDeviceBase
 {
-    std::shared_ptr<WindowWin32> mWindow;
-
     D3DGraphicsDevice mDevice;
-    mutable D3DGraphicsSurface mPrimarySurface;
     D3DResourceCache mCache;
 
 public:
-    GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window);
+    GraphicsDeviceD3D12();
     ~GraphicsDeviceD3D12() override;
 
     void CheckDeviceState() const;
@@ -43,17 +40,13 @@ public:
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 
-    GraphicsSurface* GetPrimarySurface() const override { return &mPrimarySurface; }
-    Int2 GetResolution() const override { return mPrimarySurface.GetResolution(); }
-    void SetResolution(Int2 res) override;
-
     CommandBuffer CreateCommandBuffer() override;
-    const PipelineLayout* RequirePipeline(
+    /*const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
         std::span<const MacroValue> macros, const IdentifierWithName& renderPass
-    ) override;
-    void Present() override;
+    ) override;*/
+    //void Present() override;
 
 };
 

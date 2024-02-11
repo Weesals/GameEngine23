@@ -123,11 +123,12 @@ namespace Weesals.Editor {
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics) {
-            Canvas.Render(graphics, Canvas.Material);
+            Canvas.Render(graphics);
         }
 
         public void Dispose() {
             Canvas.Dispose();
         }
+
     }
 }

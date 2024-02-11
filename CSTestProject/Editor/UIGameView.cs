@@ -18,8 +18,16 @@ namespace Weesals.Editor {
         public Camera? Camera;
         public ScenePassManager? Scene;
 
+        private ToggleButton realtimeToggle;
+        public bool EnableRealtime => realtimeToggle.State;
+
         public UIGameView(Editor editor) : base(editor, "Game") {
             EnableBackground = false;
+            realtimeToggle = new ToggleButton();
+            realtimeToggle.Transform = CanvasTransform.MakeAnchored(new(40f, 40f), new(0f, 0f));
+            realtimeToggle.State = false;
+            realtimeToggle.AppendChild(new TextBlock("Realtime") { FontSize = 10, });
+            AppendChild(realtimeToggle);
         }
 
         public RectI GetGameViewportRect() {

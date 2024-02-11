@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Utility;
@@ -217,6 +218,31 @@ namespace Weesals.Engine.Rendering {
             foreach (var module in Modules) if (module.Name == name) return module;
             return default;
         }
+
+        public void LoadJSON(string path) {
+            var json = new SJson(File.ReadAllText(path));
+            foreach (var jStage in json.GetFields()) {
+                Stage stage = null;
+                for (int i = 0; i < Stages.Length; i++) if (Stages[i].Mode.ToString() == jStage.Key) { stage = Stages[i]; break; }
+                foreach (var jModule in jStage.Value) {
+                    ModuleInstance moduleInstance = null;
+                    foreach (var jField in jModule.GetFields()) {
+                        if (jField.Key == "name") {
+                            var moduleType = ParticleGenerator.FindModule(jField.Value.ToString());
+                            moduleInstance = stage.InsertModule(moduleType);
+                            continue;
+                        }
+                        moduleInstance.SetInput(jField.Key.ToString(), jField.Value.ToString());
+                    }
+                }
+            }
+        }
+
+        public ParticleSystem CreateParticleSystem(string path) {
+            Directory.CreateDirectory("./Assets/Generated/");
+            File.WriteAllText(path, Generate());
+            return new ParticleSystem(path);
+        }
     }
     public class ParticleSystemManager {
         private List<ParticleSystem> systems = new();
@@ -225,16 +251,17 @@ namespace Weesals.Engine.Rendering {
         public CSRenderTarget[] PositionBuffers = new CSRenderTarget[2];
         public CSRenderTarget[] VelocityBuffers = new CSRenderTarget[2];
         public CSRenderTarget[] AttributeBuffers = new CSRenderTarget[2];
-        public ref CSRenderTarget PositionBuffer => ref PositionBuffers[bufferIndex];
-        public ref CSRenderTarget VelocityBuffer => ref VelocityBuffers[bufferIndex];
-        public ref CSRenderTarget AttributeBuffer => ref AttributeBuffers[bufferIndex];
+        public CSRenderTarget PositionBuffer => PositionBuffers[bufferIndex];
+        public CSRenderTarget VelocityBuffer => VelocityBuffers[bufferIndex];
+        public CSRenderTarget AttributeBuffer => AttributeBuffers[bufferIndex];
         public CSRenderTarget DepthStencilBuffer;
 
         private Material rootMaterial;
         private Material pruneMaterial;
         private Material rebaseMaterial;
+        private Material expireMaterial;
 
-        private BufferLayoutPersistent BlockBegins;
+        private BufferLayoutPersistent ActiveBlocks;
         private int bufferIndex;
         private float time;
 
@@ -248,6 +275,7 @@ namespace Weesals.Engine.Rendering {
 
         private DynamicMesh emissionMesh;
         private DynamicMesh updateMesh;
+        public int TimeMS => (int)(time * 1000.0f);
 
         public Int2 PoolSize => PositionBuffer.GetSize();
         public Material RootMaterial => rootMaterial;
@@ -261,23 +289,22 @@ namespace Weesals.Engine.Rendering {
                 VelocityBuffers[i].SetSize(poolSize);
                 VelocityBuffers[i].SetFormat(BufferFormat.FORMAT_R16G16B16A16_FLOAT);
             }
-            DepthStencilBuffer = CSRenderTarget.Create("DepthStencil");
+            DepthStencilBuffer = CSRenderTarget.Create("ParticleDepthStencil");
             DepthStencilBuffer.SetSize(poolSize);
             DepthStencilBuffer.SetFormat(BufferFormat.FORMAT_D24_UNORM_S8_UINT);
 
-            BlockBegins = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
-            BlockBegins.AppendElement(new CSBufferElement("BlockBegins", BufferFormat.FORMAT_R32G32_UINT));
-            BlockBegins.AllocResize(32);
-            BlockBegins.BufferLayout.mCount = 2;
-            var begins = new MemoryBlock<Int2>((Int2*)BlockBegins.Elements[0].mData, 2);
+            ActiveBlocks = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
+            ActiveBlocks.AppendElement(new CSBufferElement("BlockBegins", BufferFormat.FORMAT_R32_UINT));
+            ActiveBlocks.AllocResize(256);
+            ActiveBlocks.BufferLayout.mCount = 0;
 
             rootMaterial = new();
-            rootMaterial.SetBuffer("BlockBegins", BlockBegins);
+            rootMaterial.SetBuffer("ActiveBlocks", ActiveBlocks);
             rootMaterial.SetValue("Gravity", new Vector3(0f, -10f, 0f));
 
             pruneMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSStep"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSStep")
+                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSBlank"),
+                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSBlank")
             );
             pruneMaterial.SetRasterMode(RasterMode.MakeNoCull());
             pruneMaterial.SetDepthMode(DepthMode.MakeWriteOnly().SetStencil(
@@ -289,13 +316,23 @@ namespace Weesals.Engine.Rendering {
             pruneMaterial.SetStencilRef(0x00);
             pruneMaterial.SetBlendMode(BlendMode.MakeNone());
             rebaseMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSStep"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSStep")
+                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSBlank"),
+                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSBlank")
             );
             rebaseMaterial.SetRasterMode(RasterMode.MakeNoCull());
             rebaseMaterial.SetDepthMode(DepthMode.MakeDefault(DepthMode.Comparisons.Less).SetStencil(0x00, 0xff));
             rebaseMaterial.SetStencilRef(0x00);
             rebaseMaterial.SetBlendMode(BlendMode.MakeNone());
+
+            expireMaterial = new Material(
+                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSBlank"),
+                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSBlank")
+            );
+            expireMaterial.SetValue("LocalTimeZ", 0.001f);
+            expireMaterial.SetRasterMode(RasterMode.MakeNoCull());
+            expireMaterial.SetDepthMode(DepthMode.MakeWriteOnly().SetStencil(0x00, 0xff));
+            expireMaterial.SetStencilRef(0x00);
+            expireMaterial.SetBlendMode(BlendMode.MakeOpaque());
 
             blockMetaSize = poolSize / ParticleSystem.AllocGroup.Size;
             blockMeta = new BlockMetadata[blockMetaSize.X * blockMetaSize.Y];
@@ -323,8 +360,8 @@ namespace Weesals.Engine.Rendering {
                 SystemId = systemId,
             };
             return new ParticleSystem.AllocGroup() {
-                Position = new Int2(id % blockMetaSize.X, id / blockMetaSize.X) * ParticleSystem.AllocGroup.Size,
-                ConsumeCount = 0,
+                BlockPnt = new UShort2((ushort)(id % blockMetaSize.X), (ushort)(id / blockMetaSize.X)),
+                RemainCount = ParticleSystem.AllocGroup.Count,
             };
         }
         unsafe public void Update(CSGraphics graphics, float dt) {
@@ -348,7 +385,23 @@ namespace Weesals.Engine.Rendering {
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
             using var materials = new PooledArray<Material>(2);
             materials[1] = rootMaterial;
-            graphics.CopyBufferData(BlockBegins);
+
+            // Delete expired blocks
+            foreach (var system in systems) {
+                system.UpdateExpired(graphics, emissionMesh, dt);
+            }
+            if (emissionMesh.IndexCount > 0) {
+                bindings[0] = emissionMesh.IndexBuffer;
+                bindings[1] = emissionMesh.VertexBuffer;
+                materials[0] = expireMaterial;
+                var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
+                var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                var drawConfig = CSDrawConfig.MakeDefault();
+                graphics.Draw(pso, bindings, resources, drawConfig);
+                emissionMesh.Clear();
+            }
+
+            // Spawn new blocks
             foreach (var system in systems) {
                 var irange = system.UpdateEmission(graphics, emissionMesh, dt);
                 if (irange.Length <= 0) continue;
@@ -359,8 +412,10 @@ namespace Weesals.Engine.Rendering {
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
                 var drawConfig = CSDrawConfig.MakeDefault();
                 graphics.Draw(pso, bindings, resources, drawConfig);
+                emissionMesh.Clear();
             }
-            emissionMesh.Clear();
+
+            // Update valid blocks
             FlipBuffers();
             SetTargets(graphics);
             foreach (var system in systems) {
@@ -412,11 +467,15 @@ namespace Weesals.Engine.Rendering {
             materials[2] = passMat;
             materials[3] = sceneRoot;
             foreach (var system in systems) {
+                system.SetActiveBlocks(ref ActiveBlocks);
+                graphics.CopyBufferData(ActiveBlocks);
+                if (ActiveBlocks.Count == 0) continue;
                 materials[0] = system.DrawMaterial;
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
                 var drawConfig = CSDrawConfig.MakeDefault();
-                graphics.Draw(pso, bindings, resources, drawConfig, PoolSize.X * PoolSize.Y);
+                graphics.Draw(pso, bindings, resources, drawConfig,
+                    ParticleSystem.AllocGroup.Count * ActiveBlocks.Count);
             }
         }
 
@@ -443,36 +502,49 @@ namespace Weesals.Engine.Rendering {
         public int SystemId = -1;
 
         public float SpawnRate = 5000f;
+        public float MaximumDuration = 5.0f;
 
         public struct AllocGroup {
             public const int Size = 4;
             public const int Count = Size * Size;
-            public Int2 Position;
-            public int ConsumeCount;
-            public int RemainCount => Count - ConsumeCount;
+            public UShort2 BlockPnt;
+            public int ConsumeCount => Count - RemainCount;
+            public int RemainCount;
+            public bool IsValid => RemainCount != -1;
+            public uint BlockId => (uint)BlockPnt.X + ((uint)BlockPnt.Y << 16);
+            public static readonly AllocGroup Invalid = new AllocGroup() { RemainCount = -1, };
+        }
+        public struct AllocatedBlock {
+            public UShort2 BlockPnt;
+            public int ExpireTimeMS;
+            public uint BlockId => (uint)BlockPnt.X + ((uint)BlockPnt.Y << 16);
         }
 
         private Random random = new();
-        private AllocGroup allocated;
+        private AllocGroup allocated = AllocGroup.Invalid;
+        private List<AllocatedBlock> blocks = new();
 
-        public ParticleSystem() {
+        public ParticleSystem(string particleShader) {
             SpawnerMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSSpawn"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSSpawn")
+                ShaderBase.FromPath(particleShader, "VSSpawn"),
+                ShaderBase.FromPath(particleShader, "PSSpawn")
             );
             SpawnerMaterial.SetRasterMode(RasterMode.MakeNoCull());
-            SpawnerMaterial.SetDepthMode(DepthMode.MakeWriteOnly().SetStencil(0x00, 0xff));
+            var spawnDS = DepthMode.MakeWriteOnly().SetStencil(0x00, 0xff);
+            spawnDS.StencilFront = spawnDS.StencilBack =
+                new DepthMode.StencilDesc(DepthMode.StencilOp.Replace, DepthMode.StencilOp.Replace, DepthMode.StencilOp.Replace, DepthMode.Comparisons.Always);
+            SpawnerMaterial.SetDepthMode(spawnDS);
             SpawnerMaterial.SetBlendMode(BlendMode.MakeOpaque());
             StepperMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSStep"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSStep")
+                ShaderBase.FromPath(particleShader, "VSStep"),
+                ShaderBase.FromPath(particleShader, "PSStep")
             );
             StepperMaterial.SetRasterMode(RasterMode.MakeNoCull());
             StepperMaterial.SetDepthMode(DepthMode.MakeReadOnly(DepthMode.Comparisons.GEqual).SetStencil(0xff, 0x00));
             StepperMaterial.SetBlendMode(BlendMode.MakeOpaque());
             DrawMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSMain"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSMain")
+                ShaderBase.FromPath(particleShader, "VSMain"),
+                ShaderBase.FromPath(particleShader, "PSMain")
             );
             DrawMaterial.SetRasterMode(RasterMode.MakeNoCull());
             DrawMaterial.SetDepthMode(DepthMode.MakeReadOnly());
@@ -482,45 +554,74 @@ namespace Weesals.Engine.Rendering {
         internal void Initialise(ParticleSystemManager manager, int systemId) {
             Manager = manager;
             SystemId = systemId;
-            SpawnerMaterial.SetStencilRef(systemId);
-            StepperMaterial.SetStencilRef(systemId);
+            SpawnerMaterial.SetStencilRef(systemId + 1);
+            StepperMaterial.SetStencilRef(systemId + 1);
+        }
+        public RangeInt UpdateExpired(CSGraphics graphics, DynamicMesh mesh, float dt) {
+            var rangeBegin = mesh.IndexCount;
+            int i = 0;
+            for (; i < blocks.Count; i++) {
+                var block = blocks[i];
+                var delta = Manager.TimeMS - block.ExpireTimeMS;
+                if (delta < 0) break;
+                AppendBlockQuad(mesh, block.BlockPnt);
+            }
+            if (i > 0) blocks.RemoveRange(0, i);
+            return RangeInt.FromBeginEnd(rangeBegin, mesh.IndexCount);
         }
         public RangeInt UpdateEmission(CSGraphics graphics, DynamicMesh mesh, float dt) {
             var count = (int)(dt * SpawnRate + random.NextSingle());
             if (count <= 0) return default;
 
-            Span<Vector2> vpositions = stackalloc Vector2[4];
-            Span<ushort> indices = stackalloc ushort[6];
-
             var rangeBegin = mesh.IndexCount;
             for (int b = 0; ; ++b) {
                 if (count <= 0) break;
-                if (allocated.RemainCount == 0) {
+                if (allocated.RemainCount <= 0) {
+                    if (allocated.IsValid) {
+                        blocks.Add(new AllocatedBlock() { BlockPnt = allocated.BlockPnt, ExpireTimeMS = Manager.TimeMS + (int)(MaximumDuration * 1000), });
+                    }
                     allocated = Manager.AllocateBlock(SystemId);
                 }
                 int toConsume = Math.Min(allocated.RemainCount, count);
-                var verts = mesh.AppendVerts(4);
-                var inds = mesh.AppendIndices(6);
-                var size = (Vector2)Manager.PoolSize;
-                vpositions[0] = (Vector2)allocated.Position + new Vector2(0f, 0f);
-                vpositions[1] = (Vector2)allocated.Position + new Vector2(AllocGroup.Size, 0f);
-                vpositions[2] = (Vector2)allocated.Position + new Vector2(0f, AllocGroup.Size);
-                vpositions[3] = (Vector2)allocated.Position + new Vector2(AllocGroup.Size, AllocGroup.Size);
-                for (int i = 0; i < vpositions.Length; i++)
-                    vpositions[i] = vpositions[i] / size * 2.0f - Vector2.One;
 
-                verts.GetPositions<Vector2>().Set(vpositions);
-                int blockBegin = allocated.ConsumeCount;
-                int blockEnd = blockBegin + toConsume;
-                verts.GetTexCoords().Set(new Vector2(blockBegin, blockEnd));
-                quadIndices.CopyTo(indices);
-                for (int i = 0; i < indices.Length; ++i) indices[i] += (ushort)verts.BaseVertex;
-                inds.GetIndices<ushort>().Set(indices);
+                AppendBlockQuad(mesh, allocated.BlockPnt, allocated.ConsumeCount, toConsume);
 
-                allocated.ConsumeCount += toConsume;
+                allocated.RemainCount -= toConsume;
                 count -= toConsume;
             }
             return RangeInt.FromBeginEnd(rangeBegin, mesh.IndexCount);
+        }
+
+        private void AppendBlockQuad(DynamicMesh mesh, UShort2 blockPnt, int blockBegin = 0, int blockCount = AllocGroup.Count) {
+            Span<Vector2> vpositions = stackalloc Vector2[4];
+            Span<ushort> indices = stackalloc ushort[6];
+
+            var verts = mesh.AppendVerts(4);
+            var inds = mesh.AppendIndices(6);
+            var size = (Vector2)Manager.PoolSize;
+            var pos = blockPnt.ToVector2() * ParticleSystem.AllocGroup.Size;
+            vpositions[0] = pos + new Vector2(0f, 0f);
+            vpositions[1] = pos + new Vector2(AllocGroup.Size, 0f);
+            vpositions[2] = pos + new Vector2(0f, AllocGroup.Size);
+            vpositions[3] = pos + new Vector2(AllocGroup.Size, AllocGroup.Size);
+            for (int i = 0; i < vpositions.Length; i++)
+                vpositions[i] = (vpositions[i] / size * 2.0f - Vector2.One) * new Vector2(1.0f, -1.0f);
+
+            verts.GetPositions<Vector2>().Set(vpositions);
+            verts.GetTexCoords().Set(new Vector2(blockBegin, blockBegin + blockCount));
+            quadIndices.CopyTo(indices);
+            for (int i = 0; i < indices.Length; ++i) indices[i] += (ushort)verts.BaseVertex;
+            inds.GetIndices<ushort>().Set(indices);
+        }
+
+        unsafe public void SetActiveBlocks(ref BufferLayoutPersistent activeBlocks) {
+            activeBlocks.BufferLayout.mCount = blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
+            if (activeBlocks.BufferCapacityCount < activeBlocks.Count)
+                activeBlocks.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)blocks.Count));
+            var activeBlockIds = new MemoryBlock<uint>((uint*)activeBlocks.Elements[0].mData, activeBlocks.BufferLayout.mCount);
+            for (int i = 0; i < blocks.Count; i++) activeBlockIds[i] = blocks[i].BlockId;
+            if (allocated.ConsumeCount > 0) activeBlockIds[blocks.Count] = allocated.BlockId;
+            activeBlocks.BufferLayout.revision++;
         }
     }
 }

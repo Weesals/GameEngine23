@@ -19,7 +19,7 @@ namespace Weesals.Engine {
                     return item;
                 }
             }
-            var target = CSRenderTarget.Create("RT Temp");
+            var target = CSRenderTarget.Create($"RT<{desc.Format},{desc.Size}>");
             target.SetSize(desc.Size);
             target.SetFormat(desc.Format);
             target.SetMipCount(desc.MipCount);
@@ -447,7 +447,7 @@ namespace Weesals.Engine {
                             var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
                             var viewport = selfPassData.Viewport;
                             if (viewport.Width <= 0) viewport = new RectI(Int2.Zero, selfPassData.OutputSize);
-                            if (viewport.Width <= 0) viewport = new RectI(Int2.Zero, Graphics.GetResolution());
+                            if (viewport.Width <= 0) viewport = new RectI(Int2.Zero, Graphics.GetSurface().GetResolution());
                             var context = new CustomTexturesContext(Graph,
                                 viewport,
                                 selfInputs,
@@ -513,7 +513,7 @@ namespace Weesals.Engine {
                     if (buffer.Target.IsValid()) continue;
                     if (buffer.RequireAttachment) {
                         var desc = buffer.Description;
-                        if (desc.Size.X == -1) desc.Size = Graphics.GetResolution();
+                        if (desc.Size.X == -1) desc.Size = Graphics.GetSurface().GetResolution();
                         if (desc.Format == BufferFormat.FORMAT_UNKNOWN) desc.Format = BufferFormat.FORMAT_R8G8B8A8_UNORM;
                         buffer.Target.Texture = rtPool.RequireTarget(desc);
                         tempTargets.Add(i);
@@ -547,7 +547,7 @@ namespace Weesals.Engine {
                     RenderPass.Context context = new RenderPass.Context(depth, targetsSpan);
                     context.Viewport = selfPassData.Viewport;
                     if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, selfPassData.OutputSize);
-                    if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, Graphics.GetResolution());
+                    if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, Graphics.GetSurface().GetResolution());
                     selfPassData.RenderPass.Render(Graphics, ref context);
                     targetsSpan.Clear();
                 }

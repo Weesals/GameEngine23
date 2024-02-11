@@ -127,28 +127,32 @@ namespace Weesals.Engine {
     }
     public static class Input {
 
-        private static Core core => Core.ActiveInstance;
+        private static CSInput primaryInput;
+
+        public static void Initialise(CSInput input) {
+            primaryInput = input;
+        }
 
         unsafe public static Vector2 GetMousePosition() {
-            var pointers = core.GetInput().GetPointers();
+            var pointers = primaryInput.GetPointers();
             if (pointers.Length == 0) return Vector2.Zero;
             return pointers[0].mPositionCurrent;
         }
 
         // Is the key currently pressed
         public static bool GetKeyDown(KeyCode key) {
-            return core.GetInput().GetKeyDown((char)key);
+            return primaryInput.GetKeyDown((char)key);
         }
         public static float GetSignedAxis(KeyCode negative, KeyCode positive) {
             return (GetKeyDown(negative) ? -1f : 0f) + (GetKeyDown(positive) ? 1f : 0f);
         }
         // Was the key pressed this frame
         public static bool GetKeyPressed(KeyCode key) {
-            return core.GetInput().GetKeyPressed((char)key);
+            return primaryInput.GetKeyPressed((char)key);
         }
         // Was the key released this frame
         public static bool GetKeyReleased(KeyCode key) {
-            return core.GetInput().GetKeyReleased((char)key);
+            return primaryInput.GetKeyReleased((char)key);
         }
 
     }

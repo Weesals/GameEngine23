@@ -34,6 +34,7 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     GraphicsDeviceD3D12* mDevice;
     D3DGraphicsSurface* mSurface;
     int mFrameHandle;
+    D3DResourceCache::CommandAllocator* mCmdAllocator;
     ComPtr<ID3D12GraphicsCommandList> mCmdList;
     ID3D12RootSignature* mLastRootSig;
     const D3DResourceCache::D3DPipelineState* mLastPipeline;
@@ -44,15 +45,10 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     std::vector<D3D12_VERTEX_BUFFER_VIEW> tVertexViews;
     RectInt mViewportRect;
 public:
-    D3DCommandBuffer(GraphicsDeviceD3D12* device, D3DGraphicsSurface* surface)
-        : mDevice(device), mSurface(surface) {
-        D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-        queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
-        queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-        ThrowIfFailed(device->GetD3DDevice()
-            ->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-                mSurface->GetCmdAllocator(), nullptr, IID_PPV_ARGS(&mCmdList)));
-        ThrowIfFailed(mCmdList->Close());
+    D3DCommandBuffer(GraphicsDeviceD3D12* device)
+        : mDevice(device)
+        , mCmdAllocator(nullptr)
+    {
     }
     ID3D12Device* GetD3DDevice() const { return mDevice->GetD3DDevice(); }
     GraphicsDeviceBase* GetGraphics() const override {
@@ -60,15 +56,39 @@ public:
     }
     // Get this command buffer ready to begin rendering
     virtual void Reset() override {
-        mFrameHandle = 1ull << mDevice->GetResourceCache().RequireFrameHandle((size_t)mSurface + mSurface->GetBackFrameIndex());
-        mCmdList->Reset(mSurface->GetCmdAllocator(), nullptr);
+        mCmdAllocator = mDevice->GetResourceCache().RequireAllocator();
+        if (mCmdList == nullptr) {
+            D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+            queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+            queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+            ThrowIfFailed(GetD3DDevice()
+                ->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    mCmdAllocator->mCmdAllocator.Get(), nullptr, IID_PPV_ARGS(&mCmdList)));
+            //ThrowIfFailed(mCmdList->Close());
+        }
+        else {
+            mCmdList->Reset(mCmdAllocator->mCmdAllocator.Get(), nullptr);
+        }
 
+        mSurface = nullptr;
         mLastRootSig = nullptr;
         mLastPipeline = nullptr;
         std::fill(mLastCBs, mLastCBs + _countof(mLastCBs), nullptr);
         std::fill(mLastResources, mLastResources + _countof(mLastResources), 0);
         std::fill(mFrameBuffers.begin(), mFrameBuffers.end(), nullptr);
         mDepthBuffer = { };
+    }
+    virtual std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) override {
+        return std::make_shared<D3DGraphicsSurface>(mDevice->GetDevice(), ((WindowWin32*)window)->GetHWND());
+    }
+    virtual void SetSurface(GraphicsSurface* surface) override {
+        mSurface = (D3DGraphicsSurface*)surface;
+        mFrameHandle = 1ull << mDevice->GetResourceCache().RequireFrameHandle((size_t)mSurface + mSurface->GetBackFrameIndex());
+        mCmdAllocator->mFrameLocks |= mFrameHandle;
+        mDevice->GetResourceCache().AddInFlightSurface(std::dynamic_pointer_cast<D3DGraphicsSurface>(mSurface->This()));
+    }
+    virtual GraphicsSurface* GetSurface() override {
+        return mSurface;
     }
     virtual void SetViewport(RectInt rect) override {
         CD3DX12_VIEWPORT viewport((float)rect.x, (float)rect.y, (float)rect.width, (float)rect.height);
@@ -175,12 +195,9 @@ public:
             for (int i = 0; i < fbcount; ++i) {
                 auto srcBuffer = i < frameBuffers.size() ? frameBuffers[i] : nullptr;
                 auto& dstBuffer = mFrameBuffers[i];
-                if (dstBuffer != srcBuffer) {
-                    /*if (dstBuffer != nullptr) dstBuffer->RequireState(barriers,
-                        dstBuffer == &mDevice->GetBackBuffer() ? D3D12_RESOURCE_STATE_PRESENT : D3D12_RESOURCE_STATE_COMMON);*/
-                    dstBuffer = srcBuffer;
-                    if (dstBuffer != nullptr) dstBuffer->RequireState(barriers, D3D12_RESOURCE_STATE_RENDER_TARGET, srcBuffer.mMip);
-                }
+                if (dstBuffer == srcBuffer) continue;
+                dstBuffer = srcBuffer;
+                if (dstBuffer != nullptr) dstBuffer->RequireState(barriers, D3D12_RESOURCE_STATE_RENDER_TARGET, dstBuffer.mMip);
             }
             if (mDepthBuffer != depthBuffer) {
                 //if (mDepthBuffer != nullptr) mDepthBuffer->RequireState(barriers, D3D12_RESOURCE_STATE_DEPTH_READ);
@@ -328,15 +345,21 @@ public:
             }
             else {
                 auto* textureBase = (TextureBase*)resource;
-                if (auto rt = dynamic_cast<RenderTarget2D*>(textureBase)) {
+                if (auto* rt = dynamic_cast<RenderTarget2D*>(textureBase)) {
                     auto surface = cache.RequireD3DRT(rt);
-                    assert(surface->mBuffer.Get() != nullptr);
-                    InplaceVector<D3D12_RESOURCE_BARRIER, 2> barriers;
-                    D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-                    if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
-                    surface->RequireState(barriers, barrierState, 0);
-                    srvOffset = surface->mSRVOffset;
-                    if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
+                    if (surface->mBuffer == nullptr) {
+                        // TODO: Print log message (first time)
+                        srvOffset = cache.RequireDefaultTexture(mCmdList.Get(), mFrameHandle)->mSRVOffset;
+                    }
+                    else {
+                        assert(surface->mBuffer.Get() != nullptr);
+                        InplaceVector<D3D12_RESOURCE_BARRIER, 2> barriers;
+                        D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+                        if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
+                        surface->RequireState(barriers, barrierState, 0);
+                        srvOffset = surface->mSRVOffset;
+                        if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
+                    }
                 } else {
                     auto tex = dynamic_cast<Texture*>(textureBase);
                     srvOffset = cache.RequireCurrentTexture(tex, mCmdList.Get(), mFrameHandle)->mSRVOffset;
@@ -383,7 +406,7 @@ public:
     // TODO: Should this be automatic?
     void Execute() override
     {
-        InplaceVector<D3D12_RESOURCE_BARRIER, 10> barriers;
+        InplaceVector<D3D12_RESOURCE_BARRIER, 2> barriers;
         auto& backBuffer = mSurface->GetBackBuffer();
         backBuffer.RequireState(barriers, D3D12_RESOURCE_STATE_PRESENT, 0);
         if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
@@ -397,10 +420,8 @@ public:
 
 };
 
-GraphicsDeviceD3D12::GraphicsDeviceD3D12(const std::shared_ptr<WindowWin32>& window)
-    : mWindow(window)
-    , mDevice()
-    , mPrimarySurface(mDevice, window->GetHWND())
+GraphicsDeviceD3D12::GraphicsDeviceD3D12()
+    : mDevice()
     , mCache(mDevice, mStatistics)
 {
     //WaitForGPU();
@@ -424,16 +445,12 @@ void GraphicsDeviceD3D12::CheckDeviceState() const
     }
 }
 
-void GraphicsDeviceD3D12::SetResolution(Int2 resolution) {
-    //mCache.depthBufferPool.clear();
-    mPrimarySurface.SetResolution(resolution);
-}
 CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
 {
-    return CommandBuffer(new D3DCommandBuffer(this, &mPrimarySurface));
+    return CommandBuffer(new D3DCommandBuffer(this));
 }
 
-const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
+/*const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
     const Shader& vertexShader, const Shader& pixelShader,
     const MaterialState& materialState, std::span<const BufferLayout*> bindings,
     std::span<const MacroValue> macros, const IdentifierWithName& renderPass
@@ -442,7 +459,7 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
     CheckDeviceState();
 
     InplaceVector<DXGI_FORMAT> fbFormats;
-    fbFormats.push_back(mPrimarySurface.GetBackBuffer().mFormat);
+    //fbFormats.push_back(mPrimarySurface.GetBackBuffer().mFormat);
     auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, macros, renderPass,
         fbFormats, DXGI_FORMAT_D24_UNORM_S8_UINT);
     if (pipelineState->mLayout == nullptr)
@@ -456,10 +473,11 @@ const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
         for (auto& b : bindings) pipelineState->mLayout->mBindings.push_back(b);
     }
     return pipelineState->mLayout.get();
-}
+}*/
 
 // Flip the backbuffer and wait until a frame is available to be rendered
-void GraphicsDeviceD3D12::Present() {
+/*void GraphicsDeviceD3D12::Present() {
     int disposedFrame = mPrimarySurface.Present();
     mCache.UnlockFrame((size_t)&mPrimarySurface + disposedFrame);
 }
+*/

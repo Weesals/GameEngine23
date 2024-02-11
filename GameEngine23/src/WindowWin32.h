@@ -30,16 +30,17 @@ public:
     ~WindowWin32() override;
 
     // Set input buffer to receive input events
-    void SetInput(std::shared_ptr<Input> input);
+    virtual void SetInput(const std::shared_ptr<Input>& input) override;
 
     HWND GetHWND() const { return hWnd; }
 
     // Get the size of the inner window area (not including border or title bar)
     Int2 GetClientSize() const override;
+    void SetClientSize(Int2 size) override;
 
     // Process window messages and then return control to the callee
     // Non-zero values mean the window was closed
-    int MessagePump() override;
+    static int MessagePump();
 
     void Close() override;
 

@@ -5,38 +5,32 @@
 
 void NativePlatform::Initialize()
 {
-    // Create the window
-    auto window = std::make_shared<WindowWin32>(L"Game Engine 23");
     // Initiaise graphics
-    auto device = std::make_shared<GraphicsDeviceD3D12>(window);
+    auto device = std::make_shared<GraphicsDeviceD3D12>();
 
     // Create input buffer and link to window
-    auto input = std::make_shared<Input>();
-    window->SetInput(input);
+    //auto input = std::make_shared<Input>();
 
     // Set the platform references
-    mWindow = window;
     mGraphics = device;
-    mInput = input;
+    //mInput = input;
 }
 
 std::shared_ptr<WindowBase> NativePlatform::CreateWindow(const std::wstring_view& name) {
     auto window = std::make_shared<WindowWin32>(name.data());
-    window->SetInput(mInput);
+    //window->SetInput(mInput);
     return window;
-}
-std::shared_ptr<GraphicsSurface> NativePlatform::CreateGraphicsSurface(WindowBase& window) {
-    return std::make_shared<D3DGraphicsSurface>(((GraphicsDeviceD3D12&)*mGraphics).GetDevice(), ((WindowWin32&)window).GetHWND());
 }
 
 int NativePlatform::MessagePump()
 {
-    return mWindow->MessagePump();
+    return WindowWin32::MessagePump();
+    //return mWindow->MessagePump();
 }
 void NativePlatform::Present()
 {
-    mGraphics->Present();
+    //mGraphics->Present();
     // Tell the input to flush per-frame data
-    mInput->GetMutator().ReceiveTickEvent();
+    //mInput->GetMutator().ReceiveTickEvent();
 }
 

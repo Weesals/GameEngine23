@@ -175,7 +175,7 @@ namespace Game5.Game {
             var completions = this.completions;
             var moveContract = this.moveContract;
             var navMesh = NavMesh.GetReadOnly();
-            var navQuery = this.navQuery;
+            ref var navQuery = ref this.navQuery;
             navQuery.Initialise(NavMesh);
             using var portals = new PooledList<TriangleEdge>(4);
             bool noPath = Input.GetKeyDown(KeyCode.LeftShift);

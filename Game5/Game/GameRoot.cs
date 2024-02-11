@@ -20,7 +20,7 @@ namespace Game5.Game {
 
         public RectI GameViewport { get; private set; }
         public int RenderRevision;
-        public int RenderHash => Canvas.Revision + RenderRevision + ScenePasses.GetRenderHash();
+        public int RenderHash => Canvas.Revision + RenderRevision + ScenePasses.GetRenderHash() + Handles.RenderHash;
 
         public ObservableCollection<object> Editables = new();
 
@@ -43,9 +43,9 @@ namespace Game5.Game {
 
         public Play Play;
 
-        public GameRoot(Scene scene) {
-            Scene = scene;
-            scenePasses = new(scene);
+        public GameRoot() {
+            Scene = new();
+            scenePasses = new(Scene);
             EventSystem = new(Canvas);
 
             SetupPasses();
@@ -99,7 +99,7 @@ namespace Game5.Game {
                 new[] { new RenderPass.PassInput("SceneColor", false) },
                 new[] { new RenderPass.PassOutput("SceneColor", 0), },
                 (CSGraphics graphics, ref RenderPass.Context context) => {
-                    Canvas.Render(graphics, Canvas.Material);
+                    Canvas.Render(graphics);
                 });
 
             scenePasses.AddPass(shadowPass);
@@ -125,11 +125,12 @@ namespace Game5.Game {
             Canvas.Update(dt);
 
             Play.Update(dt);
+            PreRender();
 
             Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
         }
 
-        public void PreRender(CSGraphics graphics, float dt) {
+        public void PreRender() {
             var Camera = Play.Camera;
             if (scenePasses.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) {
                 RenderRevision++;
@@ -142,12 +143,16 @@ namespace Game5.Game {
             foreach (var pass in scenePasses.ScenePasses) {
                 if (pass.GetHasSceneChanges()) ++RenderRevision;
             }
-            Play.PreRender(graphics, dt);
+            Play.PreRender();
             Canvas.RequireComposed();
         }
-        public void Render(CSGraphics graphics) {
+        public void Render(CSGraphics graphics, float dt) {
+            // This requires graphics calls, do it first
+            // TODO: Check visibility and dont process culled
+            Play.UpdateParticles(graphics, dt);
+
             // TODO: Avoid calling this twice when TAA is enabled
-            ScenePasses.BeginRender(GameViewport.Size);
+            ScenePasses.SetupRender(GameViewport.Size);
 
             //Camera.FarPlane = 45f + (0.5f + 0.5f * MathF.Sin(UnityEngine.Time.time * 10.0f)) * 400.0f;
             renderGraph.Clear();
@@ -173,12 +178,13 @@ namespace Game5.Game {
             renderGraph.BeginPass(canvasPass)
                 .SetViewport(GameViewport);
             renderGraph.Execute(canvasPass, graphics);
-        }
-        public void PostRender() {
+
             // Copy current matrices into previous frame slots
-            Scene.PostRender();
-            // Clear dynamic meshes
-            ScenePasses.EndRender();
+            Scene.CommitMotion();
+        }
+        public void ResetFrame() {
+            // Clear dynamic meshes (probably added in Update() )
+            ScenePasses.ClearDynamicDraws();
 
             Handles.Reset();
         }

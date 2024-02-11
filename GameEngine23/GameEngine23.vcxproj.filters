@@ -123,10 +123,6 @@
     <ClInclude Include="src\NativePlatform.h">
       <Filter>Core\Platforms</Filter>
     </ClInclude>
-    <ClInclude Include="src\RetainedRenderer.h">
-      <Filter>Rendering</Filter>
-    </ClInclude>
-    <ClInclude Include="src\RenderQueue.h" />
     <ClInclude Include="src\RenderTarget2D.h" />
     <ClInclude Include="src\Lighting.h" />
     <ClInclude Include="src\ui\font\FontRenderer.h" />
@@ -191,10 +187,6 @@
     <ClCompile Include="src\NativePlatform.cpp">
       <Filter>Core\Platforms</Filter>
     </ClCompile>
-    <ClCompile Include="src\RetainedRenderer.cpp">
-      <Filter>Rendering</Filter>
-    </ClCompile>
-    <ClCompile Include="src\RenderQueue.cpp" />
     <ClCompile Include="src\GraphicsDeviceBase.cpp" />
     <ClCompile Include="src\RenderTarget2D.cpp" />
     <ClCompile Include="src\Lighting.cpp" />

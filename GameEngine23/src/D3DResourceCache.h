@@ -11,6 +11,8 @@
 #include "GraphicsUtility.h"
 #include "Material.h"
 
+class D3DGraphicsSurface;
+
 // Stores a cache of Constant Buffers that have been generated
 // so that they can be efficiently reused where appropriate
     // The GPU data for a set of shaders, rendering state, and vertex attributes
@@ -176,6 +178,11 @@ public:
         BufferLayout::Usage mUsage;
     };
 
+    struct CommandAllocator {
+        ComPtr<ID3D12CommandAllocator> mCmdAllocator;
+        uint64_t mFrameLocks = 0;
+    };
+
     // If no texture is specified, use this
     std::shared_ptr<Texture> mDefaultTexture;
     int mRTOffset;
@@ -204,12 +211,16 @@ private:
     std::vector<uint8_t> mTempData;
 
     std::vector<size_t> mFrameBitPool;
+    std::vector<CommandAllocator> mCommandAllocators;
+    std::vector<std::shared_ptr<D3DGraphicsSurface>> mInflightSurfaces;
 
 public:
     RenderStatistics& mStatistics;
 
     D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& statistics);
     int RequireFrameHandle(size_t frameHash);
+    void AddInFlightSurface(const std::shared_ptr<D3DGraphicsSurface>& surface);
+    CommandAllocator* RequireAllocator();
     void UnlockFrame(size_t frameHash);
     void ClearDelayedData();
     ID3D12Resource* AllocateUploadBuffer(int size, int lockBits);
@@ -243,6 +254,7 @@ public:
     D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, int lockBits);
 
     void UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
+    D3DBufferWithSRV* RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DBufferWithSRV* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
 };
 
@@ -265,11 +277,13 @@ class D3DGraphicsSurface : public GraphicsSurface {
     UINT64 mFenceValues[FrameCount];
 
     // Each frame needs its own allocator
-    ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
+    //ComPtr<ID3D12CommandAllocator> mCmdAllocator[FrameCount];
     BackBuffer mFrameBuffers[FrameCount];
 
     // Current frame being rendered (wraps to the number of back buffers)
     int mBackBufferIndex;
+    UINT64 mLockFrame;
+
     // Fence to wait for frames to render
     HANDLE mFenceEvent;
     ComPtr<ID3D12Fence> mFence;
@@ -281,15 +295,19 @@ public:
     D3DGraphicsSurface(D3DGraphicsDevice& device, HWND hWnd);
     ~D3DGraphicsSurface();
     IDXGISwapChain3* GetSwapChain() const { return mSwapChain.Get(); }
-    Int2 GetResolution() const { return mResolution; }
-    void SetResolution(Int2 res);
+    Int2 GetResolution() const override { return mResolution; }
+    void SetResolution(Int2 res) override;
     void ResizeSwapBuffers();
 
-    ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
+    //ID3D12CommandAllocator* GetCmdAllocator() const { return mCmdAllocator[mBackBufferIndex].Get(); }
     const BackBuffer& GetBackBuffer() const { return mFrameBuffers[mBackBufferIndex]; }
 
     int GetBackBufferIndex() const { return mBackBufferIndex; }
     int GetBackFrameIndex() const;
+
+    UINT64 GetHeadFrame() const;
+    UINT64 GetLockFrame() const;
+    UINT64 ConsumeFrame(UINT64 untilFrame);
 
     bool GetIsOccluded() const override;
     void RegisterDenyPresent(int delta = 1) override;

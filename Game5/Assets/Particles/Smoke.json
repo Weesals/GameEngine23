@@ -1,0 +1,66 @@
+{
+  "ParticleSpawn": [
+    {
+      "name": "PositionInSphere",
+      "Radius": "1.0"
+    },
+    /*{
+      "name": "Custom",
+      "Code": "Position.z -= 20.0;"
+    },*/
+    {
+      "name": "Custom",
+      "Code": "Position.z += 5.0;"
+    },
+    /*{
+      "name": "Custom",
+      "Code": "Velocity.y += 20.0;"
+    }*/
+  ],
+  "ParticleStep": [
+    {
+      "name": "IncrementLifetime"
+    },
+    /*{
+      "name": "ApplyGravity",
+    },*/
+    {
+      "name": "ApplyVelocity"
+    },
+    {
+      "name": "ApplyDrag",
+      "Drag": "0.2"
+    },
+    {
+      "name": "Turbulence",
+      "Speed": "10.0"
+    },
+    {
+      "name": "Custom",
+      "Code": "Velocity.x += 10.0 * DeltaTime;"
+    },
+    {
+      "name": "KillDeadParticles"
+    }
+  ],
+  "ParticleVertex": [
+    {
+      "name": "UVRotate",
+      "Rotation": "Age * 4.0 + Seed * 6.0"
+    },
+    {
+      "name": "UVAtlas",
+      "AtlasCount": "2.0",
+      "AtlasIndex": "0.0"
+    }
+  ],
+  "ParticlePixel": [
+    {
+      "name": "Opacity",
+      "Opacity": "0.1"
+    },
+    {
+      "name": "TextureSample"
+    }
+  ]
+}

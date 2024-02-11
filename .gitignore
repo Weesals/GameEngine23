@@ -403,3 +403,4 @@ FodyWeavers.xsd
 /CSBindings/scripts/*.dll
 /**/Ignore
 /.*
+/**/Generated

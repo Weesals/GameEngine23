@@ -44,6 +44,7 @@
 	FontInstance=NativeFont
 	RenderPass=NativeRenderPass
 	GraphicsSurface=NativeGraphicsSurface
+	Input=NativeInput
 	Vector2=System.Numerics.Vector2
 	Vector3=System.Numerics.Vector3
 	Vector4=System.Numerics.Vector4

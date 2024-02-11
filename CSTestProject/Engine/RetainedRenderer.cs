@@ -235,7 +235,7 @@ namespace Weesals.Engine {
         public CSBufferLayout GetGPUBuffer() { return gpuScene.BufferLayout; }
         public int GetGPURevision() { return gpuScene.Revision; }
 
-        unsafe public void PostRender() {
+        unsafe public void CommitMotion() {
             foreach (var instance in movedInstances) {
                 var data = GetInstanceData(instance);
                 Matrix4x4 mat = *(Matrix4x4*)data.Data;

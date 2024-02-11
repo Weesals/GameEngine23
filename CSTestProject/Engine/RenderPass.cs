@@ -375,7 +375,7 @@ namespace Weesals.Engine {
                 targets[targetId].SetFormat(BufferFormat.FORMAT_R11G11B10_FLOAT);
             }
             context.OverwriteOutput(context.Outputs[0], targets[targetId]);
-            ScenePasses.BeginRender(context.Viewport.Size, TemporalOffset, frame % 12);
+            ScenePasses.SetupRender(context.Viewport.Size, TemporalOffset, frame % 12);
             OnBegin?.Invoke(context.Viewport.Size);
             return true;
         }
@@ -586,7 +586,7 @@ namespace Weesals.Engine {
             return /*Scene.GetGPURevision() + */dynamicDrawHash;
         }
 
-        public void BeginRender(Int2 viewportSize, Vector2 jitter = default, int jitterFrame = default) {
+        public void SetupRender(Int2 viewportSize, Vector2 jitter = default, int jitterFrame = default) {
             var jitteredProjection = projection;
             var jitteredPrevProj = previousProj;
             jitteredProjection.M31 += jitter.X / viewportSize.X;
@@ -605,7 +605,7 @@ namespace Weesals.Engine {
             previousView = View;
             previousProj = Projection;
         }
-        public void EndRender() {
+        public void ClearDynamicDraws() {
             foreach (var instance in dynamicInstances) {
                 Scene.RemoveInstance(instance);
                 RemoveInstance(instance);

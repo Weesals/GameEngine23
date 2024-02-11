@@ -77,7 +77,7 @@ struct Pointer
 	}
 };
 
-class Input
+class Input : public std::enable_shared_from_this<Input>
 {
 	struct KeyState
 	{
@@ -93,6 +93,7 @@ class Input
 	std::wstring mCharBuffer;
 
 public:
+	std::shared_ptr<Input> This() { return shared_from_this(); }
 	// Called from something that receives input, to store and
 	// pass pointer data to the application
 	std::shared_ptr<Pointer> AllocatePointer(unsigned int deviceId)

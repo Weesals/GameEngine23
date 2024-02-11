@@ -283,6 +283,7 @@ namespace Weesals.Engine {
         public bool Equals(Short2 o) { return X == o.X && Y == o.Y; }
         public override string ToString() { return $"<{X}, {Y}>"; }
         public override int GetHashCode() { return X + (Y << 16); }
+        public static implicit operator Short2(short v) { return new Short2(v, v); }
     }
     public struct UShort2 : IEquatable<UShort2> {
         public ushort X, Y;
@@ -292,6 +293,7 @@ namespace Weesals.Engine {
         public bool Equals(UShort2 o) { return X == o.X && Y == o.Y; }
         public override string ToString() { return $"<{X}, {Y}>"; }
         public override int GetHashCode() { return X + (Y << 16); }
+        public static implicit operator UShort2(ushort v) { return new UShort2(v, v); }
     }
 
     public struct Color : IEquatable<Color> {

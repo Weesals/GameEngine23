@@ -349,7 +349,7 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
             &texHeapType,
             D3D12_HEAP_FLAG_NONE,
             &textureDesc,
-            D3D12_RESOURCE_STATE_COPY_DEST,
+            D3D12_RESOURCE_STATE_COMMON,
             nullptr,
             IID_PPV_ARGS(&d3dTex->mBuffer)
         ));
@@ -384,11 +384,12 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
     /*WriteBuffer(cmdList, *this, d3dTex->mBuffer.Get(), srcData.size(), [&](uint8_t* data) {
         memcpy(data, srcData.data(), srcData.size());
     });*/
-    for (int i = 0; i < tex.GetArrayCount(); ++i) {
-        // Put the texture back in normal mode
-        auto beginWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, i);
-        //cmdList->ResourceBarrier(1, &beginWrite);
 
+    // Put the texture in write mode
+    auto beginWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+    cmdList->ResourceBarrier(1, &beginWrite);
+
+    for (int i = 0; i < tex.GetArrayCount(); ++i) {
         for (int m = 0; m < tex.GetMipCount(); ++m) {
             auto res = tex.GetMipResolution(size, tex.GetBufferFormat(), m);
             auto srcData = tex.GetData(m, i);
@@ -400,27 +401,35 @@ void D3DResourceCache::UpdateTextureData(D3DBufferWithSRV* d3dTex, const Texture
             UpdateSubresources<1>(cmdList, d3dTex->mBuffer.Get(), uploadBuffer, 0,
                 D3D12CalcSubresource(m, i, 0, tex.GetMipCount(), tex.GetArrayCount()), 1,
                 &textureData);
-            mStatistics.BufferWrite(4 * res.x * res.y);//*/
+            mStatistics.BufferWrite(4 * res.x * res.y);
         }
-
-        // Put the texture back in normal mode
-        auto endWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON, i);
-        cmdList->ResourceBarrier(1, &endWrite);
     }
 
+    // Put the texture back in normal mode
+    auto endWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+    cmdList->ResourceBarrier(1, &endWrite);
+
     d3dTex->mRevision = tex.GetRevision();
+}
+D3DResourceCache::D3DBufferWithSRV* D3DResourceCache::RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, int lockBits)
+{
+    if (mDefaultTexture == nullptr) {
+        mDefaultTexture = std::make_shared<Texture>();
+        mDefaultTexture->SetSize(4);
+        auto data = mDefaultTexture->GetRawData();
+        std::fill((uint32_t*)&*data.begin(), (uint32_t*)(&*data.begin() + data.size()), 0xffe0e0e0);
+        mDefaultTexture->MarkChanged();
+    }
+    auto texture = mDefaultTexture.get();
+    auto d3dTex = RequireD3DBuffer(*texture);
+    if (d3dTex->mRevision != texture->GetRevision())
+        UpdateTextureData(d3dTex, *texture, cmdList, lockBits);
+    return d3dTex;
 }
 D3DResourceCache::D3DBufferWithSRV* D3DResourceCache::RequireCurrentTexture(const Texture* texture, ID3D12GraphicsCommandList* cmdList, int lockBits)
 {
     if (texture == nullptr || texture->GetSize().x <= 0) {
-        if (mDefaultTexture == nullptr) {
-            mDefaultTexture = std::make_shared<Texture>();
-            mDefaultTexture->SetSize(4);
-            auto data = mDefaultTexture->GetRawData();
-            std::fill((uint32_t*)&*data.begin(), (uint32_t*)(&*data.begin() + data.size()), 0xffe0e0e0);
-            mDefaultTexture->MarkChanged();
-        }
-        texture = mDefaultTexture.get();
+        return RequireDefaultTexture(cmdList, lockBits);
     }
     auto d3dTex = RequireD3DBuffer(*texture);
     if (d3dTex->mRevision != texture->GetRevision())
@@ -497,7 +506,28 @@ int D3DResourceCache::RequireFrameHandle(size_t frameHash) {
         }
     }
     mFrameBitPool.push_back(frameHash);
+    assert(mFrameBitPool.size() <= 64);
     return (int)mFrameBitPool.size() - 1;
+}
+void D3DResourceCache::AddInFlightSurface(const std::shared_ptr<D3DGraphicsSurface>& surface) {
+    if (std::find(mInflightSurfaces.begin(), mInflightSurfaces.end(), surface) != mInflightSurfaces.end()) return;
+    mInflightSurfaces.push_back(surface);
+}
+D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
+    for(int i = 0; i < (int)mInflightSurfaces.size(); ++i) {
+        auto& surface = mInflightSurfaces[i];
+        auto lockFrame = surface->GetLockFrame();
+        auto consumeFrame = surface->ConsumeFrame(lockFrame);
+        for (; lockFrame != consumeFrame; ++consumeFrame) UnlockFrame((size_t)surface.get() + consumeFrame);
+        if (surface->GetHeadFrame() == lockFrame) mInflightSurfaces.erase(mInflightSurfaces.begin() + (i--));
+    }
+    for (auto& allocator : mCommandAllocators) {
+        if (allocator.mFrameLocks == 0) return &allocator;
+    }
+    CommandAllocator allocator;
+    ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator.mCmdAllocator)));
+    mCommandAllocators.push_back(allocator);
+    return &mCommandAllocators.back();
 }
 void D3DResourceCache::UnlockFrame(size_t frameHash) {
     int frameHandle = (int)mFrameBitPool.size() - 1;
@@ -510,6 +540,11 @@ void D3DResourceCache::UnlockFrame(size_t frameHash) {
     mResourceViewCache.Unlock(1ull << frameHandle);
     mUploadBufferCache.Unlock(1ull << frameHandle);
     mDelayedRelease.Unlock(1ull << frameHandle);
+    for (auto& allocator : mCommandAllocators) {
+        if (allocator.mFrameLocks == 0) continue;
+        allocator.mFrameLocks &= ~(1ull << frameHandle);
+        if (allocator.mFrameLocks == 0) allocator.mCmdAllocator->Reset();
+    }
 }
 void D3DResourceCache::ClearDelayedData() {
     mResourceViewCache.Clear();
@@ -730,6 +765,7 @@ D3DResourceCache::D3DRenderSurface::SubresourceData& D3DResourceCache::RequireTe
 
 D3DGraphicsSurface::D3DGraphicsSurface(D3DGraphicsDevice& device, HWND hWnd)
     : mDevice(device)
+    , mLockFrame(0)
 {
     // Check the window for how large the backbuffer should be
     RECT rect;
@@ -773,8 +809,7 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
         WaitForGPU();
         for (UINT n = 0; n < FrameCount; n++) {
             mFrameBuffers[n] = { };
-            if (mCmdAllocator[n] != nullptr)
-                mCmdAllocator[n]->Reset();
+            //if (mCmdAllocator[n] != nullptr) mCmdAllocator[n]->Reset();
         }
         mResolution = resolution;
         ResizeSwapBuffers();
@@ -790,9 +825,9 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
         frameBuffer.mMips = 1;
         frameBuffer.mSlices = 1;
         frameBuffer.mFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-        if (mCmdAllocator[n] == nullptr) {
-            ThrowIfFailed(mD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCmdAllocator[n])));
-        }
+        //if (mCmdAllocator[n] == nullptr) {
+            //ThrowIfFailed(mD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCmdAllocator[n])));
+        //}
         if (frameBuffer.mBuffer == nullptr) {
             ThrowIfFailed(mSwapChain->GetBuffer(n, IID_PPV_ARGS(&frameBuffer.mBuffer)));
             wchar_t name[] = L"Frame Buffer 0";
@@ -880,6 +915,18 @@ int D3DGraphicsSurface::Present() {
     return WaitForFrame();
 }
 
+UINT64 D3DGraphicsSurface::GetHeadFrame() const {
+    return mFenceValues[mBackBufferIndex];
+}
+UINT64 D3DGraphicsSurface::GetLockFrame() const {
+    return mFence->GetCompletedValue() + 1;
+}
+UINT64 D3DGraphicsSurface::ConsumeFrame(UINT64 untilFrame) {
+    auto id = mLockFrame;
+    mLockFrame = untilFrame;
+    return id;
+}
+
 // Wait for the earliest submitted frame to be finished and ready to be rendered into
 int D3DGraphicsSurface::WaitForFrame() {
     // Schedule a Signal command in the queue.
@@ -899,7 +946,7 @@ int D3DGraphicsSurface::WaitForFrame() {
 
     // Set the fence value for the next frame.
     mFenceValues[mBackBufferIndex] = currentFenceValue + 1;
-    mCmdAllocator[mBackBufferIndex]->Reset();
+    //mCmdAllocator[mBackBufferIndex]->Reset();
     //mCache.SetResourceLockIds(fenceVal, currentFenceValue);
     return (int)previousId;
 }

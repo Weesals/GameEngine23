@@ -181,6 +181,9 @@ namespace Weesals.Engine {
     }
     public partial struct CSRenderTarget : IEquatable<CSRenderTarget> {
         unsafe public bool IsValid() { return mRenderTarget != null; }
+        public Int2 Size => GetSize();
+        public BufferFormat Format => GetFormat();
+        public int MipCount => GetMipCount();
         unsafe public void SetSize(Int2 size) { SetSize(mRenderTarget, size); }
         unsafe public Int2 GetSize() { return GetSize(mRenderTarget); }
         unsafe public void SetFormat(BufferFormat format) { SetFormat(mRenderTarget, format); }
@@ -283,12 +286,6 @@ namespace Weesals.Engine {
                 var csstr = new CSString(shaderPathPtr, shaderPath.Length);
                 return new CSMaterial(_Create(csstr));
             }
-        }
-        public unsafe static CSSpan ResolveResources(NativeGraphics* graphics, NativePipeline* pipeline, IList<CSMaterial> materials) {
-            var usmaterials = stackalloc CSMaterial[materials.Count];
-            for (int m = 0; m < materials.Count; ++m) usmaterials[m] = materials[m];
-            var resources = ResolveResources(graphics, pipeline, new CSSpan(usmaterials, materials.Count));
-            return resources;
         }
 
         public override bool Equals(object? obj) { return obj is CSMaterial mat && mat == this; }
@@ -405,16 +402,16 @@ namespace Weesals.Engine {
         }
     }
     public partial struct CSInput {
-        unsafe public bool IsValid() { return mPlatform != null; }
-        unsafe public CSSpanSPtr<CSPointer> GetPointers() { return new CSSpanSPtr<CSPointer>(GetPointers(null, mPlatform)); }
-        unsafe public bool GetKeyDown(char key) { return GetKeyDown(null, mPlatform, (byte)key); }
-        unsafe public bool GetKeyPressed(char key) { return GetKeyPressed(null, mPlatform, (byte)key); }
-        unsafe public bool GetKeyReleased(char key) { return GetKeyReleased(null, mPlatform, (byte)key); }
-        unsafe public Span<CSKey> GetPressKeys() { return GetPressKeys(null, mPlatform).AsSpan<CSKey>(); }
-        unsafe public Span<CSKey> GetDownKeys() { return GetDownKeys(null, mPlatform).AsSpan<CSKey>(); }
-        unsafe public Span<CSKey> GetReleaseKeys() { return GetReleaseKeys(null, mPlatform).AsSpan<CSKey>(); }
-        unsafe public Span<ushort> GetCharBuffer() { return GetCharBuffer(null, mPlatform).AsSpan<ushort>(); }
-        unsafe public void ReceiveTickEvent() { ReceiveTickEvent(null, mPlatform); }
+        unsafe public bool IsValid() { return mInput != null; }
+        unsafe public CSSpanSPtr<CSPointer> GetPointers() { return new CSSpanSPtr<CSPointer>(GetPointers(null, mInput)); }
+        unsafe public bool GetKeyDown(char key) { return GetKeyDown(null, mInput, (byte)key); }
+        unsafe public bool GetKeyPressed(char key) { return GetKeyPressed(null, mInput, (byte)key); }
+        unsafe public bool GetKeyReleased(char key) { return GetKeyReleased(null, mInput, (byte)key); }
+        unsafe public Span<CSKey> GetPressKeys() { return GetPressKeys(null, mInput).AsSpan<CSKey>(); }
+        unsafe public Span<CSKey> GetDownKeys() { return GetDownKeys(null, mInput).AsSpan<CSKey>(); }
+        unsafe public Span<CSKey> GetReleaseKeys() { return GetReleaseKeys(null, mInput).AsSpan<CSKey>(); }
+        unsafe public Span<ushort> GetCharBuffer() { return GetCharBuffer(null, mInput).AsSpan<ushort>(); }
+        unsafe public void ReceiveTickEvent() { ReceiveTickEvent(null, mInput); }
     }
     public partial struct CSConstantBuffer {
         unsafe public CSIdentifier mName => mConstantBuffer->mName;
@@ -442,10 +439,16 @@ namespace Weesals.Engine {
     }
     public partial struct CSGraphicsSurface {
         unsafe public void RegisterDenyPresent(int delta = 1) { RegisterDenyPresent(mSurface, delta); }
+        unsafe public Int2 GetResolution() { return GetResolution(mSurface); }
+        unsafe public void SetResolution(Int2 res) { SetResolution(mSurface, res); }
+        unsafe public void Present() { Present(mSurface); }
+        unsafe public void Dispose() { Dispose(mSurface); }
     }
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
-        unsafe public Int2 GetResolution() { return GetResolution(mGraphics); }
+        unsafe public CSGraphicsSurface CreateSurface(CSWindow window) { return new CSGraphicsSurface(CreateSurface(mGraphics, window.GetNativeWindow())); }
+        unsafe public void SetSurface(CSGraphicsSurface surface) { SetSurface(mGraphics, surface.GetNativeSurface()); }
+        unsafe public CSGraphicsSurface GetSurface() { return new CSGraphicsSurface(GetSurface(mGraphics)); }
         unsafe public void SetRenderTargets(CSRenderTargetBinding colorTarget, CSRenderTargetBinding depth) {
             SetRenderTargets(mGraphics, colorTarget.mTarget != null ? new CSSpan(&colorTarget, 1) : default, depth);
         }
@@ -458,12 +461,10 @@ namespace Weesals.Engine {
             SetRenderTargets(mGraphics, new CSSpan(targets.Data, targets.Length), depth);
         }
         unsafe public bool IsTombstoned() { return IsTombstoned(mGraphics) != 0; }
-        unsafe public void SetResolution(Int2 res) { SetResolution(mGraphics, res); }
         unsafe public void Reset() { Reset(mGraphics); }
         unsafe public void Clear() { Clear(mGraphics); }
         unsafe public void SetViewport(RectI viewport) { SetViewport(mGraphics, viewport); }
         unsafe public void Execute() { Execute(mGraphics); }
-        unsafe public CSGraphicsSurface GetPrimarySurface() { return new CSGraphicsSurface(GetPrimarySurface(mGraphics)); }
         unsafe public nint RequireConstantBuffer(Span<byte> data) {
             fixed (byte* dataPtr = data) {
                 return (nint)RequireConstantBuffer(mGraphics, new CSSpan(dataPtr, data.Length));
@@ -485,7 +486,7 @@ namespace Weesals.Engine {
             }
         }
         unsafe public void CopyBufferData(CSBufferLayout buffer) {
-            Span<RangeInt> ranges = stackalloc RangeInt[] { new(0, buffer.mCount) };
+            Span<RangeInt> ranges = stackalloc RangeInt[] { new(0, buffer.size) };
             CopyBufferData(buffer, ranges);
         }
         unsafe public void CopyBufferData(CSBufferLayout buffer, List<RangeInt> ranges) {
@@ -516,9 +517,6 @@ namespace Weesals.Engine {
         unsafe public MemoryBlock<T> RequireFrameData<T>(int count) where T: unmanaged {
             return new MemoryBlock<T>((T*)RequireFrameData(mGraphics, sizeof(T) * count), count);
         }
-        unsafe public CSSpan ImmortalizeBufferLayout(CSSpan data) {
-            return ImmortalizeBufferLayout(mGraphics, data);
-        }
         unsafe public override int GetHashCode() { return (int)(mGraphics) ^ (int)((ulong)mGraphics >> 32); }
         unsafe public ulong GetGlobalPSOHash() { return GetGlobalPSOHash(mGraphics); }
         unsafe public static implicit operator NativeGraphics*(CSGraphics g) { return g.mGraphics; }
@@ -529,16 +527,20 @@ namespace Weesals.Engine {
     }
     public partial struct CSWindow {
         unsafe public void Dispose() { Dispose(mWindow); mWindow = null; }
-        unsafe public Int2 GetResolution() { return GetResolution(mWindow); }
+        unsafe public Int2 GetSize() { return GetSize(mWindow); }
+        unsafe public void SetSize(Int2 size) { SetSize(mWindow, size); }
+        unsafe public void SetInput(CSInput input) { SetInput(mWindow, input.GetNativeInput()); }
     }
     public partial struct Platform {
         unsafe public void Dispose() { Dispose(mPlatform); mPlatform = null; }
-        unsafe public CSInput GetInput() { return new CSInput(mPlatform); }
-        unsafe public CSWindow GetWindow() { return new CSWindow(GetWindow(mPlatform)); }
+        unsafe public CSWindow CreateWindow(string name) {
+            fixed (char* namePtr = name)
+                return new CSWindow(CreateWindow(mPlatform, new CSString(namePtr, name.Length)));
+        }
         unsafe public CSResources GetResources() { return new CSResources(); }
+        unsafe public CSInput CreateInput() { return new CSInput(CreateInput(mPlatform)); }
         unsafe public CSGraphics CreateGraphics() { return new CSGraphics(CreateGraphics(mPlatform)); }
         unsafe public int MessagePump() { return MessagePump(mPlatform); }
-        unsafe public void Present() { Present(mPlatform); }
     }
 
 

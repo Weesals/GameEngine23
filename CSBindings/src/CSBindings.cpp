@@ -3,7 +3,6 @@
 #include <Texture.h>
 #include <NativePlatform.h>
 #include <ResourceLoader.h>
-#include <RetainedRenderer.h>
 #include <Lighting.h>
 #include <Containers.h>
 #include <ui/font/FontRenderer.h>
@@ -16,6 +15,16 @@
 
 #include "CSBindings.h"
 
+template<typename T>
+void increment_shared(const std::shared_ptr<T>& ptr) {
+	uint64_t data[4] = { };
+	(std::shared_ptr<T>&)data[0] = ptr;
+}
+template<typename T>
+void decrement_shared(const std::shared_ptr<T>& ptr) {
+	std::shared_ptr<T> del;
+	memcpy(&del, &ptr, sizeof(ptr));
+}
 template<class R, class... Args> R* create_shared(Args... args) {
 	uint64_t data[4] = { };
 	auto& ptr = (std::shared_ptr<R>&)data[0];
@@ -177,14 +186,6 @@ void CSMaterial::InheritProperties(NativeMaterial* material, NativeMaterial* oth
 void CSMaterial::RemoveInheritance(NativeMaterial* material, NativeMaterial* other) {
 	material->RemoveInheritance(other->GetSharedPtr());
 }
-CSSpan CSMaterial::ResolveResources(NativeGraphics* graphics, NativePipeline* pipeline, CSSpan materials) {
-	InplaceVector<const Material*, 8> pomaterials;
-	for (int i = 0; i < materials.mSize; ++i) {
-		pomaterials.push_back(((const Material**)materials.mData)[i]);
-	}
-	auto result = MaterialEvaluator::ResolveResources(graphics->mCmdBuffer, (const PipelineLayout*)pipeline, pomaterials);
-	return MakeSpan(result);
-}
 NativeMaterial* CSMaterial::_Create(CSString shaderPath) {
 	if (shaderPath.mBuffer == nullptr) {
 		return create_shared<Material>();
@@ -317,16 +318,17 @@ void CSGraphics::Dispose(NativeGraphics* graphics) {
 		graphics = nullptr;
 	}
 }
-NativeSurface* CSGraphics::GetPrimarySurface(const NativeGraphics* graphics) {
-	return graphics->mCmdBuffer.GetGraphics()->GetPrimarySurface();
+NativeSurface* CSGraphics::CreateSurface(NativeGraphics* graphics, NativeWindow* window) {
+	auto surface = graphics->mCmdBuffer.CreateSurface(window);
+	increment_shared(surface);
+	return surface.get();
 }
-Int2C CSGraphics::GetResolution(const NativeGraphics* graphics) {
-	auto* natgraphics = graphics->mCmdBuffer.GetGraphics();
-	return ToC(natgraphics->GetResolution());
+void CSGraphics::SetSurface(NativeGraphics* graphics, NativeSurface* surface) {
+	graphics->mCmdBuffer.SetSurface(surface);
+	graphics->mCmdBuffer.SetRenderTargets({ }, nullptr);
 }
-void CSGraphics::SetResolution(const NativeGraphics* graphics, Int2 res) {
-	auto* natgraphics = graphics->mCmdBuffer.GetGraphics();
-	natgraphics->SetResolution(res);
+NativeSurface* GetSurface(NativeGraphics* graphics) {
+	return graphics->mCmdBuffer.GetSurface();
 }
 void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget) {
 	auto* bindings = (const CSRenderTargetBinding*)colorTargets.mData;
@@ -363,12 +365,6 @@ void* CSGraphics::RequireFrameData(NativeGraphics* graphics, int byteSize) {
 	// TODO: Alignment?
 	return graphics->mCmdBuffer.RequireFrameData<uint8_t>(byteSize).data();
 }
-CSSpan CSGraphics::ImmortalizeBufferLayout(NativeGraphics* graphics, CSSpan bindings) {
-	InplaceVector<const BufferLayout*> bindingsPtr;
-	for (int i = 0; i < bindings.mSize; ++i) bindingsPtr.push_back(&((const BufferLayout*)bindings.mData)[i]);
-	auto ibindings = RenderQueue::ImmortalizeBufferLayout(graphics->mCmdBuffer, bindingsPtr);
-	return MakeSpan(ibindings);
-}
 void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span) {
 	return graphics->mCmdBuffer.RequireConstantBuffer(std::span<uint8_t>((uint8_t*)span.mData, span.mSize));
 }
@@ -400,7 +396,6 @@ void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bind
 }
 void CSGraphics::Reset(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Reset();
-	graphics->mCmdBuffer.SetRenderTargets({ }, nullptr);
 }
 void CSGraphics::Clear(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.ClearRenderTarget(ClearConfig(Color(0, 0, 0, 0), 1.0f));
@@ -418,45 +413,61 @@ uint64_t CSGraphics::GetGlobalPSOHash(NativeGraphics* graphics) {
 	return graphics->mCmdBuffer.GetGlobalPSOHash();
 }
 
+void CSGraphicsSurface::Dispose(NativeSurface* surface) { decrement_shared(surface->This()); }
+Int2C CSGraphicsSurface::GetResolution(const NativeSurface* surface) {
+	return ToC(surface->GetResolution());
+}
+void CSGraphicsSurface::SetResolution(NativeSurface* surface, Int2 res) {
+	surface->SetResolution(res);
+}
 void CSGraphicsSurface::RegisterDenyPresent(NativeSurface* surface, int delta) {
 	surface->RegisterDenyPresent(delta);
+}
+void CSGraphicsSurface::Present(NativeSurface* surface) {
+	surface->Present();
 }
 
 void CSWindow::Dispose(NativeWindow* window) {
 	window->Close();
 }
-Int2C CSWindow::GetResolution(const NativeWindow* window) {
+Int2C CSWindow::GetSize(const NativeWindow* window) {
 	return ToC(window->GetClientSize());
 }
+void CSWindow::SetSize(NativeWindow* window, Int2 size) {
+	window->SetClientSize(size);
+}
+void CSWindow::SetInput(NativeWindow* window, NativeInput* input) {
+	window->SetInput(input->This());
+}
 
-CSSpanSPtr CSInput::GetPointers(NativePlatform* platform) {
-	auto pointers = platform->GetInput()->GetPointers();
+CSSpanSPtr CSInput::GetPointers(NativeInput* input) {
+	auto pointers = input->GetPointers();
 	return MakeSPtrSpan(pointers);
 }
-Bool CSInput::GetKeyDown(NativePlatform* platform, unsigned char key) {
-	return platform->GetInput()->IsKeyDown(key);
+Bool CSInput::GetKeyDown(NativeInput* input, unsigned char key) {
+	return input->IsKeyDown(key);
 }
-Bool CSInput::GetKeyPressed(NativePlatform* platform, unsigned char key) {
-	return platform->GetInput()->IsKeyPressed(key);
+Bool CSInput::GetKeyPressed(NativeInput* input, unsigned char key) {
+	return input->IsKeyPressed(key);
 }
-Bool CSInput::GetKeyReleased(NativePlatform* platform, unsigned char key) {
-	return platform->GetInput()->IsKeyReleased(key);
+Bool CSInput::GetKeyReleased(NativeInput* input, unsigned char key) {
+	return input->IsKeyReleased(key);
 }
-CSSpan CSInput::GetPressKeys(NativePlatform* platform) {
-	return MakeSpan(platform->GetInput()->GetPressKeys());
+CSSpan CSInput::GetPressKeys(NativeInput* input) {
+	return MakeSpan(input->GetPressKeys());
 }
-CSSpan CSInput::GetDownKeys(NativePlatform* platform) {
-	return MakeSpan(platform->GetInput()->GetDownKeys());
+CSSpan CSInput::GetDownKeys(NativeInput* input) {
+	return MakeSpan(input->GetDownKeys());
 }
-CSSpan CSInput::GetReleaseKeys(NativePlatform* platform) {
-	return MakeSpan(platform->GetInput()->GetReleaseKeys());
+CSSpan CSInput::GetReleaseKeys(NativeInput* input) {
+	return MakeSpan(input->GetReleaseKeys());
 }
-CSSpan CSInput::GetCharBuffer(NativePlatform* platform) {
-	const auto& buffer = platform->GetInput()->GetCharBuffer();
+CSSpan CSInput::GetCharBuffer(NativeInput* input) {
+	const auto& buffer = input->GetCharBuffer();
 	return CSSpan(buffer.data(), (int)buffer.size());
 }
-void CSInput::ReceiveTickEvent(NativePlatform* platform) {
-	platform->GetInput()->GetMutator().ReceiveTickEvent();
+void CSInput::ReceiveTickEvent(NativeInput* input) {
+	input->GetMutator().ReceiveTickEvent();
 }
 
 NativeShader* CSResources::LoadShader(CSString path, CSString entryPoint) {
@@ -514,16 +525,19 @@ void Platform::Dispose(NativePlatform* platform) {
 	}
 }
 
-NativeWindow* Platform::GetWindow(const NativePlatform* platform) {
-	return platform->GetWindow().get();
+NativeWindow* Platform::CreateWindow(NativePlatform* platform, CSString name) {
+	auto window = platform->CreateWindow(ToWString(name));
+	increment_shared(window);
+	return window.get();
 }
-NativeGraphics* Platform::CreateGraphics(const NativePlatform* platform) {
+NativeInput* Platform::CreateInput(NativePlatform* platform) {
+	auto input = create_shared<Input>();
+	return input;
+}
+NativeGraphics* Platform::CreateGraphics(NativePlatform* platform) {
 	return new NativeGraphics(platform->GetGraphics()->CreateCommandBuffer());
 }
 
 int Platform::MessagePump(NativePlatform* platform) {
 	return platform->MessagePump();
-}
-void Platform::Present(NativePlatform* platform) {
-	platform->GetGraphics()->Present();
 }

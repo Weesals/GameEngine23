@@ -36,13 +36,11 @@ WindowWin32::~WindowWin32()
     CloseWindow(hWnd);
 }
 
-void WindowWin32::SetInput(std::shared_ptr<Input> input)
-{
+void WindowWin32::SetInput(const std::shared_ptr<Input>& input) {
     mInput = input;
 }
 
-Int2 WindowWin32::GetClientSize() const
-{
+Int2 WindowWin32::GetClientSize() const {
     RECT clientRect;
     GetClientRect(GetHWND(), &clientRect);
     return Int2(
@@ -50,9 +48,19 @@ Int2 WindowWin32::GetClientSize() const
         (uint32_t)(clientRect.bottom - clientRect.top)
     );
 }
+void WindowWin32::SetClientSize(Int2 size) {
+    auto hwnd = GetHWND();
+    auto style = GetWindowStyle(hwnd);
+    RECT rect;
+    GetClientRect(hwnd, &rect);
+    rect.right = rect.left + size.x;
+    rect.bottom = rect.top + size.y;
+    AdjustWindowRectEx(&rect, GetWindowLong(hWnd, GWL_STYLE), FALSE, GetWindowLong(hWnd, GWL_EXSTYLE));
+    SetWindowPos(hwnd, NULL, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+    UpdateWindow(hwnd);
+}
 
-int WindowWin32::MessagePump()
-{
+int WindowWin32::MessagePump() {
     MSG msg;
     while ((PeekMessage(&msg, NULL, 0U, 0U, PM_REMOVE) != 0)) {
         TranslateMessage(&msg);
