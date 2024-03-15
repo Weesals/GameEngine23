@@ -60,11 +60,12 @@ namespace Weesals.UI {
             return Math.Clamp(height, MinimumSize.Y, MaximumSize.Y);
         }
     }
+    public interface ICanvasLayout { }
 
     // An item that forms a part of the UI
     public class CanvasRenderable : IWithParent<CanvasRenderable> {
         public enum DirtyFlags : byte { None = 0, Transform = 1, Layout = 2, Children = 4, Compose = 8, };
-        public enum StateFlags : byte { None = 0, HasCullParent = 1, HasCustomTransformApplier = 2, };
+        public enum StateFlags : byte { None = 0, HasCullParent = 1, HasCustomTransformApplier = 2, HasLayoutParent = 4, };
 
         public ref struct TransformerContext {
             public ref CanvasLayout Layout;
@@ -74,6 +75,7 @@ namespace Weesals.UI {
         public interface ICustomTransformer {
             void Apply(CanvasRenderable renderable, ref TransformerContext context);
         }
+        public string? Name { get; set; }
 
         protected CanvasBinding mBinding;
         protected CanvasTransform mTransform = CanvasTransform.MakeDefault();
@@ -81,7 +83,6 @@ namespace Weesals.UI {
         protected HittestGrid.Binding hitBinding;
         protected List<CanvasRenderable> mChildren = new();
         protected List<ICustomTransformer>? customTransformers;
-        protected int mOrderId = -1;
         protected byte mDepth;
         protected DirtyFlags dirtyFlags;
         protected StateFlags stateFlags;
@@ -93,21 +94,19 @@ namespace Weesals.UI {
             get => mTransform;
             set => SetTransform(value);
         }
-        internal int GetOrderId() { return mOrderId; }
         public virtual void Initialise(CanvasBinding binding) {
             mBinding = binding;
             if (mBinding.mCanvas != null) {
                 mDepth = (byte)(binding.mParent == null ? 0 : (binding.mParent.mDepth + 1));
                 SetHitTestEnabled(true);
-                var next = Parent?.FindNext(this);
-                var nextOrderId = next != null ? next.mOrderId : mOrderId + 0x1000000;
-                int step = (nextOrderId - mOrderId) / (mChildren.Count + 1);
-                int orderId = mOrderId;
-                foreach (var child in mChildren) { orderId += step; child.mOrderId = orderId; }
                 foreach (var child in mChildren) if (child.Parent == null) child.Initialise(new CanvasBinding(this));
                 stateFlags = StateFlags.None;
-                if (FindParent<IHitTestGroup>() != null) stateFlags |= StateFlags.HasCullParent;
                 if (this is ICustomTransformer) stateFlags |= StateFlags.HasCustomTransformApplier;
+                if (Parent != null) {
+                    if (FindParent<IHitTestGroup>() != null) stateFlags |= StateFlags.HasCullParent;
+                    if (Parent is ICanvasLayout || Parent.HasStateFlag(StateFlags.HasLayoutParent))
+                        stateFlags |= StateFlags.HasLayoutParent;
+                }
                 MarkComposeDirty();
             }
             MarkTransformDirty();
@@ -141,9 +140,6 @@ namespace Weesals.UI {
         protected void InsertChild(int index, CanvasRenderable child) {
             mChildren.Insert(index, child);
             if (mBinding.mCanvas != null && child.Parent == null) {
-                var prev = index > 0 ? mChildren[index - 1] : this;
-                var next = index + 2 < mChildren.Count ? mChildren[index + 2] : Parent?.FindNext(this);
-                child.mOrderId = next != null ? (next.mOrderId + prev.mOrderId) / 2 : prev.mOrderId + 0x1000000;
                 child.Initialise(new CanvasBinding(this));
             }
             MarkChildrenDirty();
@@ -162,20 +158,6 @@ namespace Weesals.UI {
                 if (parent is T tvalue) return tvalue;
             }
             return default;
-        }
-        private CanvasRenderable FindPrev(CanvasRenderable from) {
-            var child = mChildren.IndexOf(from);
-            Debug.Assert(child >= 0, "Child does not exist in self");
-            --child;
-            if (child >= 0) return mChildren[child];
-            return this;
-        }
-        private CanvasRenderable? FindNext(CanvasRenderable from) {
-            var child = mChildren.IndexOf(from);
-            Debug.Assert(child >= 0, "Child does not exist in self");
-            ++child;
-            if (child < mChildren.Count) return mChildren[child];
-            return Parent?.FindNext(this);
         }
         public void SetTransform(in CanvasTransform transform) {
             mTransform = transform;
@@ -200,13 +182,13 @@ namespace Weesals.UI {
         }
         public void RequireLayout() {
             if (HasDirtyFlag(DirtyFlags.Children)) {
-                ClearDirtyFlag(DirtyFlags.Children);
                 UpdateChildLayouts();
+                ClearDirtyFlag(DirtyFlags.Children);
             }
             foreach (var child in mChildren) child.RequireLayout();
         }
         public virtual void UpdateChildLayouts() {
-            if (!hitBinding.IsValid) UpdateHitBinding();
+            //if (!hitBinding.IsValid) UpdateHitBinding();
             foreach (var child in mChildren) {
                 child.UpdateLayout(mLayoutCache);
             }
@@ -240,6 +222,9 @@ namespace Weesals.UI {
                 .ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
             Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, bounds);
         }
+        protected bool HasStateFlag(StateFlags flag) {
+            return (stateFlags & flag) != 0;
+        }
         protected void MarkTransformDirty() {
             dirtyFlags |= DirtyFlags.Transform;
             if (Parent != null) Parent.dirtyFlags |= DirtyFlags.Children;
@@ -251,6 +236,8 @@ namespace Weesals.UI {
         }
         protected void MarkChildrenDirty() {
             dirtyFlags |= DirtyFlags.Children;
+            if (HasStateFlag(StateFlags.HasLayoutParent))
+                Parent.MarkChildrenDirty();
             if (Canvas != null && Canvas != this) Canvas.MarkChildrenDirty();
         }
         protected void MarkComposeDirty() {
@@ -325,6 +312,10 @@ namespace Weesals.UI {
                 item2 = item2.Parent!;
             }
             return -1;
+        }
+
+        public override string? ToString() {
+            return Name ?? base.ToString();
         }
 
     }

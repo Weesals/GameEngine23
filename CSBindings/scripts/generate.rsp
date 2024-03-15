@@ -38,7 +38,7 @@
 	Texture=NativeTexture
 	GraphicsBufferBase=NativeBuffer
 	RenderTarget2D=NativeRenderTarget
-	Shader=NativeShader
+	CompiledShader=NativeCompiledShader
 	Material=NativeMaterial
 	PipelineLayout=NativePipeline
 	FontInstance=NativeFont
@@ -51,7 +51,10 @@
 	Matrix=System.Numerics.Matrix4x4
 	Int2=Weesals.Engine.Int2
 	Int2C=Weesals.Engine.Int2
+	Int3=Weesals.Engine.Int3
+	Int3C=Weesals.Engine.Int3
 	Int4=Weesals.Engine.Int4
+	Int4C=Weesals.Engine.Int4
 	ColorB4=Weesals.Engine.Color
 	Rect=Weesals.Engine.RectF
 	RectInt=Weesals.Engine.RectI

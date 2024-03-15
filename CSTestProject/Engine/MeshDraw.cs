@@ -21,6 +21,7 @@ namespace Weesals.Engine {
 		protected List<Material> mMaterials = new();
 		protected List<CSBufferLayout> mBufferLayout = new();
 		protected List<RenderPassCache> mPassCache = new();
+        protected int resourceGeneration;
 
         public MeshDraw(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
 		public MeshDraw(Mesh mesh, Span<Material> materials) {
@@ -35,9 +36,11 @@ namespace Weesals.Engine {
             mBufferLayout.Add(mMesh.VertexBuffer);
             //mMesh.CreateMeshLayout(mBufferLayout);
             mPassCache.Clear();
+            resourceGeneration = Resources.Generation;
         }
 
         unsafe protected RenderPassCache GetPassCache(CSGraphics graphics) {
+            if (resourceGeneration != Resources.Generation) InvalidateMesh();
             var renderPass = CSName.None;
             if (mBufferLayout.Count == 0) InvalidateMesh();
             var pipelineHash = (ulong)renderPass.GetId() + graphics.GetGlobalPSOHash();
@@ -50,9 +53,10 @@ namespace Weesals.Engine {
                     max = mid;
                 }
             }
-            if (min == mPassCache.Count || mPassCache[min].mRenderPass != renderPass) {
+            if (min == mPassCache.Count || mPassCache[min].mPipelineHash != pipelineHash) {
                 var pipeline = MaterialEvaluator.ResolvePipeline(graphics, mBufferLayout, mMaterials);
                 mPassCache.Insert(min, new RenderPassCache {
+                    mPipelineHash = pipelineHash,
 			        mRenderPass = renderPass,
 			        mPipeline = pipeline,
 		        });

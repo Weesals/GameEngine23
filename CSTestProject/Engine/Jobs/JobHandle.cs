@@ -4,9 +4,13 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Utility;
 
 namespace Weesals.Engine.Jobs {
     public readonly struct JobHandle {
+
+        // This value only exists to stop packed ever being 0
+        const int SentinelFlag = 0x10000;
 
         private readonly int packed;
 
@@ -14,8 +18,24 @@ namespace Weesals.Engine.Jobs {
         public readonly byte Version => (byte)(packed >> 24);
         public readonly bool IsValid => packed != 0;
 
-        public JobHandle(int id, byte version) { packed = (id | 0x10000) | (version << 24); }
+        // Currently unused
+        public readonly byte Flags => (byte)(packed >> 16);
+
+        public JobHandle(int id, byte version) { packed = (id | SentinelFlag) | (version << 24); }
         public override string ToString() { return $"<{Id} V={Version}>"; }
+
+        private static int deferCount = 0;
+        private static int deferCmplt = 0;
+        public static JobHandle CreateDeferred() {
+            ++deferCount;
+            var handle = JobDependencies.Instance.CreateDeferredHandle();
+            Debug.Assert(!JobDependencies.Instance.GetIsComplete(handle));
+            return handle;
+        }
+        public static void MarkDeferredComplete(JobHandle handle) {
+            deferCmplt++;
+            JobDependencies.Instance.MarkComplete(handle);
+        }
 
         public static JobHandle CombineDependencies(JobHandle job1) { return job1; }
         public static JobHandle CombineDependencies(JobHandle job1, JobHandle job2) {
@@ -27,12 +47,48 @@ namespace Weesals.Engine.Jobs {
             if (j1Complete && j2Complete) return JobHandle.None;
             return dependencies.JoinHandles(job1, job2);
         }
+        public static JobHandle CombineDependencies(JobHandle job1, JobHandle job2, JobHandle job3) {
+            var dependencies = JobDependencies.Instance;
+            var joined = dependencies.CreateJoined();
+            dependencies.AppendJoined(ref joined, job1);
+            dependencies.AppendJoined(ref joined, job2);
+            dependencies.AppendJoined(ref joined, job3);
+            return dependencies.EndJoined(ref joined);
+        }
+        public static JobHandle CombineDependencies(JobHandle job1, JobHandle job2, JobHandle job3, JobHandle job4) {
+            var dependencies = JobDependencies.Instance;
+            var joined = dependencies.CreateJoined();
+            dependencies.AppendJoined(ref joined, job1);
+            dependencies.AppendJoined(ref joined, job2);
+            dependencies.AppendJoined(ref joined, job3);
+            dependencies.AppendJoined(ref joined, job4);
+            return dependencies.EndJoined(ref joined);
+        }
+        public static JobHandle CombineDependencies(JobHandle job1, JobHandle job2, JobHandle job3, JobHandle job4, JobHandle job5) {
+            var dependencies = JobDependencies.Instance;
+            var joined = dependencies.CreateJoined();
+            dependencies.AppendJoined(ref joined, job1);
+            dependencies.AppendJoined(ref joined, job2);
+            dependencies.AppendJoined(ref joined, job3);
+            dependencies.AppendJoined(ref joined, job4);
+            dependencies.AppendJoined(ref joined, job5);
+            return dependencies.EndJoined(ref joined);
+        }
 
-        public static JobHandle Schedule(Action<object> value, JobHandle dependency = default) {
+        public static JobHandle Schedule(Action<object?> value, JobHandle dependency = default) {
             return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateJob(value), dependency);
         }
-        public static JobHandle Schedule(Action<object> value, object context, JobHandle dependency) {
+        public static JobHandle Schedule(Action<object?> value, object context, JobHandle dependency) {
             return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateJob(value, context), dependency);
+        }
+
+        public static JobHandle ScheduleBatch(Action<RangeInt> value, int count, JobHandle dependency) {
+            var job = JobScheduler.Instance.CreateBatchJob(value, count);
+            return JobDependencies.Instance.CreateHandle(job, dependency);
+        }
+        public static JobHandle ScheduleBatch(Action<RangeInt> value, RangeInt range, JobHandle dependency) {
+            var job = JobScheduler.Instance.CreateBatchJob(value, range);
+            return JobDependencies.Instance.CreateHandle(job, dependency);
         }
 
         public void Complete() {
@@ -43,5 +99,6 @@ namespace Weesals.Engine.Jobs {
         }
 
         public static readonly JobHandle None = new();
+        internal static readonly JobHandle Invalid = new(-1, 0);
     }
 }

@@ -23,10 +23,6 @@ namespace Weesals.Engine {
         public CSResources GetResources() { return platform.GetResources(); }
         public CSInput CreateInput() { return platform.CreateInput(); }
 
-        public CSModel LoadModel(string path) {
-            return CSResources.LoadModel(path);
-        }
-
         public int MessagePump() {
             return platform.MessagePump();
         }
@@ -39,9 +35,10 @@ namespace Weesals.Engine {
         public CSWindow Window;
         public CSGraphicsSurface Surface;
         public CSInput Input;
-        public Int2 Size;
+        public Int2 Size => Window.GetSize();
         public bool IsRenderable => Size.Y > 0;
-        public ApplicationWindow(CSWindow window) {
+        public ApplicationWindow() { }
+        public virtual void RegisterRootWindow(CSWindow window) {
             var core = Core.ActiveInstance;
             if (core == null) throw new Exception("Core must be initialised before creating windows");
             Window = window;
@@ -50,13 +47,15 @@ namespace Weesals.Engine {
             Window.SetInput(Input);
         }
         public bool Validate() {
-            Size = Window.GetSize();
-            if (Size.Y <= 0) return false;
-            if (Size != Surface.GetResolution()) Surface.SetResolution(Size);
+            if (!Window.IsValid()) return false;
+            var size = Size;
+            if (size.Y <= 0) return false;
+            if (size != Surface.GetResolution())
+                Surface.SetResolution(size);
             return true;
         }
         public void Dispose() {
-            Surface.Dispose();
+            if (Surface.IsValid()) Surface.Dispose();
         }
     }
 

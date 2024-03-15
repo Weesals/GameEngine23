@@ -18,8 +18,8 @@ cbuffer WorldCB : register(b0)
     float2 Resolution;
 }
 
-float IGN(float2 pos) {
-    pos.x += TemporalFrame * 5.588238;
+float IGN(float2 pos, float seed = 0.0) {
+    pos.x += TemporalFrame * 5.588238 + seed;
     return frac(52.9829189f * frac(dot(float2(0.06711056f, 0.00583715f), pos)));
 }
 

@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Game5.Game;
+using Weesals.Engine;
 using Weesals.UI;
 
 namespace Game5.UI.Interaction {
@@ -13,7 +14,9 @@ namespace Game5.UI.Interaction {
         public Play Play => PlayUI.Play;
 
         public struct Instance {
-            public GenericTarget Target;
+            public ItemReference Target;
+            public Vector3 DragOffset;
+            public Plane DragPlane;
         }
         private Dictionary<PointerEvent, Instance> instances = new();
 
@@ -22,17 +25,17 @@ namespace Game5.UI.Interaction {
         }
 
         public ActivationScore GetActivation(PointerEvent events) {
-            if (!CanInteract(events)) return ActivationScore.None;
-            if (events.IsDrag && events.HasButton(0)) return ActivationScore.Active;
+            if (!events.HasButton(0) || !CanInteract(events)) return ActivationScore.None;
+            if (events.IsDrag && !events.WasDrag) return ActivationScore.Active;
             return ActivationScore.Potential;
         }
         public bool CanInteract(PointerEvent events) {
             var target = FindTarget(events);
             if (!target.IsValid) return false;
-            if (target.Owner is not IEntityPosition) return false;
+            if (target.Owner is not IItemPosition) return false;
             return true;
         }
-        private GenericTarget FindTarget(PointerEvent events) {
+        private ItemReference FindTarget(PointerEvent events) {
             var mray = PlayUI.ScreenToRay(events.PreviousPosition);
             return PlayUI.Play.HitTest(mray);
         }
@@ -40,11 +43,17 @@ namespace Game5.UI.Interaction {
             if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
             var entity = FindTarget(events);
             if (!entity.IsValid) { events.Yield(); return; }
-            instances.Add(events, new Instance() { Target = entity, });
+            var pos = PlayUI.ScreenToRay(events.PreviousPosition)
+                .ProjectTo(new Plane(Vector3.UnitY, 0f));
+            instances.Add(events, new Instance() {
+                Target = entity,
+                DragPlane = new Plane(Vector3.UnitY, pos.Y),
+                DragOffset = entity.GetWorldPosition() - pos,
+            });
         }
         public void OnDrag(PointerEvent events) {
             if (!instances.TryGetValue(events, out var instance)) return;
-            var camera = PlayUI.Play.Camera;
+            /*var camera = PlayUI.Play.Camera;
             var ray0 = PlayUI.ScreenToRay(events.PreviousPosition);
             var ray1 = PlayUI.ScreenToRay(events.CurrentPosition);
             var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
@@ -52,13 +61,23 @@ namespace Game5.UI.Interaction {
             var delta = pos1 - pos0;
             var position = instance.Target.GetWorldPosition();
             position += delta;
-            instance.Target.SetWorldPosition(position);
+            instance.Target.SetWorldPosition(position);*/
+
+            instance.DragOffset = Vector3.Lerp(
+                instance.DragOffset,
+                Vector3.Zero,
+                Math.Clamp(Vector2.Distance(events.CurrentPosition, events.PreviousPosition) / 100.0f, 0, 1)
+            );
+            instances[events] = instance;
+
+            var ray = PlayUI.ScreenToRay(events.CurrentPosition);
+            instance.Target.SetWorldPosition(ray.ProjectTo(instance.DragPlane) + instance.DragOffset);
         }
         public void OnEndDrag(PointerEvent events) {
             instances.Remove(events);
         }
 
-        unsafe private void SetSelected(GenericTarget entity, bool selected) {
+        unsafe private void SetSelected(ItemReference entity, bool selected) {
             //if (entity.Owner is IEntitySelectable selectable)
                 //selectable.NotifySelected(entity.Data, selected);
             /*foreach (var instance in entity.Meshes) {

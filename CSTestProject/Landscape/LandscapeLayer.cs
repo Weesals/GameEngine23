@@ -19,7 +19,7 @@ namespace Weesals.Landscape {
         public string BaseColor = "";
         public string NormalMap = "";
 
-        public float Scale = 0.2f;
+        public float Scale = 0.1f;
         [Range(0, 360)] public float Rotation;
         [Range(0, 1)] public float Fringe = 0.5f;
         [Range(0, 1)] public float UniformMetal = 0f;

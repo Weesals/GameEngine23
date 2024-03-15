@@ -117,7 +117,7 @@ namespace Weesals.UI {
             items.BufferLayout.mCount -= unused.Compact(items.Count);
             range = new RangeInt(items.Count, count);
             if (range.End >= items.BufferCapacityCount) {
-                int newSize = items.BufferCapacityCount + 1024;
+                int newSize = items.BufferCapacityCount * 3 / 2 + 1024;
                 newSize = Math.Max(newSize, range.End);
                 if (!items.AllocResize(newSize)) return default;
             }

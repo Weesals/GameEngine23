@@ -27,7 +27,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 Original code was translated and adapted for ShaderToy by P.Z.
 */
 
-#include "include/common.hlsl"
+#include <common.hlsl>
 
 static const float _Exposure = 1.0;
 static const float3 _GroundColor = float3(.40, .39, .38);
@@ -61,55 +61,43 @@ static const float kSamples = 2.0;
 #define MIE_G2 0.9801 
 #define SKY_GROUND_THRESHOLD 0.02 
 
-cbuffer ConstantBuffer : register(b1)
-{
-    matrix InvModelViewProjection;
-    float2 Resolution;
+cbuffer ConstantBuffer : register(b1) {
+    matrix InvVP;
     float3 _WorldSpaceLightDir0;
 };
 
-struct VSInput
-{
+struct VSInput {
     float4 position : POSITION;
+    float2 uv : TEXCOORD0;
 };
 
-struct PSInput
-{
+struct PSInput {
     float4 position : SV_POSITION;
-    float time : TEXCOORD0;
+    float2 uv : TEXCOORD0;
 };
 
-PSInput VSMain(VSInput input)
-{
+PSInput VSMain(VSInput input) {
     PSInput result;
-
     result.position = input.position;
-    result.position.z = 0.9999;
-    result.time = 0.0;
-
-#if defined(VULKAN)
-    result.position.y = -result.position.y;
-#endif
-
+    result.uv = input.uv;
+    result.position.z = 0.99999;
+    result.position.w = 1.0;
     return result;
 }
 
 
-float Scale(float inCos)
-{
+float Scale(float inCos) {
     float x = 1.0 - inCos;
     return 0.25 * exp(-0.00287 + x * (0.459 + x * (3.83 + x * (-6.80 + x * 5.25))));
 }
 
-float SunAttenuation(float3 lightPos, float3 ray)
-{
+float SunAttenuation(float3 lightPos, float3 ray) {
     float EyeCos = pow(clamp(dot(lightPos, ray), 0.0, 1.0), _SunSizeConvergence);
     float temp = pow(1.0 + MIE_G2 - 2.0 * MIE_G * (-EyeCos), pow(_SunSize, 0.65) * 10.);
     return (1.5 * ((1.0 - MIE_G2) / (2.0 + MIE_G2)) * (1.0 + EyeCos * EyeCos) / max(temp, 1.0e-4));
 }
 
-float4 ProceduralSkybox(float3 ro, float3 rd)
-{
+float4 ProceduralSkybox(float3 ro, float3 rd) {
     float3 kSkyTintInGammaSpace = _SkyTint;
     float3 kScatteringWavelength = lerp(ScatteringWavelength - ScatteringWavelengthRange, ScatteringWavelength + ScatteringWavelengthRange, float3(1, 1, 1) - kSkyTintInGammaSpace);
     float3 kInvWavelength = 1.0 / (pow(kScatteringWavelength, 4.0));
@@ -180,16 +168,16 @@ float4 ProceduralSkybox(float3 ro, float3 rd)
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 
-float4 PSMain(PSInput input) : SV_TARGET
-{
+float4 PSMain(PSInput input) : SV_TARGET {
     float2 vpos = input.position.xy / Resolution.xy * 2 - 1;
     vpos.y = -vpos.y;
         
     float4 clipSpacePosition = float4(vpos, 1.0f, 1.0f);
-    float4 viewSpacePosition = mul(InvModelViewProjection, clipSpacePosition);
+    float4 viewSpacePosition = mul(InvVP, clipSpacePosition);
     viewSpacePosition.xyz /= viewSpacePosition.w;
     float3 directionVector = normalize(viewSpacePosition.xyz);
-    //return float4(frac(directionVector * 5), 0.0f);
+    //return float4(frac(directionVector * 5), 1.0f);
+    //return float4(pow(-dot(_WorldSpaceLightDir0,directionVector), 1.0).rrr, 1.0);
     
     float3 ro = float3(0., 0., 0.);
     float3 rd = directionVector.xyz;

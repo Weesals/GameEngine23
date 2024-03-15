@@ -35,5 +35,8 @@
   <ItemGroup>
     <None Remove="Assets\ParticleAtlas.png" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Assets\Characters\" />
+  </ItemGroup>
 
 </Project>

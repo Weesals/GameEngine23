@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "Buffer.h"
 #include "BridgeTypes.h"
+//#include "TextureCompression.h"
 
 class Mesh;
 class Model;
@@ -17,21 +18,21 @@ struct PipelineLayout;
 class FontInstance;
 class GraphicsSurface;
 class WindowBase;
-class Shader;
 class Input;
+class CompiledShader;
 
 typedef Mesh NativeMesh;
 typedef Model NativeModel;
 typedef Texture NativeTexture;
 typedef GraphicsBufferBase NativeBuffer;
 typedef RenderTarget2D NativeRenderTarget;
-typedef Shader NativeShader;
 typedef Material NativeMaterial;
 typedef PipelineLayout NativePipeline;
 typedef FontInstance NativeFont;
 typedef GraphicsSurface NativeSurface;
 typedef WindowBase NativeWindow;
 typedef Input NativeInput;
+typedef CompiledShader NativeCompiledShader;
 
 class NativePlatform;
 class NativeScene;
@@ -118,8 +119,8 @@ public:
 	void SetTexture(NativeTexture* tex) {
 		mTexture = tex;
 	}
-	static void SetSize(NativeTexture* tex, Int2 size);
-	static Int2C GetSize(NativeTexture* tex);
+	static void SetSize(NativeTexture* tex, Int3 size);
+	static Int3C GetSize(NativeTexture* tex);
 	static void SetFormat(NativeTexture* tex, BufferFormat fmt);
 	static BufferFormat GetFormat(NativeTexture* tex);
 	static void SetMipCount(NativeTexture* tex, int count);
@@ -129,6 +130,7 @@ public:
 	static CSSpan GetTextureData(NativeTexture* tex, int mip, int slice);
 	static void MarkChanged(NativeTexture* tex);
 	static NativeTexture* _Create(CSString name);
+	static void Swap(NativeTexture* from, NativeTexture* to);
 	static void Dispose(NativeTexture* tex);
 };
 struct DLLCLASS CSRenderTarget {
@@ -158,9 +160,14 @@ class DLLCLASS CSFont {
 	NativeFont* mFont;
 public:
 	CSFont(NativeFont* font) : mFont(font) { }
+	static void Dispose(NativeFont* font);
+private:
 	static NativeTexture* GetTexture(const NativeFont* font);
 	static int GetLineHeight(const NativeFont* font);
 	static int GetKerning(const NativeFont* font, wchar_t c1, wchar_t c2);
+	static int GetKerningCount(const NativeFont* font);
+	static void GetKernings(const NativeFont* font, CSSpan kernings);
+	static int GetGlyphCount(const NativeFont* font);
 	static int GetGlyphId(const NativeFont* font, wchar_t chr);
 	static const CSGlyph& GetGlyph(const NativeFont* font, int id);
 };
@@ -277,6 +284,20 @@ struct CSDrawConfig {
 	CSDrawConfig(int indexStart, int indexCount)
 		: mIndexBase(indexStart), mIndexCount(indexCount) { }
 };
+class DLLCLASS CSCompiledShader {
+	NativeCompiledShader* mShader = nullptr;
+public:
+	CSCompiledShader(NativeCompiledShader* shader)
+		: mShader(shader) { }
+	NativeCompiledShader* GetNativeShader() const { return mShader; }
+private:
+	static NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount);
+	static void InitializeValues(NativeCompiledShader* shader, int cb, int vcount);
+	static CSSpan GetValues(NativeCompiledShader* shader, int cb);
+	static CSSpan GetConstantBuffers(const NativeCompiledShader* shader);
+	static CSSpan GetResources(const NativeCompiledShader* shader);
+	static CSSpan GetBinaryData(const NativeCompiledShader* shader);
+};
 class DLLCLASS CSGraphics {
 	NativeGraphics* mGraphics = nullptr;
 public:
@@ -289,7 +310,10 @@ private:
 	static void SetSurface(NativeGraphics* graphics, NativeSurface* surface);
 	static NativeSurface* GetSurface(NativeGraphics* graphics);
 	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
-	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
+	static const NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString path, CSString entry, CSIdentifier identifier, CSSpan macros);
+	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
+		NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
+		void* materialState);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
@@ -309,6 +333,7 @@ public:
 	NativeSurface* GetNativeSurface() const { return mSurface; }
 	static void Dispose(NativeSurface* surface);
 private:
+	static NativeRenderTarget* GetBackBuffer(const NativeSurface* surface);
 	static Int2C GetResolution(const NativeSurface* surface);
 	static void SetResolution(NativeSurface* surface, Int2 res);
 	static void RegisterDenyPresent(NativeSurface* surface, int delta);
@@ -322,6 +347,7 @@ public:
 	NativeWindow* GetNativeWindow() { return mWindow; }
 private:
 	static void Dispose(NativeWindow* window);
+	static int GetStatus(NativeWindow* window);
 	static Int2C GetSize(const NativeWindow* window);
 	static void SetSize(NativeWindow* window, Int2 size);
 	static void SetInput(NativeWindow* window, NativeInput* input);
@@ -359,7 +385,6 @@ private:
 
 class DLLCLASS CSResources {
 public:
-	static NativeShader* LoadShader(CSString path, CSString entryPoint);
 	static NativeModel* LoadModel(CSString path);
 	static NativeTexture* LoadTexture(CSString path);
 	static NativeFont* LoadFont(CSString path);
@@ -380,3 +405,11 @@ public:
 
 	static NativePlatform* Create();
 };
+
+/*
+extern "C" void __declspec(dllexport) NVTTCompressTextureBC1(InputData * img, void* outData);
+extern "C" void __declspec(dllexport) NVTTCompressTextureBC2(InputData * img, void* outData);
+extern "C" void __declspec(dllexport) NVTTCompressTextureBC3(InputData * img, void* outData);
+extern "C" void __declspec(dllexport) NVTTCompressTextureBC4(InputData * img, void* outData);
+extern "C" void __declspec(dllexport) NVTTCompressTextureBC5(InputData * img, void* outData);
+*/

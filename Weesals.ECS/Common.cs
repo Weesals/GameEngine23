@@ -29,10 +29,11 @@ namespace Weesals.ECS {
             public override bool Equals(object? obj) { throw new NotImplementedException(); }
             public override int GetHashCode() { var hash64 = Field.DeepHash(); return (int)hash64 ^ (int)(hash64 >> 32); }
         }
-        public List<ComponentType> componentTypes = new();
-        public List<ComponentType> sparseComponentTypes = new();
+        private List<ComponentType> componentTypes = new();
+        private List<ComponentType> sparseComponentTypes = new();
         private Dictionary<Type, TypeId> componentsByType = new();
         private HashSet<DeepBitField> cachedTypeMasks = new();
+        public event Action<TypeId>? OnTypeIdCreated;
         public TypeId RequireComponentTypeId<T>() {
             if (typeof(T) == typeof(Entity)) return TypeId.Invalid;
             if (componentsByType.TryGetValue(typeof(T), out var typeId)) return typeId;
@@ -43,6 +44,7 @@ namespace Weesals.ECS {
                 var cmpType = new ComponentType<T>(typeId);
                 (typeId.IsSparse ? sparseComponentTypes : componentTypes).Add(cmpType);
                 componentsByType[typeof(T)] = typeId;
+                OnTypeIdCreated?.Invoke(typeId);
                 return typeId;
             }
         }

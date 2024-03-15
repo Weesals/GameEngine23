@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -43,19 +44,44 @@ namespace Game5 {
 
         float timeSinceRender = 0f;
         int renderHash = 0;
+        bool onBattery = false;
 
         public bool IsThrottled { get; private set; }
 
-        public FrameThrottler() { }
+        // Define constants and structures required for P/Invoke
+        const int SYSTEM_POWER_STATUS = 0x0015;
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SystemPowerStatus {
+            public byte ACLineStatus;
+            public byte BatteryFlag;
+            public byte BatteryLifePercent;
+            public byte Reserved1;
+            public uint BatteryLifeTime;
+            public uint BatteryFullLifeTime;
+        }
+        [DllImport("Kernel32.dll")]
+        public static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
+
+        public FrameThrottler() {
+            UpdateBatteryStatus();
+        }
+
+        public void UpdateBatteryStatus() {
+            SystemPowerStatus status;
+            if (!GetSystemPowerStatus(out status)) return;
+            onBattery = (status.ACLineStatus == 0);
+        }
 
         public void Update(float dt) {
             timeSinceRender += dt;
         }
 
-        public void Step(int newRenderHash, bool forceChange = false) {
-            IsThrottled = renderHash == newRenderHash && timeSinceRender <= 0.25f && !forceChange;
+        public float Step(int newRenderHash, bool forceChange = false) {
+            float elapsed = timeSinceRender;
+            IsThrottled = renderHash == newRenderHash && timeSinceRender <= (onBattery ? 1f : 0.1f) && !forceChange;
             renderHash = newRenderHash;
             if (!IsThrottled) NotifyRendered();
+            return elapsed;
         }
         private void NotifyRendered() {
             timeSinceRender = 0f;

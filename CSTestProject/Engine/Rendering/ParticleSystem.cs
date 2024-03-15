@@ -1,68 +1,71 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.ECS;
+using Weesals.UI;
 using Weesals.Utility;
 
-namespace Weesals.Engine.Rendering {
+namespace Weesals.Engine {
 
-    public class Module {
-        public readonly struct Argument {
-            public readonly string Name;
-            public readonly string Type;
-            public Argument(string name, string type) { Name = name; Type = type; }
-        }
-        public readonly string Name;
-        public readonly string Bootstrap;
-        public readonly string Function;
-        public readonly Argument[] Inputs;
-        public readonly Argument[] Outputs;
-        public Module(string name, string bootstrap, string function, Argument[] inputs, Argument[] outputs) {
-            Name = name;
-            Bootstrap = bootstrap;
-            Function = function;
-            Inputs = inputs;
-            Outputs = outputs;
-        }
-        public int FindInputId(string name) {
-            for (int i = 0; i < Inputs.Length; i++) {
-                if (Inputs[i].Name == name) return i;
+    namespace Particles {
+        public class Module {
+            public readonly struct Argument {
+                public readonly string Name;
+                public readonly string Type;
+                public Argument(string name, string type) { Name = name; Type = type; }
             }
-            return -1;
+            public readonly string Name;
+            public readonly string Bootstrap;
+            public readonly string Function;
+            public readonly Argument[] Inputs;
+            public readonly Argument[] Outputs;
+            public Module(string name, string bootstrap, string function, Argument[] inputs, Argument[] outputs) {
+                Name = name;
+                Bootstrap = bootstrap;
+                Function = function;
+                Inputs = inputs;
+                Outputs = outputs;
+            }
+            public int FindInputId(string name) {
+                for (int i = 0; i < Inputs.Length; i++) {
+                    if (Inputs[i].Name == name) return i;
+                }
+                return -1;
+            }
         }
-    }
-    public class ModuleInstance {
-        public Module Module;
-        public string[] Inputs;
-        public string[] Outputs;
-        public ModuleInstance(Module module) {
-            Module = module;
-            Inputs = new string[module.Inputs.Length];
-            Outputs = new string[module.Outputs.Length];
+        public class ModuleInstance {
+            public Module Module;
+            public string[] Inputs;
+            public string[] Outputs;
+            public ModuleInstance(Module module) {
+                Module = module;
+                Inputs = new string[module.Inputs.Length];
+                Outputs = new string[module.Outputs.Length];
+            }
+            public ModuleInstance SetInput(string name, string value) {
+                Inputs[Module.FindInputId(name)] = value;
+                return this;
+            }
         }
-        public ModuleInstance SetInput(string name, string value) {
-            Inputs[Module.FindInputId(name)] = value;
-            return this;
-        }
-    }
-    public class ParticleGenerator {
-        public static Module[] Modules;
-        static ParticleGenerator() {
-            Modules = new Module[] {
+        public class ParticleGenerator {
+            public static Module[] Modules;
+            static ParticleGenerator() {
+                Modules = new Module[] {
                 new(
                     "PositionInSphere",
                     "",
                     "{" +
-                    " float z = Permute(Seed) * 2.0 - 1.0;" +
+                    " float z = (Seed) * 2.0 - 1.0;" +
                     " float rxy = sqrt(1.0 - z * z);" +
-                    " float phi = Permute(z);" +
-                    " float y = rxy * cos(phi);" +
-                    " float x = rxy * sin(phi);" +
-                    " float radius = Radius * sqrt(Permute(x));" +
-                    " Position += float3(x, y, z) * radius;" +
+                    " float phi = Permute(z) * (3.14 * 2.0);" +
+                    " float y = cos(phi);" +
+                    " float x = sin(phi);" +
+                    " Position += float3(x, y, z) * (Radius * pow(Permute(phi), 1.0/3.0));" +
                     "}",
                     new Module.Argument[] { new("Position", "float3"), new("Radius", "float"), },
                     new Module.Argument[] { new("Position", "float3"), }
@@ -148,102 +151,148 @@ namespace Weesals.Engine.Rendering {
                     new Module.Argument[] { }
                 ),
             };
-        }
-        public class Stage {
-            public enum Modes { ParticleSpawn, ParticleStep, ParticleVertex, ParticlePixel, }
-            public Modes Mode;
-            public ModuleInstance[] Modules = Array.Empty<ModuleInstance>();
-            public Stage(Modes mode) {
-                Mode = mode;
-                Modules = Array.Empty<ModuleInstance>();
             }
-            public ModuleInstance InsertModule(Module module) {
-                if (module == null) return default!;
-                Array.Resize(ref Modules, Modules.Length + 1);
-                Modules[^1] = new ModuleInstance(module);
-                return Modules[^1];
+            public class Stage {
+                public enum Modes { ParticleSpawn, ParticleStep, ParticleVertex, ParticlePixel, }
+                public Modes Mode;
+                public ModuleInstance[] Modules = Array.Empty<ModuleInstance>();
+                public Stage(Modes mode) {
+                    Mode = mode;
+                    Modules = Array.Empty<ModuleInstance>();
+                }
+                public ModuleInstance InsertModule(Module module) {
+                    if (module == null) return default!;
+                    Array.Resize(ref Modules, Modules.Length + 1);
+                    Modules[^1] = new ModuleInstance(module);
+                    return Modules[^1];
+                }
             }
-        }
-        public Stage[] Stages;
-        public ParticleGenerator() {
-            Stages = new[] {
+            public struct RenderStateData {
+                public BlendMode BlendMode;
+                public Material BaseMaterial;
+                public static readonly RenderStateData Default = new() { BlendMode = BlendMode.MakeAlphaBlend(), };
+            }
+            public struct MetaData {
+                public float SpawnRate;
+                public float MaximumDuration;
+                public static readonly MetaData Default = new () { SpawnRate = 10f, MaximumDuration = 5f, };
+            }
+            public string Name;
+            public Stage[] Stages;
+            public MetaData Meta = MetaData.Default;
+            public RenderStateData RenderState = RenderStateData.Default;
+            public ParticleGenerator() {
+                Stages = new[] {
                 new Stage(Stage.Modes.ParticleSpawn),
                 new Stage(Stage.Modes.ParticleStep),
                 new Stage(Stage.Modes.ParticleVertex),
                 new Stage(Stage.Modes.ParticlePixel),
-            }; 
-        }
-        public string Generate() {
-            StringBuilder builder = new();
-            builder.Append(File.ReadAllText("./Assets/templates/ParticleTemplate.hlsl"));
-            StringBuilder bootstrapBuilder = new();
-            HashSet<Module> bootstrappedModules = new();
-            foreach (var stage in Stages) {
-                StringBuilder stageBuilder = new();
-                foreach (var module in stage.Modules) {
-                    StringBuilder moduleBuilder = new();
-                    if (!string.IsNullOrEmpty(module.Module.Bootstrap)) {
-                        if (bootstrappedModules.Add(module.Module)) {
-                            bootstrapBuilder.AppendLine(module.Module.Bootstrap);
+            };
+            }
+            public string Generate() {
+                StringBuilder builder = new();
+                builder.Append(File.ReadAllText("./Assets/templates/ParticleTemplate.hlsl"));
+                StringBuilder bootstrapBuilder = new();
+                HashSet<Module> bootstrappedModules = new();
+                foreach (var stage in Stages) {
+                    StringBuilder stageBuilder = new();
+                    foreach (var module in stage.Modules) {
+                        StringBuilder moduleBuilder = new();
+                        if (!string.IsNullOrEmpty(module.Module.Bootstrap)) {
+                            if (bootstrappedModules.Add(module.Module)) {
+                                bootstrapBuilder.AppendLine(module.Module.Bootstrap);
+                            }
+                        }
+                        moduleBuilder.Append(module.Module.Function);
+                        for (int i = 0; i < module.Inputs.Length; i++) {
+                            var input = module.Inputs[i];
+                            if (string.IsNullOrEmpty(input)) continue;
+                            var templateInput = module.Module.Inputs[i].Name;
+                            if (templateInput != input) moduleBuilder.Replace(templateInput, input);
+                        }
+                        for (int i = 0; i < module.Outputs.Length; i++) {
+                            var output = module.Outputs[i];
+                            if (string.IsNullOrEmpty(output)) continue;
+                            var templateOutput = module.Module.Outputs[i].Name;
+                            if (templateOutput != output) moduleBuilder.Replace(templateOutput, output);
+                        }
+                        stageBuilder.Append(moduleBuilder);
+                        stageBuilder.AppendLine();
+                    }
+                    builder.Replace($"%{stage.Mode}%", stageBuilder.ToString());
+                }
+                builder.Replace($"%Bootstrap%", bootstrapBuilder.ToString());
+                return builder.ToString();
+            }
+
+            public Stage GetStage(Stage.Modes mode) {
+                for (int i = 0; i < Stages.Length; i++) if (Stages[i].Mode == mode) return Stages[i];
+                throw new Exception($"Stage {mode} not found");
+            }
+
+            public static Module? FindModule(string name) {
+                foreach (var module in Modules) if (module.Name == name) return module;
+                return default;
+            }
+
+            public void LoadJSON(string path) {
+                Name = Path.GetFileNameWithoutExtension(path);
+                var json = new SJson(File.ReadAllText(path));
+                foreach (var jStage in json.GetFields()) {
+                    if (jStage.Key == "RenderState") {
+                        if (RenderState.BaseMaterial == null)
+                            RenderState.BaseMaterial = new();
+                        foreach (var jField in jStage.Value.GetFields()) {
+                            if (jField.Key == "BlendMode") {
+                                if (jField.Value == "Opaque") RenderState.BlendMode = BlendMode.MakeOpaque();
+                                if (jField.Value == "AlphaBlend") RenderState.BlendMode = BlendMode.MakeAlphaBlend();
+                                if (jField.Value == "Additive") RenderState.BlendMode = BlendMode.MakeAdditive();
+                                if (jField.Value == "Premultiplied") RenderState.BlendMode = BlendMode.MakePremultiplied();
+                            } else if (jField.Key == "Texture") {
+                                RenderState.BaseMaterial.SetTexture("Texture", Resources.LoadTexture(jField.Value.ToString()));
+                            }
+                        }
+                        continue;
+                    }
+                    if (jStage.Key == "Metadata") {
+                        foreach (var jField in jStage.Value.GetFields()) {
+                            if (jField.Key == "SpawnRate") Meta.SpawnRate = jField.Value;
+                            if (jField.Key == "MaximumDuration") Meta.MaximumDuration = jField.Value;
+                        }
+                        continue;
+                    }
+                    Stage stage = null;
+                    for (int i = 0; i < Stages.Length; i++) if (Stages[i].Mode.ToString() == jStage.Key) { stage = Stages[i]; break; }
+                    foreach (var jModule in jStage.Value) {
+                        ModuleInstance moduleInstance = null;
+                        foreach (var jField in jModule.GetFields()) {
+                            if (jField.Key == "name") {
+                                var moduleType = ParticleGenerator.FindModule(jField.Value.ToString());
+                                moduleInstance = stage.InsertModule(moduleType);
+                                continue;
+                            }
+                            moduleInstance.SetInput(jField.Key.ToString(), jField.Value.ToString());
                         }
                     }
-                    moduleBuilder.Append(module.Module.Function);
-                    for (int i = 0; i < module.Inputs.Length; i++) {
-                        var input = module.Inputs[i];
-                        if (string.IsNullOrEmpty(input)) continue;
-                        var templateInput = module.Module.Inputs[i].Name;
-                        if (templateInput != input) moduleBuilder.Replace(templateInput, input);
-                    }
-                    for (int i = 0; i < module.Outputs.Length; i++) {
-                        var output = module.Outputs[i];
-                        if (string.IsNullOrEmpty(output)) continue;
-                        var templateOutput = module.Module.Outputs[i].Name;
-                        if (templateOutput != output) moduleBuilder.Replace(templateOutput, output);
-                    }
-                    stageBuilder.Append(moduleBuilder);
-                    stageBuilder.AppendLine();
-                }
-                builder.Replace($"%{stage.Mode}%", stageBuilder.ToString());
-            }
-            builder.Replace($"%Bootstrap%", bootstrapBuilder.ToString());
-            return builder.ToString();
-        }
-
-        public Stage GetStage(Stage.Modes mode) {
-            for (int i = 0; i < Stages.Length; i++) if (Stages[i].Mode == mode) return Stages[i];
-            throw new Exception($"Stage {mode} not found");
-        }
-
-        public static Module? FindModule(string name) {
-            foreach (var module in Modules) if (module.Name == name) return module;
-            return default;
-        }
-
-        public void LoadJSON(string path) {
-            var json = new SJson(File.ReadAllText(path));
-            foreach (var jStage in json.GetFields()) {
-                Stage stage = null;
-                for (int i = 0; i < Stages.Length; i++) if (Stages[i].Mode.ToString() == jStage.Key) { stage = Stages[i]; break; }
-                foreach (var jModule in jStage.Value) {
-                    ModuleInstance moduleInstance = null;
-                    foreach (var jField in jModule.GetFields()) {
-                        if (jField.Key == "name") {
-                            var moduleType = ParticleGenerator.FindModule(jField.Value.ToString());
-                            moduleInstance = stage.InsertModule(moduleType);
-                            continue;
-                        }
-                        moduleInstance.SetInput(jField.Key.ToString(), jField.Value.ToString());
-                    }
                 }
             }
-        }
 
-        public ParticleSystem CreateParticleSystem(string path) {
-            Directory.CreateDirectory("./Assets/Generated/");
-            File.WriteAllText(path, Generate());
-            return new ParticleSystem(path);
+            public ParticleSystem CreateParticleSystem(string path) {
+                Directory.CreateDirectory("./Assets/Generated/");
+                File.WriteAllText(path, Generate());
+                var system = new ParticleSystem(Name, path);
+                // TODO: Serialize this data into the hlsl (as comment? or pragma?)
+                system.DrawMaterial.SetBlendMode(RenderState.BlendMode);
+                if (RenderState.BaseMaterial != null) {
+                    system.CommonMaterial.InheritProperties(RenderState.BaseMaterial);
+                }
+                system.SpawnRate = Meta.SpawnRate;
+                system.MaximumDuration = Meta.MaximumDuration;
+                return system;
+            }
         }
     }
+
     public class ParticleSystemManager {
         private List<ParticleSystem> systems = new();
         private static readonly ushort[] quadIndices = new ushort[] { 0, 1, 2, 1, 3, 2, };
@@ -267,7 +316,7 @@ namespace Weesals.Engine.Rendering {
 
         private struct BlockMetadata {
             public int SystemId;
-            public float ExpiryTime;
+            public static readonly BlockMetadata Invalid = new() { SystemId = -1, };
         }
         private BlockMetadata[] blockMeta;
         private Int2 blockMetaSize;
@@ -303,8 +352,8 @@ namespace Weesals.Engine.Rendering {
             rootMaterial.SetValue("Gravity", new Vector3(0f, -10f, 0f));
 
             pruneMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSBlank"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSBlank")
+                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
+                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
             );
             pruneMaterial.SetRasterMode(RasterMode.MakeNoCull());
             pruneMaterial.SetDepthMode(DepthMode.MakeWriteOnly().SetStencil(
@@ -316,8 +365,8 @@ namespace Weesals.Engine.Rendering {
             pruneMaterial.SetStencilRef(0x00);
             pruneMaterial.SetBlendMode(BlendMode.MakeNone());
             rebaseMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSBlank"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSBlank")
+                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
+                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
             );
             rebaseMaterial.SetRasterMode(RasterMode.MakeNoCull());
             rebaseMaterial.SetDepthMode(DepthMode.MakeDefault(DepthMode.Comparisons.Less).SetStencil(0x00, 0xff));
@@ -325,22 +374,25 @@ namespace Weesals.Engine.Rendering {
             rebaseMaterial.SetBlendMode(BlendMode.MakeNone());
 
             expireMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "VSBlank"),
-                ShaderBase.FromPath("./Assets/Generated/ParticleTest.hlsl", "PSBlank")
+                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
+                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
             );
             expireMaterial.SetValue("LocalTimeZ", 0.001f);
             expireMaterial.SetRasterMode(RasterMode.MakeNoCull());
             expireMaterial.SetDepthMode(DepthMode.MakeWriteOnly().SetStencil(0x00, 0xff));
             expireMaterial.SetStencilRef(0x00);
+            //expireMaterial.SetBlendMode(BlendMode.MakeNone());
             expireMaterial.SetBlendMode(BlendMode.MakeOpaque());
 
             blockMetaSize = poolSize / ParticleSystem.AllocGroup.Size;
             blockMeta = new BlockMetadata[blockMetaSize.X * blockMetaSize.Y];
+            blockMeta.AsSpan().Fill(BlockMetadata.Invalid);
             blockMetaNext = 0;
 
             emissionMesh = new("ParticleSpawns");
             emissionMesh.RequireVertexPositions(BufferFormat.FORMAT_R32G32_FLOAT);
             emissionMesh.RequireVertexTexCoords(0);
+            emissionMesh.RequireVertexColors(BufferFormat.FORMAT_R8G8B8A8_UNORM);
             emissionMesh.SetIndexFormat(false);
             updateMesh = new("ParticleSteps");
             updateMesh.RequireVertexPositions(BufferFormat.FORMAT_R32G32_FLOAT);
@@ -354,15 +406,35 @@ namespace Weesals.Engine.Rendering {
             systems.Add(system);
             system.Initialise(this, systems.Count - 1);
         }
+        public ParticleSystem? FindSystem(string name) {
+            foreach (var system in systems) if (system.Name == name) return system;
+            return default;
+        }
         public ParticleSystem.AllocGroup AllocateBlock(int systemId) {
-            var id = (blockMetaNext++) % blockMeta.Length;
-            blockMeta[id] = new BlockMetadata() {
+            var index = (blockMetaNext++) % blockMeta.Length;
+            var alloc = new ParticleSystem.AllocatedBlock() {
+                BlockPnt = new UShort2(
+                    (ushort)(index % blockMetaSize.X),
+                    (ushort)(index / blockMetaSize.X)
+                ),
+            };
+            if (blockMeta[index].SystemId >= 0) {
+                Trace.Assert(systems[blockMeta[index].SystemId].RemoveBlock(alloc.BlockId));
+            }
+            blockMeta[index] = new BlockMetadata() {
                 SystemId = systemId,
             };
             return new ParticleSystem.AllocGroup() {
-                BlockPnt = new UShort2((ushort)(id % blockMetaSize.X), (ushort)(id / blockMetaSize.X)),
+                Alloc = alloc,
                 RemainCount = ParticleSystem.AllocGroup.Count,
             };
+        }
+        public void DeallocBlock(uint blockId, int systemId) {
+            var blockX = blockId & 0xffff;
+            var blockY = blockId >> 16;
+            var blockIndex = blockX + blockY * blockMetaSize.X;
+            Debug.Assert(blockMeta[blockIndex].SystemId == systemId);
+            blockMeta[blockIndex] = BlockMetadata.Invalid;
         }
         unsafe public void Update(CSGraphics graphics, float dt) {
             if (time == 0f) {
@@ -380,7 +452,6 @@ namespace Weesals.Engine.Rendering {
             rootMaterial.SetValue("BlockSizeBits", BitOperations.TrailingZeroCount(PoolSize.X) - 2);
             if (oldCycle != newCycle) Rebase(graphics);
 
-            SetTargets(graphics);
             var bindingsPtr = stackalloc CSBufferLayout[2];
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
             using var materials = new PooledArray<Material>(2);
@@ -391,15 +462,20 @@ namespace Weesals.Engine.Rendering {
                 system.UpdateExpired(graphics, emissionMesh, dt);
             }
             if (emissionMesh.IndexCount > 0) {
+                SetTargets(graphics, 1);
                 bindings[0] = emissionMesh.IndexBuffer;
                 bindings[1] = emissionMesh.VertexBuffer;
                 materials[0] = expireMaterial;
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                var drawConfig = CSDrawConfig.MakeDefault();
-                graphics.Draw(pso, bindings, resources, drawConfig);
+                graphics.Draw(pso, bindings, resources, CSDrawConfig.MakeDefault());
+                SetTargets(graphics);
+                pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
+                resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                graphics.Draw(pso, bindings, resources, CSDrawConfig.MakeDefault());
                 emissionMesh.Clear();
             }
+            SetTargets(graphics);
 
             // Spawn new blocks
             foreach (var system in systems) {
@@ -419,6 +495,7 @@ namespace Weesals.Engine.Rendering {
             FlipBuffers();
             SetTargets(graphics);
             foreach (var system in systems) {
+                if (!system.HasParticles) continue;
                 bindings[0] = updateMesh.IndexBuffer;
                 bindings[1] = updateMesh.VertexBuffer;
                 materials[0] = system.StepperMaterial;
@@ -482,8 +559,9 @@ namespace Weesals.Engine.Rendering {
         private void FlipBuffers() {
             bufferIndex = (bufferIndex + 1) % PositionBuffers.Length;
         }
-        unsafe private void SetTargets(CSGraphics graphics) {
-            var targetsPtr = stackalloc CSRenderTarget[2] { PositionBuffer, VelocityBuffer };
+        unsafe private void SetTargets(CSGraphics graphics, int delta = 0) {
+            int selfIndex = (bufferIndex + delta) % PositionBuffers.Length;
+            var targetsPtr = stackalloc CSRenderTarget[2] { PositionBuffers[selfIndex], VelocityBuffers[selfIndex] };
             var targets = new MemoryBlock<CSRenderTarget>(targetsPtr, 2);
             graphics.SetRenderTargets(targets, DepthStencilBuffer);
             int otherIndex = (bufferIndex + (PositionBuffers.Length - 1)) % PositionBuffers.Length;
@@ -491,24 +569,70 @@ namespace Weesals.Engine.Rendering {
             rootMaterial.SetTexture("VelocityTexture", VelocityBuffers[otherIndex]);
             rootMaterial.SetTexture("AttributesTexture", AttributeBuffers[otherIndex]);
         }
+
+        public ParticleSystem GetBlockSystem(uint blockId) {
+            var blockX = blockId & 0xffff;
+            var blockY = blockId >> 16;
+            var blockIndex = blockX + blockY * blockMetaSize.X;
+            return systems[blockMeta[blockIndex].SystemId];
+        }
+
+        public ParticleSystem RequireSystemFromJSON(string filepath) {
+            var name = Path.GetFileNameWithoutExtension(filepath);
+            var system = FindSystem(name);
+            if (system != null) return system;
+            var stParticleGenerator = new Particles.ParticleGenerator();
+            stParticleGenerator.LoadJSON(filepath);
+            var stParticles = stParticleGenerator.CreateParticleSystem($"./Assets/Generated/{name}.hlsl");
+            AppendSystem(stParticles);
+            return stParticles;
+        }
     }
     public class ParticleSystem {
         private static readonly ushort[] quadIndices = new ushort[] { 0, 1, 2, 1, 3, 2, };
-        public ParticleGenerator? Generator;
+        public readonly string? Name;
         public ParticleSystemManager? Manager;
+        public Material CommonMaterial;
         public Material SpawnerMaterial;
         public Material StepperMaterial;
         public Material DrawMaterial;
+        private BufferLayoutPersistent emitterData;
         public int SystemId = -1;
+        private float maximumLifetime = 5f;
 
         public float SpawnRate = 5000f;
-        public float MaximumDuration = 5.0f;
+        public float MaximumDuration {
+            get => maximumLifetime;
+            set { maximumLifetime = value; CommonMaterial.SetValue("Lifetime", maximumLifetime); }
+        }
+
+        public class Emitter {
+            public FloatCurve CountOverTime = new();
+            public int BurstCount = 10;
+            public Vector3 Position;
+            public float Age;
+            public float Lifetime = -1f;        //-1f == last forever
+
+            public bool IsAlive => Age >= 0f;
+            public void MarkDead() { Age = -1f; }   // Just used for external code to query emitter state
+            public void SetDelayedDeath(float duration) {
+                Debug.Assert(IsAlive, "Emitter already dead");
+                Lifetime = Age + duration;
+            }
+        }
+
+        public struct EmissionInstance {
+            public Emitter EmissionType;
+            public Matrix4x4 ShapeTransform;
+            public Material EmissionParameters;
+        }
 
         public struct AllocGroup {
             public const int Size = 4;
             public const int Count = Size * Size;
-            public UShort2 BlockPnt;
-            public int ConsumeCount => Count - RemainCount;
+            public AllocatedBlock Alloc;
+            public UShort2 BlockPnt => Alloc.BlockPnt;
+            public int ConsumeCount => IsValid ? Count - RemainCount : 0;
             public int RemainCount;
             public bool IsValid => RemainCount != -1;
             public uint BlockId => (uint)BlockPnt.X + ((uint)BlockPnt.Y << 16);
@@ -518,18 +642,30 @@ namespace Weesals.Engine.Rendering {
             public UShort2 BlockPnt;
             public int ExpireTimeMS;
             public uint BlockId => (uint)BlockPnt.X + ((uint)BlockPnt.Y << 16);
+            public override string ToString() { return $"Block {BlockPnt}"; }
         }
 
         private Random random = new();
         private AllocGroup allocated = AllocGroup.Invalid;
         private List<AllocatedBlock> blocks = new();
+        private List<Emitter> emitters = new();
 
-        public ParticleSystem(string particleShader) {
+        public bool HasParticles => blocks.Count > 0 || (allocated.ConsumeCount > 0 && !GetIsExpired(allocated.Alloc.ExpireTimeMS));
+
+        unsafe public ParticleSystem(string name, string particleShader) {
+            Name = name;
+            CommonMaterial = new();
+            CommonMaterial.SetValue("Lifetime", maximumLifetime);
+            emitterData = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
+            emitterData.AppendElement(new CSBufferElement("POSITION", BufferFormat.FORMAT_R32G32B32_FLOAT));
+            emitterData.AllocResize(256);
             SpawnerMaterial = new Material(
                 ShaderBase.FromPath(particleShader, "VSSpawn"),
                 ShaderBase.FromPath(particleShader, "PSSpawn")
             );
+            SpawnerMaterial.InheritProperties(CommonMaterial);
             SpawnerMaterial.SetRasterMode(RasterMode.MakeNoCull());
+            SpawnerMaterial.SetValue("Emitters", emitterData);
             var spawnDS = DepthMode.MakeWriteOnly().SetStencil(0x00, 0xff);
             spawnDS.StencilFront = spawnDS.StencilBack =
                 new DepthMode.StencilDesc(DepthMode.StencilOp.Replace, DepthMode.StencilOp.Replace, DepthMode.StencilOp.Replace, DepthMode.Comparisons.Always);
@@ -539,6 +675,7 @@ namespace Weesals.Engine.Rendering {
                 ShaderBase.FromPath(particleShader, "VSStep"),
                 ShaderBase.FromPath(particleShader, "PSStep")
             );
+            StepperMaterial.InheritProperties(CommonMaterial);
             StepperMaterial.SetRasterMode(RasterMode.MakeNoCull());
             StepperMaterial.SetDepthMode(DepthMode.MakeReadOnly(DepthMode.Comparisons.GEqual).SetStencil(0xff, 0x00));
             StepperMaterial.SetBlendMode(BlendMode.MakeOpaque());
@@ -546,9 +683,9 @@ namespace Weesals.Engine.Rendering {
                 ShaderBase.FromPath(particleShader, "VSMain"),
                 ShaderBase.FromPath(particleShader, "PSMain")
             );
+            DrawMaterial.InheritProperties(CommonMaterial);
             DrawMaterial.SetRasterMode(RasterMode.MakeNoCull());
             DrawMaterial.SetDepthMode(DepthMode.MakeReadOnly());
-            DrawMaterial.SetBlendMode(BlendMode.MakeAdditive());
         }
 
         internal void Initialise(ParticleSystemManager manager, int systemId) {
@@ -557,42 +694,83 @@ namespace Weesals.Engine.Rendering {
             SpawnerMaterial.SetStencilRef(systemId + 1);
             StepperMaterial.SetStencilRef(systemId + 1);
         }
+        public Emitter CreateEmitter(Vector3 pos) {
+            var emitter = new Emitter();
+            emitter.CountOverTime.SetConstant(SpawnRate);
+            emitter.Position = pos;
+            emitters.Add(emitter);
+            return emitter;
+        }
+        private bool GetIsExpired(int expireTimeMS) {
+            var delta = Manager.TimeMS - expireTimeMS;
+            return delta >= 0;
+        }
+        public bool RemoveBlock(uint blockId) {
+            if (blocks.Count > 0 && blocks[0].BlockId == blockId) {
+                blocks.RemoveAt(0);
+                return true;
+            }
+            if (allocated.BlockId == blockId) {
+                allocated = AllocGroup.Invalid;
+                return true;
+            }
+            return false;
+        }
         public RangeInt UpdateExpired(CSGraphics graphics, DynamicMesh mesh, float dt) {
             var rangeBegin = mesh.IndexCount;
             int i = 0;
             for (; i < blocks.Count; i++) {
                 var block = blocks[i];
-                var delta = Manager.TimeMS - block.ExpireTimeMS;
-                if (delta < 0) break;
+                if (!GetIsExpired(block.ExpireTimeMS)) break;
                 AppendBlockQuad(mesh, block.BlockPnt);
+                Manager.DeallocBlock(block.BlockId, SystemId);
             }
             if (i > 0) blocks.RemoveRange(0, i);
             return RangeInt.FromBeginEnd(rangeBegin, mesh.IndexCount);
         }
         public RangeInt UpdateEmission(CSGraphics graphics, DynamicMesh mesh, float dt) {
-            var count = (int)(dt * SpawnRate + random.NextSingle());
-            if (count <= 0) return default;
+            if (emitters.Count == 0) return default;
+
+            Debug.Assert(emitters.Count < 255, "Too many emitters!");
+            emitterData.SetCount(emitters.Count);
+            var emitterPositions = new TypedBufferView<Vector3>(emitterData.Elements[0], emitterData.Count);
+            for (int i = 0; i < emitters.Count; i++) {
+                var emitter = emitters[i];
+                emitterPositions[i] = emitter.Position;
+            }
+            emitterData.NotifyChanged();
+            graphics.CopyBufferData(emitterData, new RangeInt(0, emitterData.BufferStride * emitters.Count));
 
             var rangeBegin = mesh.IndexCount;
-            for (int b = 0; ; ++b) {
-                if (count <= 0) break;
-                if (allocated.RemainCount <= 0) {
-                    if (allocated.IsValid) {
-                        blocks.Add(new AllocatedBlock() { BlockPnt = allocated.BlockPnt, ExpireTimeMS = Manager.TimeMS + (int)(MaximumDuration * 1000), });
+            for (int i = 0; i < emitters.Count; i++) {
+                var emitter = emitters[i];
+                var count = (int)(dt * emitter.CountOverTime.Evaluate(emitter.Age) + random.NextSingle());
+                if (emitter.Age == 0 && dt > 0) count += emitter.BurstCount;
+                emitter.Age += dt;
+                for (int b = 0; count > 0; ++b) {
+                    if (allocated.RemainCount <= 0) {
+                        if (allocated.IsValid) {
+                            blocks.Add(new AllocatedBlock() { BlockPnt = allocated.BlockPnt, ExpireTimeMS = Manager.TimeMS + (int)(MaximumDuration * 1000), });
+                        }
+                        allocated = Manager.AllocateBlock(SystemId);
                     }
-                    allocated = Manager.AllocateBlock(SystemId);
+
+                    int toConsume = Math.Min(allocated.RemainCount, count);
+                    var verts = AppendBlockQuad(mesh, allocated.BlockPnt, allocated.ConsumeCount, toConsume);
+                    verts.GetColors().Set(new Color((byte)i, 0, 0, 0));
+                    allocated.RemainCount -= toConsume;
+                    allocated.Alloc.ExpireTimeMS = Manager.TimeMS + (int)(MaximumDuration * 1000);
+                    count -= toConsume;
                 }
-                int toConsume = Math.Min(allocated.RemainCount, count);
-
-                AppendBlockQuad(mesh, allocated.BlockPnt, allocated.ConsumeCount, toConsume);
-
-                allocated.RemainCount -= toConsume;
-                count -= toConsume;
+                if (emitter.Lifetime >= 0f && emitter.Age > emitter.Lifetime) {
+                    emitter.MarkDead();
+                    emitters.RemoveAt(i--);
+                }
             }
             return RangeInt.FromBeginEnd(rangeBegin, mesh.IndexCount);
         }
 
-        private void AppendBlockQuad(DynamicMesh mesh, UShort2 blockPnt, int blockBegin = 0, int blockCount = AllocGroup.Count) {
+        private DynamicMesh.VertexRange AppendBlockQuad(DynamicMesh mesh, UShort2 blockPnt, int blockBegin = 0, int blockCount = AllocGroup.Count) {
             Span<Vector2> vpositions = stackalloc Vector2[4];
             Span<ushort> indices = stackalloc ushort[6];
 
@@ -612,16 +790,66 @@ namespace Weesals.Engine.Rendering {
             quadIndices.CopyTo(indices);
             for (int i = 0; i < indices.Length; ++i) indices[i] += (ushort)verts.BaseVertex;
             inds.GetIndices<ushort>().Set(indices);
+            return verts;
         }
 
         unsafe public void SetActiveBlocks(ref BufferLayoutPersistent activeBlocks) {
             activeBlocks.BufferLayout.mCount = blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
             if (activeBlocks.BufferCapacityCount < activeBlocks.Count)
-                activeBlocks.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)blocks.Count));
+                activeBlocks.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)blocks.Count + 4));
             var activeBlockIds = new MemoryBlock<uint>((uint*)activeBlocks.Elements[0].mData, activeBlocks.BufferLayout.mCount);
             for (int i = 0; i < blocks.Count; i++) activeBlockIds[i] = blocks[i].BlockId;
             if (allocated.ConsumeCount > 0) activeBlockIds[blocks.Count] = allocated.BlockId;
             activeBlocks.BufferLayout.revision++;
         }
+        public override string ToString() {
+            return DrawMaterial.ToString();
+        }
     }
+
+    public struct ECParticleBinding {
+        public ParticleSystem.Emitter Emitter;
+    }
+
+    public class ParticleDebugWindow : ApplicationWindow {
+        private Canvas canvas;
+        private Image posImage, velImage;
+        public ParticleDebugWindow() { }
+        public override void RegisterRootWindow(CSWindow window) {
+            base.RegisterRootWindow(window);
+            Window.SetSize(new Int2(400, 200));
+            CreateCanvas();
+        }
+        public void CreateCanvas() {
+            canvas = new Canvas();
+            posImage = new Image() { AspectMode = Image.AspectModes.PreserveAspectContain, };
+            posImage.Element.RequireMaterial().SetMacro("NEARESTNEIGHBOUR", "1");
+            posImage.AppendChild(new TextBlock("Position"));
+            velImage = new Image() { AspectMode = Image.AspectModes.PreserveAspectContain, };
+            velImage.Element.RequireMaterial().SetMacro("NEARESTNEIGHBOUR", "1");
+            velImage.AppendChild(new TextBlock("Velocity"));
+            var grid = new GridLayout();
+            grid.AppendChild(velImage, new Int2(0, 0));
+            grid.AppendChild(posImage, new Int2(1, 0));
+            canvas.AppendChild(grid);
+        }
+        public void UpdateFrom(ParticleSystemManager particleManager) {
+            posImage.Texture = particleManager.PositionBuffer;
+            velImage.Texture = particleManager.VelocityBuffer;
+        }
+        unsafe public void Render(float dt, CSGraphics graphics) {
+            graphics.Reset();
+            graphics.SetSurface(Surface);
+            var rt = Surface.GetBackBuffer();
+            graphics.SetRenderTargets(new Span<CSRenderTarget>(ref rt), default);
+            graphics.Clear();
+            canvas.SetSize(Size);
+            canvas.Update(dt);
+            canvas.RequireComposed();
+            canvas.Render(graphics);
+            graphics.Execute();
+            Surface.Present();
+        }
+    }
+
 }

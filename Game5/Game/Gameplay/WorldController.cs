@@ -128,7 +128,7 @@ namespace Game5.Game {
             });*/
         }
 
-        public bool CanControl(PlayerBridge player, GenericTarget entity) {
+        public bool CanControl(PlayerBridge player, ItemReference entity) {
             if (!Simulation.World.IsValid(entity.GetEntity())) return false;
             if (player.IsGodMode) return true;
             var team = Simulation.World.GetComponent<ECTeam>(entity.GetEntity());
@@ -153,7 +153,7 @@ namespace Game5.Game {
             Simulation.ActionQueueSystem.EnqueueAction(entity, action);
         }
 
-        public GenericTarget AttemptPlace(int protoId, int playerId, Int2 location) {
+        public ItemReference AttemptPlace(int protoId, int playerId, Int2 location) {
             var constructionProtoId = Simulation.ProtoSystem.GetConstructionProtoId(protoId);
             var entity = Simulation.SpawnEntity(constructionProtoId, location, playerId);
             Simulation.World.AddComponent(entity, new ECConstruction() {
@@ -167,7 +167,7 @@ namespace Game5.Game {
             var dirtId = Simulation.Landscape.Layers.FindLayerId("TL_Dirt");
             Simulation.Landscape.PaintRectangle(dirtId, new RectI(pos - size / 2, size));
 
-            return GenericTarget.FromEntity(Simulation.World, entity);
+            return Simulation.EntityProxy.MakeHandle(entity);
         }
 
         public void DestroyEntity(Entity entity) {

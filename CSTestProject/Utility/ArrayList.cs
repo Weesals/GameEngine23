@@ -63,8 +63,8 @@ namespace Weesals.Utility {
         public T* Data;
         public int Length;
         public bool IsEmpty => Length == 0;
-        public ref T this[int index] { get => ref Data[index]; }
-        public ref T this[Index index] { get => ref Data[index.GetOffset(Length)]; }
+        public ref T this[int index] { get { Debug.Assert((uint)index < Length); return ref Data[index]; } }
+        public ref T this[Index index] => ref this[index.GetOffset(Length)];
 
         public MemoryBlock(T* data, int count) { Data = data; Length = count; }
 
@@ -83,6 +83,7 @@ namespace Weesals.Utility {
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Length}>"; }
         public static implicit operator Span<T>(MemoryBlock<T> block) { return block.AsSpan(); }
+        public static implicit operator ReadOnlySpan<T>(MemoryBlock<T> block) { return block.AsSpan(); }
         public static implicit operator CSSpan(MemoryBlock<T> block) { return new CSSpan(block.Data, block.Length); }
         public int GetContentsHash() {
             int hash = 0;
@@ -117,6 +118,19 @@ namespace Weesals.Utility {
             int index = 0;
             foreach (var item in en) arr[index++] = item;
             return arr;
+        }
+
+        public static void Resize(ref T[] array, int size) {
+            if (array == null || array.Length < size) {
+                var pool = ArrayPool<T>.Shared;
+                if (array != null && array.Length > 0) pool.Return(array);
+                array = pool.Rent(size);
+            }
+        }
+        public static void Return(ref T[] array) {
+            if (array == null) return;
+            ArrayPool<T>.Shared.Return(array);
+            array = Array.Empty<T>();
         }
     }
     public struct PooledList<T> : IDisposable {
@@ -166,6 +180,12 @@ namespace Weesals.Utility {
         public void Dispose() { if (Data != null) ArrayPool<T>.Shared.Return(Data); this = default; }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Count}>"; }
+
+        public void Swap(int index1, int index2) {
+            var t = Data[index1];
+            Data[index1] = Data[index2];
+            Data[index2] = t;
+        }
 
         public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }

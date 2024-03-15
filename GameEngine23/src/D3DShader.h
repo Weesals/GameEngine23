@@ -1,8 +1,10 @@
 #pragma once
 
-#include <d3d12.h>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <d3dcompiler.h>
-#include <dxgi1_6.h>
+#include <dxcapi.h>
+//#include <dxgi1_6.h>
 #include <wrl/client.h>
 #include <fstream>
 #include <filesystem>
@@ -38,6 +40,19 @@ template <> struct std::hash<ShaderKey>
     }
 };
 
+#if 1
+// Represents the D3D12 instance of a shader
+class D3DShader : ShaderBase {
+public:
+
+    ComPtr<ID3DBlob> mShader;
+    ShaderReflection mReflection;
+
+    // Compile shader and reflect uniform values / buffers
+    void CompileFromFile(const std::wstring_view& path, const std::string_view& entry, const std::string_view& profile, const DxcDefine* macros = nullptr);
+};
+
+#else
 // Represents the D3D12 instance of a shader
 class D3DShader : ShaderBase {
 public:
@@ -208,3 +223,4 @@ public:
         }
     }
 };
+#endif

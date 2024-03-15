@@ -15,7 +15,9 @@ using Weesals.Rendering;
 using Navigation;
 using Game5.UI;
 using Weesals.Editor;
-using Weesals.Engine.Rendering;
+using Weesals.Engine.Particles;
+using Weesals.Engine.Jobs;
+using Weesals.Engine.Profiling;
 
 /*
  * TODO:
@@ -31,28 +33,34 @@ using Weesals.Engine.Rendering;
 namespace Game5.Game {
 
     public class SelectionManager {
-        public Action<GenericTarget, bool>? OnEntitySelected;
-        public Action<ICollection<GenericTarget>>? OnSelectionChanged;
-        private HashSet<GenericTarget> selected = new();
+        public Action<ItemReference, bool>? OnEntitySelected;
+        public Action<ICollection<ItemReference>>? OnSelectionChanged;
+        private HashSet<ItemReference> selected = new();
 
-        public IReadOnlyCollection<GenericTarget> Selected => selected;
+        public IReadOnlyCollection<ItemReference> Selected => selected;
 
         public void ClearSelected() {
-            using var toDeselect = new PooledList<GenericTarget>(selected.Count);
+            using var toDeselect = new PooledList<ItemReference>(selected.Count);
             foreach (var item in selected) toDeselect.Add(item);
             selected.Clear();
             foreach (var item in toDeselect) NotifySelected(item, false);
         }
-        public void SetSelected(GenericTarget item) {
-            ClearSelected();
-            if (item.IsValid) AppendSelected(item);
+        public void SetSelected(ItemReference newItem) {
+            using var toDeselect = new PooledList<ItemReference>(selected.Count);
+            foreach (var item in selected) if (item != newItem) toDeselect.Add(item);
+            if (selected.Count == toDeselect.Count) selected.Clear();
+            else foreach (var item in toDeselect) selected.Remove(item);
+            foreach (var item in toDeselect) NotifySelected(item, false);
+            if (newItem.IsValid) AppendSelected(newItem);
         }
-        private void AppendSelected(GenericTarget item) {
-            selected.Add(item);
-            NotifySelected(item, true);
+        public void AppendSelected(ItemReference item) {
+            if (selected.Add(item)) NotifySelected(item, true);
+        }
+        public void RemoveSelected(ItemReference item) {
+            if (selected.Remove(item)) NotifySelected(item, false);
         }
 
-        private void NotifySelected(GenericTarget item, bool selected) {
+        private void NotifySelected(ItemReference item, bool selected) {
             if (item.Owner is IEntitySelectable selectable)
                 selectable.NotifySelected(item.Data, selected);
             if (OnEntitySelected != null) OnEntitySelected(item, selected);
@@ -84,66 +92,98 @@ namespace Game5.Game {
 
         RenderWorldBinding renderBindings;
         float time = 0;
+        ParticleSystem fireParticles;
+        ParticleSystem.Emitter mouseFire;
 
         ParticleSystemManager particleManager;
         public ParticleSystemManager ParticleManager => particleManager;
 
+        [EditorField] public bool EnableFog = true;
+        [EditorField] public float FogIntensity = 0.1f;
+        [EditorField] public bool DrawVisibilityVolume = false;
+
+        [EditorField] public int LoadedModelCount => Resources.LoadedModelCount;
+        [EditorField] public int LoadedShaderCount => Resources.LoadedShaderCount;
+        [EditorField] public int LoadedTextureCount => Resources.LoadedTextureCount;
+
         public Play(GameRoot root) {
             GameRoot = root;
 
-            landscape = new LandscapeData();
-            var layers = new LandscapeLayerCollection();
-            layers.TerrainLayers = new[] {
-                new LandscapeLayer("TL_Grass") { BaseColor = "./Assets/T_Grass_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
-                new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
-                new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/T_DirtyMoss_BaseColor.jpg", NormalMap = "./Assets/T_DirtyMoss_Normal.jpg", },
-                new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/T_Moss_BaseColor.jpg", NormalMap = "./Assets/T_Moss_Normal.jpg", },
-                new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.jpg", NormalMap = "./Assets/T_Tiles_Normal.jpg", },
-                new LandscapeLayer("TL_WaterFloor") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
-                new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
-                new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
-            }; 
-            landscape.Initialise(128, layers);
-            landscapeRenderer = new LandscapeRenderer();
-            landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
-            landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
+            using (var marker = new ProfilerMarker("Landscape").Auto()) {
+                landscape = new LandscapeData();
+                var layers = new LandscapeLayerCollection();
+                layers.TerrainLayers = new[] {
+                    new LandscapeLayer("TL_Grass") { BaseColor = "./Assets/T_Grass_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
+                    new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
+                    new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/T_DirtyMoss_BaseColor.png", NormalMap = "./Assets/T_DirtyMoss_Normal.jpg", },
+                    new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/T_Moss_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
+                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.jpg", NormalMap = "./Assets/T_Tiles_Normal.jpg", },
+                    new LandscapeLayer("TL_WaterFloor") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
+                    new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
+                    new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
+                };
+                landscape.Initialise(128, layers);
+                landscape.Load();
+                landscapeRenderer = new LandscapeRenderer();
+                landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
+                landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
+            }
 
-            particleManager = new ParticleSystemManager();
-            particleManager.Initialise(512);
-
-            var smokeParticleGenerator = new ParticleGenerator();
-            smokeParticleGenerator.LoadJSON("./Assets/Particles/Smoke.json");
-            var smokeParticles = smokeParticleGenerator.CreateParticleSystem("./Assets/Generated/ParticleTest.hlsl");
-            smokeParticles.SpawnRate = 1000;
-            smokeParticles.DrawMaterial.SetTexture("Texture", Resources.LoadTexture("Assets/ParticleAtlas.png"));
-            particleManager.AppendSystem(smokeParticles);
-
-            var fireParticleGenerator = new ParticleGenerator();
-            fireParticleGenerator.LoadJSON("./Assets/Particles/Fire.json");
-            var fireParticles = fireParticleGenerator.CreateParticleSystem("./Assets/Generated/ParticleFire.hlsl");
-            fireParticles.SpawnRate = 1000;
-            fireParticles.MaximumDuration = 0.5f;
-            fireParticles.DrawMaterial.SetTexture("Texture", Resources.LoadTexture("Assets/ParticleAtlas.png"));
-            particleManager.AppendSystem(fireParticles);
+            using (var marker = new ProfilerMarker("Particles").Auto()) {
+                particleManager = new ParticleSystemManager();
+                particleManager.Initialise(512);
+            }
 
             Camera = new Camera() {
-                FOV = 3.14f * 0.25f,
-                Position = new Vector3(0, 20f, -10f),
-                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.3f),
+                FOV = 3.14f * 0.15f,
+                Position = new Vector3(-0f, 25f, -0f),
+                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
+                    * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),
+                NearPlane = 5.0f,
+                FarPlane = 5000.0f,
             };
 
 
-            root.Canvas.AppendChild(new UIPlay(this));
+            using (var marker = new ProfilerMarker("UI Play").Auto()) {
+                root.Canvas.AppendChild(new UIPlay(this));
+            }
 
-            Simulation = new();
-            Simulation.SetLandscape(landscape);
+            using (var marker = new ProfilerMarker("Create Simulation").Auto()) {
+                Simulation = new();
+            }
+            using (var marker = new ProfilerMarker("Set Landscape").Auto()) {
+                Simulation.SetLandscape(landscape);
+            }
 
-            RenderWorld = new World();
+            using (var marker = new ProfilerMarker("Create World").Auto()) {
+                RenderWorld = new World();
+            }
 
-            renderBindings = new(World, RenderWorld, Scene, root.ScenePasses);
-            EntityHighlighting = new(renderBindings);
+            using (var marker = new ProfilerMarker("Render Bindings").Auto()) {
+                renderBindings = new(World, RenderWorld, Scene, root.ScenePasses);
+                EntityHighlighting = new(renderBindings);
+            }
 
-            Simulation.GenerateWorld();
+            using (var marker = new ProfilerMarker("Generate World").Auto()) {
+                Simulation.GenerateWorld();
+            }
+
+
+            if (false) {
+                var stParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/StressTest.json");
+                stParticles.CreateEmitter(new Vector3(0f, 0f, -5f));
+            } else if (false) {
+                var smokeParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/Smoke.json");
+                //smokeParticles.CreateEmitter(new Vector3(5f, 0f, 5f));
+                fireParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/Fire.json");
+                var auraParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/Aura.json");
+                /*foreach (var entity in Simulation.World.GetEntities()) {
+                    Simulation.World.AddComponent<ECParticleBinding>(entity) = new() {
+                        Emitter = auraParticles.CreateEmitter(default),
+                    };
+                    break;
+                }*/
+            }
 
             GameRoot.RegisterEditable(this, true);
         }
@@ -152,22 +192,44 @@ namespace Game5.Game {
         }
 
         public void Update(float dt) {
+            using var marker = new ProfilerMarker("Play.Update").Auto();
             time += dt;
             if (dt > 0.02f) dt = 0.02f;
 
             Simulation.Step((int)MathF.Round(dt * 1000));
             EntityHighlighting.Update((uint)(time * 1000f));
 
-            Camera.FarPlane = 50f;
-            Camera.NearPlane = 10f;
-
-            Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
+            Scene.RootMaterial.SetValue("Time", time);
+            Scene.RootMaterial.SetValue("CloudDensity", FogIntensity);
 
             NavDebug?.OnDrawGizmosSelected();
 
+            if (Input.GetKeyDown(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.LeftAlt) && Input.GetKeyPressed(KeyCode.F11)) {
+                Resources.ReloadShaders();
+            }
+
             var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
             particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
-        }
+            if (mouseFire != null) mouseFire.Position = mpos;
+            if (Input.GetMouseButtonDown(0) && fireParticles != null) {
+                fireParticles.CreateEmitter(mpos)
+                    .SetDelayedDeath(2f);
+            }
+
+            foreach (var accessor in World.QueryAll<ECTransform, ECParticleBinding>()) {
+                ((ECParticleBinding)accessor).Emitter.Position =
+                    ((ECTransform)accessor).GetWorldPosition();
+            }
+            var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
+            var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
+            JobHandle.CombineDependencies(idleAnimHandle, runAnimHandle).Complete();
+            foreach (var accessor in World.QueryAll<CAnimation>()) {
+                accessor.Component1Ref.Animation = idleAnim.Animations[0];
+            }
+            foreach (var accessor in World.QueryAll<CAnimation, ECActionMove>()) {
+                accessor.Component1Ref.Animation = runAnim.Animations[0];
+            }
+       }
 
         [EditorButton]
         public void ToggleNavDebug() {
@@ -204,11 +266,11 @@ namespace Game5.Game {
             }
         }
 
-        public GenericTarget HitTest(Ray ray) {
+        public ItemReference HitTest(Ray ray) {
             var entityHit = Simulation.HitTest(ray);
             if (entityHit.IsValid) return entityHit;
             if (landscape.Raycast(ray, out var landscapeHit)) {
-                return new GenericTarget(landscapeRenderer);
+                return new ItemReference(landscapeRenderer);
             }
             return default;
         }

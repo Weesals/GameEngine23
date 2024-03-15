@@ -30,7 +30,7 @@ const std::shared_ptr<Texture>& ResourceLoader::LoadTexture(const std::wstring_v
 		std::transform(path.begin(), path.end(), std::back_inserter(pathStr), [](auto c) { return (char)c; });
 		Int2 size;
 		//auto data = SOIL_load_image(pathStr.c_str(), &size.x, &size.y, 0, SOIL_LOAD_RGBA);
-		stbi_set_flip_vertically_on_load(true);
+		//stbi_set_flip_vertically_on_load(true);
 		auto data = stbi_load(pathStr.c_str(), &size.x, &size.y, 0, STBI_rgb_alpha);
 		std::shared_ptr<Texture> tex;
 		if (data != nullptr) {

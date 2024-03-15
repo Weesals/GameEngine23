@@ -1,83 +1,57 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
-using UnityEngine;
-using Weesals.ECS;
 using Weesals.Editor;
 using Weesals.Engine;
 using Weesals.Engine.Jobs;
 using Game5.Game;
-using Weesals.Landscape;
-using Weesals.UI;
-using Weesals.Utility;
 using Game5;
-using Weesals.Engine.Rendering;
 
 class Program {
 
-    static EditorWindow? editorWindow;
+    private static List<ApplicationWindow> windows = new();
 
     public static void Main() {
         var core = new Core();
         Core.ActiveInstance = core;
-
-        var primaryWindow = new ApplicationWindow(core.CreateWindow("Weesals Engine"));
-        var previewWindow = new ApplicationWindow(core.CreateWindow("Preview"));
-        previewWindow.Window.SetSize(new Int2(400, 200));
-
-        Input.Initialise(primaryWindow.Input);
         Resources.LoadDefaultUIAssets();
 
-        var root = new GameRoot();
-        editorWindow = new();
+        EditorWindow? editorWindow = new();
+        ParticleDebugWindow? previewWindow = null;// new();
+        ProfilerWindow? profilerWindow = null;
+        editorWindow?.RegisterRootWindow(core.CreateWindow("Weesals Engine"));
+        previewWindow?.RegisterRootWindow(core.CreateWindow("Preview"));
 
-        var eventSystem = root.EventSystem;
+        if (editorWindow != null) windows.Add(editorWindow);
+        if (previewWindow != null) windows.Add(previewWindow);
+
+        var root = new GameRoot();
+
         if (editorWindow != null) {
-            editorWindow.GameView.EventSystem = eventSystem;
-            editorWindow.GameView.Camera = root.Play.Camera;
-            editorWindow.GameView.Scene = root.ScenePasses;
-            editorWindow.Inspector.AppendEditables(root.Editables);
-            root.Play.SelectionManager.OnSelectionChanged += (selection) => {
-                foreach (var selected in selection) {
-                    if (selected.Owner is LandscapeRenderer landscape) {
-                        editorWindow.ActivateLandscapeTools(landscape);
-                        return;
-                    }
-                    var entity = selected;
-                    if (entity.Owner is IEntityRedirect redirect)
-                        entity = redirect.GetOwner(entity.Data);
-                    if (entity.Owner is World world) {
-                        editorWindow.ActivateEntityInspector(world, entity.GetEntity());
-                        return;
-                    }
-                }
-                editorWindow.Inspector.SetInspector(default);
-            };
-            editorWindow.EventSystem.KeyboardFilter.Insert(0, eventSystem);
-            editorWindow.EventSystem.SetInput(primaryWindow.Input);
+            root.AttachToEditor(editorWindow);
         } else {
-            eventSystem.SetInput(primaryWindow.Input);
+            //root.EventSystem.SetInput(gameWindow.Input);
+            throw new NotImplementedException("No editor is not supported (yet)");
         }
 
-        var previewCanvas = new Canvas();
-        var posImage = new Image() { AspectMode = Image.AspectModes.PreserveAspectContain, };
-        posImage.AppendChild(new TextBlock("Position"));
-        var velImage = new Image() { AspectMode = Image.AspectModes.PreserveAspectContain, };
-        velImage.AppendChild(new TextBlock("Velocity"));
-        var row = new ListLayout() { Axis = ListLayout.Axes.Horizontal, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
-        row.AppendChild(posImage);
-        row.AppendChild(velImage);
-        previewCanvas.AppendChild(row);
+        ApplicationWindow primaryWindow = editorWindow ?? throw new NotImplementedException();
+        Input.Initialise(primaryWindow.Input);
 
         var timer = new FrameTimer(4);
         var throttler = new FrameThrottler();
 
         // Loop while the window is valid
-        while (core.MessagePump() == 0) {
+        for (int f = 0; ; ++f) {
+            if (core.MessagePump() != 0) {
+                if (primaryWindow != null && !primaryWindow.Window.IsAlive()) break;
+                if (profilerWindow != null && !profilerWindow.Window.IsAlive()) {
+                    windows.Remove(profilerWindow);
+                    profilerWindow = default;
+                }
+            }
             bool isActive = false;
 
-            isActive |= primaryWindow.Validate();
-            isActive |= previewWindow.Validate();
+            foreach (var window in windows) isActive |= window.Validate();
 
             if (!isActive) {
                 Thread.Sleep(10);
@@ -87,16 +61,24 @@ class Program {
             var graphics = core.GetGraphics();
 
             var dt = (float)timer.ConsumeDeltaTicks().TotalSeconds;
-            Time.Update(dt);
             throttler.Update(dt);
 
-            if (primaryWindow.IsRenderable) {
-                var gameViewport = new RectI(0, primaryWindow.Size);
-                // Require editor UI layout to be valid
-                if (editorWindow != null) {
-                    editorWindow.Update(dt, primaryWindow.Size);
-                    gameViewport = editorWindow.GameView.GetGameViewportRect();
-                }
+            if (Input.GetKeyPressed(KeyCode.F4) && profilerWindow == null) {
+                profilerWindow = new();
+                profilerWindow?.RegisterRootWindow(core.CreateWindow("Profiler"));
+                windows.Add(profilerWindow);
+            }
+
+            float renDT;
+            {
+                // Let the editor update its UI layout
+                editorWindow?.Update(dt, primaryWindow.Size);
+                profilerWindow?.Update(dt);
+
+                // Get the game viewport
+                var gameViewport = editorWindow != null
+                    ? editorWindow.GameView.GetGameViewportRect()
+                    : new RectI(0, primaryWindow.Size);
 
                 // Setup for game viewport rendering
                 root.SetViewport(gameViewport);
@@ -104,18 +86,20 @@ class Program {
 
                 // If the frame hasnt changed, dont render anything
                 var newRenderHash = root.RenderHash
-                    + (editorWindow != null ? editorWindow.Canvas.Revision : 0);
-                var wasThrottled = throttler.IsThrottled;
-                throttler.Step(newRenderHash, editorWindow != null && editorWindow.GameView.EnableRealtime);
-                if (throttler.IsThrottled) {
-                    Thread.Sleep(6);
-                    //core.Present();
-                } else {
+                    + (editorWindow != null ? editorWindow.Canvas.Revision : 0)
+                    + (profilerWindow != null ? profilerWindow .RenderRevision : 0);
+                renDT = throttler.Step(newRenderHash, editorWindow != null && editorWindow.GameView.EnableRealtime);
+            }
+            if (throttler.IsThrottled) {
+                Thread.Sleep(6);
+                //core.Present();
+            } else {
+                if (primaryWindow?.IsRenderable ?? false) {
                     graphics.Reset();
                     graphics.SetSurface(primaryWindow.Surface);
 
                     // Render the game world and UI
-                    root.Render(graphics, dt);
+                    root.Render(graphics, renDT);
 
                     // Render the editor chrome
                     graphics.SetViewport(new RectI(0, primaryWindow.Size));
@@ -125,35 +109,24 @@ class Program {
                     graphics.Execute();
                     primaryWindow.Surface.Present();
                 }
-                root.ResetFrame();
+                if (previewWindow?.IsRenderable ?? false) {
+                    previewWindow?.UpdateFrom(root.Play.ParticleManager);
+                    previewWindow?.Render(dt, graphics);
+                }
+                if (profilerWindow?.IsRenderable ?? false) {
+                    profilerWindow.Render(dt, graphics);
+                }
             }
-            if (previewWindow.IsRenderable) {
-                posImage.Texture = root.Play.ParticleManager.PositionBuffer;
-                velImage.Texture = root.Play.ParticleManager.VelocityBuffer;
+            root.ResetFrame();
 
-                graphics.Reset();
-                graphics.SetSurface(previewWindow.Surface);
-                graphics.Clear();
-                previewCanvas.SetSize(previewWindow.Size);
-                previewCanvas.Update(dt);
-                previewCanvas.RequireComposed();
-                previewCanvas.Render(graphics);
-                graphics.Execute();
-                previewWindow.Surface.Present();
-            }
-
-            primaryWindow.Input.ReceiveTickEvent();
-            previewWindow.Input.ReceiveTickEvent();
+            foreach (var window in windows) window?.Input.ReceiveTickEvent();
         }
 
         // Clean up
         JobScheduler.Instance.Dispose();
-        editorWindow?.Dispose();
-        primaryWindow.Dispose();
-        previewWindow.Dispose();
+        foreach (var window in windows) window?.Dispose();
         root.Dispose();
         core.Dispose();
     }
-
 
 }

@@ -1,18 +1,18 @@
+#include <common.hlsl>
 #include <noise.hlsl>
 
 SamplerState BilinearSampler : register(s1);
-Texture2D<float4> Texture : register(t0);
-Texture2D<float4> PositionTexture : register(t1);
-Texture2D<float4> VelocityTexture : register(t2);
+Texture2D<float4> PositionTexture : register(t0);
+Texture2D<float4> VelocityTexture : register(t1);
+Texture2D<float4> Texture : register(t5);
 
-cbuffer ParticleCB : register(b0)
+cbuffer ParticleCB : register(b1)
 {
     float3 Gravity;
     float DeltaTime;
     float Lifetime;
     float LocalTime;
     float LocalTimeZ;
-    matrix ViewProjection;
     matrix Projection;
     uint PoolSize;
     uint BlockSizeBits;
@@ -25,10 +25,15 @@ static struct {
     uint id;
 } GlobalParticle;
 
+struct Emitter {
+    float3 Position;
+};
+
 %Bootstrap%
 
-AppendStructuredBuffer<int> FreeParticleIds;
+//AppendStructuredBuffer<int> FreeParticleIds;
 StructuredBuffer<uint> ActiveBlocks;
+StructuredBuffer<Emitter> Emitters;
 
 void KillParticle() {
     //FreeParticleIds.Append(GlobalParticle.id);
@@ -78,11 +83,13 @@ void PSBlank(PSBlankInput input
 struct VSSpawnInput {
     float4 position : POSITION;
     float2 uv : TEXCOORD0;
+    float4 params : COLOR0;
 };
 
 struct PSSpawnInput {
     float4 position : SV_POSITION;
     float2 uv : TEXCOORD0;
+    float4 params : TEXCOORD1;
 };
 
 PSSpawnInput VSSpawn(VSSpawnInput input)
@@ -91,6 +98,7 @@ PSSpawnInput VSSpawn(VSSpawnInput input)
     
     result.position = float4(input.position.xy, LocalTimeZ, 1.0);
     result.uv = input.uv;
+    result.params = input.params;
 #if defined(VULKAN)
     result.position.y = -result.position.y;
 #endif
@@ -115,6 +123,8 @@ void PSSpawn(PSSpawnInput input
     float Seed = frac(frac(dot(input.position.xy, float2(0.6796, 0.4273))) * 188.1);
     float3 Velocity = float3(0, 0, 0);
     float Age = 0.0;
+    
+    Position += Emitters[input.params.x * 255].Position;
     
 %ParticleSpawn%
 
@@ -159,15 +169,13 @@ void PSStep(PSStepInput input
     //float Seed = frac(frac(dot(input.position.xy, float2(0.34731, 0.7656))) * 651.5216);
     float3 Velocity = VelocityTexture[input.position.xy].xyz;
     float Age = VelocityTexture[input.position.xy].w;
-    
-    float3 delta = Position - AvoidPoint;
-    Velocity += 1.0 * delta / pow(dot(delta, delta), 2.0);
-    
+        
 %ParticleStep%
 
     {   // 16-bit precision fix
         Position = asfloat((asuint(Position) + ((asuint(Position).yzx >> 3) & 0x00001fff)) & 0xffffe000);
     }
+    if (Age > Lifetime) { Age = 10000000; }
     
     OutPosition = float4(Position, Seed);
     OutVelocity = float4(Velocity, Age);
@@ -213,6 +221,7 @@ PSInput VSMain(VSInput input)
     //PositionData = float4(0, 3, 0, 1);
     float3 Position = PositionData.xyz;
     float Age = VelocityData.w;
+    float NormalizedAge = Age / Lifetime;
     float2 UV = float2(input.vertexId % 2, input.vertexId / 2);
     float Seed = frac(frac(dot(address.xy, float2(0.6796, 0.4273))) * 188.1);
     float SpriteSize = 1.0;
@@ -232,7 +241,7 @@ PSInput VSMain(VSInput input)
     result.position.y = -result.position.y;
 #endif
     
-    if (Age == 0.0) {
+    if (Age == 0.0 || Age > Lifetime) {
         result.position.z = -1.0;
     }
 

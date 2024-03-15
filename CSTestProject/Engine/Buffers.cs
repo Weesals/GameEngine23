@@ -80,6 +80,28 @@ namespace Weesals.Engine {
         FORMAT_R8_SINT = 64,
         FORMAT_A8_UNORM = 65,
         FORMAT_R1_UNORM = 66,
+        FORMAT_R9G9B9E5_SHAREDEXP = 67,
+        FORMAT_R8G8_B8G8_UNORM = 68,
+        FORMAT_G8R8_G8B8_UNORM = 69,
+        FORMAT_BC1_TYPELESS = 70,
+        FORMAT_BC1_UNORM = 71,
+        FORMAT_BC1_UNORM_SRGB = 72,
+        FORMAT_BC2_TYPELESS = 73,
+        FORMAT_BC2_UNORM = 74,
+        FORMAT_BC2_UNORM_SRGB = 75,
+        FORMAT_BC3_TYPELESS = 76,
+        FORMAT_BC3_UNORM = 77,
+        FORMAT_BC3_UNORM_SRGB = 78,
+        FORMAT_BC4_TYPELESS = 79,
+        FORMAT_BC4_UNORM = 80,
+        FORMAT_BC4_SNORM = 81,
+        FORMAT_BC5_TYPELESS = 82,
+        FORMAT_BC5_UNORM = 83,
+        FORMAT_BC5_SNORM = 84,
+        FORMAT_B5G6R5_UNORM = 85,
+        FORMAT_B5G5R5A1_UNORM = 86,
+        FORMAT_B8G8R8A8_UNORM = 87,
+        FORMAT_B8G8R8X8_UNORM = 88,
     }
     unsafe struct BufferFormatType {
         public enum Types : byte {
@@ -196,7 +218,30 @@ namespace Weesals.Engine {
 			new BufferFormatType(Types.SInt, Sizes.Size8, 1),//FORMAT_R8_SINT = 64,
 			new BufferFormatType(Types.UNrm, Sizes.Size8, 1),//FORMAT_A8_UNORM = 65,
 			new BufferFormatType(Types.UNrm, Sizes.Size8, 1),//FORMAT_R1_UNORM = 66,
-		};
+
+            new BufferFormatType(Types.TLss, Sizes.Size32, 1),//FORMAT_R9G9B9E5_SHAREDEXP = 67,
+            new BufferFormatType(Types.UNrm, Sizes.Size8, 2),//FORMAT_R8G8_B8G8_UNORM = 68,
+            new BufferFormatType(Types.UNrm, Sizes.Size8, 2),//FORMAT_G8R8_G8B8_UNORM = 69,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC1_TYPELESS = 70,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC1_UNORM = 71,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC1_UNORM_SRGB = 72,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC2_TYPELESS = 73,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC2_UNORM = 74,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC2_UNORM_SRGB = 75,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC3_TYPELESS = 76,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC3_UNORM = 77,
+            new BufferFormatType(Types.TLss, Sizes.Other, 4),//FORMAT_BC3_UNORM_SRGB = 78,
+            new BufferFormatType(Types.TLss, Sizes.Other, 1),//FORMAT_BC4_TYPELESS = 79,
+            new BufferFormatType(Types.TLss, Sizes.Other, 1),//FORMAT_BC4_UNORM = 80,
+            new BufferFormatType(Types.TLss, Sizes.Other, 1),//FORMAT_BC4_SNORM = 81,
+            new BufferFormatType(Types.TLss, Sizes.Other, 2),//FORMAT_BC5_TYPELESS = 82,
+            new BufferFormatType(Types.TLss, Sizes.Other, 2),//FORMAT_BC5_UNORM = 83,
+            new BufferFormatType(Types.TLss, Sizes.Other, 2),//FORMAT_BC5_SNORM = 84,
+            new BufferFormatType(Types.UNrm, Sizes.Size5651, 3),//FORMAT_B5G6R5_UNORM = 85,
+            new BufferFormatType(Types.UNrm, Sizes.Size5651, 4),//FORMAT_B5G5R5A1_UNORM = 86,
+            new BufferFormatType(Types.UNrm, Sizes.Size8, 4),//FORMAT_B8G8R8A8_UNORM = 87,
+            new BufferFormatType(Types.UNrm, Sizes.Size8, 4),//FORMAT_B8G8R8X8_UNORM = 88,
+        };
     }
 
     unsafe public struct BufferLayoutPersistent : IDisposable {
@@ -222,6 +267,9 @@ namespace Weesals.Engine {
             BufferLayout.mCount = -1;
             mBufferAllocCount = -1;
         }
+        public void NotifyChanged() {
+            BufferLayout.revision++;
+        }
         public void Dispose() {
             if (BufferLayout.mElements != null)
                 Marshal.FreeHGlobal((nint)BufferLayout.mElements);
@@ -237,7 +285,7 @@ namespace Weesals.Engine {
             }
             BufferLayout.mElements[ElementCount] = element;
             ++BufferLayout.mElementCount;
-            mBufferStride += BufferFormatType.GetMeta(element.mFormat).GetByteSize();
+            mBufferStride += element.mBufferStride;// BufferFormatType.GetMeta(element.mFormat).GetByteSize();
             CalculateImplicitSize();
             return ElementCount - 1;
         }
@@ -268,6 +316,10 @@ namespace Weesals.Engine {
             mBufferAllocCount = newCount;
             CalculateImplicitSize();
             return true;
+        }
+        public void SetCount(int count) {
+            Debug.Assert(count <= mBufferAllocCount, "Buffer must be resized first!");
+            BufferLayout.mCount = count;
         }
         public void Clear() {
             BufferLayout.mCount = 0;
@@ -308,7 +360,7 @@ namespace Weesals.Engine {
         public static implicit operator CSBufferLayout(BufferLayoutPersistent buffer) { return buffer.BufferLayout; }
 
         private static ulong gId;
-        public static ulong MakeId() { return gId++; }
+        public static ulong MakeId() { return Interlocked.Increment(ref gId); }
     }
     struct Normalized<T> where T : unmanaged {
         public T Value;
@@ -370,6 +422,8 @@ namespace Weesals.Engine {
             ConvertFn<ushort, uint>.mConvert = &ConvertUSToUI;
             ConvertFn<int, ushort>.mConvert = &ConvertUIToUS;
             ConvertFn<ushort, int>.mConvert = &ConvertUSToUI;
+            ConvertFn<Int4, Color>.mConvert = &ConvertI4ToB4;
+            ConvertFn<Color, Int4>.mConvert = &ConvertB4ToI4;
             ConvertFn<Vector2, Vector3>.mConvert = &ConvertV2ToV3;
             ConvertFn<Vector4, Color>.mConvert = &ConvertV4ToC4;
             ConvertFn<Vector3, Color>.mConvert = &ConvertV3ToC4;
@@ -416,6 +470,8 @@ namespace Weesals.Engine {
         public static void ConvertFToUI(void* dest, void* src) { *(uint*)dest = (uint)*(float*)src; }
         public static void ConvertUSToUI(void* dest, void* src) { *(uint*)dest = *(ushort*)src; }
         public static void ConvertUIToUS(void* dest, void* src) { *(ushort*)dest = (ushort)*(int*)src; }
+        public static void ConvertI4ToB4(void* dest, void* src) { var s = *(Int4*)src; * (Color*)dest = new Color((byte)s.X, (byte)s.Y, (byte)s.Z, (byte)s.W); }
+        public static void ConvertB4ToI4(void* dest, void* src) { var s = *(Color*)src; * (Int4*)dest = new Int4(s.R, s.G, s.B, s.A); }
         public static void Convert<T>(void* dest, void* src) where T : unmanaged { *(T*)dest = *(T*)src; }
         public static void ConvertV2ToV3(void* dest, void* src) { *(Vector3*)dest = new Vector3(*(Vector2*)src, 0.0f); }
         public static void ConvertV4ToC4(void* dest, void* src) { *(Color*)dest = new Color(*(Vector4*)src); }
@@ -480,7 +536,7 @@ namespace Weesals.Engine {
             Debug.Assert(ReadWriter.mReader != null,
                 "Require a reader for " + typeof(T).Name);
         }
-        private ReadWriterPair FindConverterFor<View>(BufferFormat fmt) where View : unmanaged {
+        public static ReadWriterPair FindConverterFor<View>(BufferFormat fmt) where View : unmanaged {
             var type = BufferFormatType.GetMeta(fmt);
             if (type.IsFloat()) {
                 if (type.GetSize() == BufferFormatType.Sizes.Size32) {
@@ -535,13 +591,13 @@ namespace Weesals.Engine {
             : this((byte*)element.mData + element.mBufferStride * range.Start, element.mBufferStride, range.Length, element.mFormat)
             { }
 
-        private ReadWriterPair Initialize<View, Raw>() where View : unmanaged where Raw : unmanaged {
+        private static ReadWriterPair Initialize<View, Raw>() where View : unmanaged where Raw : unmanaged {
             return new ReadWriterPair() {
                 mWriter = FindConverterWithFallback<View, Raw>(),
                 mReader = FindConverterWithFallback<Raw, View>(),
             };
         }
-        private delegate*<void*, void*, void> FindConverterWithFallback<From, To>() where From : unmanaged where To : unmanaged {
+        private static delegate*<void*, void*, void> FindConverterWithFallback<From, To>() where From : unmanaged where To : unmanaged {
             var converter = ConvertFn<From, To>.mConvert;
             if (converter != null) return converter;
             if (typeof(From) == typeof(Vector4)) return FindConverterWithFallback<Vector3, To>();
@@ -557,7 +613,7 @@ namespace Weesals.Engine {
             return default;
         }
 
-        private ReadWriterPair Initialize<View, Raw>(bool normalized) where View : unmanaged where Raw : unmanaged {
+        private static ReadWriterPair Initialize<View, Raw>(bool normalized) where View : unmanaged where Raw : unmanaged {
             if (normalized) {
                 var pair = new ReadWriterPair() {
                     mWriter = ConvertFn<View, Normalized<Raw>>.mConvert,

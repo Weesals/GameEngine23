@@ -18,6 +18,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\GameEngine23\externals\ispc_texcomp\ispc_texcomp.dll" Link="ispc_texcomp.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Weesals.ECS\Weesals.ECS.csproj" />
   </ItemGroup>
 
@@ -34,6 +40,11 @@
       <TargetPath>CSBindings.dll</TargetPath>
     </ContentWithTargetPath>
     <None Include="$(SolutionDir)\x64\Release\CSBindings.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="todo.txt">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -28,12 +28,12 @@ namespace Navigation {
         public const int GridCellSize = NavMesh.GridCellSize;
         public const int TriGridShift = NavMesh.TriGridShift;
 
-        private static readonly ProfilerMarker requireTriPointMarker = new ProfilerMarker("RequireTriPoint");
-        private static readonly ProfilerMarker pinEdgeMarker = new ProfilerMarker("Pin Edge");
-        private static readonly ProfilerMarker swapEdgeMarker = new ProfilerMarker("Swap Edge");
-        private static readonly ProfilerMarker setTriTypeMarker = new ProfilerMarker("Set Type");
-        private static readonly ProfilerMarker getTriangleAtMarker = new ProfilerMarker("GetTriangleAt");
-        private static readonly ProfilerMarker triangulatePolyMarker = new ProfilerMarker("Triangulate Polygon");
+        private static readonly ProfilerMarker requireTriPointMarker = new ProfilerMarker("RequireTriPoint", false);
+        private static readonly ProfilerMarker pinEdgeMarker = new ProfilerMarker("Pin Edge", false);
+        private static readonly ProfilerMarker swapEdgeMarker = new ProfilerMarker("Swap Edge", false);
+        private static readonly ProfilerMarker setTriTypeMarker = new ProfilerMarker("Set Type", false);
+        private static readonly ProfilerMarker getTriangleAtMarker = new ProfilerMarker("GetTriangleAt", false);
+        private static readonly ProfilerMarker triangulatePolyMarker = new ProfilerMarker("Triangulate Polygon", false);
 
         public NavMesh NavMesh;
 
@@ -455,11 +455,11 @@ namespace Navigation {
                 x /= (c2.Y - c1.Y);
                 x += c1.X;
                 if (isMinEdge) {
-                    x += 1 << (TriGridShift - 1) - 1;
+                    x += (1 << (TriGridShift - 1)) - 1;
                     x >>= TriGridShift;
                     minX = Math.Max(minX, x);
                 } else {
-                    x -= 1 << (TriGridShift - 1) - 1;
+                    x -= (1 << (TriGridShift - 1)) - 1;
                     x >>= TriGridShift;
                     maxX = Math.Min(maxX, x);
                 }
@@ -714,8 +714,9 @@ namespace Navigation {
                     var cutO = cornerIds[^1] == cornerIds[bestI + 1] ? 2 : cornerIds[^2] == cornerIds[bestI] ? 1 : 0;
                     var cutI = bestI + cutO;
                     var otherTriI = TriangulatePolygon(cornerIds.Slice(cutI, cornerIds.Length - (bestI + (cutO != 0 ? 2 : 0))), type, edges != null ? edges + cutI : null);
-                    if (cutO == 0) ;// SetAdjacency(new TriangleEdge(triI, 1), new TriangleEdge(otherTriI, 2));
-                    else if (edges != null) {
+                    if (cutO == 0) {
+                        // SetAdjacency(new TriangleEdge(triI, 1), new TriangleEdge(otherTriI, 2));
+                    } else if (edges != null) {
                         if (cutO == 1) {
                             edges[bestI] = new TriangleEdge(otherTriI, 2);
                         } else {

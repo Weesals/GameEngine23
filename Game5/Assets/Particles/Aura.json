@@ -1,0 +1,47 @@
+{
+  "RenderState": {
+    "BlendMode": "Additive",
+    "Texture": "./Assets/Particles/Ring.png"
+  },
+  "Metadata": {
+    "SpawnRate": 4,
+    "MaximumDuration": 1.0
+  },
+  "ParticleSpawn": [
+    {
+      "name": "Custom",
+      "Code": "Position.y += 0.01;"
+    }
+  ],
+  "ParticleStep": [
+    {
+      "name": "IncrementLifetime"
+    },
+    {
+      "name": "KillDeadParticles"
+    }
+  ],
+  "ParticleVertex": [
+    {
+      "name": "Custom",
+      "Code": "SpriteSize *= 5.0 * NormalizedAge * (1.0 - NormalizedAge) / 0.25;"
+    },
+    {
+      "name": "Custom",
+      "Code": "Position += float3(UV * 2.0 - 1.0, 0.0).xzy * SpriteSize; SpriteSize = 0;"
+    }
+  ],
+  "ParticlePixel": [
+    {
+      "name": "Opacity",
+      "Opacity": "1.0"
+    },
+    {
+      "name": "TextureSample"
+    },
+    {
+      "name": "Custom",
+      "Code": "Color *= float4(0.0,0.6, 1.0, saturate(Age * 5.0));"
+    }
+  ]
+}

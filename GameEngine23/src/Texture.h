@@ -23,7 +23,7 @@ public:
 class Texture : public TextureBase
 {
 	struct Sizing {
-		Int2 mSize;
+		Int3 mSize;
 		int mMipCount = 1;
 		int mArrayCount = 1;
 	};
@@ -35,8 +35,11 @@ class Texture : public TextureBase
 
 public:
 	using TextureBase::TextureBase;
+	Texture(Texture&& other) = default;
+	Texture& operator=(Texture&& other) = default;
 	void SetSize(Int2 size);
-	Int2 GetSize() const;
+	void SetSize3D(Int3 size);
+	Int3 GetSize() const;
 
 	void SetMipCount(int count);
 	int GetMipCount() const;
@@ -53,8 +56,8 @@ public:
 	std::span<uint8_t> GetRawData(int mip = 0, int slice = 0);
 	std::span<const uint8_t> GetData(int mip = 0, int slice = 0) const;
 
-	static int GetSliceSize(Int2 res, int mips, BufferFormat fmt);
-	static Int2 GetMipResolution(Int2 res, BufferFormat fmt, int mip);
-	static uint32_t GetRawImageSize(Int2 res, BufferFormat fmt);
+	static int GetSliceSize(Int3 res, int mips, BufferFormat fmt);
+	static Int3 GetMipResolution(Int3 res, BufferFormat fmt, int mip);
+	static uint32_t GetRawImageSize(Int3 res, BufferFormat fmt);
 
 };

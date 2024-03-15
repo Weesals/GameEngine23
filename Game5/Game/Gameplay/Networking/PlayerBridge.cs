@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
+using Weesals.Engine;
 using PlayerData = Game5.Game.PlayerSystem.PlayerData;
 
 namespace Game5.Game.Networking {
@@ -16,7 +17,7 @@ namespace Game5.Game.Networking {
         public int CheatsUsed { get; private set; }
         public bool IsGodMode { get; private set; }
 
-        public List<GenericTarget> Selection = new();
+        public List<ItemReference> Selection = new();
 
         public void PullState(PlayerData data) {
             Data = data;

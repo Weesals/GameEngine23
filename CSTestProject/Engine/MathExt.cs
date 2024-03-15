@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -188,14 +189,15 @@ namespace Weesals.Engine {
 	    public static bool operator !=(Int2 o1, Int2 o2) { return o1.X != o2.X || o1.Y != o2.Y; }
         public static Int2 operator >>(Int2 o1, int o) { return new Int2(o1.X >> o, o1.Y >> o); }
         public static Int2 operator <<(Int2 o1, int o) { return new Int2(o1.X << o, o1.Y << o); }
-        public static Int2 operator &(Int2 o1, int o) { return new Int2(o1.X & o, o1.Y & o); }
-        public static Int2 operator |(Int2 o1, int o) { return new Int2(o1.X | o, o1.Y | o); }
+        public static Int2 operator &(Int2 o1, Int3 o) { return new Int2(o1.X & o.X, o1.Y & o.Y); }
+        public static Int2 operator |(Int2 o1, Int3 o) { return new Int2(o1.X | o.X, o1.Y | o.Y); }
         public static Int2 operator ^(Int2 o1, int o) { return new Int2(o1.X ^ o, o1.Y ^ o); }
 
         public static Int2 Min(Int2 v1, Int2 v2) { return new Int2(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y)); }
 	    public static Int2 Max(Int2 v1, Int2 v2) { return new Int2(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y)); }
         public static Int2 Abs(Int2 v) { return new Int2(Math.Abs(v.X), Math.Abs(v.Y)); }
         public static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return new Int2(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y)); }
+        public static int DotI(Int2 v1, Int2 v2) { return v1.X * v2.X + v1.Y * v2.Y; }
         public static long Dot(Int2 v1, Int2 v2) { return (long)v1.X * v2.X + (long)v1.Y * v2.Y; }
         public static int CSum(Int2 v) { return v.X + v.X; }
         public static int CMul(Int2 v) { return v.X * v.Y; }
@@ -218,6 +220,7 @@ namespace Weesals.Engine {
         public int X, Y, Z;
         public Int3(int v) : this(v, v, v) { }
         public Int3(int _x, int _y, int _z) { X = _x; Y = _y; Z = _z; }
+        public Int3(Int2 v, int _z) { X = v.X; Y = v.Y; Z = _z; }
         public Int3(Vector3 o) : this((int)o.X, (int)o.Y, (int)o.Z) { }
         public bool Equals(Int3 o) { return X == o.X && Y == o.Y && Z == o.Z; }
         public override string ToString() { return $"{X},{Y},{Z}"; }
@@ -231,6 +234,13 @@ namespace Weesals.Engine {
         public static Int3 operator -(Int3 v, int o) { return new Int3(v.X - o, v.Y - o, v.Z - o); }
         public static Int3 operator *(Int3 v, int o) { return new Int3(v.X * o, v.Y * o, v.Z * o); }
         public static Int3 operator /(Int3 v, int o) { return new Int3(v.X / o, v.Y / o, v.Z / o); }
+        public static bool operator ==(Int3 o1, Int3 o2) { return o1.X == o2.X && o1.Y == o2.Y && o1.Z == o2.Z; }
+        public static bool operator !=(Int3 o1, Int3 o2) { return o1.X != o2.X || o1.Y != o2.Y || o1.Z != o2.Z; }
+        public static Int3 operator >>(Int3 o1, int o) { return new Int3(o1.X >> o, o1.Y >> o, o1.Z >> o); }
+        public static Int3 operator <<(Int3 o1, int o) { return new Int3(o1.X << o, o1.Y << o, o1.Z << o); }
+        public static Int3 operator &(Int3 o1, Int3 o) { return new Int3(o1.X & o.X, o1.Y & o.Y, o1.Z & o.Z); }
+        public static Int3 operator |(Int3 o1, Int3 o) { return new Int3(o1.X | o.X, o1.Y | o.Y, o1.Z | o.Z); }
+        public static Int3 operator ^(Int3 o1, int o) { return new Int3(o1.X ^ o, o1.Y ^ o, o1.Z ^ o); }
 
         public static Int3 FloorToInt(Vector3 v) { return new Int3(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y), MathExt.FloorToInt(v.Z)); }
         public static Int3 RoundToInt(Vector3 v) { return new Int3(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y), MathExt.RoundToInt(v.Z)); }
@@ -241,10 +251,16 @@ namespace Weesals.Engine {
         public static Int3 Clamp(Int3 v, Int3 min, Int3 max) {
             return new Int3(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y), Math.Clamp(v.Z, min.Z, max.Z));
         }
+        public static int DotI(Int3 v1, Int3 v2) { return v1.X * v2.X + v1.Y * v2.Y + v1.Z * v2.Z; }
+        public static long Dot(Int3 v1, Int3 v2) { return (long)v1.X * v2.X + (long)v1.Y * v2.Y + (long)v1.Z * v2.Z; }
+        public override bool Equals(object? obj) { return obj is Int3 o && o == this; }
+        public override int GetHashCode() { return X + (Y * 7841) + (Z * 3509299); }
 
         public static implicit operator Int3(int v) { return new Int3(v); }
         public static implicit operator Vector3(Int3 v) { return new Vector3((float)v.X, (float)v.Y, (float)v.Z); }
         public static explicit operator Int3(Vector3 v) { return new Int3(v); }
+        public static readonly Int3 Zero = new Int3(0);
+        public static readonly Int3 One = new Int3(1);
     }
     public struct Int4 : IEquatable<Int4> {
         public int X, Y, Z, W;
@@ -252,6 +268,7 @@ namespace Weesals.Engine {
 	    public Int4(int _x, int _y, int _z, int _w) { X = _x; Y = _y; Z = _z; W = _w; }
 	    public Int4(Vector4 o) : this((int)o.X, (int)o.Y, (int)o.Z, (int)o.W) { }
         public bool Equals(Int4 o) { return X == o.X && Y == o.Y && Z == o.Z && W == o.W; }
+        public override string ToString() { return $"<{X}, {Y}, {Z}, {W}>"; }
         public static Int4 operator +(Int4 v, Int4 o) { return new Int4(v.X + o.X, v.Y + o.Y, v.Z + o.Z, v.W + o.W); }
 	    public static Int4 operator -(Int4 v, Int4 o) { return new Int4(v.X - o.X, v.Y - o.Y, v.Z - o.Z, v.W - o.W); }
 	    public static Int4 operator *(Int4 v, Int4 o) { return new Int4(v.X * o.X, v.Y * o.Y, v.Z * o.Z, v.W * o.W); }
@@ -260,6 +277,11 @@ namespace Weesals.Engine {
 	    public static Int4 operator -(Int4 v, int o) { return new Int4(v.X - o, v.Y - o, v.Z - o, v.W - o); }
 	    public static Int4 operator *(Int4 v, int o) { return new Int4(v.X * o, v.Y * o, v.Z * o, v.W * o); }
 	    public static Int4 operator /(Int4 v, int o) { return new Int4(v.X / o, v.Y / o, v.Z / o, v.W / o); }
+
+        unsafe public ref int this[int index] {
+            get { fixed (int* ptr = &X) return ref ptr[index]; }
+            //return ref MemoryMarshal.Cast<Int4, int>(ref new Span<Int4>(this))[index];
+        }
 
         public static Int4 FloorToInt(Vector4 v) { return new Int4(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y), MathExt.FloorToInt(v.Z), MathExt.FloorToInt(v.W)); }
         public static Int4 RoundToInt(Vector4 v) { return new Int4(MathExt.RoundToInt(v.X), MathExt.RoundToInt(v.Y), MathExt.RoundToInt(v.Z), MathExt.RoundToInt(v.W)); }
@@ -291,8 +313,8 @@ namespace Weesals.Engine {
         public UShort2(Vector2 v) { X = (ushort)v.X; Y = (ushort)v.Y; }
         public Vector2 ToVector2() { return new Vector2(X, Y); }
         public bool Equals(UShort2 o) { return X == o.X && Y == o.Y; }
-        public override string ToString() { return $"<{X}, {Y}>"; }
         public override int GetHashCode() { return X + (Y << 16); }
+        public override string ToString() { return $"<{X}, {Y}>"; }
         public static implicit operator UShort2(ushort v) { return new UShort2(v, v); }
     }
 
@@ -327,7 +349,9 @@ namespace Weesals.Engine {
         public static Color operator *(Color c, float v) { return new Color((Vector4)c * v); }
         public static Color operator *(Color c1, Color c2) { return new Color((Vector4)c1 * c2); }
         public static readonly Color White = new Color(0xffffffff);
+        public static readonly Color DarkGray = new Color(0xff444444);
         public static readonly Color Gray = new Color(0xff888888);
+        public static readonly Color LightGray = new Color(0xffcccccc);
         public static readonly Color Black = new Color(0xff000000);
         public static readonly Color Clear = new Color(0x00000000);
         public static readonly Color Red = new Color(0xff0000ff);
@@ -445,6 +469,77 @@ namespace Weesals.Engine {
         }
         public static RectI FromMinMax(Int2 min, Int2 max) {
             return new RectI(min.X, min.Y, max.X - min.X, max.Y - min.Y);
+        }
+    }
+
+    public struct BoundingBox {
+        public Vector3 Min, Max;
+        public Vector3 Centre => (Min + Max) / 2.0f;
+        public Vector3 Extents => (Max - Min) / 2.0f;
+        public Vector3 Size => Max - Min;
+
+        public BoundingBox() : this(Vector3.Zero, Vector3.Zero) { }
+        public BoundingBox(Vector3 min, Vector3 max) {
+            Min = min;
+            Max = max;
+        }
+        public static BoundingBox FromMinMax(Vector3 min, Vector3 max) { return new BoundingBox(min, max); }
+
+        public float RayCast(Ray ray) {
+            var invRayDir = Vector3.Divide(Vector3.One, ray.Direction);
+            var d0 = (Min - ray.Origin) * invRayDir;
+            var d1 = (Max - ray.Origin) * invRayDir;
+
+            var min = Vector3.Min(d0, d1);
+            var max = Vector3.Max(d0, d1);
+
+            var rmin = MathF.Max(MathF.Max(min.X, min.Y), min.Z);
+            var rmax = MathF.Min(MathF.Min(max.X, max.Y), max.Z);
+
+            return rmin <= rmax ? rmin : -1f;
+        }
+
+        public static BoundingBox Union(BoundingBox box1, BoundingBox box2) {
+            return BoundingBox.FromMinMax(Vector3.Min(box1.Min, box2.Min), Vector3.Max(box1.Max, box2.Max));
+        }
+
+        public static readonly BoundingBox Infinite = new BoundingBox(new Vector3(float.MinValue), new Vector3(float.MaxValue));
+        public static readonly BoundingBox Invalid = new BoundingBox(new Vector3(float.MaxValue), new Vector3(float.MinValue));
+    };
+
+    public struct Ray {
+        public Vector3 Origin;
+        public Vector3 Direction;
+        public Ray(Vector3 origin, Vector3 direction) {
+            Origin = origin;
+            Direction = direction;
+        }
+        public Vector3 ProjectTo(Plane p) {
+            return Origin + Direction *
+                (p.D - Vector3.Dot(p.Normal, Origin)) / Vector3.Dot(p.Normal, Direction);
+        }
+        // Get the distance between a point and the nearest point
+        // along this ray
+        public float GetDistanceSqr(Vector3 point) {
+            var dirLen2 = Direction.LengthSquared();
+            var proj = Origin + Direction *
+                (Vector3.Dot(Direction, point - Origin) / dirLen2);
+            return (point - proj).LengthSquared();
+        }
+        public Vector3 GetPoint(float d) { return Origin + Direction * d; }
+        public Ray Normalize() { return new Ray(Origin, Vector3.Normalize(Direction)); }
+
+        public override string ToString() {
+            return $"<{Origin} <> {Direction}>";
+        }
+    }
+    public static class RayExt {
+        public static Vector3 Raycast(this Plane plane, Ray ray) {
+            return ray.ProjectTo(plane);
+        }
+        public static Vector3 Raycast(this Plane plane, Ray ray, out float dst) {
+            dst = (plane.D - Vector3.Dot(plane.Normal, ray.Origin)) / Vector3.Dot(plane.Normal, ray.Direction);
+            return ray.GetPoint(dst);
         }
     }
 

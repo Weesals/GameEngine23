@@ -15,18 +15,19 @@ namespace Game5.Game {
         public Int2 Size;
         public int Height;
         public Shapes Shape;
+        public override string ToString() { return $"{Shape}: {Size}x{Height}"; }
     }
     public class PrototypeData {
         public int Id = -1;
-        public int ParentId = -1;
+        //public int ParentId = -1;
         public int ConstructionProtoId = -1;
-        public int ReferenceCount;
-        public RangeInt DataBundle;
-        public RangeInt Actions;
+        //public int ReferenceCount;
+        //public RangeInt DataBundle;
+        //public RangeInt Actions;
         public EntityPrefab Prefab;
         public EntityFootprint Footprint;
-        public int LineOfSightRadius;
-        public bool IsMobile;
+        //public int LineOfSightRadius;
+        //public bool IsMobile;
         public static readonly PrototypeData Default = new PrototypeData();
     }
 
@@ -68,6 +69,8 @@ namespace Game5.Game {
         }
 
         public PrototypeData GetPrototypeData(EntityPrefab prefab) {
+            if (!PrefabRegistry.World.GetHasComponent<PrototypeData>(prefab.Index))
+                return PrototypeData.Default;
             return PrefabRegistry.World.GetComponent<PrototypeData>(prefab.Index) ?? PrototypeData.Default;
             //return GetPrototypeData(World.Stage.UnsafeGetEntityByIndex(entityIndex));
         }

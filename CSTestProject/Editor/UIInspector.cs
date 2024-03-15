@@ -18,7 +18,8 @@ using Weesals.Landscape.Editor;
 using Weesals.UI;
 using Weesals.Utility;
 
-namespace Weesals.Editor {
+namespace Weesals.Editor
+{
 
     public class UILandscapeTools : CanvasRenderable
         , IToolServiceProvider<BrushConfiguration>
@@ -26,6 +27,7 @@ namespace Weesals.Editor {
 
         public TextButton HeightButton = new("Edit Height");
         public TextButton WaterButton = new("Edit Water");
+        public TextButton SaveButton = new("Save");
         public InputDispatcher InputDispatcher = new();
 
         public UXLandscapeCliffTool CliffTool = new();
@@ -33,6 +35,7 @@ namespace Weesals.Editor {
 
         private BrushConfiguration brushConfig = new();
 
+        ToolContext toolContext;
         ScenePassManager scenePassManager;
         ScenePassManager IToolServiceProvider<ScenePassManager>.Service => scenePassManager;
         BrushConfiguration IToolServiceProvider<BrushConfiguration>.Service => brushConfig;
@@ -48,12 +51,19 @@ namespace Weesals.Editor {
             WaterButton.OnClick += () => { SetActiveTool(activeTool == WaterTool ? null : WaterTool); };
             list.AppendChild(WaterButton);
 
+            SaveButton.OnClick += () => { toolContext.LandscapeData.Save(); };
+            list.AppendChild(SaveButton);
+
             AppendChild(list);
+        }
+        public override void Uninitialise(CanvasBinding binding) {
+            base.Uninitialise(binding);
+            SetActiveTool(null);
         }
 
         public void Initialize(UIGameView gameView, LandscapeRenderer landscape) {
             scenePassManager = gameView.Scene;
-            var toolContext = new ToolContext(landscape, InputDispatcher, gameView.Camera, this);
+            toolContext = new ToolContext(landscape, InputDispatcher, gameView.Camera, this);
             CliffTool.InitializeTool(toolContext);
             WaterTool.InitializeTool(toolContext);
         }
@@ -64,8 +74,8 @@ namespace Weesals.Editor {
             activeTool = tool;
             if (activeTool is IInteraction ntool) InputDispatcher.AddInteraction(ntool);
             if (activeTool != null) activeTool.SetActive(true);
-            HeightButton.Text.Text = activeTool == CliffTool ? "End" : "Edit Height";
-            WaterButton.Text.Text = activeTool == WaterTool ? "End" : "Edit Water";
+            HeightButton.TextElement.Text = activeTool == CliffTool ? "End" : "Edit Height";
+            WaterButton.TextElement.Text = activeTool == WaterTool ? "End" : "Edit Water";
         }
     }
 
@@ -89,8 +99,9 @@ namespace Weesals.Editor {
                 OnTextChanged += Text_Changed;
             }
             private string? Text_Validate(string value) {
+                if (string.IsNullOrEmpty(value)) return value;
                 var propertyType = binding.GetPropertyType();
-                if (propertyType.IsValueType) {
+                if (propertyType.IsValueType && false) {
                     if (propertyType == typeof(int) || propertyType == typeof(short) || propertyType == typeof(sbyte)) {
                         if (!IntRegex.IsMatch(value)) return default;
                     }
@@ -105,19 +116,19 @@ namespace Weesals.Editor {
             }
             private void Text_Changed(string value) {
                 if (binding == null) return;
+                var propertyType = binding.GetPropertyType();
                 try {
-                    var propertyType = binding.GetPropertyType();
-                    if (value == "") {
-                        binding.SetValueAs(propertyType.IsValueType ? Activator.CreateInstance(propertyType) : default);
-                    } else {
+                    if (value != "") {
                         var converter = TypeDescriptor.GetConverter(propertyType);
                         if (converter.CanConvertFrom(typeof(string))) {
                             binding.SetValueAs(converter.ConvertFrom(value));
                         } else {
                             binding.SetValueAs(Convert.ChangeType(value, binding.GetPropertyType()));
                         }
+                        return;
                     }
                 } catch (Exception e) { Debug.WriteLine(e.Message); }
+                binding.SetValueAs(propertyType.IsValueType ? Activator.CreateInstance(propertyType) : default);
             }
             public void BindValue(PropertyPath path) {
                 if (IsEditing) return;
@@ -125,8 +136,27 @@ namespace Weesals.Editor {
                 var type = path.GetPropertyType();
                 if (type == typeof(float))
                     Text = path.GetValueAs<float>().ToString("0.#######") ?? "";
-                else
-                    Text = path.GetValueAs<object>()?.ToString() ?? "";
+                else if (type.IsArray) {
+                    var arr = path.GetValueAs<Array>();
+                    if (arr == null) {
+                        Text = "null";
+                    } else {
+                        var builder = new StringBuilder();
+                        builder.Append($"Array[{arr.Length}] {{");
+                        for (int i = 0; i < arr.Length; i++) {
+                            var item = arr.GetValue(i)?.ToString() ?? "null";
+                            if (i > 0) builder.Append(",");
+                            if (Text.Length + item.Length >= 32) {
+                                builder.Append("...");
+                                break;
+                            }
+                            builder.Append(item);
+                        }
+                        builder.Append($"}}");
+                        Text = builder.ToString();
+                    }
+                } else
+                    Text = path.GetValueAs<object>()?.ToString() ?? "null";
             }
             public override Vector2 GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
@@ -142,7 +172,10 @@ namespace Weesals.Editor {
                 Binding = path;
                 TextElement.Alignment = TextAlignment.Left;
             }
-            public void OnBeginDrag(PointerEvent events) { dragOver = 0; }
+            public void OnBeginDrag(PointerEvent events) {
+                if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
+                dragOver = 0;
+            }
             private double ToLinear(double value) => Math.Sign(value) * Math.Pow(Math.Abs(value), 1.0f / 3.0f);
             private double ToExponent(double value) => value * value * value;
             public void OnDrag(PointerEvent events) {
@@ -228,13 +261,21 @@ namespace Weesals.Editor {
         public void Initialise(World world, Entity entity) {
             List.ClearChildren();
             if (world != null) {
-                List.AppendChild(new TextBlock(entity.ToString()) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat });
+                var entityAddr = world.Stage.RequireEntityAddress(entity);
+                var entityName = $"{entity} (Arch {entityAddr.ArchetypeId} Row {entityAddr.Row})";
+                List.AppendChild(new TextBlock(entityName) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat });
                 foreach (var component in world.GetEntityComponents(entity)) {
                     var type = component.GetComponentType();
                     List.AppendChild(new TextBlock(type.Type.Name) { FontSize = 14, TextColor = component.TypeId.IsSparse ? Color.Blue : Color.Black, DisplayParameters = TextDisplayParameters.Flat });;
-                    var properties = new UIPropertiesList();
-                    foreach (var field in type.Type.GetFields()) {
+                    var properties = new UIPropertiesList() { Name = "Entity Inspector" };
+                    var scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                    foreach (var field in type.Type.GetFields(scope)) {
                         properties.AppendProperty(CreatePropertyPath(component.Column.Items, component.Row, field), () => {
+                            component.NotifyMutation();
+                        });
+                    }
+                    foreach (var property in type.Type.GetProperties(scope)) {
+                        properties.AppendProperty(CreatePropertyPath(component.Column.Items, component.Row, property), () => {
                             component.NotifyMutation();
                         });
                     }
@@ -251,11 +292,17 @@ namespace Weesals.Editor {
             propPath.DefrenceField(field);
             return propPath;
         }
+        private PropertyPath CreatePropertyPath(Array owner, int index, PropertyInfo property) {
+            var propPath = new PropertyPath(owner);
+            propPath.DefrenceArray(index);
+            propPath.DefrenceProperty(property);
+            return propPath;
+        }
     }
 
-    [Conditional("DEBUG")]
+    //[Conditional("DEBUG")]
     public class EditorFieldAttribute : Attribute { }
-    [Conditional("DEBUG")]
+    //[Conditional("DEBUG")]
     public class EditorButtonAttribute : Attribute { }
     public class UIEditablesInspector : CanvasRenderable {
         public List<object> Editables = new();
@@ -269,9 +316,9 @@ namespace Weesals.Editor {
         public void Refresh() {
             List.ClearChildren();
             foreach (var editable in Editables) {
-                List.AppendChild(new TextBlock(editable.GetType().Name));
-                var properties = new UIPropertiesList();
-                var scope = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+                List.AppendChild(new TextBlock(editable.GetType().Name) { TextColor = Color.DarkGray, });
+                var properties = new UIPropertiesList() { Name = "Editables Inspector" };
+                var scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
                 foreach (var field in editable.GetType().GetFields(scope)) {
                     if (field.GetCustomAttribute<EditorFieldAttribute>() != null)
                         properties.AppendProperty(new PropertyPath(editable, field));
@@ -282,7 +329,7 @@ namespace Weesals.Editor {
                 }
                 foreach (var method in editable.GetType().GetMethods(scope)) {
                     if (method.GetCustomAttribute<EditorButtonAttribute>() != null) {
-                        var btn = new TextButton(method.Name);
+                        var btn = new TextButton(method.Name) { Transform = CanvasTransform.MakeDefault().WithOffsets(5f, 0f, -5f, 0f) };
                         btn.OnClick += () => { method.Invoke(editable, null); };
                         properties.AppendChild(btn);
                     }
@@ -293,6 +340,7 @@ namespace Weesals.Editor {
     }
 
     public class UIInspector : TabbedWindow {
+        public readonly ScrollView ScrollView;
         public readonly ListLayout Content;
         public UILandscapeTools LandscapeTools = new();
         public UIEntityInspector EntityInspector = new();
@@ -300,9 +348,11 @@ namespace Weesals.Editor {
         private CanvasRenderable? activeInspector;
 
         public UIInspector(Editor editor) : base(editor, "Inspector") {
-            Content = new() { Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
+            ScrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
+            Content = new() { Name = "Inspector Content", Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
             Content.AppendChild(EditablesInspector);
-            AppendChild(Content);
+            ScrollView.AppendChild(Content);
+            AppendChild(ScrollView);
         }
 
         public void AppendEditables(ObservableCollection<object> editables) {

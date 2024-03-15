@@ -10,6 +10,7 @@ namespace Weesals.ECS {
         public int Row;
         public EntityAddress(ArchetypeId archetype, int row) { ArchetypeId = archetype; Row = row; }
         public EntityAddress(Stage.EntityData entity) : this(entity.ArchetypeId, entity.Row) { }
+        public override string ToString() { return $"{ArchetypeId}:{Row}"; }
         public static implicit operator EntityAddress(Stage.EntityData entity) { return entity.Address; }
         public static readonly EntityAddress Invalid = new(new(0), -1);
     }
@@ -88,7 +89,10 @@ namespace Weesals.ECS {
             object IEnumerator.Current => Current;
             public Enumerator(ComponentMutateListener listener) {
                 Listener = listener;
-                bindingIndex = 0;
+                SetBindingIndex(0);
+            }
+            private void SetBindingIndex(int index) {
+                bindingIndex = index;
                 bitEnum = bindingIndex < Listener.bindings.Count ? Listener.bindings[bindingIndex].GetEnumerator() : default;
             }
             public void Dispose() { }
@@ -96,7 +100,7 @@ namespace Weesals.ECS {
             public bool MoveNext() {
                 if (bitEnum.BitField == null) return false;
                 while (!bitEnum.MoveNext()) {
-                    ++bindingIndex;
+                    SetBindingIndex(bindingIndex + 1);
                     if (bindingIndex >= Listener.bindings.Count) return false;
                 }
                 return true;
@@ -217,8 +221,11 @@ namespace Weesals.ECS {
                 Columns[i].CopyValue(dstRow, Columns[i], srcRow);
             }
         }
-        public void CopyRowTo(int srcRow, Archetype dest, int dstRow) {
+        public void CopyRowTo(int srcRow, Archetype dest, int dstRow, StageContext context) {
             CopyColumns(srcRow, dest, dstRow, TypeMask, dest.TypeMask, 1, 1);
+            foreach (var typeIndex in BitField.Except(SparseTypeMask, dest.SparseTypeMask)) {
+                dest.RequireSparseComponent(TypeId.MakeSparse(typeIndex), context);
+            }
             CopyColumns(srcRow, dest, dstRow, SparseTypeMask, dest.SparseTypeMask, ColumnCount, dest.ColumnCount);
             if (MaxItem >= 0) {
                 dest.Entities[dstRow] = Entities[srcRow];

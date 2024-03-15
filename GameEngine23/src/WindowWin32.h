@@ -34,6 +34,8 @@ public:
 
     HWND GetHWND() const { return hWnd; }
 
+    WindowStatus GetStatus() const override;
+
     // Get the size of the inner window area (not including border or title bar)
     Int2 GetClientSize() const override;
     void SetClientSize(Int2 size) override;

@@ -115,7 +115,12 @@ namespace Weesals.ECS {
             return BitOperations.PopCount(pattern & ((1ul << pageId) - 1));
         }
         private static int GetNextBit(ulong pattern, int bit) {
-            return BitOperations.TrailingZeroCount(pattern & ~((2uL << bit) - 1));
+            return GetBitFrom(pattern, bit + 1);
+        }
+        private static int GetBitFrom(ulong pattern, int bit) {
+            //return BitOperations.TrailingZeroCount(pattern & ~((2uL << bit) - 1));
+            //return BitOperations.TrailingZeroCount(pattern & (ulong)(-(long)(1uL << Math.Min(63, bit + 1))));
+            return BitOperations.TrailingZeroCount(pattern & ((ulong.MaxValue) << bit));
         }
 
         public struct UnionEnumerator : IEnumerator<int>, IEnumerable<int> {
@@ -145,7 +150,7 @@ namespace Weesals.ECS {
                         page |= Bits1.pages[Bits1.GetBitIndex(pageId)];
                     if ((Bits2.pageIds & (1ul << pageId)) != 0)
                         page |= Bits2.pages[Bits2.GetBitIndex(pageId)];
-                    next = GetNextBit(page, -1);
+                    next = GetNextBit(page, 0);
                 }
                 bitIndex = (bitIndex & ~63) + next;
                 return true;
@@ -172,7 +177,7 @@ namespace Weesals.ECS {
             public void Dispose() { }
             public void Reset() { bitIndex = -1; }
             public bool MoveNext() {
-                var next = GetNextBit(page, bitIndex & 63);
+                var next = GetNextBit(page, bitIndex);
                 if (next >= 64) {
                     var pageIds = Bits1.pageIds & Bits2.pageIds;
                     var pageId = GetPageIdByBit(bitIndex);
@@ -211,7 +216,7 @@ namespace Weesals.ECS {
             public void Dispose() { }
             public void Reset() { bitIndex = -1; }
             public bool MoveNext() {
-                var next = GetNextBit(page, bitIndex & 63);
+                var next = GetNextBit(page, bitIndex);
                 if (next >= 64) {
                     var pageIds = Bits1.pageIds;
                     var pageId = GetPageIdByBit(bitIndex);

@@ -84,14 +84,16 @@ namespace Weesals.ECS {
                 var typeMask = Stage.Context.RequireTypeMask(active.SetTypes);
                 if (!typeMask.Equals(archetype.TypeMask)) {
                     var newTableId = Stage.RequireArchetypeIndex(typeMask);
-                    entityAddr = Stage.MoveEntity(mutation.Entity, newTableId);
-                    archetype = Stage.GetArchetype(entityAddr.ArchetypeId);
+                    var mover = Stage.BeginMoveEntity(mutation.Entity, newTableId);
+                    //archetype = Stage.GetArchetype(entityAddr.ArchetypeId);
                     foreach (var typeId in mutation.SetTypes) {
-                        var columnId = archetype.RequireTypeIndex(new TypeId(typeId), Context);
-                        ref var column = ref archetype.Columns[columnId];
-                        column.CopyValue(entityAddr.Row, values[typeId].Items, i);
-                        column.NotifyMutation(entityAddr.Row);
+                        ref var column = ref mover.GetColumn(new TypeId(typeId));
+                        //var columnId = archetype.RequireTypeIndex(new TypeId(typeId), Context);
+                        //ref var column = ref archetype.Columns[columnId];
+                        column.CopyValue(mover.To.Row, values[typeId].Items, i);
+                        column.NotifyMutation(mover.To.Row);
                     }
+                    entityAddr = mover.Commit();
                 }
 
                 // Sparse components

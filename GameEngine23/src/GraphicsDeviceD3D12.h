@@ -40,7 +40,11 @@ public:
 
     D3DResourceCache& GetResourceCache() { return mCache; }
 
-    CommandBuffer CreateCommandBuffer() override;
+    virtual CommandBuffer CreateCommandBuffer() override;
+
+    virtual CompiledShader CompileShader(const std::wstring_view& path, const std::string_view& entry,
+        const std::string_view& profile, std::span<const MacroValue> macros) override;
+
     /*const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,

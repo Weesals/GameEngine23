@@ -16,11 +16,11 @@ namespace Weesals.Engine {
         protected BoundingBox boundingBox;
 
         protected int revision;
-        protected sbyte vertexPositionId;
-        protected sbyte vertexNormalId;
-        protected sbyte vertexTangentId;
-        protected sbyte vertexColorId;
-        protected sbyte vertexTexCoord0Id;
+        protected sbyte vertexPositionId = -1;
+        protected sbyte vertexNormalId = -1;
+        protected sbyte vertexTangentId = -1;
+        protected sbyte vertexColorId = -1;
+        protected sbyte vertexTexCoord0Id = -1;
         protected BufferLayoutPersistent indexBuffer;
         protected BufferLayoutPersistent vertexBuffer;
         protected bool isDynamic;
@@ -40,12 +40,7 @@ namespace Weesals.Engine {
             name = _name;
             vertexBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Vertex);
             indexBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Index);
-            vertexPositionId = 0;
-            vertexNormalId = -1;
-            vertexTangentId = -1;
-            vertexColorId = -1;
-            vertexTexCoord0Id = -1;
-		    vertexPositionId = (sbyte)vertexBuffer.AppendElement(new CSBufferElement("POSITION", BufferFormat.FORMAT_R32G32B32_FLOAT, sizeof(Vector3), null));
+            vertexPositionId = (sbyte)vertexBuffer.AppendElement(new CSBufferElement("POSITION", BufferFormat.FORMAT_R32G32B32_FLOAT, sizeof(Vector3), null));
 		    indexBuffer.AppendElement(new CSBufferElement("INDEX", BufferFormat.FORMAT_R32_UINT, sizeof(int), null));
             material = new();
             boundingBox = default;
@@ -69,8 +64,11 @@ namespace Weesals.Engine {
             }
             boundingBox = BoundingBox.FromMinMax(min, max);
         }
+        public void SetBoundingBox(BoundingBox boundingBox) {
+            this.boundingBox = boundingBox;
+        }
 
-        private void RequireVertexElementFormat(ref sbyte elementId, BufferFormat fmt, string semantic) {
+        protected void RequireVertexElementFormat(ref sbyte elementId, BufferFormat fmt, string semantic) {
             if (elementId == -1) {
                 elementId = (sbyte)vertexBuffer.AppendElement(new CSBufferElement(semantic, fmt));
                 return;
@@ -144,6 +142,10 @@ namespace Weesals.Engine {
         public TypedBufferView<Color> GetColorsV(bool require = false) {
             if (vertexColorId == -1) { if (require) RequireVertexColors(); else return default; }
             return new TypedBufferView<Color>(vertexBuffer.Elements[vertexColorId], vertexBuffer.Count);
+        }
+        public TypedBufferView<T> GetColorsV<T>(bool require = false) where T : unmanaged {
+            if (vertexColorId == -1) { if (require) RequireVertexColors(); else return default; }
+            return new TypedBufferView<T>(vertexBuffer.Elements[vertexColorId], vertexBuffer.Count);
         }
         public TypedBufferView<uint> GetIndicesV() {
             return new TypedBufferView<uint>(indexBuffer.Elements[0], indexBuffer.Count);

@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Geometry;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
@@ -24,7 +25,7 @@ namespace Weesals.Engine {
         public override string ToString() { return $"<{Size}:{Format}:{MipCount}>"; }
     }
     public interface ICustomOutputTextures {
-        bool FillTextures(ref RenderGraph.CustomTexturesContext context);
+        bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context);
     }
     public class RenderPass {
         protected static Material blitMaterial;
@@ -195,8 +196,8 @@ namespace Weesals.Engine {
         public readonly RenderQueue RenderQueue;
         public readonly RetainedRenderer RetainedRenderer;
         public Scene Scene => RetainedRenderer.Scene;
-        public Matrix4x4 View { get; protected set; }
-        public Matrix4x4 Projection { get; protected set; }
+        public Matrix4x4 View { get; protected set; } = Matrix4x4.Identity;
+        public Matrix4x4 Projection { get; protected set; } = Matrix4x4.Identity;
         public Frustum Frustum { get; protected set; }
 
         public RenderTags TagsToInclude = RenderTags.Default;
@@ -253,6 +254,8 @@ namespace Weesals.Engine {
     public class ShadowPass : ScenePass {
         public Action OnPostRender;
 
+        private ConvexHull activeArea = new();
+
         public ShadowPass(Scene scene) : base(scene, "Shadows") {
             Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 1024, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }) };
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
@@ -262,35 +265,37 @@ namespace Weesals.Engine {
             // Create shadow projection based on frustum near/far corners
             Span<Vector3> corners = stackalloc Vector3[8];
             frustum.GetCorners(corners);
-            var lightViewMatrix = Matrix4x4.CreateLookAt(new Vector3(40, 50, -70), Vector3.Zero, Vector3.UnitY);
-            foreach (ref var corner in corners) corner = Vector3.Transform(corner, lightViewMatrix);
+
+            var lightViewMatrix = Matrix4x4.CreateLookAt(new Vector3(40, 50, 70), Vector3.Zero, Vector3.UnitY);
             var lightMin = new Vector3(float.MaxValue);
             var lightMax = new Vector3(float.MinValue);
-            foreach (var corner in corners) {
-                lightMin = Vector3.Min(lightMin, corner);
-                lightMax = Vector3.Max(lightMax, corner);
-            }
-            // Or project onto terrain if smaller
-            if (relevantArea.Max.Y != relevantArea.Min.Y) {
-                frustum.IntersectPlane(Vector3.UnitY, relevantArea.Min.Y, corners);
-                frustum.IntersectPlane(Vector3.UnitY, relevantArea.Max.Y, corners.Slice(4));
-                foreach (ref var corner in corners) corner = Vector3.Clamp(corner, relevantArea.Min, relevantArea.Max);
-                foreach (ref var corner in corners) corner = Vector3.Transform(corner, lightViewMatrix);
-                var lightTMin = new Vector3(float.MaxValue);
-                var lightTMax = new Vector3(float.MinValue);
-                foreach (var corner in corners) {
-                    lightTMin = Vector3.Min(lightTMin, corner);
-                    lightTMax = Vector3.Max(lightTMax, corner);
+
+            if (relevantArea.Min.Y < relevantArea.Max.Y) {
+                activeArea.FromBox(corners);
+                activeArea.Slice(relevantArea);
+                //activeArea.DrawGizmos();
+
+                Span<Vector3> activeCorners = stackalloc Vector3[activeArea.CornerCount];
+                activeArea.GetCorners(activeCorners);
+                foreach (ref var corner in activeCorners) {
+                    corner = Vector3.Transform(corner, lightViewMatrix);
+                    lightMin = Vector3.Min(lightMin, corner);
+                    lightMax = Vector3.Max(lightMax, corner);
                 }
-                lightMin = Vector3.Max(lightMin, lightTMin);
-                lightMax = Vector3.Min(lightMax, lightTMax);
+            } else {
+                foreach (ref var corner in corners) {
+                    corner = Vector3.Transform(corner, lightViewMatrix);
+                    lightMin = Vector3.Min(lightMin, corner);
+                    lightMax = Vector3.Max(lightMax, corner);
+                }
             }
-            lightMax.Z += 10.0f;
+
+            lightMax.Z += 5.0f;
 
             var lightSize = lightMax - lightMin;
 
             lightViewMatrix.Translation = lightViewMatrix.Translation - (lightMin + lightMax) / 2.0f;
-            var lightProjMatrix = Matrix4x4.CreateOrthographic(lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
+            var lightProjMatrix = Matrix4x4.CreateOrthographic(-lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
             return SetViewProjection(
                 lightViewMatrix,
                 lightProjMatrix
@@ -301,6 +306,9 @@ namespace Weesals.Engine {
             base.RenderScene(graphics, ref context);
             OnPostRender?.Invoke();
         }
+        public void DrawVolume() {
+            activeArea.DrawGizmos();
+        }
     }
     public class MainPass : ScenePass {
         public MainPass(Scene scene, string name) : base(scene, name) {
@@ -308,10 +316,11 @@ namespace Weesals.Engine {
         public void UpdateShadowParameters(ScenePass shadowPass) {
             var basePassMat = OverrideMaterial;
             var shadowPassViewProj = shadowPass.View * shadowPass.Projection;
+            Matrix4x4.Invert(shadowPass.View, out var shadowPassInvView);
             Matrix4x4.Invert(View, out var basePassInvView);
             basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);
             basePassMat.SetValue("ShadowIVViewProjection", basePassInvView * shadowPassViewProj);
-            basePassMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(-Vector3.UnitZ, basePassInvView)));
+            basePassMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
             basePassMat.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
         }
     }
@@ -329,6 +338,7 @@ namespace Weesals.Engine {
                 new PassOutput("SceneVelId", 2).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_SNORM, MipCount = 1, }),
             };
             TagsToInclude.Add(scene.TagManager.RequireTag("MainPass"));
+            TagsToInclude.Add(scene.TagManager.RequireTag("Terrain"));
         }
     }
     public class TransparentPass : MainPass {
@@ -345,8 +355,77 @@ namespace Weesals.Engine {
             TagsToInclude.Clear();
             TagsToInclude.Add(scene.TagManager.RequireTag("Transparent"));
             TagsToInclude.Add(scene.TagManager.RequireTag("MainPass"));
+            TagsToInclude.Add(scene.TagManager.RequireTag("Terrain"));
             GetPassMaterial().SetBlendMode(BlendMode.MakeAlphaBlend());
             GetPassMaterial().SetDepthMode(DepthMode.MakeReadOnly());
+        }
+    }
+    public class SkyboxPass : RenderPass {
+        public ScenePassManager ScenePasses;
+        protected Material skyboxMat;
+        public SkyboxPass() : base("Skybox") {
+            Inputs = new[] {
+                new PassInput("SceneDepth", false),
+                new PassInput("SceneColor", false),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneDepth", 0),
+                new PassOutput("SceneColor", 1),
+            };
+            skyboxMat = new Material("./Assets/skybox.hlsl", GetPassMaterial());
+            skyboxMat.SetDepthMode(DepthMode.MakeReadOnly());
+            skyboxMat.SetBlendMode(BlendMode.MakeAlphaBlend());
+        }
+        public void UpdateShadowParameters(ScenePass shadowPass) {
+            Matrix4x4.Invert(shadowPass.View, out var shadowPassInvView);
+            skyboxMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
+            skyboxMat.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
+        }
+        unsafe public override void Render(CSGraphics graphics, ref Context context) {
+            base.Render(graphics, ref context);
+            var viewProj = ScenePasses.View * ScenePasses.Projection;
+            Matrix4x4.Invert(viewProj, out var invVP);
+            skyboxMat.SetValue("InvVP", invVP);
+            skyboxMat.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
+            DrawQuad(graphics, default, skyboxMat);
+        }
+    }
+    public class VolumetricFogPass : RenderPass {
+        public ScenePassManager ScenePasses;
+        Material fogMaterial;
+        CSTexture volumeTex;
+        public VolumetricFogPass() : base("VolumetricFog") {
+            Inputs = new[] {
+                new PassInput("SceneDepth"),
+                new PassInput("SceneColor", false),
+                new PassInput("ShadowMap"),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, }),
+            };
+            fogMaterial = new Material("./Assets/volumetricfog.hlsl", GetPassMaterial());
+            fogMaterial.SetBlendMode(BlendMode.MakePremultiplied());
+            fogMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+            var volumeTexGenerator = new NoiseTexture3D();
+            volumeTex = volumeTexGenerator.Require();
+            fogMaterial.SetTexture("FogDensity", volumeTex);
+        }
+        public override void Render(CSGraphics graphics, ref Context context) {
+            base.Render(graphics, ref context);
+            var viewProj = ScenePasses.View * ScenePasses.Projection;
+            Matrix4x4.Invert(viewProj, out var invVP);
+            fogMaterial.SetValue("InvVP", invVP);
+            DrawQuad(graphics, default, fogMaterial);
+        }
+
+        public void UpdateShadowParameters(ShadowPass shadowPass) {
+            var shadowPassViewProj = shadowPass.View * shadowPass.Projection;
+            Matrix4x4.Invert(shadowPass.View, out var shadowPassInvView);
+            Matrix4x4.Invert(ScenePasses.View, out var basePassInvView);
+            fogMaterial.SetValue("ShadowViewProjection", shadowPassViewProj);
+            fogMaterial.SetValue("ShadowIVViewProjection", shadowPassViewProj);
+            fogMaterial.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
+            fogMaterial.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
         }
     }
     public class TemporalJitter : RenderPass, ICustomOutputTextures {
@@ -364,8 +443,9 @@ namespace Weesals.Engine {
             Inputs = new[] { new RenderPass.PassInput("SceneDepth"), new RenderPass.PassInput("SceneColor", true), new RenderPass.PassInput("SceneVelId", true), };
             Outputs = new[] { new RenderPass.PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }), };
             temporalMaterial = new Material("./Assets/temporal.hlsl", GetPassMaterial());
+            temporalMaterial.SetDepthMode(DepthMode.MakeReadOnly());
         }
-        public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
+        public bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) {
             ++frame;
             int targetId = frame % 2;
             if (!targets[targetId].IsValid() || targets[targetId].GetSize() != context.Viewport.Size) {
@@ -414,11 +494,11 @@ namespace Weesals.Engine {
             firstPassMaterial.SetPixelShader(Resources.LoadShader("./Assets/highz.hlsl", "FirstPassPS"));
             firstPassMaterial.SetBlendMode(BlendMode.MakeOpaque());
             //firstPassMaterial.SetDepthMode(new DepthMode(DepthMode.Comparisons.Always, true));
-            firstPassMaterial.SetDepthMode(DepthMode.MakeOff());
+            firstPassMaterial.SetDepthMode(DepthMode.MakeReadOnly());
             highZMaterial = new Material(firstPassMaterial);
             highZMaterial.SetPixelShader(Resources.LoadShader("./Assets/highz.hlsl", "HighZPassPS"));
         }
-        public bool FillTextures(ref RenderGraph.CustomTexturesContext context) {
+        public bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) {
             var inputSize = context.FindInputSize(0);
             if (inputSize.X <= 0) return false;
             var outputDesc = context.Outputs[0].Output.TargetDesc;
@@ -453,7 +533,7 @@ namespace Weesals.Engine {
                 new PassOutput("SceneColor", 1),
             };
             aoPass = new Material("./Assets/ambientocclusion.hlsl", GetPassMaterial());
-            aoPass.SetDepthMode(DepthMode.MakeOff());
+            aoPass.SetDepthMode(DepthMode.MakeReadOnly());
             aoPass.SetBlendMode(BlendMode.MakeAlphaBlend());
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
@@ -506,9 +586,10 @@ namespace Weesals.Engine {
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
-            DrawQuad(graphics, GetPassMaterial().GetUniformTexture("SceneColor"));
+            //DrawQuad(graphics, GetPassMaterial().GetUniformTexture("SceneColor"));
+            postMaterial.SetTexture("SceneColor", GetPassMaterial().GetUniformTexture("SceneColor"));
             postMaterial.SetTexture("BloomChain", GetPassMaterial().GetUniformTexture("BloomChain"));
-            DrawQuad(graphics, GetPassMaterial().GetUniformTexture("BloomChain"), postMaterial);
+            DrawQuad(graphics, default, postMaterial);
         }
     }
     public class PresentPass : RenderPass {
@@ -529,6 +610,18 @@ namespace Weesals.Engine {
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
             OnRender(graphics, ref context);
+        }
+    }
+    public class FinalPass : RenderPass, ICustomOutputTextures {
+        public delegate bool RenderPassEvaluator(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context);
+        public RenderPassEvaluator OnFillTextures;
+        public FinalPass(string name, PassInput[]? inputs, PassOutput[]? outputs, RenderPassEvaluator onFillTextures) : base(name) {
+            if (inputs != null) Inputs = inputs;
+            if (outputs != null) Outputs = outputs;
+            OnFillTextures = onFillTextures;
+        }
+        public bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) {
+            return OnFillTextures(graphics, ref context);
         }
     }
 
@@ -596,9 +689,9 @@ namespace Weesals.Engine {
             var previousVP = previousView * jitteredPrevProj;
             foreach (var pass in scenePasses) {
                 if (pass.TagsToInclude.Has(pass.Scene.TagManager.RequireTag("MainPass"))) {
-                    pass.OverrideMaterial.SetValue("PreviousViewProjection", previousVP);
-                    pass.OverrideMaterial.SetValue("TemporalJitter", Input.GetKeyDown(KeyCode.Q) ? default : jitter * 0.5f);
-                    pass.OverrideMaterial.SetValue("TemporalFrame", (float)jitterFrame);
+                    Scene.RootMaterial.SetValue("PreviousViewProjection", previousVP);
+                    Scene.RootMaterial.SetValue("TemporalJitter", Input.GetKeyDown(KeyCode.Q) ? default : jitter * 0.5f);
+                    Scene.RootMaterial.SetValue("TemporalFrame", (float)jitterFrame);
                     pass.SetViewProjection(view, jitteredProjection);
                 }
             }

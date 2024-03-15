@@ -5,22 +5,24 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Editor.Assets;
 using Weesals.Engine;
 using Weesals.UI;
 
 namespace Weesals.Editor {
-    public class UIProjectView : TabbedWindow {
+    public class UIProjectView : TabbedWindow, ISelectionProxy {
         public class FolderList : CanvasRenderable, ISelectionGroup {
             public class FolderView : Selectable {
-                public readonly FolderView ParentFolder;
+                public readonly FolderView? ParentFolder;
                 public readonly string Filename;
                 public TextBlock Text;
-                public FolderView(string filename, string name, FolderView parentFolder = null) {
+                public FolderView(string filename, string name, FolderView? parentFolder = null) {
                     Filename = filename;
                     ParentFolder = parentFolder;
                     Text = new(name) {
                         FontSize = 14,
                         Alignment = TextAlignment.Left,
+                        TextColor = Color.DarkGray,
                     };
                     AppendChild(Text);
                     var depth = 0;
@@ -32,16 +34,21 @@ namespace Weesals.Editor {
                     if (IsSelected) {
                         FindParent<UIProjectView>()?.SetContentPath(Filename);
                     }
-                    Text.TextColor = IsSelected ? Color.Yellow : Color.White;
+                    Text.TextColor = IsSelected ? Color.Orange : Color.DarkGray;
                 }
                 public override Vector2 GetDesiredSize(SizingParameters sizing) {
-                    return new Vector2(100f, 20f);
+                    var size = base.GetDesiredSize(sizing);
+                    size.Y = 20f;
+                    return size;
                 }
             }
 
             FolderView? selectedFolder;
             ScrollView scrollView = new() { ScrollMask = new Vector2(0f, 1f), };
-            ListLayout folderList = new() { Axis = ListLayout.Axes.Vertical, };
+            ListLayout folderList = new() { Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
+
+            public IReadOnlyCollection<ISelectable> Selected => new[] { selectedFolder };
+
             public FolderList() {
                 scrollView.AppendChild(folderList);
                 AppendChild(scrollView);
@@ -67,6 +74,16 @@ namespace Weesals.Editor {
                 if (selectedFolder != null) selectedFolder.OnSelected(this, false);
                 selectedFolder = selectable as FolderView;
                 if (selectedFolder != null) selectedFolder.OnSelected(this, true);
+            }
+
+            public void ClearSelected() {
+                SetSelected(null);
+            }
+            public void AppendSelected(ISelectable selectable) {
+                SetSelected(selectable);
+            }
+            public void RemoveSelected(ISelectable selectable) {
+                if (selectedFolder == selectable) SetSelected(null);
             }
         }
         public class FileGrid : CanvasRenderable {
@@ -134,8 +151,8 @@ namespace Weesals.Editor {
                 public void OnBeginDrag(PointerEvent events) {
                     if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
                     events.System.DragDropManager.BeginDrag(events, this);
-                    if (animator == null) animator = new();
-                    animator.Begin();
+                    //if (animator == null) animator = new();
+                    animator?.Begin();
                     MarkTransformDirty();
                 }
 
@@ -155,10 +172,14 @@ namespace Weesals.Editor {
                 public override Vector2 GetDesiredSize(SizingParameters sizing) {
                     return new Vector2(80f);
                 }
+
+                public AssetReference GetAsset() {
+                    return FindParent<UIProjectView>().Editor.AssetDatabase.RequireMetadataByPath(Filename);
+                }
             }
 
             ScrollView scrollView = new() { ScrollMask = new Vector2(0f, 1f), Margins = new RectF(-5f, -5f, 10f, 10), };
-            GridLayout filesGrid = new() { CellCount = new Int2(0, 0), };
+            FixedGridLayout filesGrid = new() { CellCount = new Int2(0, 0), };
             public string ContentPath { get; private set; } = "";
             public FileGrid() {
                 scrollView.AppendChild(filesGrid);
@@ -183,11 +204,18 @@ namespace Weesals.Editor {
             }
         }
 
+        public readonly Editor Editor;
+
         FolderList folderList = new();
         FileGrid fileGrid = new();
+
+        public ISelectionGroup SelectionGroup { get; private set; }
+
         public UIProjectView(Editor editor) : base(editor, "Project") {
-            folderList.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 0f, 1f).WithOffsets(0f, 0f, 200f, 0f));
-            fileGrid.SetTransform(CanvasTransform.MakeDefault().WithOffsets(200f, 0f, 0f, 0f));
+            SelectionGroup = editor.ProjectSelection;
+            Editor = editor;
+            folderList.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 0f, 1f).WithOffsets(0f, 0f, 150f, 0f));
+            fileGrid.SetTransform(CanvasTransform.MakeDefault().WithOffsets(150f, 0f, 0f, 0f));
             folderList.SetRoot("./Assets/");
             AppendChild(folderList);
             AppendChild(fileGrid);

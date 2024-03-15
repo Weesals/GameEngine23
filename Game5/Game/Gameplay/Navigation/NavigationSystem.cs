@@ -403,8 +403,7 @@ namespace Game5.Game {
             }
             RegisterObstruction(entity, obstruction, enable);
         }
-        private void RegisterObstruction(Entity entity, ObstructionCache obstruction, bool enable) {
-            Span<Int2> corners = stackalloc Int2[4];
+        private void ComputeObstruction(Span<Int2> corners, ObstructionCache obstruction) {
             var fwd = obstruction.Transform.GetFacing();
             var rgt = new Int2(fwd.Y, -fwd.X);
             for (int i = 0; i < 4; i++) {
@@ -413,6 +412,10 @@ namespace Game5.Game {
                 delta = (fwd * delta.Y + rgt * delta.X) / 1024;
                 corners[i] = (obstruction.Transform.Position + delta);
             }
+        }
+        private void RegisterObstruction(Entity entity, ObstructionCache obstruction, bool enable) {
+            Span<Int2> corners = stackalloc Int2[4];
+            ComputeObstruction(corners, obstruction);
             NavGrid.AppendGeometry(corners, enable ? 1 : -1);
             isNavMeshDirty = true;
         }

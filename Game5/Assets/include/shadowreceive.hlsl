@@ -1,7 +1,7 @@
 #ifndef __SHADOW_RECEIVE__
 #define __SHADOW_RECEIVE__
 
-#include "include/common.hlsl"
+#include <common.hlsl>
 
 Texture2D<float4> ShadowMap : register(t4);
 SamplerComparisonState ShadowSampler : register(s3);

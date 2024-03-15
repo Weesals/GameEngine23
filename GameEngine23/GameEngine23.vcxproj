@@ -145,6 +145,40 @@
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="externals\nvtt\CompressDXT.h" />
+    <ClInclude Include="externals\nvtt\CompressionOptions.h" />
+    <ClInclude Include="externals\nvtt\Compressor.h" />
+    <ClInclude Include="externals\nvtt\CompressRGB.h" />
+    <ClInclude Include="externals\nvtt\cuda\Bitmaps.h" />
+    <ClInclude Include="externals\nvtt\cuda\CudaCompressDXT.h" />
+    <ClInclude Include="externals\nvtt\cuda\CudaMath.h" />
+    <ClInclude Include="externals\nvtt\cuda\CudaUtils.h" />
+    <ClInclude Include="externals\nvtt\InputOptions.h" />
+    <ClInclude Include="externals\nvtt\nvtt.h" />
+    <ClInclude Include="externals\nvtt\nvtt_wrapper.h" />
+    <ClInclude Include="externals\nvtt\OptimalCompressDXT.h" />
+    <ClInclude Include="externals\nvtt\OutputOptions.h" />
+    <ClInclude Include="externals\nvtt\QuickCompressDXT.h" />
+    <ClInclude Include="externals\nvtt\SingleColorLookup.h" />
+    <ClInclude Include="externals\nvtt\squish\alpha.h" />
+    <ClInclude Include="externals\nvtt\squish\clusterfit.h" />
+    <ClInclude Include="externals\nvtt\squish\colourblock.h" />
+    <ClInclude Include="externals\nvtt\squish\colourfit.h" />
+    <ClInclude Include="externals\nvtt\squish\colourset.h" />
+    <ClInclude Include="externals\nvtt\squish\config.h" />
+    <ClInclude Include="externals\nvtt\squish\fastclusterfit.h" />
+    <ClInclude Include="externals\nvtt\squish\maths.h" />
+    <ClInclude Include="externals\nvtt\squish\rangefit.h" />
+    <ClInclude Include="externals\nvtt\squish\simd.h" />
+    <ClInclude Include="externals\nvtt\squish\simd_3dnow.h" />
+    <ClInclude Include="externals\nvtt\squish\simd_sse.h" />
+    <ClInclude Include="externals\nvtt\squish\simd_ve.h" />
+    <ClInclude Include="externals\nvtt\squish\singlechannelfit.h" />
+    <ClInclude Include="externals\nvtt\squish\singlecolourfit.h" />
+    <ClInclude Include="externals\nvtt\squish\squish.h" />
+    <ClInclude Include="externals\nvtt\squish\weightedclusterfit.h" />
+    <ClInclude Include="externals\nvtt\tools\cmdline.h" />
+    <ClInclude Include="externals\nvtt\tools\configdialog.h" />
     <ClInclude Include="src\Buffer.h" />
     <ClInclude Include="src\Lighting.h" />
     <ClInclude Include="src\Containers.h" />
@@ -173,7 +207,9 @@
     <ClInclude Include="src\Resources.h" />
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="inc\SimpleMath.h" />
+    <ClInclude Include="src\ShaderCache.h" />
     <ClInclude Include="src\Texture.h" />
+    <ClInclude Include="src\TextureCompression.h" />
     <ClInclude Include="src\ui\font\FontRenderer.h" />
     <ClInclude Include="src\utility\DistanceFieldGenerator.h" />
     <ClInclude Include="src\VulkanShader.h" />
@@ -182,6 +218,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\SimpleMath.cpp" />
+    <ClCompile Include="src\D3DShader.cpp" />
+    <ClCompile Include="src\D3DUtility.cpp" />
     <ClCompile Include="src\GraphicsDeviceBase.cpp" />
     <ClCompile Include="src\Lighting.cpp" />
     <ClCompile Include="src\Core.cpp" />
@@ -201,12 +239,15 @@
     <ClCompile Include="src\ResourceLoader.cpp" />
     <ClCompile Include="src\Resources.cpp" />
     <ClCompile Include="src\Texture.cpp" />
+    <ClCompile Include="src\TextureCompression.cpp" />
     <ClCompile Include="src\ui\font\FontRenderer.cpp" />
     <ClCompile Include="src\ui\sprite\Sprite.cpp" />
     <ClCompile Include="src\VulkanShader.cpp" />
     <ClCompile Include="src\WindowWin32.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="externals\nvtt\squish\fastclusterlookup.inl" />
+    <None Include="externals\nvtt\squish\singlecolourlookup.inl" />
     <None Include="inc\SimpleMath.inl" />
   </ItemGroup>
   <ItemGroup>

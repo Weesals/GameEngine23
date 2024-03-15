@@ -15,6 +15,17 @@ namespace Weesals.Utility {
         public bool Overlaps(RangeInt other) {
             return Start <= other.End && End >= other.Start;
         }
+        public struct Enumerator : IEnumerator<int> {
+            private int index;
+            private int end;
+            public int Current => index;
+            object IEnumerator.Current => Current;
+            public Enumerator(int begin, int count) { index = begin - 1; end = begin + count; }
+            public void Dispose() { }
+            public bool MoveNext() { return ++index < end; }
+            public void Reset() { }
+        }
+        public Enumerator GetEnumerator() { return new(Start, Length); }
     }
     public static class SpanExt {
         public static Span<T> Slice<T>(this Span<T> span, RangeInt range) {
@@ -177,7 +188,7 @@ namespace Weesals.Utility {
                 if (unallocIndex < Unused.ranges.Count) {
                     var unused = Unused.ranges[unallocIndex];
                     if (Current >= unused.Start) {
-                        Current += unused.Length;
+                        Current = unused.End;
                         ++unallocIndex;
                     }
                 }
@@ -185,6 +196,9 @@ namespace Weesals.Utility {
             }
             public void Reset() { throw new NotImplementedException(); }
             public void Dispose() { }
+            public void RepairIterator() {
+                while (unallocIndex > 0 && Current < Unused.ranges[unallocIndex - 1].End) --unallocIndex;
+            }
         }
         public Enumerator GetEnumerator(int count) { return new Enumerator(this, count); }
 
@@ -200,6 +214,21 @@ namespace Weesals.Utility {
         public SparseIndices Unused = new();
         public T[] Items;
         public int Capacity => Items.Length;
+
+        // All indices at this value and beyond are unallocated
+        // (ie. no reason to iterate beyond this value)
+        // Indices below this value MIGHT be allocated.
+        public int MaximumCount {
+            get {
+                int maxCount = Capacity;
+                if (Unused.Ranges.Count > 0) {
+                    var last = Unused.Ranges[^1];
+                    if (last.End == maxCount) maxCount = last.Start;
+                }
+                return maxCount;
+            }
+        }
+        public int PreciseCount => Items.Length - Unused.GetSumCount();
 
         public SparseArray(int capacity = 0) {
             Items = Array.Empty<T>();
@@ -326,7 +355,8 @@ namespace Weesals.Utility {
             public SparseIndices.Enumerator Indices;
             public T[] Items;
             public int Index => Indices.Current;
-            public T Current { get { return Items[Index]; } set { Items[Index] = value; } }
+            public ref T Current => ref Items[Index];
+            T IEnumerator<T>.Current { get { return Current; } }
             object IEnumerator.Current { get { return Current; } }
             public Enumerator(SparseArray<T> array) {
                 Indices = array.Unused.GetEnumerator(array.Items.Length);
@@ -337,6 +367,13 @@ namespace Weesals.Utility {
             }
             public void Reset() { throw new NotImplementedException(); }
             public void Dispose() { }
+            public void RemoveSelf() {
+                Indices.Unused.Add(Index);
+                Indices.RepairIterator();
+            }
+            public void RepairIterator() {
+                Indices.RepairIterator();
+            }
         }
 
         public Enumerator GetEnumerator() { return new Enumerator(this); }

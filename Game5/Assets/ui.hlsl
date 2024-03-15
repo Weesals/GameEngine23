@@ -21,7 +21,8 @@ struct PSInput
 };
 
 Texture2D<float4> Texture : register(t0);
-SamplerState g_sampler : register(s1);
+SamplerState PointSampler : register(s0);
+SamplerState BilinearSampler : register(s1);
 
 PSInput VSMain(VSInput input)
 {
@@ -41,10 +42,14 @@ PSInput VSMain(VSInput input)
 
 float4 PSMain(PSInput input) : SV_TARGET
 {    
-    half4 t = Texture.Sample(g_sampler, input.uv);
+#if defined(NEARESTNEIGHBOUR) && NEARESTNEIGHBOUR
+    half4 t = Texture.Sample(PointSampler, input.uv);
+#else
+    half4 t = Texture.Sample(BilinearSampler, input.uv);
+#endif
     //t.rg = input.uv;
     half4 color = input.color;
-    t.rgb = (color >= 0.0 ? t * color : 1 + (1 - t) * color).rgb;
+    t.rgb = select(color >= 0.0, t * color, 1 + (1 - t) * color).rgb;
     if (any(input.position.xy < CullRect.xy) || any(input.position.xy > CullRect.zw))
         t.a = 0.0;
     t.a *= color.a;

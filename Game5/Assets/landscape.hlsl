@@ -24,6 +24,8 @@ SamplerState AnisotropicSampler : register(s2);
     Texture2DArray<float4> BumpMaps : register(t3);
 #endif
 
+Texture3D<float4> Tex3D : register(t5);
+
 struct SampleContext {
     Texture2DArray<float4> BaseMaps;
     Texture2DArray<float4> BumpMaps;
@@ -62,16 +64,27 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoint cp) {
     o.Albedo = context.BaseMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
     o.Normal = context.BumpMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
     o.Normal.xyz = o.Normal.xyz * 2.0 - 1.0;
-    o.Normal.xy = mul(rot, o.Normal.xy);
+    o.Normal.y *= -1;
+    o.Normal.xy = mul(rot, o.Normal.xy);    //._11_12_21_22
     o.Height = o.Albedo.a;
-    if (o.Height == 0) o.Height = 0.5;
+    //if (o.Height == 0) o.Height = 0.5;
     return o;
 }
 
 
 half3 ApplyHeightBlend(half3 bc, half3 heights) {
-    heights -= min(heights.x, min(heights.y, heights.z));
-    heights /= max(heights.x, max(heights.y, heights.z)) + 0.1;
+    //heights -= min(heights.x, min(heights.y, heights.z));
+    //heights /= max(heights.x, max(heights.y, heights.z)) + 0.01;
+    
+    float minBC = saturate(abs(min(bc.x, min(bc.y, bc.z)) - 0.01) * 100.0);
+    //bc = bc.yzx;
+    bc += heights * 5.0 * saturate(bc * 5.0);
+    float maxBC = max(max(bc.x, max(bc.y, bc.z)), 1.0);
+    bc -= (maxBC - 1.0);
+    bc = saturate(bc);
+    bc /= dot(bc, 1.0);
+    //bc *= minBC;
+    return bc;
 
     bc += bc * heights * 3;
     bc += 1 - max(bc.x, max(bc.y, bc.z));
@@ -159,9 +172,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float3 shadowPos = ViewToShadow(input.viewPos);
     float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;
     
+    for (int i = 0; i < 1; ++i)
+    {
 #if EDGE
     TemporalAdjust(input.uv.xy);
-    Albedo = EdgeTex.Sample(BilinearSampler, input.uv.xy);
+    Albedo = EdgeTex.Sample(BilinearSampler, input.uv.xy).rgb;
     Albedo = lerp(Albedo, 1, pow(1 - saturate(input.uv.z - input.localPos.y), 4) * 0.25);
 #else
     TemporalAdjust(input.localPos.xz);
@@ -190,9 +205,12 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
     half3 bc = tri.BC;
     bc = ApplyHeightBlend(bc, half3(t0.Height, t1.Height, t2.Height));
-    Albedo = t0.Albedo * bc.x + t1.Albedo * bc.y + t2.Albedo * bc.z;
-    float3 Normal = t0.Normal * bc.x + t1.Normal * bc.y + t2.Normal * bc.z;
-        
+    Albedo = (t0.Albedo * bc.x + t1.Albedo * bc.y + t2.Albedo * bc.z).rgb;
+    //float3 heights = half3(t0.Height, t1.Height, t2.Height);
+    //float height = dot(heights, bc);
+    //Albedo = heights;
+    float3 Normal = (t0.Normal * bc.x + t1.Normal * bc.y + t2.Normal * bc.z).rgb;
+                
     float3 tangent, binormal;
     CalculateTerrainTBN(input.normal, tangent, binormal);
     input.normal = tangent * Normal.x + binormal * Normal.y + input.normal * Normal.z;
@@ -201,9 +219,10 @@ float4 PSMain(PSInput input) : SV_TARGET {
     //if (Time % 5 < 3) return float4(input.normal.zzz * 0.5 + 0.5, 1.0);
     //return float4(input.normal.xzy * 0.5 + 0.5, 1.0);
 #endif
-    
+    }
+
     input.normal = mul((float3x3)View, input.normal);
-    
+
     // The light
     float3 o = ComputeLight(
         Albedo,
@@ -218,16 +237,22 @@ float4 PSMain(PSInput input) : SV_TARGET {
     
     // Indirect
     o += ComputeIndiret(Albedo, Specular, input.normal, Roughness, Metallic, -viewDir);
+    //o.rgb = float3(0.5, 0.5, 0.5);
+
+    //float r = abs(frac(Time)-0.5) * 0.3;
+    //float dx = sin(Time) * 0.1;
+    //float dy = cos(Time) * 0.1;
+    //o.rgb = Tex3D.SampleGrad(AnisotropicSampler, input.localPos / 10, float3(dx, 0, 0), float3(0, 0, dy)).rgb;
+    //o.rgb += ControlMap.SampleGrad(BilinearSampler, input.localPos.xz / 10, float2(dx, 0), float2(0, dy)).rgb - 0.5;
+    //o.rgb = Tex3D.Sample(AnisotropicSampler, input.localPos / 10).rgb;
     
     return float4(o, 1);
 }
 
-PSInput ShadowCast_VSMain(VSInput input)
-{
+PSInput ShadowCast_VSMain(VSInput input) {
     return VSMain(input);
 }
-float4 ShadowCast_PSMain(PSInput input) : SV_TARGET
-{
-    float d = input.position.z;
-    return float4(d.xxx, 1);
+void ShadowCast_PSMain(PSInput input) {
+    //float d = input.position.z;
+    //return float4(d.xxx, 1);
 }

@@ -33,7 +33,7 @@ namespace Game5.Game {
         // TODO: A NativeMultiHashSet might work better, separating by InteractionId
         protected PooledList<StrikeEvent> strikeEvents;
         private List<IStrikeListener> strikeListeners = new();
-        private QueryId query = default;
+        //private QueryId query = default;
 
         protected override void OnCreate() {
             base.OnCreate();

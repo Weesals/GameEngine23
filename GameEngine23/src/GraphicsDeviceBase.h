@@ -26,18 +26,36 @@ public:
         Identifier mName;
         int mSize;
         int mBindPoint;
-        std::vector<UniformValue> mValues;
+        int mValueCount;
+        std::unique_ptr<UniformValue[]> mValues;
+        ConstantBuffer() : mValueCount(0) { }
+        ConstantBuffer(ConstantBuffer&&) = default;
+        ConstantBuffer(const ConstantBuffer& other) {
+            *this = other;
+        }
+        ~ConstantBuffer() { }
+        ConstantBuffer& operator=(ConstantBuffer&&) = default;
+        ConstantBuffer& operator=(const ConstantBuffer& o) {
+            mName = o.mName;
+            mSize = o.mSize;
+            mBindPoint = o.mBindPoint;
+            SetValuesCount(o.mValueCount);
+            for (int v = 0; v < mValueCount; ++v) mValues.get()[v] = o.mValues.get()[v];
+            return *this;
+        }
 
+        void SetValuesCount(int vcount) { mValues = std::unique_ptr<UniformValue[]>(new UniformValue[mValueCount = vcount]); }
+        std::span<UniformValue> GetValues() const { return std::span<UniformValue>(mValues.get(), mValueCount); }
         int GetValueIndex(const std::string& name) const {
-            for (size_t i = 0; i < mValues.size(); i++)
+            for (size_t i = 0; i < GetValues().size(); i++)
             {
-                if (mValues[i].mName.GetName() == name) return (int)i;
+                if (GetValues()[i].mName.GetName() == name) return (int)i;
             }
             return -1;
         }
         size_t GenerateHash() const {
             size_t hash = 0;
-            for (auto& value : mValues) hash = AppendHash(((int)value.mName << 16) | value.mOffset, hash);
+            for (auto& value : GetValues()) hash = AppendHash(((int)value.mName << 16) | value.mOffset, hash);
             return hash;
         }
         bool operator ==(const ConstantBuffer& other) const = default;
@@ -65,6 +83,34 @@ public:
         std::vector<InputParameter> mInputParameters;
     };
 };
+class CompiledShader : public ShaderBase {
+private:
+    Identifier mName;
+	uint64_t mSourceHash;
+	std::vector<uint8_t> mCompiledBlob;
+    uint64_t mCompiledBlobHash;
+    ShaderReflection mReflection;
+public:
+    void SetName(Identifier name) { mName = name; }
+    Identifier GetName() const { return mName; }
+	uint64_t GetSourceHash() const { return mSourceHash; }
+	const std::vector<uint8_t>& GetBinary() const { return mCompiledBlob; }
+    uint64_t GetBinaryHash() const {
+        if (mCompiledBlobHash == 0) const_cast<CompiledShader*>(this)->CalculateHash();
+        return mCompiledBlobHash;
+    }
+
+	std::span<uint8_t> AllocateBuffer(int size) {
+		mCompiledBlob.resize(size);
+		return mCompiledBlob;
+	}
+    void CalculateHash() {
+        mCompiledBlobHash = ArrayHash((std::span<uint8_t>)mCompiledBlob);
+    }
+    const ShaderReflection& GetReflection() const { return mReflection; }
+    ShaderReflection& GetReflection() { return mReflection; }
+};
+
 struct MacroValue {
     Identifier mName;
     Identifier mValue;
@@ -89,7 +135,6 @@ struct DrawConfig {
 };
 
 struct PipelineLayout {
-    IdentifierWithName mRenderPass;
     size_t mRootHash;       // Persistent
     size_t mPipelineHash;   // Persistent
     std::vector<const ShaderBase::ConstantBuffer*> mConstantBuffers;
@@ -128,6 +173,7 @@ struct RenderTargetBinding {
 };
 class GraphicsSurface : public std::enable_shared_from_this<GraphicsSurface> {
 public:
+    virtual const std::shared_ptr<RenderTarget2D>& GetBackBuffer() const = 0;
     virtual Int2 GetResolution() const = 0;
     virtual void SetResolution(Int2 res) = 0;
     virtual bool GetIsOccluded() const { return false; }
@@ -155,9 +201,8 @@ public:
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
     virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
     virtual const PipelineLayout* RequirePipeline(
-        const Shader& vertexShader, const Shader& pixelShader,
-        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        std::span<const MacroValue> macros, const IdentifierWithName& renderPass) {
+        const CompiledShader& vertexShader, const CompiledShader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings) {
         return nullptr;
     }
     virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
@@ -187,10 +232,9 @@ public:
     uint64_t GetGlobalPSOHash() const { return mInterop->GetGlobalPSOHash(); }
     int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
     const PipelineLayout* RequirePipeline(
-        const Shader& vertexShader, const Shader& pixelShader,
-        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        std::span<const MacroValue> macros, const IdentifierWithName& renderPass) {
-        return mInterop->RequirePipeline(vertexShader, pixelShader, materialState, bindings, macros, renderPass);
+        const CompiledShader& vertexShader, const CompiledShader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings) {
+        return mInterop->RequirePipeline(vertexShader, pixelShader, materialState, bindings);
     }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
     template<class T> std::span<T> RequireFrameData(std::span<T> data) {
@@ -250,6 +294,9 @@ public:
 
     // Create a command buffer which allows draw calls to be submitted
     virtual CommandBuffer CreateCommandBuffer() = 0;
+
+    virtual CompiledShader CompileShader(const std::wstring_view& path, const std::string_view& entry,
+        const std::string_view& profile, std::span<const MacroValue> macros) { return { }; }
 
     // Calculate which PSO this draw call would land in
     //const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials);

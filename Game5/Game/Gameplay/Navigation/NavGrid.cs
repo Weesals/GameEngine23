@@ -40,8 +40,7 @@ public class NavGrid : IDisposable {
         gridIt.ComputeAABB(polygon, out var aabbMin, out var aabbMax);
         using var xCoords = new PooledList<int>(4);
         for (int y = aabbMin.Y; y <= aabbMax.Y; y++) {
-            var yPos = gridIt.GridToSimulationY(y);
-            gridIt.ComputeXRange(polygon, yPos, ref xCoords.AsMutable());
+            gridIt.ComputeXRange(polygon, y, ref xCoords.AsMutable());
             for (int iX = 0; iX < xCoords.Count; iX += 2) {
                 var xMin = xCoords[iX] + y * Size.X;
                 var xMax = xCoords[iX + 1] + y * Size.X;
@@ -93,6 +92,7 @@ public class NavGrid : IDisposable {
             aabbMax = Int2.Min(aabbMax, Size - 1);
         }
         public void ComputeXRange(Span<Int2> polygon, int yPos, ref PooledList<int> xCoords) {
+            yPos = GridToSimulationY(yPos);
             for (int p = 0; p < polygon.Length; p++) {
                 var p0 = polygon[p];
                 var p1 = polygon[(p + 1) % polygon.Length];
@@ -129,7 +129,7 @@ public class NavGrid : IDisposable {
             Span<Int2> Directions = stackalloc Int2[] { new Int2(1, 0), new Int2(0, 1), new Int2(-1, 0), new Int2(0, -1), };
             var edgeValues = new PooledHashMap<Edge, AdjacencyIds>(64);
             var size = Size * Coordinate.Granularity / Granularity;
-            using (var marker = new ProfilerMarker("Triangulate").Auto()) {
+            using (var marker = new ProfilerMarker("NavMesh Triangulate").Auto()) {
                 var mutator = Mutator;
                 var cornerMutator = mutator.CreateVertexMutator();
                 for (int d = 0; d < 2; d++) {
@@ -171,11 +171,11 @@ public class NavGrid : IDisposable {
                     }
                 }
             }
-            using (var marker = new ProfilerMarker("Repair").Auto()) {
+            using (var marker = new ProfilerMarker("NavMesh Repair").Auto()) {
                 var mutator = Mutator;
                 mutator.RepairSwap();
             }
-            using (var marker = new ProfilerMarker("Set Type").Auto()) {
+            using (var marker = new ProfilerMarker("NavMesh Set Type").Auto()) {
                 var mutator = Mutator;
                 int count = 0;
                 foreach (var edgeKV in edgeValues) {

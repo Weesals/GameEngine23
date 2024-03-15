@@ -22,7 +22,7 @@ namespace Weesals.Landscape.Editor {
         public float HeightDelta = 2f;
 
         public CliffTypeData Type = new CliffTypeData() { SurfaceType = "TL_Moss", EdgeType = "TL_Cliff", };
-        public FloatCurve HeightCurve = new FloatCurve(new FloatKeyframe(0f, 0f), new FloatKeyframe(0.5f, 1f));
+        public FloatCurve HeightCurve = new FloatCurve(new(0f, 0f), new(0.5f, 1f));
         public FloatCurve SmoothHeightCurve = FloatCurve.MakeSmoothStep();
 
         public ActivationScore GetActivation(PointerEvent events) {

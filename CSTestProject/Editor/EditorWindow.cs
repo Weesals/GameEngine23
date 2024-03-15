@@ -9,13 +9,16 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.XPath;
 using Weesals.ECS;
+using Weesals.Editor.Assets;
 using Weesals.Engine;
 using Weesals.Landscape;
 using Weesals.UI;
 
 namespace Weesals.Editor {
     public class Editor {
-        public CSFont DefaultFont;
+        public Font DefaultFont;
+        public AssetDatabase AssetDatabase;
+        public SelectionManager ProjectSelection = new(null);
     }
     public class TabbedWindow : CanvasRenderable {
         public CanvasImage TitleBG = new();
@@ -28,6 +31,10 @@ namespace Weesals.Editor {
         public TabbedWindow(Editor editor, string title) {
             Title = title;
             TitleText.SetFont(editor.DefaultFont, 16);
+            TitleText.Color = Color.DarkGray;
+            TitleText.DisplayParameters = TextDisplayParameters.Header;
+            TitleBG.SetSprite(Resources.TryLoadSprite("HeaderBG"));
+            PanelBG.SetSprite(Resources.TryLoadSprite("PanelBG"));
         }
 
         protected CanvasLayout GetContentsLayout() {
@@ -63,10 +70,10 @@ namespace Weesals.Editor {
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
             var layout = mLayoutCache;
-            var tabHeader = layout.SliceTop(TitleText.GetPreferredHeight() + 5).Inset(1);
+            var tabHeader = layout.SliceTop(TitleText.GetPreferredHeight() + 5);
             TitleBG.UpdateLayout(Canvas, tabHeader);
             TitleText.UpdateLayout(Canvas, tabHeader);
-            if (EnableBackground) PanelBG.UpdateLayout(Canvas, layout.Inset(1));
+            if (EnableBackground) PanelBG.UpdateLayout(Canvas, layout);
 
             TitleBG.Append(ref composer);
             TitleText.Append(ref composer);
@@ -76,30 +83,42 @@ namespace Weesals.Editor {
     }
 
 
-    public class EditorWindow : IDisposable {
+    public class EditorWindow : ApplicationWindow, IDisposable {
         public Editor Editor;
         public UIInspector Inspector;
         public UIGameView GameView;
+        public UIHierarchy Hierarchy;
         public UIProjectView ProjectView;
         public EventSystem EventSystem;
         public Canvas Canvas;
+        public AssetDatabase AssetDatabase;
+
         public bool RequireRepaint;
 
         public EditorWindow() {
-            Editor = new();
-            Editor.DefaultFont = CSResources.LoadFont("./Assets/Roboto-Regular.ttf");
+            Editor = new() {
+                DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf"),
+                AssetDatabase = new(),
+            };
 
             Canvas = new();
             EventSystem = new EventSystem(Canvas);
             var flex = new FlexLayout();
             Inspector = new(Editor) { };
             GameView = new(Editor) { };
+            Hierarchy = new(Editor) { };
             ProjectView = new UIProjectView(Editor);
             flex.AppendRight(GameView);
             flex.InsertBelow(GameView, ProjectView, 0.3f);
+            flex.AppendRight(Hierarchy, 0.15f);
             flex.AppendRight(Inspector, 0.25f);
 
             Canvas.AppendChild(flex);
+        }
+
+        public override void RegisterRootWindow(CSWindow window) {
+            base.RegisterRootWindow(window);
+            EventSystem.SetInput(Input);
         }
 
         public void ActivateLandscapeTools(LandscapeRenderer landscape) {
@@ -126,8 +145,9 @@ namespace Weesals.Editor {
             Canvas.Render(graphics);
         }
 
-        public void Dispose() {
+        public new void Dispose() {
             Canvas.Dispose();
+            base.Dispose();
         }
 
     }

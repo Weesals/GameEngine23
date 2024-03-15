@@ -43,11 +43,11 @@ namespace Weesals.Engine
     {
     }
 
-    public partial struct NativeShader
+    public partial struct NativeInput
     {
     }
 
-    public partial struct NativeInput
+    public partial struct NativeCompiledShader
     {
     }
 
@@ -233,12 +233,12 @@ namespace Weesals.Engine
             mTexture = tex;
         }
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetSize@CSTexture@@SAXPEAVTexture@@UInt2@@@Z", ExactSpelling = true)]
-        public static extern void SetSize(NativeTexture* tex, [NativeTypeName("Int2")] Weesals.Engine.Int2 size);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetSize@CSTexture@@SAXPEAVTexture@@UInt3@@@Z", ExactSpelling = true)]
+        public static extern void SetSize(NativeTexture* tex, [NativeTypeName("Int3")] Weesals.Engine.Int3 size);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetSize@CSTexture@@SA?AUInt2C@@PEAVTexture@@@Z", ExactSpelling = true)]
-        [return: NativeTypeName("Int2C")]
-        public static extern Weesals.Engine.Int2 GetSize(NativeTexture* tex);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetSize@CSTexture@@SA?AUInt3C@@PEAVTexture@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("Int3C")]
+        public static extern Weesals.Engine.Int3 GetSize(NativeTexture* tex);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetFormat@CSTexture@@SAXPEAVTexture@@W4BufferFormat@@@Z", ExactSpelling = true)]
         public static extern void SetFormat(NativeTexture* tex, [NativeTypeName("BufferFormat")] Weesals.Engine.BufferFormat fmt);
@@ -267,6 +267,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSTexture@@SAPEAVTexture@@UCSString@@@Z", ExactSpelling = true)]
         public static extern NativeTexture* _Create(CSString name);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Swap@CSTexture@@SAXPEAVTexture@@0@Z", ExactSpelling = true)]
+        public static extern void Swap(NativeTexture* from, NativeTexture* to);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSTexture@@SAXPEAVTexture@@@Z", ExactSpelling = true)]
         public static extern void Dispose(NativeTexture* tex);
@@ -345,21 +348,33 @@ namespace Weesals.Engine
             mFont = font;
         }
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetTexture@CSFont@@SAPEAVTexture@@PEBVFontInstance@@@Z", ExactSpelling = true)]
-        public static extern NativeTexture* GetTexture([NativeTypeName("const NativeFont *")] NativeFont* font);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSFont@@SAXPEAVFontInstance@@@Z", ExactSpelling = true)]
+        public static extern void Dispose(NativeFont* font);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetLineHeight@CSFont@@SAHPEBVFontInstance@@@Z", ExactSpelling = true)]
-        public static extern int GetLineHeight([NativeTypeName("const NativeFont *")] NativeFont* font);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetTexture@CSFont@@CAPEAVTexture@@PEBVFontInstance@@@Z", ExactSpelling = true)]
+        private static extern NativeTexture* GetTexture([NativeTypeName("const NativeFont *")] NativeFont* font);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetKerning@CSFont@@SAHPEBVFontInstance@@_W1@Z", ExactSpelling = true)]
-        public static extern int GetKerning([NativeTypeName("const NativeFont *")] NativeFont* font, [NativeTypeName("wchar_t")] ushort c1, [NativeTypeName("wchar_t")] ushort c2);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetLineHeight@CSFont@@CAHPEBVFontInstance@@@Z", ExactSpelling = true)]
+        private static extern int GetLineHeight([NativeTypeName("const NativeFont *")] NativeFont* font);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGlyphId@CSFont@@SAHPEBVFontInstance@@_W@Z", ExactSpelling = true)]
-        public static extern int GetGlyphId([NativeTypeName("const NativeFont *")] NativeFont* font, [NativeTypeName("wchar_t")] ushort chr);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetKerning@CSFont@@CAHPEBVFontInstance@@_W1@Z", ExactSpelling = true)]
+        private static extern int GetKerning([NativeTypeName("const NativeFont *")] NativeFont* font, [NativeTypeName("wchar_t")] ushort c1, [NativeTypeName("wchar_t")] ushort c2);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGlyph@CSFont@@SAAEBUCSGlyph@@PEBVFontInstance@@H@Z", ExactSpelling = true)]
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetKerningCount@CSFont@@CAHPEBVFontInstance@@@Z", ExactSpelling = true)]
+        private static extern int GetKerningCount([NativeTypeName("const NativeFont *")] NativeFont* font);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetKernings@CSFont@@CAXPEBVFontInstance@@UCSSpan@@@Z", ExactSpelling = true)]
+        private static extern void GetKernings([NativeTypeName("const NativeFont *")] NativeFont* font, CSSpan kernings);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGlyphCount@CSFont@@CAHPEBVFontInstance@@@Z", ExactSpelling = true)]
+        private static extern int GetGlyphCount([NativeTypeName("const NativeFont *")] NativeFont* font);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGlyphId@CSFont@@CAHPEBVFontInstance@@_W@Z", ExactSpelling = true)]
+        private static extern int GetGlyphId([NativeTypeName("const NativeFont *")] NativeFont* font, [NativeTypeName("wchar_t")] ushort chr);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGlyph@CSFont@@CAAEBUCSGlyph@@PEBVFontInstance@@H@Z", ExactSpelling = true)]
         [return: NativeTypeName("const CSGlyph &")]
-        public static extern CSGlyph* GetGlyph([NativeTypeName("const NativeFont *")] NativeFont* font, int id);
+        private static extern CSGlyph* GetGlyph([NativeTypeName("const NativeFont *")] NativeFont* font, int id);
     }
 
     public unsafe partial struct CSMaterial
@@ -628,6 +643,39 @@ namespace Weesals.Engine
         }
     }
 
+    public unsafe partial struct CSCompiledShader
+    {
+        private NativeCompiledShader* mShader;
+
+        public CSCompiledShader(NativeCompiledShader* shader)
+        {
+            mShader = shader;
+        }
+
+        public NativeCompiledShader* GetNativeShader()
+        {
+            return mShader;
+        }
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSCompiledShader@@CAPEAVCompiledShader@@UCSIdentifier@@HHH@Z", ExactSpelling = true)]
+        private static extern NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?InitializeValues@CSCompiledShader@@CAXPEAVCompiledShader@@HH@Z", ExactSpelling = true)]
+        private static extern void InitializeValues(NativeCompiledShader* shader, int cb, int vcount);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetValues@CSCompiledShader@@CA?AUCSSpan@@PEAVCompiledShader@@H@Z", ExactSpelling = true)]
+        private static extern CSSpan GetValues(NativeCompiledShader* shader, int cb);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetConstantBuffers@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
+        private static extern CSSpan GetConstantBuffers([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetResources@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
+        private static extern CSSpan GetResources([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetBinaryData@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
+        private static extern CSSpan GetBinaryData([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
+    }
+
     public unsafe partial struct CSGraphics
     {
         private NativeGraphics* mGraphics;
@@ -659,9 +707,13 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetRenderTargets@CSGraphics@@CAXPEAVNativeGraphics@@UCSSpan@@UCSRenderTargetBinding@@@Z", ExactSpelling = true)]
         private static extern void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVShader@@2PEAX1UCSIdentifier@@@Z", ExactSpelling = true)]
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CompileShader@CSGraphics@@CAPEBVCompiledShader@@PEAVNativeGraphics@@UCSString@@1UCSIdentifier@@UCSSpan@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("const NativeCompiledShader *")]
+        private static extern NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString path, CSString entry, CSIdentifier identifier, CSSpan macros);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVCompiledShader@@2PEAX@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativePipeline *")]
-        private static extern NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeShader* vertexShader, NativeShader* pixelShader, void* materialState, CSSpan macros, CSIdentifier renderPass);
+        private static extern NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader, void* materialState);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireFrameData@CSGraphics@@CAPEAXPEAVNativeGraphics@@H@Z", ExactSpelling = true)]
         private static extern void* RequireFrameData(NativeGraphics* graphics, int byteSize);
@@ -715,6 +767,9 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSGraphicsSurface@@SAXPEAVGraphicsSurface@@@Z", ExactSpelling = true)]
         public static extern void Dispose([NativeTypeName("NativeSurface *")] NativeGraphicsSurface* surface);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetBackBuffer@CSGraphicsSurface@@CAPEAVRenderTarget2D@@PEBVGraphicsSurface@@@Z", ExactSpelling = true)]
+        private static extern NativeRenderTarget* GetBackBuffer([NativeTypeName("const NativeSurface *")] NativeGraphicsSurface* surface);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetResolution@CSGraphicsSurface@@CA?AUInt2C@@PEBVGraphicsSurface@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("Int2C")]
         private static extern Weesals.Engine.Int2 GetResolution([NativeTypeName("const NativeSurface *")] NativeGraphicsSurface* surface);
@@ -747,6 +802,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSWindow@@CAXPEAVWindowBase@@@Z", ExactSpelling = true)]
         private static extern void Dispose([NativeTypeName("NativeWindow *")] WindowBase* window);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetStatus@CSWindow@@CAHPEAVWindowBase@@@Z", ExactSpelling = true)]
+        private static extern int GetStatus([NativeTypeName("NativeWindow *")] WindowBase* window);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetSize@CSWindow@@CA?AUInt2C@@PEBVWindowBase@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("Int2C")]
@@ -832,9 +890,6 @@ namespace Weesals.Engine
 
     public unsafe partial struct CSResources
     {
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?LoadShader@CSResources@@SAPEAVShader@@UCSString@@0@Z", ExactSpelling = true)]
-        public static extern NativeShader* LoadShader(CSString path, CSString entryPoint);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?LoadModel@CSResources@@SAPEAVModel@@UCSString@@@Z", ExactSpelling = true)]
         public static extern NativeModel* LoadModel(CSString path);

@@ -2,6 +2,7 @@
   "profiles": {
     "Game5": {
       "commandName": "Project",
+      "workingDirectory": "./",
       "nativeDebugging": true
     }
   }

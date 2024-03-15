@@ -60,6 +60,13 @@ namespace Weesals.UI {
                 Vector2.Dot(AxisY.toxy(), v) / AxisY.toxyz().LengthSquared()
             );
         }
+        public Vector2 InverseTransformPosition2DN(Vector2 v) {
+            v -= Position.toxy();
+            return new Vector2(
+                Vector2.Dot(AxisX.toxy(), v) / (AxisX.toxyz().LengthSquared() * AxisX.W),
+                Vector2.Dot(AxisY.toxy(), v) / (AxisY.toxyz().LengthSquared() * AxisY.W)
+            );
+        }
         public CanvasLayout MinMaxNormalized(float xmin, float ymin, float xmax, float ymax) {
 	        return new CanvasLayout {
 		        AxisX = new Vector4(AxisX.X, AxisX.Y, AxisX.Z, AxisX.W * (xmax - xmin)),
@@ -131,11 +138,14 @@ namespace Weesals.UI {
             };
         }
         public static CanvasLayout MakeBox(Vector2 size) {
+            return MakeBox(size, default);
+        }
+        public static CanvasLayout MakeBox(Vector2 size, Vector2 offset) {
 	        return new CanvasLayout{
 		        AxisX = new Vector4(1, 0, 0, size.X),
 		        AxisY = new Vector4(0, 1, 0, size.Y),
 		        AxisZ = new Vector3(0, 0, 1),
-		        Position = Vector3.Zero,
+		        Position = new Vector3(offset.X, offset.Y, 0f),
 	        };
         }
 
@@ -165,11 +175,11 @@ namespace Weesals.UI {
         public Vector2 OffsetMax { get => Offsets.tozw(); set => Offsets.tozw(value); }
 
         public void Apply(in CanvasLayout parent, out CanvasLayout layout) {
-            Vector2 parentSize = parent.GetSize();
-            Vector2 invSize = new Vector2(1.0f / parentSize.X, 1.0f / parentSize.Y);
-            Vector2 posMinN = AnchorMin + OffsetMin * invSize;
-            Vector2 posMaxN = AnchorMax + OffsetMax * invSize;
-            layout = parent.MinMaxNormalized(posMinN.X, posMinN.Y, posMaxN.X, posMaxN.Y);
+            layout = parent;
+            layout.AxisX.W = parent.AxisX.W * (AnchorMax.X - AnchorMin.X) + (OffsetMax.X - OffsetMin.X);
+            layout.AxisY.W = parent.AxisY.W * (AnchorMax.Y - AnchorMin.Y) + (OffsetMax.Y - OffsetMin.Y);
+            layout.Position += parent.AxisX.toxyz() * (AnchorMin.X * parent.AxisX.W + OffsetMin.X);
+            layout.Position += parent.AxisY.toxyz() * (AnchorMin.Y * parent.AxisY.W + OffsetMin.Y);
             if (Scale != Vector3.One) {
                 var size = layout.GetSize();
                 var delta = new Vector2(size.X * (Scale.X - 1f), size.Y * (Scale.Y - 1f));

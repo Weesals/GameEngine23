@@ -35,7 +35,7 @@ PSInput VSMain(VSInput input)
     float3 worldNrm = mul(instance.Model, float4(input.normal.xyz, 0.0)).xyz;
     result.position = mul(ViewProjection, float4(worldPos, 1.0));
     result.viewPos = mul(View, float4(worldPos, 1.0)).xyz;
-    result.normal = mul(View, float4(worldNrm, 0.0)).xyz;
+    result.normal = mul((float3x3)View, worldNrm);
     result.uv = input.uv;
 
     float3 prevWorldPos = mul(instance.PreviousModel, float4(input.position.xyz, 1.0)).xyz;
@@ -70,7 +70,7 @@ void PSMain(PSInput input
 
     float3 shadowPos = ViewToShadow(input.viewPos);
     float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;
-    
+
     // The light
     float3 o = ComputeLight(
         Albedo,
@@ -93,6 +93,7 @@ void PSMain(PSInput input
     OutColor = float4(o, tex.a);
     OutVelocity = float4(input.velocity * 16.0, instance.Selected, 1);
     //OutColor.rg = OutVelocity.rg * 10.0 + 0.5;
+    //OutColor.rgb = _ViewSpaceLightDir0;
 }
 
 //#include "include/shadowcast.hlsl"
@@ -116,6 +117,6 @@ ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input) {
     return result;
 }
 
-float4 ShadowCast_PSMain(ShadowCast_PSInput input) : SV_TARGET {
-    return 1.0;
+void ShadowCast_PSMain(ShadowCast_PSInput input) {
+    //return 1.0;
 }

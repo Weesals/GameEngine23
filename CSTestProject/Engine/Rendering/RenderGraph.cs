@@ -19,7 +19,7 @@ namespace Weesals.Engine {
                     return item;
                 }
             }
-            var target = CSRenderTarget.Create($"RT<{desc.Format},{desc.Size}>");
+            var target = CSRenderTarget.Create($"RT<{desc.Format},{desc.Size},Mip={desc.MipCount}>");
             target.SetSize(desc.Size);
             target.SetFormat(desc.Format);
             target.SetMipCount(desc.MipCount);
@@ -53,6 +53,7 @@ namespace Weesals.Engine {
         public struct RPOutput {
             public RenderPass.PassOutput Output;
             public int TargetId;
+            public CSRenderTarget SpecifiedRT;
             public override string ToString() { return $"{Output}: {TargetId}"; }
             public static readonly RPOutput Invalid = new RPOutput() { Output = default, TargetId = -1, };
         }
@@ -91,10 +92,23 @@ namespace Weesals.Engine {
                 }
                 return this;
             }
-            public void SetViewport(RectI viewport) {
+            public Builder SetOutput(CSIdentifier identifier, CSRenderTarget target) {
+                Graph.RequireIO(passId);
+                var pass = Graph.passes[passId];
+                var outputs = Graph.outputs.Slice(pass.InputsRange).AsSpan();
+                int output = outputs.Length - 1;
+                for (; output >= 0; --output) if (outputs[output].Output.Name == identifier) break;
+                if (output != -1) {
+                    outputs[output].SpecifiedRT = target;
+                    Graph.passes[passId] = pass;
+                }
+                return this;
+            }
+            public Builder SetViewport(RectI viewport) {
                 var pass = Graph.passes[passId];
                 pass.Viewport = viewport;
                 Graph.passes[passId] = pass;
+                return this;
             }
             public void SetOutputSize(Int2 size) {
                 var pass = Graph.passes[passId];
@@ -102,6 +116,11 @@ namespace Weesals.Engine {
                 Graph.passes[passId] = pass;
             }
         }
+
+        private int CreateBuffer(CSRenderTarget target, TextureDesc description) {
+            return buffers.Add(new BufferItem() { Target = new(target), Description = description, });
+        }
+
         public ref struct CustomTexturesContext {
             public readonly RenderGraph Graph;
             public readonly RectI Viewport;
@@ -134,6 +153,7 @@ namespace Weesals.Engine {
         private List<PassData> passes = new();
         private SparseArray<RPInput> dependencies = new();
         private SparseArray<RPOutput> outputs = new();
+        private SparseArray<BufferItem> buffers = new();
         private RenderTargetPool rtPool = new();
         public void Clear() {
             passes.Clear();
@@ -221,17 +241,16 @@ namespace Weesals.Engine {
             public readonly RenderGraph Graph;
             public readonly RenderPass RootPass;
             public readonly CSGraphics Graphics;
-            private PooledList<BufferItem> buffers;
             private PooledList<ExecuteItem> executeList;
             private readonly List<PassData> passes => Graph.passes;
             private readonly SparseArray<RPInput> dependencies => Graph.dependencies;
             private readonly SparseArray<RPOutput> outputs => Graph.outputs;
+            private readonly SparseArray<BufferItem> buffers => Graph.buffers;
             private readonly RenderTargetPool rtPool => Graph.rtPool;
             public Evaluator(RenderGraph graph, RenderPass pass, CSGraphics graphics) {
                 Graph = graph;
                 RootPass = pass;
                 Graphics = graphics;
-                buffers = new();
                 executeList = new();
                 executeList.Add(new ExecuteItem() { PassId = FindPass(RootPass), });
             }
@@ -275,10 +294,15 @@ namespace Weesals.Engine {
                         var selfInput = selfInputs[i];
                         // Mark any non-write-only dependencies as Required
                         if ((passthroughMask & (1u << i)) != 0) {
-                            // If connected output node specifies size -1, fill its size
                             var otherPassData = passes[selfInput.OtherPassId];
-                            otherPassData.Viewport = selfPassData.Viewport;
-                            passes[selfInput.OtherPassId] = otherPassData;
+                            if (otherPassData.Viewport.Width == 0) {
+                                // If connected output node specifies size -1, fill its size
+                                otherPassData.Viewport = selfPassData.Viewport;
+                                passes[selfInput.OtherPassId] = otherPassData;
+                            } else {
+                                selfPassData.Viewport = otherPassData.Viewport;
+                                passes[selfExec.PassId] = selfPassData;
+                            }
                         }
 
                         // Require added to executeList and following self
@@ -305,6 +329,7 @@ namespace Weesals.Engine {
                     // Fill selfTargets
                     for (int o = 0; o < selfOutputs.Length; ++o) {
                         var selfOutput = selfOutputs[o];
+                        if (selfOutputs[o].TargetId != -1) continue;
                         Debug.Assert(selfOutputs[o].TargetId == -1);
                         // First based on passthrough inputs (reuse buffer of input)
                         if (selfOutput.Output.PassthroughInput != -1) {
@@ -317,8 +342,7 @@ namespace Weesals.Engine {
                         }
                         // Otherwise allocate a new buffer
                         if (selfOutputs[o].TargetId == -1) {
-                            selfOutputs[o].TargetId = buffers.Count;
-                            buffers.Add(new BufferItem() { Description = selfOutput.Output.TargetDesc, });
+                            selfOutputs[o].TargetId = buffers.Add(new BufferItem() { Description = selfOutput.Output.TargetDesc, });
                         }
                         // Populate the buffer with our specifications
                         ref var buffer = ref buffers[selfOutputs[o].TargetId];
@@ -328,6 +352,8 @@ namespace Weesals.Engine {
                             buffer.Description.Size = selfOutput.Output.TargetDesc.Size;
                         if (buffer.Description.MipCount == 1)
                             buffer.Description.MipCount = selfOutput.Output.TargetDesc.MipCount;
+                        if (selfOutput.SpecifiedRT.IsValid())
+                            buffer.Target = new(selfOutput.SpecifiedRT);
                     }
                 }
             }
@@ -452,8 +478,8 @@ namespace Weesals.Engine {
                                 viewport,
                                 selfInputs,
                                 selfOutputs,
-                                buffers);
-                            if (!custom.FillTextures(ref context)) continue;
+                                buffers.AsSpan());
+                            if (!custom.FillTextures(Graphics, ref context)) continue;
                             changes = true;
                         }
                         customUpdatedMask |= (1u << l);
@@ -488,6 +514,10 @@ namespace Weesals.Engine {
                     var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
                     var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
                     output += $"Pass[{selfPassData.RenderPass.Name}]\n";
+                    if (selfPassData.Viewport.Width > 0)
+                        output += $"  Viewport{selfPassData.Viewport}\n";
+                    else if (selfPassData.OutputSize.X > 0)
+                        output += $"  Size{selfPassData.OutputSize}\n";
                     output += $"  Inputs(";
                     for (int i = 0; i < selfInputs.Length; i++) {
                         var otherPass = passes[selfInputs[i].OtherPassId];
@@ -500,24 +530,26 @@ namespace Weesals.Engine {
                     for (int i = 0; i < selfOutputs.Length; i++) {
                         if (i > 0) output += ", ";
                         var target = buffers[selfOutputs[i].TargetId];
-                        output += $"{selfOutputs[i].Output.Name}:{selfOutputs[i].TargetId}:{target.Description.Size}";
+                        output += $"{selfOutputs[i].Output.Name}:{selfOutputs[i].TargetId}:{target.Description.Size} :: T{selfOutputs[i].TargetId}";
                     }
                     output += $")\n";
                 }
                 Debug.WriteLine(output);
             }
+            private void RequireBuffer(ref PooledList<int> tempTargets, int i) {
+                ref BufferItem buffer = ref buffers[i];
+                var desc = buffer.Description;
+                if (desc.Size.X == -1) desc.Size = Graphics.GetSurface().GetResolution();
+                if (desc.Format == BufferFormat.FORMAT_UNKNOWN) desc.Format = BufferFormat.FORMAT_R8G8B8A8_UNORM;
+                buffer.Target.Texture = rtPool.RequireTarget(desc);
+                tempTargets.Add(i);
+            }
             public void RenderPasses() {
                 using var tempTargets = new PooledList<int>(16);
-                for (int i = 0; i < buffers.Count; i++) {
-                    ref var buffer = ref buffers[i];
+                for (var it = buffers.GetEnumerator(); it.MoveNext();) {
+                    ref var buffer = ref it.Current;
                     if (buffer.Target.IsValid()) continue;
-                    if (buffer.RequireAttachment) {
-                        var desc = buffer.Description;
-                        if (desc.Size.X == -1) desc.Size = Graphics.GetSurface().GetResolution();
-                        if (desc.Format == BufferFormat.FORMAT_UNKNOWN) desc.Format = BufferFormat.FORMAT_R8G8B8A8_UNORM;
-                        buffer.Target.Texture = rtPool.RequireTarget(desc);
-                        tempTargets.Add(i);
-                    }
+                    if (buffer.RequireAttachment) RequireBuffer(ref tempTargets.AsMutable(), it.Index);
                 }
                 using var targetsSpan = new PooledList<RenderPass.Target>(16);
                 // Invoke render passes
@@ -539,7 +571,10 @@ namespace Weesals.Engine {
                     var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
                     RenderPass.Target depth = default;
                     for (int i = 0; i < selfOutputs.Length; i++) {
-                        var target = buffers[selfOutputs[i].TargetId].Target;
+                        var bufferId = selfOutputs[i].TargetId;
+                        ref var buffer = ref buffers[bufferId];
+                        if (!buffer.Target.IsValid()) RequireBuffer(ref tempTargets.AsMutable(), bufferId);
+                        var target = buffer.Target;
                         var fmt = target.Texture.IsValid() ? target.Texture.GetFormat() : selfOutputs[i].Output.TargetDesc.Format;
                         if (BufferFormatType.GetIsDepthBuffer(fmt)) depth = target;
                         else targetsSpan.Add(target);
@@ -557,8 +592,8 @@ namespace Weesals.Engine {
                 }
             }
             public void Dispose() {
-                buffers.Dispose();
                 executeList.Dispose();
+                buffers.Clear();
             }
         }
         public void Execute(RenderPass pass, CSGraphics graphics) {

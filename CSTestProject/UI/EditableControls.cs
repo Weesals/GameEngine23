@@ -151,7 +151,7 @@ namespace Weesals.UI {
         private bool TrySetText(string? text) {
             if (text == Text) return true;
             if (OnValidateInput != null) text = OnValidateInput(text);
-            if (text == null) return false;
+            if (text == null || text == Text) return false;
             Text = text;
             if (OnTextChanged != null) OnTextChanged(Text);
             return true;

@@ -58,8 +58,11 @@ protected:
 public:
 	const std::shared_ptr<Texture>& GetTexture() const { return mTexture; }
     int GetLineHeight() const { return mLineHeight; }
+    int GetKerningCount() const { return (int)mKernings.size(); }
+    const std::unordered_map<std::tuple<char, char>, int, hash_tuple>& GetKernings() const { return mKernings; }
     int GetKerning(wchar_t c1, wchar_t c2) const { auto k = mKernings.find(std::make_tuple((char)c1, (char)c2)); return k != mKernings.end() ? k->second : 0; }
 	virtual bool Load(const std::string& path, std::string_view glyps) = 0;
+    int GetGlyphCount() const { return (int)mGlyphs.size(); }
     int GetGlyphId(wchar_t chr) const;
     const Glyph& GetGlyph(int id) const;
 };

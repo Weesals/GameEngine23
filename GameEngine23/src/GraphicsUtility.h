@@ -44,18 +44,27 @@ static T PostIncrement(T& v, T a) { int t = v; v += a; return t; }
 
 static size_t AppendHash(const uint8_t* ptr, size_t size, size_t hash)
 {
-    auto ApplyHash = [&]<typename Z>()
+    auto ApplyHash = [&]<typename Z>(Z z)
     {
-        hash += *(Z*)ptr;
+        hash += z;// *(Z*)ptr;
         hash *= 0x9E3779B97F4A7C15uL;
-        hash ^= hash >> 16;
+        hash ^= hash >> 15;
         ptr += sizeof(Z);
         size -= sizeof(Z);
     };
-    while (size >= sizeof(uint64_t)) ApplyHash.operator()<uint64_t>();
-    if (size >= sizeof(uint32_t)) ApplyHash.operator()<uint32_t>();
-    if (size >= sizeof(uint16_t)) ApplyHash.operator()<uint16_t>();
-    if (size >= sizeof(uint8_t)) ApplyHash.operator()<uint8_t>();
+    while (size >= sizeof(uint64_t)) {
+        uint64_t z;
+        memcpy(&z, ptr, sizeof(uint64_t));
+        ApplyHash.operator()<uint64_t>(z);
+    }
+    if (size > 0) {
+        uint64_t z = 0;
+        memcpy(&z, ptr, size);
+        ApplyHash.operator()<uint64_t>(z);
+    }
+    //if (size >= sizeof(uint32_t)) ApplyHash.operator()<uint32_t>();
+    //if (size >= sizeof(uint16_t)) ApplyHash.operator()<uint16_t>();
+    //if (size >= sizeof(uint8_t)) ApplyHash.operator()<uint8_t>();
     return hash;
 }
 template<typename T>

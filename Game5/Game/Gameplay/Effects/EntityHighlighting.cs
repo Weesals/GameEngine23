@@ -9,7 +9,7 @@ using Weesals.Utility;
 
 namespace Game5.Game {
     public interface IHighlightListener {
-        void NotifyHighlightChanged(GenericTarget target, Color color);
+        void NotifyHighlightChanged(ItemReference target, Color color);
     }
     public class EntityHighlighting {
 
@@ -23,19 +23,19 @@ namespace Game5.Game {
 
         public struct FlashingData : IDisposable {
             public struct EntityFlash {
-                public GenericTarget Target;
+                public ItemReference Target;
                 public FlashConfig Config;
             }
             private uint currentTime;
             private List<EntityFlash> flashes = new();
             public FlashingData() { }
             public void Dispose() { }
-            private int GetIndex(GenericTarget target) {
+            private int GetIndex(ItemReference target) {
                 for (int i = 0; i < flashes.Count; i++)
                     if (flashes[i].Target == target) return i;
                 return -1;
             }
-            public void BeginFlashing(GenericTarget target, FlashConfig config) {
+            public void BeginFlashing(ItemReference target, FlashConfig config) {
                 var flash = new EntityFlash() { Target = target, Config = config, };
                 flash.Config.BeginTimeMS = currentTime + 1;
                 var index = GetIndex(target);

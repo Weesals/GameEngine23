@@ -67,7 +67,7 @@ namespace Game5.UI.Interaction {
             Play.PushLocalCommand(request);
             if (entity.IsValid) {
                 Play.EntityHighlighting.Flashing.BeginFlashing(
-                    GenericTarget.FromEntity(Play.World, entity),
+                    Play.Simulation.EntityProxy.MakeHandle(entity),
                     EntityHighlighting.OrderEffect
                 );
             }
@@ -77,7 +77,7 @@ namespace Game5.UI.Interaction {
             var target = FindTarget(events);
             return target.IsValid;
         }
-        private GenericTarget FindTarget(PointerEvent events) {
+        private ItemReference FindTarget(PointerEvent events) {
             var layout = PlayUI.GetComputedLayout();
             var m = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
             var mray = PlayUI.Play.Camera.ViewportToRay(m);

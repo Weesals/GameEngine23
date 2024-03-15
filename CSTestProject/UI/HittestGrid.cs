@@ -24,7 +24,7 @@ namespace Weesals.UI {
         }
 
         public class Cell : List<CanvasRenderable> {
-
+            public bool Sorted = true;
         }
 
         public readonly Cell[] Cells;
@@ -87,9 +87,14 @@ namespace Weesals.UI {
             for (int y = min.Y; y < max.Y; ++y) {
                 for (int x = min.X; x < max.X; ++x) {
                     var cell = Cells[ToIndex(x, y)];
-                    var index = cell.BinarySearch(item, OrderComparer.Default);
-                    if (index < 0) index = ~index;
-                    cell.Insert(index, item);
+                    if (cell.Sorted && cell.Count < 1) {
+                        var index = cell.BinarySearch(item, OrderComparer.Default);
+                        if (index < 0) index = ~index;
+                        cell.Insert(index, item);
+                    } else {
+                        cell.Add(item);
+                        cell.Sorted = false;
+                    }
                 }
             }
         }
@@ -97,7 +102,12 @@ namespace Weesals.UI {
         public HitEnumerator BeginHitTest(Int2 pos) {
             var pnt = ToLocalInt(pos);
             var cellI = ToIndex(pnt.X, pnt.Y);
-            return new HitEnumerator(Cells[cellI], pos);
+            var cell = Cells[cellI];
+            if (!cell.Sorted) {
+                cell.Sort(OrderComparer.Default);
+                cell.Sorted = true;
+            }
+            return new HitEnumerator(cell, pos);
         }
 
         public struct HitEnumerator : IEnumerator<CanvasRenderable> {

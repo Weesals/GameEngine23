@@ -32,7 +32,7 @@ namespace Weesals.Engine {
         public struct Value {
             public ushort OutputOffset;	// Offset in the output data array
             public ushort ValueOffset;  // Offset within the material
-            public byte DataSize;       // How big the data type is
+            public ushort DataSize;       // How big the data type is
             public sbyte SourceId;      // Which material it comes from
         }
         internal Material[] sources;
@@ -54,7 +54,8 @@ namespace Weesals.Engine {
 			Debug.Assert(data.Length >= mDataSize);
 			foreach (var value in GetValueArray()) {
 				var srcData = sources[value.SourceId].GetParametersRaw().GetDataRaw();
-				srcData.Slice(value.ValueOffset, value.DataSize).CopyTo(data.Slice(value.OutputOffset));
+				srcData.Slice(value.ValueOffset, Math.Min(value.DataSize, srcData.Length)).CopyTo(data.Slice(value.OutputOffset));
+                // TODO: Fill overflow with 0
 			}
 			var context = new MaterialEvaluatorContext(this, 0, data);
 			foreach (var value in GetComputedValueArray()) {
@@ -113,14 +114,18 @@ namespace Weesals.Engine {
 		}
         private static void MergePipelineState(ref Material.StateData state, Material mat) {
             state.MergeWith(mat.State);
-            foreach (var inherit in mat.InheritParameters) {
-                MergePipelineState(ref state, inherit);
+            if (mat.InheritParameters != null) {
+                foreach (var inherit in mat.InheritParameters) {
+                    MergePipelineState(ref state, inherit);
+                }
             }
         }
         private static void MergeRealtimeState(ref Material.RealtimeStateData state, Material mat) {
             state.MergeWith(mat.RealtimeData);
-            foreach (var inherit in mat.InheritParameters) {
-                MergeRealtimeState(ref state, inherit);
+            if (mat.InheritParameters != null) {
+                foreach (var inherit in mat.InheritParameters) {
+                    MergeRealtimeState(ref state, inherit);
+                }
             }
         }
         public static Material.StateData ResolvePipelineState(Span<Material> materials) {
@@ -137,20 +142,22 @@ namespace Weesals.Engine {
         }
         public static int ResolveMacros(Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, Span<Material> materials) {
             int count = 0;
+            ulong keyMask = 0;
             foreach (var mat in materials) {
                 ref var matmacros = ref mat.GetMacrosRaw();
-                foreach (var itemKV in matmacros.GetItemsRaw()) {
-                    int i = 0;
-                    for (; i < count; ++i) {
-                        if (macros[i].Key == itemKV.Key) break;
+                foreach (var item in matmacros.GetItemsRaw()) {
+                    var keyItem = 1ul << (item.Identifier.mId & 63);
+                    if ((keyMask & keyItem) != keyItem) {
+                        keyMask |= keyItem;
+                        int i = 0;
+                        for (; i < count; ++i) if (macros[i].Key == item.Identifier) break;
+                        if (i < count) continue;
                     }
-                    if (i >= count) {
-                        macros[count] = new KeyValuePair<CSIdentifier, CSIdentifier>(
-                            itemKV.Key,
-                            MemoryMarshal.Cast<byte, CSIdentifier>(matmacros.GetItemData(itemKV.Value))[0]
-                        );
-                        ++count;
-                    }
+                    macros[count] = new KeyValuePair<CSIdentifier, CSIdentifier>(
+                        item.Identifier,
+                        MemoryMarshal.Read<CSIdentifier>(matmacros.GetItemData(item))
+                    );
+                    ++count;
                 }
             }
             return count;
@@ -160,14 +167,16 @@ namespace Weesals.Engine {
             return ResolvePipeline(graphics, CollectionsMarshal.AsSpan(pbuffLayout), CollectionsMarshal.AsSpan(materials));
         }
         unsafe public static CSPipeline ResolvePipeline(CSGraphics graphics, Span<CSBufferLayout> pbuffLayout, Span<Material> materials) {
-            var macros = stackalloc KeyValuePair<CSIdentifier, CSIdentifier>[32];
-            int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macros, 32), materials);
+            var macrosBuffer = stackalloc KeyValuePair<CSIdentifier, CSIdentifier>[32];
+            int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, 32), materials);
+            var macros = new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, count);
             var materialState = ResolvePipelineState(materials);
+            var vertShader = Resources.RequireShader(graphics, materialState.VertexShader!, "vs_6_0", macros);
+            var pixShader = Resources.RequireShader(graphics, materialState.PixelShader!, "ps_6_0", macros);
             var pipeline = graphics.RequirePipeline(pbuffLayout,
-                materialState.VertexShader, materialState.PixelShader,
-                &materialState.BlendMode,
-                new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macros, count),
-                materialState.RenderPass
+                vertShader.CompiledShader,
+                pixShader.CompiledShader,
+                &materialState.BlendMode
             );
             return pipeline;
         }
@@ -203,7 +212,7 @@ namespace Weesals.Engine {
             public sbyte SourceId => EvalValue.SourceId;
             public ushort OutputOffset => EvalValue.OutputOffset;
             public ushort ValueOffset => EvalValue.ValueOffset;
-            public byte DataSize => EvalValue.DataSize;
+            public ushort DataSize => EvalValue.DataSize;
             public CSIdentifier Name;
             public sbyte ParamOffset;
             public sbyte ParamCount;
@@ -277,7 +286,7 @@ namespace Weesals.Engine {
                 var value = values[v];
                 if (value.Name != name) continue;
                 value.EvalValue.OutputOffset = (ushort)offset;
-                if (byteSize >= 0) value.EvalValue.DataSize = (byte)byteSize;
+                if (byteSize >= 0) value.EvalValue.DataSize = (ushort)byteSize;
                 values[v] = value;
                 break;
             }
@@ -334,6 +343,7 @@ namespace Weesals.Engine {
             cache.valueCount = (byte)valueCount;
             cache.parameters = parameterIds.ToArray();
             cache.mDataSize = (ushort)dataSize;
+            Debug.Assert(cache.mDataSize > 0);
             Clear();
         }
 	    // At this point, the parameter definitely does not yet exist in our list
@@ -353,11 +363,13 @@ namespace Weesals.Engine {
 			    ObserveValue(material, name);
 			    return data;
 		    }
-		    // Check if it exists in inherited material properties
-		    foreach (var mat in material.InheritParameters) {
-			    data = GetUniformSourceIntl(mat, name, ref context);
-			    if (!data.IsEmpty) return data;
-		    }
+            // Check if it exists in inherited material properties
+            if (material.InheritParameters != null) {
+                foreach (var mat in material.InheritParameters) {
+                    data = GetUniformSourceIntl(mat, name, ref context);
+                    if (!data.IsEmpty) return data;
+                }
+            }
 		    return data;
 	    }
 	    int RequireSource(Material material) {
@@ -381,7 +393,7 @@ namespace Weesals.Engine {
                 EvalValue = new MaterialEvaluator.Value() {
 		            OutputOffset = InvalidOffset,
                     ValueOffset = (ushort)dataOffset,
-		            DataSize = (byte)(valueData.Length),
+		            DataSize = (ushort)(valueData.Length),
 		            SourceId = (sbyte)RequireSource(material),
                 },
                 Name = name,
@@ -410,7 +422,7 @@ namespace Weesals.Engine {
                 EvalValue = new MaterialEvaluator.Value() {
 		            OutputOffset = (byte)(outputOffset),
 		            ValueOffset = (ushort)(parameterI),
-                    DataSize = (byte)parameter.GetDataSize(),
+                    DataSize = (ushort)parameter.GetDataSize(),
                     SourceId = (sbyte)RequireSource(material),
                 },
 		        Name = parameter.GetName(),

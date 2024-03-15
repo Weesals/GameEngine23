@@ -113,7 +113,7 @@ namespace Game5.Game {
             }
         }
 
-        public Int2 GetProgress(GenericTarget entity, RequestId requestId) {
+        public Int2 GetProgress(ItemReference entity, RequestId requestId) {
             return AccumulationSystem.GetProgress(entity.GetEntity(), requestId);
         }
     }

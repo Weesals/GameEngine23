@@ -24,6 +24,7 @@ namespace Weesals.Engine {
                 Mesh.RequireVertexPositions();
                 Mesh.RequireVertexTexCoords(0);
                 Mesh.RequireVertexColors();
+                Mesh.RequireVertexTangents();
             }
             public void Dispose() {
                 Mesh.Dispose();
@@ -39,7 +40,7 @@ namespace Weesals.Engine {
         private static MeshBuffer polygonBuffer;
         private static MeshBuffer textBuffer;
 
-        public static CSFont Font;
+        public static Font Font;
 
         private struct Batch {
             public MeshBuffer Buffer;
@@ -48,26 +49,24 @@ namespace Weesals.Engine {
         private static List<Batch> batches = new();
 
         static Handles() {
-            Font = CSResources.LoadFont("./Assets/Roboto-Regular.ttf");
+            Font = Resources.LoadFont("./Assets/Roboto-Regular.ttf");
 
             var lineMat = new Material(Resources.LoadShader("./Assets/handles.hlsl", "VSLine"), Resources.LoadShader("./Assets/handles.hlsl", "PSLine"));
             lineMat.SetRasterMode(RasterMode.MakeNoCull());
             lineMat.SetBlendMode(BlendMode.MakeAlphaBlend());
             lineMat.SetDepthMode(DepthMode.MakeOff());
             lineBuffer = new(lineMat);
-            lineBuffer.Mesh.RequireVertexTangents();
             var polyMat = new Material(Resources.LoadShader("./Assets/handles.hlsl", "VSMain"), Resources.LoadShader("./Assets/handles.hlsl", "PSMain"));
             polyMat.SetBlendMode(BlendMode.MakeAlphaBlend());
             polyMat.SetDepthMode(DepthMode.MakeOff());
             polygonBuffer = new(polyMat);
-            polygonBuffer.Mesh.RequireVertexTangents();
             var textMat = new Material(Resources.LoadShader("./Assets/handles.hlsl", "VSText"), Resources.LoadShader("./Assets/handles.hlsl", "PSText"));
             textMat.SetRasterMode(RasterMode.MakeNoCull());
             textMat.SetBlendMode(BlendMode.MakeAlphaBlend());
             textMat.SetDepthMode(DepthMode.MakeOff());
-            textMat.SetTexture("Texture", Font.GetTexture());
+            textMat.SetTexture("Texture", Font.Texture);
             textBuffer = new(textMat);
-            textBuffer.Mesh.RequireVertexTangents();
+            Reset();
         }
         public static void Reset() {
             RenderHash = 0;
@@ -174,7 +173,7 @@ namespace Weesals.Engine {
             foreach (ref var i in quadInds) i += (uint)vertices.BaseVertex;
             indices.GetIndices().Set(quadInds);
             Span<Vector2> quadUVs = stackalloc[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f), };
-            vertices.GetTangents().Set(to - from);
+            vertices.GetTangents().Set(Vector3.Normalize(to - from) * thickness);
             vertices.GetTexCoords().Set(quadUVs);
             vertices.GetColors().Set(color * Handles.color);
             Span<Vector3> quadPos = stackalloc[] { from, from, to, to, };

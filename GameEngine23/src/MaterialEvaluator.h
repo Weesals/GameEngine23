@@ -78,7 +78,7 @@ public:
 		}
 	}
 	static void ResolveConstantBuffer(ShaderBase::ConstantBuffer* cb, std::span<const Material*> materialStack, uint8_t* buffer) {
-		for (auto& val : cb->mValues) {
+		for (auto& val : cb->GetValues()) {
 			for (auto* mat : materialStack) {
 				Material::ParameterContext context(materialStack);
 				auto data = context.GetUniform(val.mName);
@@ -99,7 +99,7 @@ public:
 			uint8_t tmpData[2048];
 			auto count = (int)(uint32_t)(cb->mSize + sizeof(uint64_t)) / sizeof(uint64_t);
 			for (int i = 0; i < count; ++i) ((uint64_t*)tmpData)[i] = 0;
-			for (auto& val : cb->mValues) {
+			for (auto& val : cb->GetValues()) {
 				auto data = context.GetUniform(val.mName);
 				std::memcpy(tmpData + val.mOffset, data.data(), data.size());
 			}

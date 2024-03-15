@@ -1,31 +1,27 @@
 {
+  "RenderState": {
+    "Texture": "./Assets/ParticleAtlas.png"
+  },
+  "Metadata": {
+    "SpawnRate": 500,
+    "MaximumDuration": 5.0
+  },
   "ParticleSpawn": [
     {
       "name": "PositionInSphere",
       "Radius": "1.0"
-    },
-    /*{
-      "name": "Custom",
-      "Code": "Position.z -= 20.0;"
-    },*/
-    {
-      "name": "Custom",
-      "Code": "Position.z += 5.0;"
-    },
-    /*{
-      "name": "Custom",
-      "Code": "Velocity.y += 20.0;"
-    }*/
+    }
   ],
   "ParticleStep": [
     {
       "name": "IncrementLifetime"
     },
-    /*{
-      "name": "ApplyGravity",
-    },*/
     {
       "name": "ApplyVelocity"
+    },
+    {
+      "name": "Custom",
+      "Code": "{ float3 delta = Position - AvoidPoint;  Velocity += 1.0 * delta / pow(dot(delta, delta), 2.0); }"
     },
     {
       "name": "ApplyDrag",
@@ -61,6 +57,10 @@
     },
     {
       "name": "TextureSample"
+    },
+    {
+      "name": "Custom",
+      "Code": "Color.rgb = lerp(lerp(Color.b, Color.r, _ViewSpaceLightDir0.x * 0.5 + 0.5), Color.b, saturate(-_ViewSpaceLightDir0.y));"
     }
   ]
 }

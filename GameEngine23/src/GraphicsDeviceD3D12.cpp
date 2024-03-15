@@ -16,18 +16,6 @@
 #include <stdexcept>
 #include <sstream>
 
-// From DirectXTK wiki
-inline void ThrowIfFailed(HRESULT hr)
-{
-    if (FAILED(hr))
-    {
-        std::ostringstream err;
-        err << "Exception thrown, Code: " << std::hex << hr << std::endl;
-        OutputDebugStringA(err.str().c_str());
-        throw std::runtime_error(err.str());
-    }
-}
-
 // Handles receiving rendering events from the user application
 // and issuing relevant draw commands
 class D3DCommandBuffer : public CommandBufferInteropBase {
@@ -39,10 +27,11 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     ID3D12RootSignature* mLastRootSig;
     const D3DResourceCache::D3DPipelineState* mLastPipeline;
     const D3DConstantBuffer* mLastCBs[10];
-    UINT64 mLastResources[10];
+    D3D12_GPU_DESCRIPTOR_HANDLE mLastResources[10];
     InplaceVector<D3DResourceCache::D3DRenderSurfaceView, 8> mFrameBuffers;
     D3DResourceCache::D3DRenderSurfaceView mDepthBuffer;
     std::vector<D3D12_VERTEX_BUFFER_VIEW> tVertexViews;
+    std::vector<D3D12_RESOURCE_BARRIER> mDelayedBarriers;
     RectInt mViewportRect;
 public:
     D3DCommandBuffer(GraphicsDeviceD3D12* device)
@@ -74,18 +63,31 @@ public:
         mLastRootSig = nullptr;
         mLastPipeline = nullptr;
         std::fill(mLastCBs, mLastCBs + _countof(mLastCBs), nullptr);
-        std::fill(mLastResources, mLastResources + _countof(mLastResources), 0);
+        std::fill(mLastResources, mLastResources + _countof(mLastResources), D3D12_GPU_DESCRIPTOR_HANDLE{ .ptr = 0, });
         std::fill(mFrameBuffers.begin(), mFrameBuffers.end(), nullptr);
         mDepthBuffer = { };
     }
     virtual std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) override {
-        return std::make_shared<D3DGraphicsSurface>(mDevice->GetDevice(), ((WindowWin32*)window)->GetHWND());
+        auto surface = std::make_shared<D3DGraphicsSurface>(mDevice->GetDevice(), ((WindowWin32*)window)->GetHWND());
+        return surface;
     }
     virtual void SetSurface(GraphicsSurface* surface) override {
         mSurface = (D3DGraphicsSurface*)surface;
-        mFrameHandle = 1ull << mDevice->GetResourceCache().RequireFrameHandle((size_t)mSurface + mSurface->GetBackFrameIndex());
+        mFrameHandle = 1ull << mDevice->GetResourceCache().RequireFrameHandle((size_t)mSurface + (mSurface->GetBackFrameIndex() & 31));
         mCmdAllocator->mFrameLocks |= mFrameHandle;
-        mDevice->GetResourceCache().AddInFlightSurface(std::dynamic_pointer_cast<D3DGraphicsSurface>(mSurface->This()));
+        auto& cache = mDevice->GetResourceCache();
+        auto* backBuffer = &*surface->GetBackBuffer();
+        auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(backBuffer);
+        /*mSurface->GetFrameBuffer().RequireState(mDelayedBarriers,
+            mDevice->GetResourceCache().mBarrierStateManager, D3D12_RESOURCE_STATE_COMMON, 0);*/
+        D3DResourceCache::D3DRenderSurfaceView view(&mSurface->GetFrameBuffer());
+        cache.RequireTextureRTV(view, mFrameHandle);
+        //*d3dRT = mSurface->GetFrameBuffer();
+        cache.SetRenderTargetMapping(backBuffer, mSurface->GetFrameBuffer());
+        backBuffer->SetResolution(Int2(d3dRT->mDesc.mWidth, d3dRT->mDesc.mHeight));
+        backBuffer->SetFormat((BufferFormat)d3dRT->mFormat);
+        cache.AddInFlightSurface(std::dynamic_pointer_cast<D3DGraphicsSurface>(mSurface->This()));
+        assert(d3dRT->mHandle >= 0);
     }
     virtual GraphicsSurface* GetSurface() override {
         return mSurface;
@@ -104,13 +106,20 @@ public:
         for (int t = 0; t < colorTargets.size(); ++t) {
             auto target = colorTargets[t];
             auto d3dRt = RequireInitializedRT(target.mTarget);
-            if (target.mTarget == nullptr) d3dRt = &mSurface->GetBackBuffer();
+            assert(target.mTarget != nullptr);
+            assert(d3dRt->mHandle >= 0);
+            //if (target.mTarget == nullptr) d3dRt = &mSurface->GetFrameBuffer();
             d3dColorTargets.push_back(D3DResourceCache::D3DRenderSurfaceView(d3dRt, target.mMip, target.mSlice));
         }
-        if (colorTargets.empty() && depthTarget.mTarget == nullptr) d3dColorTargets.push_back(&mSurface->GetBackBuffer());
+        //if (colorTargets.empty() && depthTarget.mTarget == nullptr) d3dColorTargets.push_back(&mSurface->GetFrameBuffer());
         if (depthTarget.mTarget != nullptr)
             d3dDepthTarget = D3DResourceCache::D3DRenderSurfaceView(RequireInitializedRT(depthTarget.mTarget), depthTarget.mMip, depthTarget.mSlice);
         SetD3DRenderTarget(d3dColorTargets, d3dDepthTarget);
+    }
+    void FlushBarriers() {
+        if (mDelayedBarriers.empty()) return;
+        mCmdList->ResourceBarrier((UINT)mDelayedBarriers.size(), mDelayedBarriers.data());
+        mDelayedBarriers.clear();
     }
     const D3DResourceCache::D3DRenderSurface* RequireInitializedRT(const RenderTarget2D* target) {
         auto d3dRt = target != nullptr ? mDevice->GetResourceCache().RequireD3DRT(target) : nullptr;
@@ -147,10 +156,10 @@ public:
         mDevice->GetD3DDevice()->CreateCommittedResource(&heapParams, D3D12_HEAP_FLAG_NONE, &texDesc,
             D3D12_RESOURCE_STATE_COMMON, &clearValue, IID_PPV_ARGS(&surface->mBuffer));
         surface->mBuffer->SetName(L"Texture RT");
-        surface->mWidth = (uint16_t)texDesc.Width;
-        surface->mHeight = (uint16_t)texDesc.Height;
-        surface->mMips = (uint16_t)texDesc.MipLevels;
-        surface->mSlices = (uint16_t)texDesc.DepthOrArraySize;
+        surface->mDesc.mWidth = (uint16_t)texDesc.Width;
+        surface->mDesc.mHeight = (uint16_t)texDesc.Height;
+        surface->mDesc.mMips = (uint8_t)texDesc.MipLevels;
+        surface->mDesc.mSlices = (uint8_t)texDesc.DepthOrArraySize;
         surface->mFormat = texDesc.Format;
     }
     void AllocateRenderTarget(D3DResourceCache::D3DRenderSurface* surface, Int2 size, BufferFormat fmt, int mipCount, int arrayCount) {
@@ -174,6 +183,7 @@ public:
             size,
             std::make_unique<D3DResourceCache::D3DRenderSurface>()
         )).first;
+        item->second->mHandle = cache.mResourceCount++;
         auto* surface = item->second.get();
         AllocateDepthBuffer(surface, size, BufferFormat::FORMAT_D24_UNORM_S8_UINT, 1, 1, true);
         auto d3dDevice = mDevice->GetD3DDevice();
@@ -181,6 +191,7 @@ public:
     }
     void SetD3DRenderTarget(std::span<const D3DResourceCache::D3DRenderSurfaceView> frameBuffers, D3DResourceCache::D3DRenderSurfaceView depthBuffer) {
         bool same = mDepthBuffer == depthBuffer;
+        auto& cache = mDevice->GetResourceCache();
         D3DResourceCache::D3DRenderSurfaceView anyBuffer = depthBuffer;
         for (int i = 0; i < (int)frameBuffers.size(); ++i) {
             auto buffer = frameBuffers[i];
@@ -188,30 +199,39 @@ public:
             if (buffer != mFrameBuffers[i]) same = false;
         }
         if (same) return;
-        if (anyBuffer != nullptr && depthBuffer == nullptr) depthBuffer = RequireDepth(Int2(anyBuffer.mSurface->mWidth, anyBuffer.mSurface->mHeight));
+        if (anyBuffer != nullptr && depthBuffer == nullptr) depthBuffer = RequireDepth(Int2(anyBuffer.mSurface->mDesc.mWidth, anyBuffer.mSurface->mDesc.mHeight));
         {
-            InplaceVector<D3D12_RESOURCE_BARRIER, 10> barriers;
             int fbcount = std::max((int)frameBuffers.size(), (int)mFrameBuffers.size());
             for (int i = 0; i < fbcount; ++i) {
                 auto srcBuffer = i < frameBuffers.size() ? frameBuffers[i] : nullptr;
                 auto& dstBuffer = mFrameBuffers[i];
                 if (dstBuffer == srcBuffer) continue;
+                if (dstBuffer != nullptr) {
+                    int subresource = dstBuffer.GetSubresource();
+                    dstBuffer->UnlockState(cache.mBarrierStateManager,
+                        D3D12_RESOURCE_STATE_RENDER_TARGET, subresource);
+                }
                 dstBuffer = srcBuffer;
-                if (dstBuffer != nullptr) dstBuffer->RequireState(barriers, D3D12_RESOURCE_STATE_RENDER_TARGET, dstBuffer.mMip);
+                if (dstBuffer != nullptr) {
+                    int subresource = dstBuffer.GetSubresource();
+                    dstBuffer->RequireState(mDelayedBarriers, cache.mBarrierStateManager,
+                        D3D::BarrierStateManager::CreateLocked(D3D12_RESOURCE_STATE_RENDER_TARGET), subresource);
+                }
             }
             if (mDepthBuffer != depthBuffer) {
                 //if (mDepthBuffer != nullptr) mDepthBuffer->RequireState(barriers, D3D12_RESOURCE_STATE_DEPTH_READ);
                 mDepthBuffer = depthBuffer;
-                if (mDepthBuffer != nullptr) mDepthBuffer->RequireState(barriers, D3D12_RESOURCE_STATE_DEPTH_WRITE, depthBuffer.mMip);
+                if (mDepthBuffer != nullptr) mDepthBuffer->RequireState(mDelayedBarriers,
+                    mDevice->GetResourceCache().mBarrierStateManager, D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                    mDepthBuffer.GetSubresource());
             }
             mFrameBuffers.resize((uint8_t)frameBuffers.size());
-            if (!barriers.empty())
-                mCmdList->ResourceBarrier(barriers.size(), barriers.data());
+            FlushBarriers();
         }
 
         if (anyBuffer != nullptr) {
             auto& cache = mDevice->GetResourceCache();
-            SetViewport(RectInt(0, 0, anyBuffer->mWidth, anyBuffer->mHeight));
+            SetViewport(RectInt(0, 0, anyBuffer->mDesc.mWidth, anyBuffer->mDesc.mHeight));
 
             InplaceVector<D3D12_CPU_DESCRIPTOR_HANDLE, 8> targets;
             for (int i = 0; i < (int)frameBuffers.size(); ++i) {
@@ -262,7 +282,7 @@ public:
 
     void* RequireConstantBuffer(std::span<const uint8_t> data) override {
         auto& cache = mDevice->GetResourceCache();
-        return cache.RequireConstantBuffer(mFrameHandle, data);
+        return cache.RequireConstantBuffer(mCmdList.Get(), mFrameHandle, data);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) override {
         auto& cache = mDevice->GetResourceCache();
@@ -284,11 +304,10 @@ public:
         mLastPipeline = pipelineState;
         mCmdList->SetPipelineState(pipelineState->mPipelineState.Get());
     }
-    const PipelineLayout* RequirePipeline(
-        const Shader& vertexShader, const Shader& pixelShader,
-        const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-        std::span<const MacroValue> macros, const IdentifierWithName& renderPass
-    )
+    virtual const PipelineLayout* RequirePipeline(
+        const CompiledShader& vertexShader, const CompiledShader& pixelShader,
+        const MaterialState& materialState, std::span<const BufferLayout*> bindings
+    ) override
     {
         mDevice->CheckDeviceState();
 
@@ -296,13 +315,12 @@ public:
         for (auto& fb : mFrameBuffers) frameBufferFormats.push_back(fb->mFormat);
         DXGI_FORMAT depthBufferFormat = mDepthBuffer->mFormat;
         auto pipelineState = mDevice->GetResourceCache().RequirePipelineState(
-            vertexShader, pixelShader, materialState, bindings, macros, renderPass,
+            vertexShader, pixelShader, materialState, bindings,
             frameBufferFormats, depthBufferFormat
         );
         if (pipelineState->mLayout == nullptr)
         {
             pipelineState->mLayout = std::make_unique<PipelineLayout>();
-            pipelineState->mLayout->mRenderPass = renderPass;
             pipelineState->mLayout->mRootHash = (size_t)pipelineState->mRootSignature;
             pipelineState->mLayout->mPipelineHash = pipelineState->mPipelineState != nullptr ? (size_t)pipelineState : 0;
             pipelineState->mLayout->mConstantBuffers = pipelineState->mConstantBuffers;
@@ -341,24 +359,26 @@ public:
             auto* resource = resources[r++];
             int srvOffset = -1;
             if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
-                srvOffset = cache.GetBinding((uint64_t)resource)->mSRVOffset;
+                auto* rbinding = cache.GetBinding((uint64_t)resource);
+                assert(rbinding != nullptr); // "Did you call CopyBufferData on this resource?");
+                srvOffset = rbinding->mSRVOffset;
             }
             else {
                 auto* textureBase = (TextureBase*)resource;
                 if (auto* rt = dynamic_cast<RenderTarget2D*>(textureBase)) {
-                    auto surface = cache.RequireD3DRT(rt);
+                    auto* surface = cache.RequireD3DRT(rt);
                     if (surface->mBuffer == nullptr) {
                         // TODO: Print log message (first time)
                         srvOffset = cache.RequireDefaultTexture(mCmdList.Get(), mFrameHandle)->mSRVOffset;
                     }
                     else {
                         assert(surface->mBuffer.Get() != nullptr);
-                        InplaceVector<D3D12_RESOURCE_BARRIER, 2> barriers;
                         D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
                         if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
-                        surface->RequireState(barriers, barrierState, 0);
+                        surface->RequireState(mDelayedBarriers, mDevice->GetResourceCache().mBarrierStateManager,
+                            barrierState, -1);
                         srvOffset = surface->mSRVOffset;
-                        if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
+                        FlushBarriers();
                     }
                 } else {
                     auto tex = dynamic_cast<Texture*>(textureBase);
@@ -370,9 +390,9 @@ public:
             auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
             handle.ptr += srvOffset;
             auto bindingId = rootSig->mNumConstantBuffers + rb->mBindPoint;
-            if (mLastResources[bindingId] == handle.ptr) continue;
+            if (mLastResources[bindingId].ptr == handle.ptr) continue;
             mCmdList->SetGraphicsRootDescriptorTable(bindingId, handle);
-            mLastResources[bindingId] = handle.ptr;
+            mLastResources[bindingId] = handle;
         }
 
         int indexCount = -1;
@@ -406,16 +426,21 @@ public:
     // TODO: Should this be automatic?
     void Execute() override
     {
-        InplaceVector<D3D12_RESOURCE_BARRIER, 2> barriers;
-        auto& backBuffer = mSurface->GetBackBuffer();
-        backBuffer.RequireState(barriers, D3D12_RESOURCE_STATE_PRESENT, 0);
-        if (!barriers.empty()) mCmdList->ResourceBarrier(barriers.size(), barriers.data());
+        auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(&*mSurface->GetBackBuffer());
+        auto& backBuffer = *d3dRT;// mSurface->GetFrameBuffer();
 
         SetD3DRenderTarget({ }, D3DResourceCache::D3DRenderSurfaceView());
+
+        backBuffer.RequireState(mDelayedBarriers, mDevice->GetResourceCache().mBarrierStateManager,
+            D3D12_RESOURCE_STATE_PRESENT, 0);
+        backBuffer.mBuffer.Reset();
+        FlushBarriers();
+
         ThrowIfFailed(mCmdList->Close());
 
         ID3D12CommandList* ppCommandLists[] = { mCmdList.Get(), };
         mDevice->GetDevice().GetCmdQueue()->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+        //mDevice->GetResourceCache().mBarrierStateManager.Clear();
     }
 
 };
@@ -450,6 +475,28 @@ CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
     return CommandBuffer(new D3DCommandBuffer(this));
 }
 
+CompiledShader GraphicsDeviceD3D12::CompileShader(const std::wstring_view& path, const std::string_view& entry,
+    const std::string_view& profile, std::span<const MacroValue> macros) {
+    CompiledShader compiled;
+    bool wasCreated = false;
+    DxcDefine d3dMacros[128];
+    auto count = std::min(macros.size(), _countof(d3dMacros) - 1);
+    for (int m = 0; m < count; ++m) {
+        d3dMacros[m] = DxcDefine{
+            .Name = macros[m].mName.GetWName().c_str(),
+            .Value = macros[m].mValue.GetWName().c_str(),
+        };
+    }
+    d3dMacros[count] = { };
+    D3DShader d3dshader;
+    d3dshader.CompileFromFile(path.data(), entry.data(), profile.data(), d3dMacros);
+    auto blob = compiled.AllocateBuffer((int)d3dshader.mShader->GetBufferSize());
+    std::memcpy(blob.data(), d3dshader.mShader->GetBufferPointer(), blob.size());
+    compiled.SetName(path);
+    compiled.GetReflection() = d3dshader.mReflection;
+    return compiled;
+}
+
 /*const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
     const Shader& vertexShader, const Shader& pixelShader,
     const MaterialState& materialState, std::span<const BufferLayout*> bindings,
@@ -459,7 +506,7 @@ CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
     CheckDeviceState();
 
     InplaceVector<DXGI_FORMAT> fbFormats;
-    //fbFormats.push_back(mPrimarySurface.GetBackBuffer().mFormat);
+    //fbFormats.push_back(mPrimarySurface.GetFrameBuffer().mFormat);
     auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, macros, renderPass,
         fbFormats, DXGI_FORMAT_D24_UNORM_S8_UINT);
     if (pipelineState->mLayout == nullptr)

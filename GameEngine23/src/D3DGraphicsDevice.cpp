@@ -12,6 +12,15 @@
 #pragma comment(lib, "d3dcompiler.lib")
 
 
+void ThrowIfFailed(HRESULT hr) {
+    if (FAILED(hr)) {
+        std::ostringstream err;
+        err << "Exception thrown, Code: " << std::hex << hr << std::endl;
+        OutputDebugStringA(err.str().c_str());
+        throw std::runtime_error(err.str());
+    }
+}
+
 #if PIX
 #include <filesystem>
 #include <shlobj.h>
@@ -39,18 +48,6 @@ static std::wstring GetLatestWinPixGpuCapturerPath() {
 }
 
 #endif
-
-// From DirectXTK wiki
-inline void ThrowIfFailed(HRESULT hr)
-{
-    if (FAILED(hr))
-    {
-        std::ostringstream err;
-        err << "Exception thrown, Code: " << std::hex << hr << std::endl;
-        OutputDebugStringA(err.str().c_str());
-        throw std::runtime_error(err.str());
-    }
-}
 
 // Initialise D3D with the specified window
 D3DGraphicsDevice::D3DGraphicsDevice()

@@ -7,6 +7,7 @@ using Weesals.UI;
 using Game5.UI.Interaction;
 using Weesals.Utility;
 using Weesals.ECS;
+using Weesals.Engine.Importers;
 
 namespace Game5.UI {
 
@@ -25,7 +26,7 @@ namespace Game5.UI {
         private UXEntityOrder entityOrder;
         private UXPlacement placement;
 
-        private Int2 cameraMove = Int2.Zero;
+        private Int3 cameraMove = Int3.Zero;
 
         public UIPlay(Play play) {
             Play = play;
@@ -48,17 +49,17 @@ namespace Game5.UI {
 
             var spriteRenderer = new SpriteRenderer();
             var atlas = spriteRenderer.Generate(new[] {
-                Resources.LoadTexture("./Assets/T_Hammer.png"),
-                Resources.LoadTexture("./Assets/T_Sword.png"),
-                Resources.LoadTexture("./Assets/T_Staff.png"),
-                Resources.LoadTexture("./Assets/T_Axe.png"),
-                Resources.LoadTexture("./Assets/T_Bow.png"),
-                Resources.LoadTexture("./Assets/T_Meat.png"),
-                Resources.LoadTexture("./Assets/T_Wheat.png"),
-                Resources.LoadTexture("./Assets/T_House.png"),
-                Resources.LoadTexture("./Assets/T_Castle.png"),
-                Resources.LoadTexture("./Assets/T_Tick.png"),
-                Resources.LoadTexture("./Assets/T_Spear.png"),
+                Resources.LoadTexture("./Assets/ui/T_Bow.png"),
+                Resources.LoadTexture("./Assets/ui/T_House.png"),
+                Resources.LoadTexture("./Assets/ui/T_Castle.png"),
+                Resources.LoadTexture("./Assets/ui/T_Hammer.png"),
+                Resources.LoadTexture("./Assets/ui/T_Sword.png"),
+                Resources.LoadTexture("./Assets/ui/T_Staff.png"),
+                Resources.LoadTexture("./Assets/ui/T_Axe.png"),
+                Resources.LoadTexture("./Assets/ui/T_Meat.png"),
+                Resources.LoadTexture("./Assets/ui/T_Wheat.png"),
+                Resources.LoadTexture("./Assets/ui/T_Tick.png"),
+                Resources.LoadTexture("./Assets/ui/T_Spear.png"),
             });
 
 #if FALSE
@@ -78,8 +79,9 @@ namespace Game5.UI {
 #endif
 
             var list = new ListLayout() {
-                Transform = CanvasTransform.MakeAnchored(new Vector2(256, 256), new Vector2(0.0f, 1.0f)),
+                Transform = CanvasTransform.MakeAnchored(new Vector2(300, 64), new Vector2(0.0f, 1.0f)),
                 ScaleMode = ListLayout.ScaleModes.StretchOrClamp,
+                Axis = ListLayout.Axes.Horizontal,
             };
             for (int i = 0; i < 5; ++i) {
                 var imgBtn = new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
@@ -94,32 +96,50 @@ namespace Game5.UI {
             }
             AppendChild(list);
             Canvas.KeyboardFilter.Insert(0, this);
+            //AppendChild(new Image(testTexture.Texture));
         }
 
         public void Update(float dt) {
             //MarkComposeDirty();
-            Play.Camera.Position += (new Vector2(cameraMove.X, cameraMove.Y) * (dt * Play.Camera.Position.Y)).AppendY(0f);
+            var camRight = Vector3.Normalize(Play.Camera.Right * new Vector3(1f, 0f, 1f));
+            var camFwd = Vector3.Normalize(Vector3.Cross(camRight, Vector3.UnitY));
+            var ray = Play.Camera.ViewportToRay(new Vector2(0.5f, 0.5f));
+
+            var camera = Play.Camera;
+            Vector3 pivot = camera.Position;
+            if (Play.Landscape.Raycast(ray, out var hit)) pivot = hit.HitPosition;
+            camera.Position +=
+                (cameraMove.X * camRight + cameraMove.Z * camFwd + cameraMove.Y * Vector3.UnitY)
+                * (dt * camera.Position.Y);
+            var delta = (Input.GetKeyDown(KeyCode.Minus) ? -1 : 0)
+                + (Input.GetKeyDown(KeyCode.Plus) ? 1 : 0);
+            var rot = Quaternion.CreateFromAxisAngle(Vector3.UnitY, delta * dt);
+            camera.Orientation = rot * camera.Orientation;
+            camera.Position += (pivot - camera.Position)
+                - Vector3.Transform(pivot - camera.Position, rot);
         }
 
         public Ray ScreenToRay(Vector2 mpos) {
             var layout = GetComputedLayout();
-            var m = layout.InverseTransformPosition2D(mpos) / layout.GetSize();
+            var m = layout.InverseTransformPosition2DN(mpos);
             var mray = Play.Camera.ViewportToRay(m);
             return mray;
         }
 
-        private Int2 GetAxis(KeyCode key) {
-            Int2 axis = Int2.Zero;
-            if (key == KeyCode.W || key == KeyCode.UpArrow) axis.Y++;
+        private Int3 GetAxis(KeyCode key) {
+            Int3 axis = 0;
+            if (key == KeyCode.W || key == KeyCode.UpArrow) axis.Z++;
             if (key == KeyCode.A || key == KeyCode.LeftArrow) axis.X--;
-            if (key == KeyCode.S || key == KeyCode.DownArrow) axis.Y--;
+            if (key == KeyCode.S || key == KeyCode.DownArrow) axis.Z--;
             if (key == KeyCode.D || key == KeyCode.RightArrow) axis.X++;
+            if (key == KeyCode.Q) axis.Y--;
+            if (key == KeyCode.E) axis.Y++;
             return axis;
         }
         public void OnKeyPress(ref KeyEvent key) {
             cameraMove += GetAxis(key);
             if (key == KeyCode.Delete) {
-                using var selected = PooledArray<GenericTarget>.FromEnumerator(Play.SelectionManager.Selected);
+                using var selected = PooledArray<ItemReference>.FromEnumerator(Play.SelectionManager.Selected);
                 Play.SelectionManager.ClearSelected();
                 foreach (var entity in selected) Play.World.DeleteEntity(entity.GetEntity());
             }

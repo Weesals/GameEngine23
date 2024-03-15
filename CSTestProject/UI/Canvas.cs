@@ -37,23 +37,28 @@ namespace Weesals.UI {
         }
     }
     public class Canvas : CanvasRenderable, IDisposable {
+        public delegate void CanvasRepaintDelegate(ref CanvasCompositor.Context context);
+
         public CanvasMeshBuffer Builder { get; private set; }
         public CanvasCompositor Compositor { get; private set; }
         public HittestGrid HitTestGrid { get; private set; }
         public TweenManager Tweens { get; private set; }
+        public Font DefaultFont { get; private set; }
         public Material Material;
         private Int2 mSize;
         public ISelectionGroup? SelectionGroup;
         public Updatables Updatables = new();
         public KeyboardFilter KeyboardFilter;
+        public CanvasRepaintDelegate OnRepaint;
 
         public int Revision => Builder.VertexRevision + Compositor.GetIndices().BufferLayout.revision;
 
-        unsafe public Canvas() {
+        public Canvas() {
             Builder = new();
             Compositor = new(Builder);
             HitTestGrid = new(new Int2(8, 8));
             Tweens = new();
+            DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf");
             Initialise(new CanvasBinding(this));
             Material = new Material("./Assets/ui.hlsl");
             Material.SetBlendMode(BlendMode.MakeAlphaBlend());
@@ -86,6 +91,7 @@ namespace Weesals.UI {
                 UpdateLayout(CanvasLayout.MakeBox(size));
             }
         }
+        public new void MarkComposeDirty() { base.MarkComposeDirty(); }
         public void RequireComposed() {
             if (HasDirtyFlag(DirtyFlags.Children)) {
                 RequireLayout();
@@ -95,6 +101,7 @@ namespace Weesals.UI {
                 var builder = Compositor.CreateBuilder(this);
                 var compositor = Compositor.CreateRoot(ref builder);
                 Compose(ref compositor);
+                if (OnRepaint != null) OnRepaint(ref compositor);
                 Compositor.EndBuild(builder);
             }
         }

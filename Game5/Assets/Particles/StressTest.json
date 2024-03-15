@@ -1,0 +1,58 @@
+{
+  "RenderState": {
+    "BlendMode": "Additive"
+  },
+  "Metadata": {
+    "SpawnRate": 200000,
+    "MaximumDuration": 10.0
+  },
+  "ParticleSpawn": [
+    {
+      "name": "PositionInSphere",
+      "Radius": "4.0"
+    }
+  ],
+  "ParticleStep": [
+    {
+      "name": "IncrementLifetime"
+    },
+    {
+      "name": "ApplyVelocity"
+    },
+    {
+      "name": "Custom",
+      "Code": "{ float3 delta = Position - AvoidPoint;  Velocity += 1.0 * delta / pow(dot(delta, delta), 2.0); }"
+    },
+    {
+      "name": "ApplyDrag",
+      "Drag": "0.2"
+    },
+    {
+      "name": "Turbulence",
+      "Speed": "10.0"
+    },
+    {
+      "name": "Custom",
+      "Code": "Velocity.x += 7.0 * DeltaTime;"
+    },
+    {
+      "name": "Custom",
+      "Code": "Velocity.y -= Position.y * DeltaTime;"
+    },
+    {
+      "name": "KillDeadParticles"
+    }
+  ],
+  "ParticleVertex": [
+    {
+      "name": "Custom",
+      "Code": "SpriteSize *= 0.06;"
+    }
+  ],
+  "ParticlePixel": [
+    {
+      "name": "Opacity",
+      "Opacity": "0.01 + 0.02 * frac(UV * 100.0);"
+    }
+  ]
+}

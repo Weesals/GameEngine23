@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Geometry;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
@@ -51,6 +52,7 @@ namespace Weesals.Engine {
         public struct ResolvedMaterialSet {
             public MaterialEvaluator mEvaluator;
             public ulong mSourceHash;
+            public int mMaterialSet;
         };
         public ResolvedMaterialSets(RetainedMaterialCollection matCollection) {
             mMatCollection = matCollection;
@@ -71,7 +73,7 @@ namespace Weesals.Engine {
             ulong hash = valueHash + (ulong)graphics.GetHashCode() + (ulong)matSetId * 0x9E3779B97F4A7C15uL;
             if (!mResolvedByHash.TryGetValue(hash, out var item)) {
                 mResolvedByHash.Add(hash, item = mResolved.Count);
-                mResolved.Add(new ResolvedMaterialSet());
+                mResolved.Add(new ResolvedMaterialSet() { mMaterialSet = matSetId });
             }
             ref var resolved = ref mResolved[item];
             if (resolved.mEvaluator == null) {
@@ -149,6 +151,7 @@ namespace Weesals.Engine {
         private ulong[] instanceVisibility = Array.Empty<ulong>();
         private uint listenerMask = DefaultListenerMask;
         private uint listenerFlags = 0;
+        private BoundingBox activeBounds = BoundingBox.Invalid;
 
         public RootMaterial RootMaterial = new();
         public RetainedMaterialCollection MaterialCollection = new();
@@ -196,6 +199,11 @@ namespace Weesals.Engine {
             var id = instances.Add(new Instance() { Data = range, });
             if (id >= instanceVisibility.Length) Array.Resize(ref instanceVisibility, instances.Items.Length);
             instanceVisibility[id] = 1;
+            var data = GetInstanceData(new CSInstance(id));
+            data.AsSpan().Fill(Vector4.Zero);
+            ref var instanceData = ref instances[id];
+            var stride = gpuScene.Elements[0].mBufferStride;
+            gpuSceneDirty.Add(instanceData.Data.Start * stride, instanceData.Data.Length * stride);
             return new CSInstance(id);
         }
         public unsafe bool UpdateInstanceData<T>(CSInstance instance, int offset, T value) where T: unmanaged {
@@ -235,6 +243,10 @@ namespace Weesals.Engine {
         public CSBufferLayout GetGPUBuffer() { return gpuScene.BufferLayout; }
         public int GetGPURevision() { return gpuScene.Revision; }
 
+        public BoundingBox GetActiveBounds() {
+            return activeBounds;
+        }
+
         unsafe public void CommitMotion() {
             foreach (var instance in movedInstances) {
                 var data = GetInstanceData(instance);
@@ -252,8 +264,16 @@ namespace Weesals.Engine {
             const float MaxSize = 10.0f;
             if (!UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4))) return;
             var instanceId = instance.GetInstanceId();
-            instanceVisibility[instanceId] = GenerateCellMask(mat.Translation - new Vector3(MaxSize), mat.Translation + new Vector3(MaxSize));
+            var aabbMin = mat.Translation - new Vector3(MaxSize);
+            var aabbMax = mat.Translation + new Vector3(MaxSize);
+            activeBounds.Min = Vector3.Min(activeBounds.Min, aabbMin);
+            activeBounds.Max = Vector3.Max(activeBounds.Max, aabbMax);
+            instanceVisibility[instanceId] = GenerateCellMask(aabbMin, aabbMax);
             movedInstances.Add(instance);
+        }
+        unsafe public void SetHighlight(CSInstance instance, Color color) {
+            Vector4 col = color;
+            UpdateInstanceData(instance, sizeof(Matrix4x4) * 2, &col, sizeof(Vector4));
         }
 
         public void SubmitToGPU(CSGraphics graphics) {
@@ -529,6 +549,8 @@ namespace Weesals.Engine {
             instanceBatches.Remove((uint)sceneId);
         }
 
+        private ConvexHull hull = new();
+
         // Generate a drawlist for rendering currently visible objects
         unsafe public void SubmitToRenderQueue(CSGraphics graphics, RenderQueue queue, in Frustum frustum) {
             Scene.ClearListener(changeListenerId);
@@ -536,12 +558,12 @@ namespace Weesals.Engine {
 
             ulong visMask;
             {       // Generate a mask representing the cells intersecting the frustum
-                Span<Vector3> corners = stackalloc Vector3[8];
-                frustum.GetCorners(corners);
-                Vector3 frustumMin = corners[0];
-                Vector3 frustumMax = corners[0];
-                foreach (var corner in corners.Slice(1)) { frustumMin = Vector3.Min(frustumMin, corner); frustumMax = Vector3.Max(frustumMax, corner); }
-                visMask = Scene.GenerateCellMask(frustumMin, frustumMax);
+                var activeRange = Scene.GetActiveBounds();
+                hull.FromFrustum(frustum);
+                hull.Slice(activeRange);
+                var aabb = hull.GetAABB();
+                if (aabb.Extents.X <= 0) return;
+                visMask = Scene.GenerateCellMask(aabb.Min, aabb.Max);
             }
 
             foreach (var batch in batches) {
@@ -562,6 +584,9 @@ namespace Weesals.Engine {
                     var id = instance.GetInstanceId();
                     change |= queue.AppendInstance((uint)id);
                     Scene.MarkListener(changeListenerId, id);
+
+                    //Handles.matrix = matrix;
+                    //Gizmos.DrawWireCube(mesh.BoundingBox.Centre, mesh.BoundingBox.Size);
                 }
                 // If no instances were created, quit
                 if (queue.InstanceCount == instBegin) continue;
@@ -591,7 +616,8 @@ namespace Weesals.Engine {
                             mSize = (int)sizeof(void*),
                         };
                     }
-                    resolved.mResolvedResources = Scene.ResolvedMaterials.RequireResolved(graphics, tresources, batch.MaterialSet);
+                    resolved.mResolvedResources = tresources.Count == 0 ? default
+                        : Scene.ResolvedMaterials.RequireResolved(graphics, tresources, batch.MaterialSet);
                 }
 
                 var pipeline = resolved.mPipeline;
@@ -611,7 +637,7 @@ namespace Weesals.Engine {
                     resources[r++] = resource;
                 }
                 // Get other resource data for this batch
-                {
+                if (r > 0) {
                     ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.mResolvedResources);
                     resCB.mEvaluator.EvaluateSafe(resources.Slice(r).Reinterpret<byte>());
                     r += resources.Length;

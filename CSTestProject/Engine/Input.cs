@@ -115,6 +115,13 @@ namespace Weesals.Engine {
         MediaPrevious = 0xB1,
         MediaStop = 0xB2,
         MediaPlay = 0xB3,
+        Plus = 0xBB,
+        Comma = 0xBC,
+        Minus = 0xBD,
+        Period = 0xBE,
+        LeftBrace = 0xDB,
+        Pipe = 0xDC,
+        RightBrace = 0xDD,
         Play = 0xFA,
         Zoom = 0xFB,
         Clear = 0xFE,
@@ -133,10 +140,26 @@ namespace Weesals.Engine {
             primaryInput = input;
         }
 
-        unsafe public static Vector2 GetMousePosition() {
+        private static CSPointer GetMouse() {
             var pointers = primaryInput.GetPointers();
-            if (pointers.Length == 0) return Vector2.Zero;
-            return pointers[0].mPositionCurrent;
+            if (pointers.Length == 0) return default;
+            return pointers[0];
+        }
+        unsafe public static Vector2 GetMousePosition() {
+            return GetMouse().mPositionCurrent;
+        }
+        unsafe public static bool GetMouseButton(int button) {
+            return (GetMouse().mCurrentButtonState & (1u << button)) != 0;
+        }
+        unsafe public static bool GetMouseButtonDown(int button) {
+            var mouse = GetMouse();
+            return (mouse.mCurrentButtonState & (1u << button)) != 0 &&
+                (mouse.mPreviousButtonState & (1u << button)) == 0;
+        }
+        unsafe public static bool GetMouseButtonUp(int button) {
+            var mouse = GetMouse();
+            return (mouse.mCurrentButtonState & (1u << button)) == 0 &&
+                (mouse.mPreviousButtonState & (1u << button)) != 0;
         }
 
         // Is the key currently pressed

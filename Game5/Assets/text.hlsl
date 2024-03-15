@@ -85,7 +85,7 @@ float4 PSMain(PSInput input) : SV_TARGET
         half ol_from = min(1, bias + halfWidth + outlineFade / 2);
         half ol_to = max(0, bias - halfWidth - outlineFade / 2);
         c = lerp(faceColor, outlineColor, saturate((ol_from - density) / outlineFade));
-        c *= saturate((density - ol_to) / outlineFade);
+        c.a *= saturate((density - ol_to) / outlineFade);
     }
 #endif
 #ifdef UNDERLAY_ON

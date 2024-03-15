@@ -6,8 +6,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
 
-namespace Weesals.Utility {
-    public class Geometry {
+namespace Weesals.Geometry {
+    public static class Triangulation {
         public static bool RayTriangleIntersection(Ray ray, Vector3 v0, Vector3 v1, Vector3 v2, out Vector3 bc, out float t) {
             bc = default; t = default;
             Vector3 edge1 = v1 - v0, edge2 = v2 - v0;

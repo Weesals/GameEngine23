@@ -8,6 +8,8 @@
 #include <wrl/client.h>
 using Microsoft::WRL::ComPtr;
 
+void ThrowIfFailed(HRESULT hr);
+
 // This wraps and alows access to raw D3D types
 // It should never be used directly by the client application
 class D3DGraphicsDevice

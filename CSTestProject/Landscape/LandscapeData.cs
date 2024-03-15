@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO.Compression;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Geometry;
 using Weesals.Utility;
 
 namespace Weesals.Landscape {
@@ -74,6 +77,8 @@ namespace Weesals.Landscape {
 
     // A terrain
     public class LandscapeData {
+
+        public const int SerialVersion = 1;
         // How many units of Height is 1 unit in world space
         public const int HeightScale = 1024;
 
@@ -308,12 +313,12 @@ namespace Weesals.Landscape {
                 var terHeight11 = (float)mHeightMap[mSizing.ToIndex(fromC + new Int2(1, 1))].HeightF;
                 // Raycast against the triangles that make up this cell
                 Vector3 bc; float t;
-                if (Geometry.RayTriangleIntersection(localRay,
+                if (Triangulation.RayTriangleIntersection(localRay,
                     new Vector3((Vector2)(fromC + new Int2(0, 0)) * terScale, terHeight00).toxzy(),
                     new Vector3((Vector2)(fromC + new Int2(1, 1)) * terScale, terHeight11).toxzy(),
                     new Vector3((Vector2)(fromC + new Int2(1, 0)) * terScale, terHeight10).toxzy(),
                     out bc, out t
-                ) || Geometry.RayTriangleIntersection(localRay,
+                ) || Triangulation.RayTriangleIntersection(localRay,
                     new Vector3((Vector2)(fromC + new Int2(0, 0)) * terScale, terHeight00).toxzy(),
                     new Vector3((Vector2)(fromC + new Int2(0, 1)) * terScale, terHeight01).toxzy(),
                     new Vector3((Vector2)(fromC + new Int2(1, 1)) * terScale, terHeight11).toxzy(),
@@ -350,6 +355,72 @@ namespace Weesals.Landscape {
                 }
             }
             NotifyLandscapeChanged(new LandscapeChangeEvent(range, controlMap: true));
+        }
+
+        string dataPath = "./Assets/Terrain.tdat";
+        public void Load() {
+            if (!File.Exists(dataPath)) return;
+            using (var stream = File.OpenRead(dataPath))
+            using (var compressed = new ZLibStream(stream, CompressionMode.Decompress)) {
+                Deserialize(new BinaryReader(compressed));
+            }
+        }
+        public void Save() {
+            using (var stream = new MemoryStream())
+            using (var compressed = new ZLibStream(stream, CompressionMode.Compress)) {
+                Serialize(new BinaryWriter(compressed));
+                compressed.Flush();
+                File.WriteAllBytes(dataPath, stream.ToArray());
+            }
+        }
+
+        // Read/write data to disk (untested)
+        public void Serialize(BinaryWriter writer) {
+            writer.Write(SerialVersion);
+            writer.Write(Size.X);
+            writer.Write(Size.Y);
+            var typeMapping = new PooledArray<byte>(64);
+            for (int i = 0; i < typeMapping.Count; i++) typeMapping[i] = (byte)i;
+            // Write type id mapping
+            var allTypes = new PooledList<byte>();
+            byte prevTypeId = 255;
+            for (int i = 0; i < mControlMap.Length; i++) {
+                var typeId = mControlMap[i].TypeId;
+                if (typeId == prevTypeId) continue;
+                prevTypeId = typeId;
+                if (!allTypes.Contains(typeId)) allTypes.Add(typeId);
+            }
+            writer.Write((byte)allTypes.Count);
+            for (int i = 0; i < allTypes.Count; i++) {
+                writer.Write(Layers[allTypes[i]].Name);
+                typeMapping[allTypes[i]] = (byte)i;
+            }
+            allTypes.Dispose();
+            // Write all maps
+            for (int i = 0; i < mHeightMap.Length; i++) writer.Write(mHeightMap[i].Height);
+            for (int i = 0; i < mControlMap.Length; i++) writer.Write(typeMapping[mControlMap[i].TypeId]);
+            writer.Write(WaterEnabled);
+            if (WaterEnabled) for (int i = 0; i < mWaterMap.Length; i++) writer.Write(mWaterMap[i].Data);
+            typeMapping.Dispose();
+        }
+        public void Deserialize(BinaryReader reader) {
+            var version = reader.ReadInt32();
+            Debug.Assert(version <= SerialVersion, "Unsupported version");
+            SetSize(new Int2(reader.ReadInt32(), reader.ReadInt32()));
+            var typeMapping = new PooledArray<byte>(64);
+            for (int i = 0; i < typeMapping.Count; i++) typeMapping[i] = (byte)i;
+            // Read type id mapping
+            var typeC = reader.ReadByte();
+            for (int i = 0; i < typeC; i++) {
+                typeMapping[i] = (byte)Layers.FindLayerId(reader.ReadString());
+            }
+            // Read maps
+            for (int i = 0; i < mHeightMap.Length; i++) mHeightMap[i] = new HeightCell() { Height = reader.ReadInt16() };
+            for (int i = 0; i < mControlMap.Length; i++) mControlMap[i] = new ControlCell() { TypeId = typeMapping[reader.ReadByte()], };
+            SetWaterEnabled(reader.ReadBoolean());
+            if (WaterEnabled) for (int i = 0; i < mWaterMap.Length; i++) mWaterMap[i] = new WaterCell() { Data = reader.ReadByte() };
+            // Update all change listeners
+            NotifyLandscapeChanged(LandscapeChangeEvent.MakeAll(Size));
         }
     }
 

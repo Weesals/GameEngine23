@@ -40,6 +40,11 @@ void WindowWin32::SetInput(const std::shared_ptr<Input>& input) {
     mInput = input;
 }
 
+WindowBase::WindowStatus WindowWin32::GetStatus() const {
+    return IsWindowEnabled(hWnd) ? WindowBase::WindowStatus::Alive
+        : WindowBase::WindowStatus::Closed;
+}
+
 Int2 WindowWin32::GetClientSize() const {
     RECT clientRect;
     GetClientRect(GetHWND(), &clientRect);

@@ -113,6 +113,35 @@ struct Int2
 	inline Int2 operator =(Vector2 v) { return Int2((int)v.x, (int)v.y); }
 	inline operator Vector2() const { return Vector2((float)x, (float)y); }
 };
+struct Int3
+{
+	int x, y, z;
+	Int3() : Int3(0, 0, 0) { }
+	Int3(int v) : Int3(v, v, v) { }
+	Int3(int x, int y, int z) : x(x), y(y), z(z) { }
+	Int3(Int2 v, int z) : x(v.x), y(v.y), z(z) { }
+	Int3(const Vector3 o) : x((int)o.x), y((int)o.y), z((int)o.z) { }
+	inline Int3 operator +(const Int3 o) const { return Int3(x + o.x, y + o.y, z + o.z); }
+	inline Int3 operator -(const Int3 o) const { return Int3(x - o.x, y - o.y, z - o.z); }
+	inline Int3 operator *(const Int3 o) const { return Int3(x * o.x, y * o.y, z * o.z); }
+	inline Int3 operator /(const Int3 o) const { return Int3(x / o.x, y / o.y, z / o.z); }
+	inline Int3 operator +(const int o) const { return Int3(x + o, y + o, z + o); }
+	inline Int3 operator -(const int o) const { return Int3(x - o, y - o, z - o); }
+	inline Int3 operator *(const int o) const { return Int3(x * o, y * o, z * o); }
+	inline Int3 operator /(const int o) const { return Int3(x / o, y / o, z / o); }
+	inline bool operator ==(Int3 o) const noexcept { return x == o.x && y == o.y && z == o.z; }
+	inline bool operator !=(Int3 o) const noexcept { return x != o.x || y != o.y || z != o.z; }
+
+	Int2 xy() const { return *(Int2*)this; }
+	Int2& xy() { return *(Int2*)this; }
+
+	static Int3 Min(Int3 v1, Int3 v2);
+	static Int3 Max(Int3 v1, Int3 v2);
+	static Int3 Clamp(Int3 v, Int3 min, Int3 max);
+
+	inline Int3 operator =(Vector3 v) { return Int3((int)v.x, (int)v.y, (int)v.z); }
+	inline operator Vector3() const { return Vector3((float)x, (float)y, (float)z); }
+};
 struct Int4
 {
 	int x, y, z, w;

@@ -1,13 +1,17 @@
 {
+  "RenderState": {
+    "BlendMode": "Additive",
+    "Texture": "./Assets/ParticleAtlas.png"
+  },
+  "Metadata": {
+    "SpawnRate": 2000,
+    "MaximumDuration": 0.5
+  },
   "ParticleSpawn": [
     {
       "name": "PositionInSphere",
       "Radius": "1.0"
-    },
-    {
-      "name": "Custom",
-      "Code": "Position.z += 5.0; Position.y += 5.0;"
-    },
+    }
   ],
   "ParticleStep": [
     {
@@ -57,7 +61,7 @@
     },
     {
       "name": "Custom",
-      "Code": "Color *= float4(1.0,0.6, 0.3, saturate(Age * 5.0));"
+      "Code": "Color *= float4(1.0,0.6, 0.3, sqrt(saturate(Age * 5.0)));"
     }
   ]
 }

@@ -15,6 +15,10 @@ int Int2::CMul(Int2 v) { return v.x * v.y; }
 Int2 Int2::FloorToInt(Vector2 v) { return Int2((int)std::floorf(v.x), (int)std::floorf(v.y)); }
 Int2 Int2::CeilToInt(Vector2 v) { return Int2((int)std::ceilf(v.x), (int)std::ceilf(v.y)); }
 
+Int3 Int3::Min(Int3 v1, Int3 v2) { return Int3(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z)); }
+Int3 Int3::Max(Int3 v1, Int3 v2) { return Int3(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z)); }
+Int3 Int3::Clamp(Int3 v, Int3 min, Int3 max) { return Int3(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y), std::min(std::max(v.z, min.z), max.z)); }
+
 Int4 Int4::Min(Int4 v1, Int4 v2) { return Int4(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z), std::min(v1.w, v2.w)); }
 Int4 Int4::Max(Int4 v1, Int4 v2) { return Int4(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z), std::max(v1.w, v2.w)); }
 Int4 Int4::Clamp(Int4 v, Int4 min, Int4 max) { return Int4(std::min(std::max(v.x, min.x), max.x), std::min(std::max(v.y, min.y), max.y), std::min(std::max(v.z, min.z), max.z), std::min(std::max(v.w, min.w), max.w)); }

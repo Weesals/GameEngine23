@@ -19,3 +19,4 @@ public:
 	size_t GetHash() const { return (mPathId.mId) + (mEntryPoint.mId << 16); }
 
 };
+

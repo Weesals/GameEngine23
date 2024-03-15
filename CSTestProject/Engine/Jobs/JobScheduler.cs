@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Numerics;
+using Weesals.Utility;
 
 namespace Weesals.Engine.Jobs {
     /*
@@ -15,6 +16,7 @@ namespace Weesals.Engine.Jobs {
      * Threads process their own stacks, then grab a global, then steal
      * 
      */
+
     public class JobDependencies {
 
         public static JobDependencies Instance = new();
@@ -30,9 +32,9 @@ namespace Weesals.Engine.Jobs {
                     return Id == 0 ? "None" : ((ushort)~Id).ToString();
                 }
             }
-            public byte Version;
             // How many things need to complete before this one finishes
             public int DependencyCount;
+            public byte Version;
             public ushort JobId;
             public Depenendecy Dependents;
             public override string ToString() {
@@ -101,6 +103,11 @@ namespace Weesals.Engine.Jobs {
             return ref Pages[GetPage(handle.Id)].Dependencies[GetBit(handle.Id)];
         }
 
+        public JobHandle CreateDeferredHandle() {
+            var handle = IntlCreateHandle(ushort.MaxValue - 1);
+            GetNode(handle).DependencyCount = -1;
+            return handle;
+        }
         public JobHandle CreateHandle(ushort jobId) {
             var handle = IntlCreateHandle(jobId);
             GetNode(handle).DependencyCount = -1;
@@ -108,18 +115,19 @@ namespace Weesals.Engine.Jobs {
             return handle;
         }
         public JobHandle CreateHandle(ushort jobId, JobHandle dependency) {
+            if (jobId == ushort.MaxValue) return dependency;
             // If handle is expired
             if (!dependency.IsValid || GetIsComplete(dependency)) return CreateHandle(jobId);
             // If handle has no job
             //JobScheduler.Instance.Validate();
             if (TrySetJobId(dependency, jobId)) return dependency;
             // Otherwise we must create a new handle
-            var job = IntlCreateHandle(jobId);
-            if (!RegisterDependency(job, dependency)) {
-                GetNode(job).DependencyCount = -1;
-                JobScheduler.Instance.ScheduleJob(jobId, job);
+            var handle = IntlCreateHandle(jobId);
+            if (!RegisterDependency(handle, dependency)) {
+                GetNode(handle).DependencyCount = -1;
+                JobScheduler.Instance.ScheduleJob(jobId, handle);
             }
-            return job;
+            return handle;
         }
         public bool TrySetJobId(JobHandle handle, ushort jobId) {
             var page = Pages[GetPage(handle.Id)];
@@ -151,6 +159,35 @@ namespace Weesals.Engine.Jobs {
                 DecrementDependency(result.Id);
             }
             return result;
+        }
+        public struct JoinCreator {
+            public JobHandle Handle;
+            public JobHandle Singleton;
+        }
+        public JoinCreator CreateJoined() {
+            var result = IntlCreateHandle();
+            var page = Pages[GetPage(result.Id)];
+            ref var entry = ref page.Dependencies[GetBit(result.Id)];
+            Interlocked.Increment(ref entry.DependencyCount);
+            return new JoinCreator() { Handle = result, Singleton = JobHandle.None, };
+        }
+        // Same as join, but mutates the existing handle
+        public void AppendJoined(ref JoinCreator join, JobHandle handle2) {
+            if (RegisterDependency(join.Handle, handle2)) {
+                join.Singleton = join.Singleton.Id == JobHandle.None.Id ? handle2
+                    : JobHandle.Invalid;
+            }
+        }
+        public JobHandle EndJoined(ref JoinCreator result) {
+            DecrementDependency(result.Handle.Id);
+            if (result.Singleton.Id != JobHandle.Invalid.Id) {
+                var page = Pages[GetPage(result.Handle.Id)];
+                ref var entry = ref page.Dependencies[GetBit(result.Handle.Id)];
+                var count = entry.DependencyCount;
+                DeleteHandle(result.Handle);
+                return result.Singleton;
+            }
+            return result.Handle;
         }
         public void MarkComplete(JobHandle handle) {
             var page = Pages[GetPage(handle.Id)];
@@ -210,7 +247,8 @@ namespace Weesals.Engine.Jobs {
 
     public class JobScheduler {
 
-        public const int ThreadCount = 8;
+        public const int ThreadCount = -1;
+        public const bool EnableThreading = true;
 
         public bool IsQuitting { get; private set; }
 
@@ -240,16 +278,62 @@ namespace Weesals.Engine.Jobs {
                     if (count >= Capacity) return false;
                     // Currently busy
                     if ((state & OpMask) != 0) continue;
-                    count++;
-                    var tmpState = 0x20000 | (begin << 8) | (count);
                     // Something else got here first
-                    if (Interlocked.CompareExchange(ref State, tmpState, state) != state) continue;
-                    // Should be safe to do anything now
+                    if (Interlocked.CompareExchange(ref State, 0x20000 | state, state) != state) continue;
+                    state |= 0x20000;
+                    count++;
                     Pool[(begin + count - 1) % Capacity] = taskId;
-                    state = tmpState & 0xffff;
-                    Trace.Assert(Interlocked.CompareExchange(ref State, state, tmpState) == tmpState);
+                    Trace.Assert(Interlocked.CompareExchange(ref State, (begin << 8) | (count), state) == state);
                     return true;
                 }
+            }
+            public bool TryPeek(out int taskId) {
+                taskId = default;
+                while (true) {
+                    var state = Volatile.Read(ref State);
+                    int count = (byte)(state >> 0);
+                    int begin = (byte)(state >> 8);
+                    // No items
+                    if (count <= 0) return false;
+                    // Currently busy
+                    if ((state & OpMask) != 0) continue;
+                    // Something else got here first
+                    if (Interlocked.CompareExchange(ref State, 0x20000 | state, state) != state) continue;
+                    state |= 0x20000;
+                    taskId = Pool[begin];
+                    Trace.Assert(Interlocked.CompareExchange(ref State, (begin << 8) | (count), state) == state);
+                    return true;
+                }
+                throw new Exception("Failed to pop an item");
+            }
+            public bool TryBeginPop(out int taskId, out nint state) {
+                taskId = default;
+                while (true) {
+                    state = Volatile.Read(ref State);
+                    int count = (byte)(state >> 0);
+                    int begin = (byte)(state >> 8);
+                    // No items
+                    if (count <= 0) return false;
+                    // Currently busy
+                    if ((state & OpMask) != 0) continue;
+                    // Something else got here first
+                    if (Interlocked.CompareExchange(ref State, 0x20000 | state, state) != state) continue;
+                    state |= 0x20000;
+                    taskId = Pool[begin];
+                    return true;
+                }
+            }
+            public bool YieldPop(nint state) {
+                Trace.Assert(Interlocked.CompareExchange(ref State, state & 0xffff, state) == state);
+                return true;
+            }
+            public bool EndPop(nint state) {
+                int count = (byte)(state >> 0);
+                int begin = (byte)(state >> 8);
+                if (++begin >= Capacity) begin -= Capacity;
+                --count;
+                Trace.Assert(Interlocked.CompareExchange(ref State, (begin << 8) | (count), state) == state);
+                return true;
             }
             public bool TryPop(out int taskId) {
                 taskId = default;
@@ -261,16 +345,14 @@ namespace Weesals.Engine.Jobs {
                     if (count <= 0) return false;
                     // Currently busy
                     if ((state & OpMask) != 0) continue;
-                    int prevBegin = begin;
+                    // Something else got here first
+                    if (Interlocked.CompareExchange(ref State, 0x20000 | state, state) != state) continue;
+                    state |= 0x20000;
+
+                    taskId = Pool[begin];
                     if (++begin >= Capacity) begin -= Capacity;
                     --count;
-                    var tmpState = 0x20000 | (begin << 8) | (count);
-                    // Something else got here first
-                    if (Interlocked.CompareExchange(ref State, tmpState, state) != state) continue;
-                    // Should be safe to do anything now
-                    taskId = Pool[prevBegin];
-                    state = tmpState & 0xffff;
-                    Trace.Assert(Interlocked.CompareExchange(ref State, state, tmpState) == tmpState);
+                    Trace.Assert(Interlocked.CompareExchange(ref State, (begin << 8) | (count), state) == state);
                     return true;
                 }
                 throw new Exception("Failed to pop an item");
@@ -278,15 +360,28 @@ namespace Weesals.Engine.Jobs {
         }
 
         public struct JobTask {
-            public Action<object?> Callback;
+            public object Callback;
             public object? Context;
             public JobHandle Dependency;
+            public ushort BatchBegin;
+            public ushort BatchCount;
+            public uint RunState;
+            public int RunCount => (int)(RunState & 0xffff);
+            public int CompleteCount => (int)((RunState >> 16) & 0xffff);
+        }
+        public struct JobRun {
+            public int TaskId;
+            public ushort BatchBegin;
+            public ushort BatchCount;
+            public bool IsValid => TaskId >= 0;
+            public static readonly JobRun Invalid = new() { TaskId = -1, };
         }
         private JobTask[] taskArray = new JobTask[1024];
         private int lastTaskIndex = -1;
         private Queue<TaskPool> globalPool = new();
 
         public class JobThread {
+            public readonly string Name;
             public readonly JobScheduler Scheduler;
             public readonly Thread Thread;
             public readonly AutoResetEvent SleepEvent = new(false);
@@ -294,32 +389,102 @@ namespace Weesals.Engine.Jobs {
             public bool IsAsleep => Volatile.Read(ref isAsleep);
             public TaskPool CurrentTasks = new();
             public JobThread(JobScheduler scheduler, string name) {
+                Name = name;
                 Scheduler = scheduler;
                 Thread = new Thread(Invoke) { Name = name };
                 Thread.Start();
             }
+            private int GetRunCount(int maxCount) {
+                int batchBit = 31 - BitOperations.LeadingZeroCount((uint)maxCount);
+                return maxCount >> Math.Max(batchBit - 4, 0);
+            }
+            private void GetRunIndices(int index, JobTask task, out ushort batchBegin, out ushort batchCount) {
+                int batchBit = 31 - BitOperations.LeadingZeroCount((uint)task.BatchCount);
+                batchBegin = (ushort)(index << Math.Max(batchBit - 4, 0));
+                var batchEnd = Math.Min(((index + 1) << Math.Max(batchBit - 4, 0)), task.BatchCount);
+                batchCount = (ushort)(batchEnd - batchBegin);
+                batchBegin += task.BatchBegin;
+            }
+            private JobRun TryTakeJobRun() {
+                if (!CurrentTasks.TryBeginPop(out var taskId, out var state)) return JobRun.Invalid;
+                ref var task = ref Scheduler.taskArray[taskId];
+                JobRun run = new() { TaskId = taskId, };
+                if (task.BatchCount == 0) {
+                    CurrentTasks.EndPop(state);
+                } else {
+                    var index = (int)(Interlocked.Increment(ref task.RunState) & 0xffff);
+                    if (index >= GetRunCount(task.BatchCount)) {
+                        CurrentTasks.EndPop(state);
+                    } else {
+                        CurrentTasks.YieldPop(state);
+                    }
+                    GetRunIndices(index - 1, task, out run.BatchBegin, out run.BatchCount);
+                }
+                return run;
+            }
             private void Invoke() {
                 JobScheduler.currentThread = this;
-                while (!Scheduler.IsQuitting) {
-                    if (CurrentTasks.TryPop(out var taskId)) {
-                        ref var task = ref Scheduler.taskArray[taskId];
-                        var dep = task.Dependency;
-                        task.Callback(task.Context);
-                        task = default;
-                        JobDependencies.Instance.MarkComplete(dep);
+                ThreadName = Name;
+                int spinCount = 0;
+                for (; !Scheduler.IsQuitting; ++spinCount) {
+                    var run = TryTakeJobRun();
+                    if (run.IsValid) {
+                        ExecuteRun(run);
+                        spinCount = 0;
                         continue;
                     }
-                    lock (Scheduler.globalPool) {
-                        lock (CurrentTasks) {
-                            if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
-                                CurrentTasks = Scheduler.globalPool.Dequeue();
-                                continue;
+                    if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
+                        lock (Scheduler.globalPool) {
+                            lock (CurrentTasks) {
+                                if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
+                                    CurrentTasks = Scheduler.globalPool.Dequeue();
+                                    continue;
+                                }
                             }
                         }
                     }
-                    Sleep();
+                    bool found = false;
+                    foreach (var thread in Scheduler.jobThreads) {
+                        run = thread.TryTakeJobRun();
+                        if (run.IsValid) {
+                            ExecuteRun(run);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        spinCount = 0;
+                        continue;
+                    }
+                    if (spinCount > 200) {
+                        Sleep();
+                        spinCount = 0;
+                    } else if (spinCount > 50) {
+                        Thread.Sleep(0);
+                    }
                 }
             }
+
+            private void ExecuteRun(JobRun run) {
+                ref var task = ref Scheduler.taskArray[run.TaskId];
+                if (task.BatchCount == 0) {
+                    ((Action<object?>)task.Callback)(task.Context);
+                    MarkComplete(run.TaskId);
+                } else {
+                    ((Action<RangeInt>)task.Callback)(new RangeInt(run.BatchBegin, run.BatchCount));
+                    var runCount = GetRunCount(task.BatchCount);
+                    var newState = Interlocked.Add(ref task.RunState, 0x10000);
+                    if (((newState >> 16) & 0xffff) >= runCount)
+                        MarkComplete(run.TaskId);
+                }
+            }
+            private void MarkComplete(int taskId) {
+                ref var task = ref Scheduler.taskArray[taskId];
+                var dep = task.Dependency;
+                task = default;
+                JobDependencies.Instance.MarkComplete(dep);
+            }
+
             private void Sleep() {
                 Volatile.Write(ref isAsleep, true);
                 Interlocked.MemoryBarrier();
@@ -364,9 +529,13 @@ namespace Weesals.Engine.Jobs {
 
         private JobThread[] jobThreads = Array.Empty<JobThread>();
         [ThreadStatic] static JobThread? currentThread;
+        [ThreadStatic] static string ThreadName;
+
+        public static string CurrentThreadName => ThreadName ?? "Unknown";
 
         public JobScheduler() {
-            jobThreads = new JobThread[ThreadCount];
+            ThreadName = "Main Thread";
+            jobThreads = new JobThread[ThreadCount > 0 ? ThreadCount : (Environment.ProcessorCount * 2 / 3)];
             for (int i = 0; i < jobThreads.Length; i++) {
                 jobThreads[i] = new(this, $"Job Thread {i}");
             }
@@ -383,25 +552,49 @@ namespace Weesals.Engine.Jobs {
             }
         }
 
+#pragma warning disable
         public ushort CreateJob(Action<object?> action, object? context = null) {
-            return IntlPushTask(new JobTask() { Callback = action, Context = context, });
+            if (!EnableThreading) { action(context); return ushort.MaxValue; }
+            return IntlPushTask(new JobTask() { Callback = action, Context = context, BatchCount = 0, });
         }
+        public ushort CreateBatchJob(Action<RangeInt> action, int count) {
+            if (!EnableThreading) { action(new RangeInt(0, count)); return ushort.MaxValue; }
+            return IntlPushTask(new JobTask() { Callback = action, Context = null, BatchCount = (ushort)count, });
+        }
+        public ushort CreateBatchJob(Action<RangeInt> action, RangeInt range) {
+            if (!EnableThreading) { action(range); return ushort.MaxValue; }
+            return IntlPushTask(new JobTask() { Callback = action, Context = null, BatchBegin = (ushort)range.Start, BatchCount = (ushort)range.Length, });
+        }
+#pragma warning restore
         public void ScheduleJob(ushort jobId, JobHandle handle) {
             taskArray[jobId].Dependency = handle;
+            PushJobToThread(jobId);
+            int wakeThreads = Math.Min(jobThreads.Length, taskArray[jobId].BatchCount);
+            for (int c = 0; c < wakeThreads; ++c) jobThreads[c].RequireWake();
+        }
+        private bool PushJobToThread(int jobId) {
             // Try to add to local stack (is running in local thread)
             if (currentThread != null) {
                 Debug.Assert(!currentThread.IsAsleep);
-                if (currentThread.CurrentTasks.Count == 0 && currentThread.TryPushTask(jobId)) return;
+                if (currentThread.CurrentTasks.Count == 0 && currentThread.TryPushTask(jobId)) return true;
             }
+            int threadId = FindBestThread();
+            if (jobThreads[threadId].TryPushTask(jobId)) { jobThreads[threadId].RequireWake(); return true; }
+            return false;
+        }
+        private int FindBestThread() {
             // Add to another thread
             int bestThread = 0;
+            int bestPenalty = int.MaxValue;
             for (int i = 0; i < jobThreads.Length; i++) {
                 var thread = jobThreads[i];
-                if (thread.CurrentTasks.Count < jobThreads[bestThread].CurrentTasks.Count)
+                int penalty = thread.CurrentTasks.Count + (thread.IsAsleep ? 1 : 0);
+                if (penalty < bestPenalty) {
                     bestThread = i;
+                    bestPenalty = penalty;
+                }
             }
-            if (jobThreads[bestThread].TryPushTask(jobId)) { jobThreads[bestThread].RequireWake(); return; }
-            throw new NotImplementedException();
+            return bestThread;
         }
         public void Validate() {
             jobThreads[0].Validate();

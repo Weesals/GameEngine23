@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Geometry;
 using Weesals.Utility;
 
 namespace Weesals.UI {
@@ -93,27 +94,28 @@ namespace Weesals.UI {
         CanvasElement element = CanvasElement.Invalid;
 
         public enum DirtyFlags : byte { None = 0, UV = 1, Color = 2, Position = 4, Indices = 8, All = 0x0f, };
+        public enum DrawFlags : byte { None = 0, Never = 1, NinePatch = 2, };
 
         private CanvasBlending blending;
         private RectF uvrect;
-        private RectF border;
+        private RectF border = new RectF(0f, 0f, 0f, 0f);
         private float spriteScale = 1.0f;
-        private DirtyFlags dirty;
+        private DirtyFlags dirty = DirtyFlags.None;
+        private DrawFlags drawFlags = DrawFlags.None;
 
         public CSTexture Texture { get; private set; }
         public RectF UVRect { get => uvrect; set { uvrect = value; dirty |= DirtyFlags.UV; } }
         public RectF Border { get => border; set { border = value; dirty |= DirtyFlags.UV; } }
         public Color Color { get => blending.Color; set { blending.Color = value; dirty |= DirtyFlags.Color; } }
-        public bool IsNinePatch { get; private set; }
+        public bool IsNinePatch => (drawFlags & DrawFlags.NinePatch) != 0;
         public bool IsInitialized => element.IsValid();
         public bool HasDirtyFlags => dirty != DirtyFlags.None;
+        public bool EnableDraw { get => (drawFlags & DrawFlags.Never) == 0; set { if (value) drawFlags &= ~DrawFlags.Never; else drawFlags |= DrawFlags.Never; } }
         public CanvasBlending.BlendModes BlendMode { get => blending.BlendMode; }
         public CanvasImage() : this(default, new RectF(0f, 0f, 1f, 1f)) { }
         public CanvasImage(CSTexture texture, RectF uvrect) {
             Texture = texture;
             UVRect = uvrect;
-            Border = new RectF(0f, 0f, 0f, 0f);
-            IsNinePatch = false;
             blending = CanvasBlending.Default;
         }
         unsafe public void Initialize(Canvas canvas) {
@@ -125,8 +127,7 @@ namespace Weesals.UI {
         public void SetTexture(CSTexture texture) {
             Texture = texture;
             if (Texture.IsValid()) {
-                if (element.Material == null) element.SetMaterial(new Material());
-                element.Material!.SetTexture("Texture", Texture);
+                RequireMaterial().SetTexture("Texture", Texture);
                 MarkLayoutDirty();
             }
         }
@@ -138,7 +139,8 @@ namespace Weesals.UI {
             Border = sprite?.Borders ?? new RectF(0f, 0f, 0f, 0f);
             spriteScale = sprite?.Scale ?? 1.0f;
             bool wasNine = IsNinePatch;
-            IsNinePatch = Border != new RectF(0f, 0f, 1f, 1f);
+            if (Border != new RectF(0f, 0f, 1f, 1f)) drawFlags |= DrawFlags.NinePatch;
+            else drawFlags &= ~DrawFlags.NinePatch;
             if (wasNine != IsNinePatch) dirty |= DirtyFlags.Indices;
             if (UVRect.GetHashCode() + Border.GetHashCode() == hash) {
                 dirty = (dirty & ~DirtyFlags.UV) | wasDirty;
@@ -190,7 +192,7 @@ namespace Weesals.UI {
                     : stackalloc Vector2[] { UVRect.Min, UVRect.Max, };
                 for (int y = 0; y < corners.Length; ++y) {
                     int yI = y * corners.Length;
-                    for (int x = 0; x < corners.Length; ++x) texcoords[yI + x] = new Vector2(corners[x].X, corners[corners.Length - y - 1].Y);
+                    for (int x = 0; x < corners.Length; ++x) texcoords[yI + x] = new Vector2(corners[x].X, corners[y].Y);
                 }
                 buffers.MarkVerticesChanged();
             }
@@ -220,6 +222,7 @@ namespace Weesals.UI {
         }
 
         public void Append(ref CanvasCompositor.Context compositor) {
+            if ((drawFlags & DrawFlags.Never) != 0) return;
             compositor.Append(element);
         }
 
@@ -239,6 +242,10 @@ namespace Weesals.UI {
                 }
                 layout.SetSize(size);
             }
+        }
+        public Material RequireMaterial() {
+            if (element.Material == null) element.SetMaterial(new Material());
+            return element.Material!;
         }
     }
     public enum TextAlignment { Left, Centre, Right, };
@@ -265,7 +272,9 @@ namespace Weesals.UI {
             );
         }
         public static TextDisplayParameters Flat = new() { FaceColor = Vector4.One, };
-        public static TextDisplayParameters Default = new() {
+        public static TextDisplayParameters Header = new() { FaceColor = Vector4.One, OutlineColor = new Vector4(1f, 1f, 1f, 1f), OutlineWidth = 0.15f, OutlineSoftness = 0.2f, FaceDilate = 0.15f, };
+        public static TextDisplayParameters Default = new() { FaceColor = Vector4.One, OutlineColor = new Vector4(0f, 0f, 0f, 0.3f), OutlineWidth = 0.1f, FaceDilate = 0.1f, };
+        public static TextDisplayParameters Shadowed = new() {
             FaceColor = Vector4.One,
             FaceDilate = 0.2f,
             OutlineColor = new Vector4(0f, 0f, 0f, 0.5f),
@@ -275,7 +284,7 @@ namespace Weesals.UI {
             UnderlaySoftness = 0.3f,
         };
     }
-    public struct CanvasText : ICanvasElement {
+    public struct CanvasText : ICanvasElement, ICanvasTransient {
         CanvasElement element = CanvasElement.Invalid;
 
         public struct GlyphStyle {
@@ -297,7 +306,7 @@ namespace Weesals.UI {
         string text = "";
         public string Text { get => text; set { SetText(value); } }
 
-        CSFont font;
+        Font font;
         bool dirty;
         GlyphStyle defaultStyle = GlyphStyle.Default;
         TextAlignment alignment = TextAlignment.Centre;
@@ -308,9 +317,9 @@ namespace Weesals.UI {
 
         public int ComputedGlyphCount => glyphLayout.Count;
 
-        public Color Color { get => defaultStyle.mColor; set { defaultStyle.mColor = value; dirty = true; } }
-        public float FontSize { get => defaultStyle.mFontSize; set { defaultStyle.mFontSize = value; dirty = true; } }
-        public CSFont Font { get => font; set { SetFont(value); dirty = true; } }
+        public Color Color { get => defaultStyle.mColor; set { if (defaultStyle.mColor == value) return; defaultStyle.mColor = value; dirty = true; } }
+        public float FontSize { get => defaultStyle.mFontSize; set { if (defaultStyle.mFontSize == value) return; defaultStyle.mFontSize = value; dirty = true; } }
+        public Font Font { get => font; set { SetFont(value); dirty = true; } }
         public TextAlignment Alignment { get => alignment; set { alignment = value; dirty = true; } }
         public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty = true; if (element.Material != null) UpdateMaterialProperties(); } }
 
@@ -322,12 +331,14 @@ namespace Weesals.UI {
             glyphLayout = new();
         }
         public void Initialize(Canvas canvas) {
+            if (font == null) Font = canvas.DefaultFont;
         }
         public void Dispose(Canvas canvas) {
             styles.Dispose();
             glyphPlacements.Dispose();
             glyphLayout.Dispose();
             if (element.IsValid()) element.Dispose(canvas);
+            MarkLayoutDirty();
 		}
 
         private void SetText(string value) {
@@ -336,12 +347,12 @@ namespace Weesals.UI {
             glyphPlacements.Clear();
             glyphLayout.Clear();
         }
-		public void SetFont(CSFont _font) {
+		public void SetFont(Font _font) {
             font = _font;
 			dirty = true;
             if (element.Material != null) UpdateMaterialProperties();
         }
-        public void SetFont(CSFont _font, float fontSize) {
+        public void SetFont(Font _font, float fontSize) {
             SetFont(_font); FontSize = fontSize;
         }
 
@@ -351,8 +362,8 @@ namespace Weesals.UI {
 			return true;
 		}
 		void UpdateGlyphPlacement() {
-            if (!font.IsValid()) return;
-            float lineHeight = (float)font.GetLineHeight();
+            if (font == null) return;
+            float lineHeight = (float)font.LineHeight;
             glyphPlacements.Clear();
             styles.Clear();
             styles.Add(defaultStyle);
@@ -429,7 +440,7 @@ namespace Weesals.UI {
             }
         }
         void UpdateGlyphLayout(in CanvasLayout layout) {
-			float lineHeight = (float)font.GetLineHeight();
+			float lineHeight = (float)font.LineHeight;
 			glyphLayout.Clear();
             var pos = Vector2.Zero;
             var min = new Vector2(10000.0f);
@@ -475,7 +486,7 @@ namespace Weesals.UI {
 				var placement = glyphPlacements[c];
                 posX += placement.mAdvance;
             }
-            float lineHeight = (float)font.GetLineHeight();
+            float lineHeight = (float)font.LineHeight;
             for (; c < glyphPlacements.Count; ++c) {
                 var placement = glyphPlacements[c];
                 var glyph = font.GetGlyph(placement.mGlyphId);
@@ -491,7 +502,7 @@ namespace Weesals.UI {
         public RectF GetComputedGlyphRect(int index) {
             if (glyphLayout.Count == 0) return default;
             if (index < glyphLayout.Count) {
-                var lineHeight = (float)font.GetLineHeight();
+                var lineHeight = (float)font.LineHeight;
                 var placement = glyphPlacements[index];
                 var layout = glyphLayout[index];
                 var glyph = font.GetGlyph(placement.mGlyphId);
@@ -508,8 +519,8 @@ namespace Weesals.UI {
             dirty = true;
         }
         public void FillVertexBuffers(in CanvasLayout layout, TypedBufferView<Vector3> positions, TypedBufferView<Vector2> uvs, TypedBufferView<SColor> colors) {
-            var atlasTexelSize = 1.0f / font.GetTexture().GetSize().X;
-            var lineHeight = (float)font.GetLineHeight();
+            var atlasTexelSize = 1.0f / font.Texture.GetSize().X;
+            var lineHeight = (float)font.LineHeight;
             int vindex = 0;
             var dilate = (displayParameters ?? TextDisplayParameters.Default).GetDilation();
             for (int c = 0; c < glyphLayout.Count; ++c) {
@@ -601,7 +612,7 @@ namespace Weesals.UI {
 		}
 
         private void UpdateMaterialProperties() {
-            element.Material!.SetTexture("Texture", font.GetTexture());
+            element.Material!.SetTexture("Texture", font.Texture);
             var textParams = displayParameters ?? TextDisplayParameters.Default;
             element.Material.SetValue("_FaceColor", textParams.FaceColor);
             element.Material.SetValue("_FaceDilate", textParams.FaceDilate);
@@ -832,7 +843,7 @@ namespace Weesals.UI {
                         var t1v0 = vertices[elIndices[i2 + 0]];
                         var t1v1 = vertices[elIndices[i2 + 1]];
                         var t1v2 = vertices[elIndices[i2 + 2]];
-                        if (Geometry.GetTrianglesOverlap(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2)) return true;
+                        if (Triangulation.GetTrianglesOverlap(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2)) return true;
                     }
                 }
             }

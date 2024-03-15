@@ -103,8 +103,14 @@ PSInput VSMain(VSInput input) {
     float4 vCamPos4 = result.position;
     vCamPos4.xyz /= vCamPos4.w;
     vCamPos4.z = 0.0;
+    vCamPos4.w = 1.0;
     float4 camPos = mul(InvModelViewProjection, vCamPos4);
     camPos.xyz /= camPos.w;
+    camPos.xyz = -float3(
+        dot(View._m00_m10_m20, View._m03_m13_m23),
+        dot(View._m01_m11_m21, View._m03_m13_m23),
+        dot(View._m02_m12_m22, View._m03_m13_m23)
+    );
     result.viewDirWS = result.worldPos - camPos.xyz;
         
 #if defined(VULKAN)
@@ -142,14 +148,14 @@ float4 PSMain(PSInput input) : SV_TARGET {
     
     normalWS = normalize(normalWS);
 
-    float4 noise = NoiseTex.Sample(BilinearSampler, input.worldPos.xz * 0.3);
+    float4 noise = NoiseTex.Sample(BilinearSampler, input.worldPos.xz * 0.2);
     normalWS.xz = (noise.xy * 2 - 1);
     float rot = Time + dot(input.worldPos.xz, float2(0.14, 0.12) * 2);
     normalWS.xz = normalWS.xz * cos(rot) + normalWS.zx * float2(-1, 1) * sin(rot);
     normalWS.xz += sin(normalWS.zx * 20 + Time * 2) * 0.1;
     float roughness = length(normalWS.xz);
     //Normal.xz /= 1 + dot(Normal.xz, Normal.xz);
-    normalWS.xz *= saturate(waterDepth / 3.0);
+    normalWS.xz *= saturate(waterDepth / 3.0) * 0.5;
     normalWS.y = sqrt(saturate(1 - dot(normalWS.xz, normalWS.xz)));
     //WorldPos.y += (dot(abs(Normal.xz), 1) - 0.2) * 0.2;
 
@@ -157,8 +163,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
     const float3 CloudColor = float3(0.8, 0.8, 0.8);
     const float3 GroundColor = float3(0.25, 0.3, 0.1);
     const float3 HorizonColor = float3(.5, .35, .2);
-    const half3 ExtinctCoefs = half3(0.35, 0.09, 0.03) * -20;
-    const half3 ScatterCoefs = half3(0.007, 0.021, 0.025) * -20;
+    const half3 ExtinctCoefs = half3(0.35, 0.09, 0.03) * -15;
+    //const half3 ScatterCoefs = half3(0.007, 0.021, 0.025) * -20;
+    const half3 ScatterCoefs = half3(0.0007, 0.0021, 0.0025) * -15;
     const float3 FoamColor = float3(0.9, 0.9, 0.9);
         
     const float3 mainLightColor = 0.8;
@@ -188,14 +195,16 @@ float4 PSMain(PSInput input) : SV_TARGET {
     half3 viewRefl = reflect(viewDir, normal);
     half3 ambientRefl = SkyColor;
 
-    float2 cloudUV = (positionWS + viewRefl / viewRefl.y * 50).xz / 40;
+    float2 cloudUV = (positionWS + viewRefl / viewRefl.y * 10).xz / 40;
     cloudUV.x -= 0.01 * Time;
-    float cloud = NoiseTex.Sample(BilinearSampler, cloudUV).r;
+    float cloud = NoiseTex.SampleLevel(BilinearSampler, cloudUV, 0).r;
     cloud = sqrt(saturate(cloud * 5 - 2.5));
     ambientRefl = lerp(ambientRefl, CloudColor, cloud);
     ambientRefl = lerp(ambientRefl, HorizonColor, pow(saturate(1 - viewRefl.y), 1));
     ambientRefl = lerp(ambientRefl, GroundColor, saturate(-viewRefl.y));
-
+    
+    //return float4(cloud.xxx, 1.0);
+    
 #if defined(_ISEDGE)
     ambientRefl = 0;
 #endif

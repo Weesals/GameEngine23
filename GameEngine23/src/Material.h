@@ -100,6 +100,11 @@ struct BlendMode
 	BlendArg mDestColorBlend = BlendArg::Zero;
 	BlendOp mBlendAlphaOp = BlendOp::Add;
 	BlendOp mBlendColorOp = BlendOp::Add;
+	bool GetIsOpaque() const {
+		return mSrcAlphaBlend == BlendArg::One && mDestAlphaBlend == BlendArg::Zero
+			&& mSrcColorBlend == BlendArg::One && mDestColorBlend == BlendArg::Zero
+			&& mBlendAlphaOp == BlendOp::Add && mBlendColorOp == BlendOp::Add;
+	}
 	static BlendMode Opaque() { return { One, Zero, One, Zero, Add, Add, }; }
 	static BlendMode AlphaBlend() { return { SrcAlpha, SrcInvAlpha, SrcAlpha, SrcInvAlpha, Add, Add, }; }
 };
@@ -129,6 +134,7 @@ struct DepthMode
 	StencilDesc mStencilFront;
 	StencilDesc mStencilBack;
 	DepthMode(Comparisons c = Comparisons::Less, bool write = true) : mComparison(c), mModes(write ? Modes::DepthWrite : Modes::None) { }
+	bool GetDepthClip() const { return mComparison != Comparisons::Always; }
 	bool GetDepthWrite() const { return (mModes & Modes::DepthWrite); }
 	bool GetStencilEnable() const { return (mModes & Modes::StencilEnable); }
 	static DepthMode MakeOff() { return DepthMode(Comparisons::Always, false);}

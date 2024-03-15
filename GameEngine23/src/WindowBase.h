@@ -14,6 +14,10 @@ class WindowBase
 public:
 	virtual ~WindowBase() { }
 
+	enum WindowStatus { Alive, Closed, };
+
+	virtual WindowStatus GetStatus() const = 0;
+
 	// Get the size of the client area (not including borders or title bar)
 	virtual Int2 GetClientSize() const = 0;
 	virtual void SetClientSize(Int2 size) = 0;

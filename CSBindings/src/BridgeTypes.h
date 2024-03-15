@@ -11,7 +11,9 @@ typedef DirectX::SimpleMath::Vector3 Vector3;
 typedef DirectX::SimpleMath::Vector4 Vector4;
 */
 struct Int2C { int x, y; };
+struct Int3C { int x, y, z; };
 struct Int4C { int x, y, z, w; };
 
 inline Int2C ToC(const Int2& v) { return (const Int2C&)v; }
+inline Int3C ToC(const Int3& v) { return (const Int3C&)v; }
 inline Int4C ToC(const Int4& v) { return (const Int4C&)v; }

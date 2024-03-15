@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Editor;
 using Weesals.Engine;
+using Weesals.Engine.Jobs;
+using Weesals.Engine.Profiling;
+using Weesals.Geometry;
 using Weesals.Utility;
 
 namespace Weesals.Landscape {
@@ -92,38 +97,58 @@ namespace Weesals.Landscape {
 
         int mRevision;
 
-		public LandscapeRenderer() { }
+        public LandscapeRenderer() { }
 
         unsafe public void Initialise(LandscapeData landscapeData, Material rootMaterial) {
-			LandscapeData = landscapeData;
+            const string BaseMapsKey = "tex$LandscapeBaseMaps";
+            const string BumpMapsKey = "tex$LandscapeBumpMaps";
+            LandscapeData = landscapeData;
             runtimeData.Dispose();
             runtimeData = new() {
                 Changed = LandscapeChangeEvent.MakeAll(landscapeData.Size),
                 Bounds = BoundingBox.FromMinMax(Vector3.Zero, landscapeData.Sizing.LandscapeToWorld(landscapeData.Size)),
             };
             if (!runtimeData.BaseTextures.IsValid()) {
+                runtimeData.BaseTextures = Resources.TryLoadTexture(BaseMapsKey);
+            }
+            if (!runtimeData.BaseTextures.IsValid()) {
                 runtimeData.BaseTextures = CSTexture.Create("BaseMaps")
                     .SetSize(512)
                     .SetArrayCount(Layers.LayerCount);
                 for (int i = 0; i < Layers.LayerCount; ++i) {
-                    CSResources.LoadTexture(Layers[i].BaseColor)
+                    Resources.LoadTexture(Layers[i].BaseColor)
                         .GetTextureData()
                         .CopyTo(runtimeData.BaseTextures.GetTextureData(0, i));
                 }
+                for (int s = 0; s < runtimeData.BaseTextures.ArrayCount; ++s) {
+                    var data = runtimeData.BaseTextures.GetTextureData(0, s).Reinterpret<Color>();
+                    int totalAlpha = 0;
+                    for (int i = 0; i < data.Length; i++) totalAlpha += data[i].A;
+                    if (totalAlpha == 255 * data.Length) {
+                        for (int i = 0; i < data.Length; i++) data[i].A = 127;
+                    }
+                }
                 runtimeData.BaseTextures.MarkChanged();
                 runtimeData.BaseTextures.GenerateMips();
+                runtimeData.BaseTextures.CompressTexture(BufferFormat.FORMAT_BC3_UNORM);
+                Resources.TryPutTexture(BaseMapsKey, runtimeData.BaseTextures);
+            }
+            if (!runtimeData.BumpTextures.IsValid()) {
+                runtimeData.BumpTextures = Resources.TryLoadTexture(BumpMapsKey);
             }
             if (!runtimeData.BumpTextures.IsValid()) {
                 runtimeData.BumpTextures = CSTexture.Create("BumpMaps")
                     .SetSize(256)
                     .SetArrayCount(Layers.LayerCount);
                 for (int i = 0; i < Layers.LayerCount; ++i) {
-                    CSResources.LoadTexture(Layers[i].NormalMap)
+                    Resources.LoadTexture(Layers[i].NormalMap)
                         .GetTextureData()
                         .CopyTo(runtimeData.BumpTextures.GetTextureData(0, i));
                 }
                 runtimeData.BumpTextures.MarkChanged();
                 runtimeData.BumpTextures.GenerateMips();
+                runtimeData.BumpTextures.CompressTexture();
+                Resources.TryPutTexture(BumpMapsKey, runtimeData.BumpTextures);
             }
             if (tileMesh == null) tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
             if (edgeMesh == null) edgeMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, 1, false, true, true);
@@ -137,14 +162,14 @@ namespace Weesals.Landscape {
 
             EdgeMaterial = new Material(LandMaterial);
             EdgeMaterial.SetMacro("EDGE", "1");
-            EdgeMaterial.SetTexture("EdgeTex", CSResources.LoadTexture("./Assets/T_WorldsEdge.jpg"));
+            EdgeMaterial.SetTexture("EdgeTex", Resources.LoadTexture("./Assets/T_WorldsEdge.jpg"));
             //EdgeMaterial.SetRasterMode(RasterMode.MakeNoCull());
             edgeDraw = new MeshDrawInstanced(edgeMesh, EdgeMaterial);
             edgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             WaterMaterial = new("./Assets/water.hlsl", LandMaterial);
-            WaterMaterial.SetTexture("NoiseTex", CSResources.LoadTexture("./Assets/Noise.jpg"));
-            WaterMaterial.SetTexture("FoamTex", CSResources.LoadTexture("./Assets/FoamMask.jpg"));
+            WaterMaterial.SetTexture("NoiseTex", Resources.LoadTexture("./Assets/Noise.jpg"));
+            WaterMaterial.SetTexture("FoamTex", Resources.LoadTexture("./Assets/FoamMask.jpg"));
             WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
             WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
             waterDraw = new MeshDrawInstanced(tileMesh, WaterMaterial);
@@ -178,8 +203,22 @@ namespace Weesals.Landscape {
 
             // Update heightmap and controlmap
             if (runtimeData.Changed.HasChanges) {
-                UpdateRange(runtimeData.Changed);
+                using var profileTerrain = new ProfilerMarker("Terrain Update").Auto();
+
+                //Stopwatch timer = new Stopwatch();
+                //timer.Start();
+                //for (int i = 0; i < 10000; i++)
+                {
+                    var dependency = UpdateRange(runtimeData.Changed);
+                    dependency.Complete();
+                }
+                //timer.Stop();
+                //Trace.WriteLine($"Terrain took {timer.Elapsed.TotalMilliseconds}");
+
+                // Mark the data as current
+                mRevision = LandscapeData.Revision;
                 runtimeData.Changed = LandscapeChangeEvent.MakeNone();
+
                 var metadata = runtimeData.LandscapeMeta;
                 // Sub 1 because 1x1 cell requires 2x2 texels
                 var size = LandscapeData.Size - 1;
@@ -192,46 +231,45 @@ namespace Weesals.Landscape {
             }
             if (requireMaterialUpdates) SetMaterialProperties();
         }
-        private void UpdateRange(LandscapeChangeEvent changed) {
-            var range = changed.Range;
+        private JobHandle UpdateRange(LandscapeChangeEvent changed) {
+            // Avoid reading water data if not allocated
+            if (!LandscapeData.WaterEnabled) changed.WaterMapChanged = false;
+
+            var oldMetadata = runtimeData.LandscapeMeta;
+            JobHandle metaDependency = UpdateMetadata(changed);
+
             var size = LandscapeData.GetSize();
             if (!runtimeData.HeightMap.IsValid())
                 runtimeData.HeightMap = CSTexture.Create("HeightMap", size.X, size.Y);
             if (!runtimeData.ControlMap.IsValid())
                 runtimeData.ControlMap = CSTexture.Create("ControlMap", size.X, size.Y);
 
-            // Avoid reading water data if not allocated
-            if (!LandscapeData.WaterEnabled) changed.WaterMapChanged = false;
+            JobHandle heightDep = default;
+            JobHandle controlDep = default;
 
-            var oldMetadata = runtimeData.LandscapeMeta;
-            UpdateMetadata(changed);
-
-            if (changed.HeightMapChanged) {
-                var allRange = new RectI(0, 0, size.X, size.Y);
-                // Expand dirty range by 1 because normals
-                // If metadata changed, height needs to be renormalized
-                var heightDirtyRange =
-                    runtimeData.LandscapeMeta.HeightRangeChanged(oldMetadata) ? allRange :
-                    range.Expand(1).ClampToBounds(allRange);
-                UpdateHeightmap(heightDirtyRange);
-            }
             if (changed.ControlMapChanged) {
-                UpdateControlMap(range);
+                controlDep = JobHandle.CombineDependencies(controlDep,
+                    UpdateControlMap(changed.Range, default));
             }
             if (changed.WaterMapChanged && LandscapeData.WaterEnabled) {
-                UpdateWaterMap(range);
+                heightDep = UpdateWaterMap(changed.Range, heightDep);
+            }
+            if (changed.HeightMapChanged) {
+                // Expand dirty range by 1 because normals
+                // If metadata changed, height needs to be renormalized
+                metaDependency.Complete();
+                heightDep = UpdateHeightmap(changed.Range, oldMetadata, heightDep);
             }
 
-            // Mark the data as current
-            mRevision = LandscapeData.Revision;
-            SetMaterialProperties();
+            var dependency = JobHandle.CombineDependencies(metaDependency,
+                JobHandle.CombineDependencies(heightDep, controlDep));
+
+            return dependency;
         }
 
         private void SetMaterialProperties() {
             // Calculate material parameters
-            var transform = GetWorldMatrix();
-
-            LandMaterial.SetValue("Model", transform);
+            LandMaterial.SetValue("Model", GetWorldMatrix());
             LandMaterial.SetTexture("HeightMap", runtimeData.HeightMap);
             LandMaterial.SetTexture("ControlMap", runtimeData.ControlMap);
             LandMaterial.SetValue("_LandscapeSizing", Properties.Sizing);
@@ -244,8 +282,8 @@ namespace Weesals.Landscape {
                     layerData1[l] = new Vector4(layer.Scale, layer.UvYScroll, layer.UniformMetal, layer.UniformSmoothness);
                     layerData2[l] = new Vector4(Math.Max(0.01f, layer.Fringe), 0f, 0f, 0f);
                 }
-                LandMaterial.SetValue("_LandscapeLayerData1", layerData1);
-                LandMaterial.SetValue("_LandscapeLayerData2", layerData2);
+                LandMaterial.SetArrayValue("_LandscapeLayerData1", layerData1);
+                LandMaterial.SetArrayValue("_LandscapeLayerData2", layerData2);
             }
         }
         public Matrix4x4 GetWorldMatrix() {
@@ -254,7 +292,7 @@ namespace Weesals.Landscape {
                 Matrix4x4.CreateTranslation(LandscapeData.GetSizing().Location);
         }
 
-        unsafe private void UpdateMetadata(LandscapeChangeEvent changed) {
+        unsafe private JobHandle UpdateMetadata(LandscapeChangeEvent changed, JobHandle dependency = default) {
             // Get the heightmap data
             var chunkCount = (LandscapeData.Size - 2) / TileSize + 1;
             if (chunkCount != runtimeData.ChunkCount) {
@@ -266,27 +304,38 @@ namespace Weesals.Landscape {
             }
 
             var chunkMin = (changed.Range.Min - 1) / TileSize;  // -1 because chunks range +1 beyond their max
-            var chunkMax = (changed.Range.Max - 1) / TileSize;  // -1 because inclusive loop below
+            var chunkMax = (changed.Range.Max - 1) / TileSize + 1;
             var heightMap = LandscapeData.GetHeightMap();
             var waterMap = LandscapeData.GetWaterMap();
-            for (int cy = chunkMin.Y; cy <= chunkMax.Y; ++cy) {
-                for (int cx = chunkMin.X; cx <= chunkMax.X; ++cx) {
-                    if (changed.HeightMapChanged) {
-                        runtimeData.LandscapeChunkMeta[cx + cy * chunkCount.X] =
-                            ComputeMetadata(heightMap, new RectI(cx * TileSize, cy * TileSize, TileSize, TileSize));
-                    }
-                    if (changed.WaterMapChanged) {
-                        runtimeData.WaterChunkMeta[cx + cy * chunkCount.X] =
-                            ComputeMetadata(waterMap, new RectI(cx * TileSize, cy * TileSize, TileSize, TileSize));
-                    }
-                }
-            }
+            JobHandle resultDep = default;
             if (changed.HeightMapChanged) {
-                runtimeData.LandscapeMeta = SummarizeMeta(runtimeData.LandscapeChunkMeta);
+                var landDep = JobHandle.ScheduleBatch((range) => {
+                    foreach (var cy in range) {
+                        for (int cx = chunkMin.X; cx < chunkMax.X; ++cx) {
+                            runtimeData.LandscapeChunkMeta[cx + cy * chunkCount.X] =
+                                ComputeMetadata(heightMap, new RectI(cx * TileSize, cy * TileSize, TileSize, TileSize));
+                        }
+                    }
+                }, RangeInt.FromBeginEnd(chunkMin.Y, chunkMax.Y), dependency);
+                resultDep = JobHandle.Schedule((_) => {
+                    runtimeData.LandscapeMeta = SummarizeMeta(runtimeData.LandscapeChunkMeta);
+                }, landDep);
             }
             if (changed.WaterMapChanged) {
-                runtimeData.WaterMeta = SummarizeMeta(runtimeData.WaterChunkMeta);
+                var waterDep = JobHandle.ScheduleBatch((range) => {
+                    foreach (var cy in range) {
+                        for (int cx = chunkMin.X; cx < chunkMax.X; ++cx) {
+                            runtimeData.WaterChunkMeta[cx + cy * chunkCount.X] =
+                                ComputeMetadata(waterMap, new RectI(cx * TileSize, cy * TileSize, TileSize, TileSize));
+                        }
+                    }
+                }, RangeInt.FromBeginEnd(chunkMin.Y, chunkMax.Y), dependency);
+                waterDep = JobHandle.Schedule((_) => {
+                    runtimeData.WaterMeta = SummarizeMeta(runtimeData.WaterChunkMeta);
+                }, waterDep);
+                resultDep = JobHandle.CombineDependencies(resultDep, waterDep);
             }
+            return resultDep;
         }
         private HeightMetaData SummarizeMeta(HeightMetaData[] metas) {
             int heightMin = int.MaxValue, heightMax = int.MinValue;
@@ -330,22 +379,25 @@ namespace Weesals.Landscape {
                 HeightRange = heightMax - heightMin,
             };
         }
-        unsafe private void UpdateHeightmap(RectI range) {
+        unsafe private JobHandle UpdateHeightmap(RectI range, HeightMetaData oldMetadata, JobHandle dependency) {
             // Get the heightmap data
             var heightmap = LandscapeData.GetRawHeightMap();
             var sizing = LandscapeData.GetSizing();
-            var metadata = runtimeData.LandscapeMeta;
-            var heightScale = 255f / MathF.Max(0.01f, (metadata.MaxHeight - metadata.MinHeight));
-            var heightBias = -metadata.MinHeight * heightScale;
+            var allRange = new RectI(0, 0, sizing.Size.X, sizing.Size.Y);
             // Get the inner texture data
             var pxHeightData = runtimeData.HeightMap.GetTextureData();
-            for (int y = range.Min.Y; y < range.Max.Y; ++y) {
-                for (int x = range.Min.X; x < range.Max.X; ++x) {
-                    var px = sizing.ToIndex(new Int2(x, y));
-                    uint* c = &((uint*)pxHeightData.Data)[px];
-                    // Pack height into first byte
-                    ((byte*)c)[0] = (byte)(heightmap[px].Height * heightScale + heightBias);
-                    {
+            var metadata = runtimeData.LandscapeMeta;
+            var heightScale = 255f / MathF.Max(1f, metadata.MaxHeight - metadata.MinHeight);
+            var heightBias = -metadata.MinHeight * heightScale;
+            range = metadata.HeightRangeChanged(oldMetadata) ? allRange
+                : range.Expand(1).ClampToBounds(allRange);
+            dependency = JobHandle.ScheduleBatch((yrange) => {
+                foreach (var y in yrange) {
+                    for (int x = range.Min.X; x < range.Max.X; ++x) {
+                        var px = sizing.ToIndex(new Int2(x, y));
+                        uint* c = &((uint*)pxHeightData.Data)[px];
+                        // Pack height into first byte
+                        ((byte*)c)[0] = (byte)(heightmap[px].Height * heightScale + heightBias);
                         var h01 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x - 1, y), 0, sizing.Size - 1))];
                         var h21 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x + 1, y), 0, sizing.Size - 1))];
                         var h10 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x, y - 1), 0, sizing.Size - 1))];
@@ -357,74 +409,87 @@ namespace Weesals.Landscape {
                         ((byte*)c)[2] = (byte)(127 + (nrm.Z * 127));
                     }
                 }
-            }
-            // Mark the texture as having been changed
-            runtimeData.HeightMap.MarkChanged();
+            }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
+            dependency = JobHandle.Schedule((_) => {
+                // Mark the texture as having been changed
+                runtimeData.HeightMap.MarkChanged();
+            }, dependency);
+            return dependency;
         }
-        unsafe private void UpdateControlMap(RectI range) {
-            if (Layers == null) return;
+        unsafe private JobHandle UpdateControlMap(RectI range, JobHandle dependency) {
+            if (Layers == null) return dependency;
             var controlMap = LandscapeData.GetControlMap();
             var heightMap = LandscapeData.GetHeightMap();
             var pxControlMap = runtimeData.ControlMap.GetTextureData();
-            for (int y = range.Min.Y; y < range.Max.Y; y++) {
-                var yI = y * controlMap.Size.X;
-                for (int x = range.Min.X; x < range.Max.X; x++) {
-                    var pnt = new Int2(x, y);
-                    var cell = controlMap[pnt];
-                    var meta = Layers[cell.TypeId];
-                    var sample = VoronoiIntNoise.GetNearest_2x2(pnt * 128);
-                    var rnd = (uint)(sample.X + (sample.Y << 6));
-                    rnd *= 0xA3C59AC3;
-                    rnd ^= rnd >> 10;
-                    var c = new Color(cell.TypeId, 0, 0, 255);
-                    switch (meta.Alignment) {
-                        case LandscapeLayer.AlignmentModes.Clustered: {
-                            c.G = (byte)rnd;
-                        }
-                        break;
-                        case LandscapeLayer.AlignmentModes.Random90: {
-                            c.G = (byte)(rnd & 0xc0);
-                        }
-                        break;
-                        case LandscapeLayer.AlignmentModes.Random: {
-                            rnd = (uint)(pnt.X + (pnt.Y << 16));
-                            rnd *= 0xA3C59AC3;
-                            c.G = (byte)rnd;
-                        }
-                        break;
-                        case LandscapeLayer.AlignmentModes.WithNormal: {
-                            var dd = heightMap.GetDerivative(pnt);
-                            if (dd.Equals(default)) {
+            dependency = JobHandle.ScheduleBatch((yrange) => {
+                foreach (var y in yrange) {
+                    var yI = y * controlMap.Size.X;
+                    for (int x = range.Min.X; x < range.Max.X; x++) {
+                        var pnt = new Int2(x, y);
+                        var cell = controlMap[pnt];
+                        var layer = Layers[cell.TypeId];
+                        var sample = VoronoiIntNoise.GetNearest_2x2(pnt * 128);
+                        var rnd = (uint)(sample.X + (sample.Y << 6));
+                        rnd *= 0xA3C59AC3;
+                        rnd ^= rnd >> 10;
+                        var c = new Color(cell.TypeId, 0, 0, 255);
+                        switch (layer.Alignment) {
+                            case LandscapeLayer.AlignmentModes.Clustered: {
                                 c.G = (byte)rnd;
-                            } else {
-                                var ang = Math.Abs(dd.X) > Math.Abs(dd.Y)
-                                    ? (dd.X < 0 ? 128 : 0) + 32 * -dd.Y / dd.X
-                                    : (dd.Y < 0 ? 192 : 64) + 32 * dd.X / dd.Y;
-                                c.G = (byte)(ang + meta.Rotation * 256 / 360);
                             }
+                            break;
+                            case LandscapeLayer.AlignmentModes.Random90: {
+                                c.G = (byte)(rnd & 0xc0);
+                            }
+                            break;
+                            case LandscapeLayer.AlignmentModes.Random: {
+                                rnd = (uint)(pnt.X + (pnt.Y << 16));
+                                rnd *= 0xA3C59AC3;
+                                c.G = (byte)rnd;
+                            }
+                            break;
+                            case LandscapeLayer.AlignmentModes.WithNormal: {
+                                var dd = heightMap.GetDerivative(pnt);
+                                if (dd.Equals(default)) {
+                                    c.G = (byte)rnd;
+                                } else {
+                                    var ang = Math.Abs(dd.X) > Math.Abs(dd.Y)
+                                        ? (dd.X < 0 ? 128 : 0) + 32 * -dd.Y / dd.X
+                                        : (dd.Y < 0 ? 192 : 64) + 32 * dd.X / dd.Y;
+                                    c.G = (byte)(ang + layer.Rotation * 256 / 360);
+                                }
+                            }
+                            break;
                         }
-                        break;
+                        ((uint*)pxControlMap.Data)[yI + x] = c.Packed;
                     }
-                    ((uint*)pxControlMap.Data)[yI + x] = c.Packed;
                 }
-            }
-            // Mark the texture as having been changed
-            runtimeData.ControlMap.MarkChanged();
+            }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
+            dependency = JobHandle.Schedule((_) => {
+                // Mark the texture as having been changed
+                runtimeData.ControlMap.MarkChanged();
+            }, dependency);
+            return dependency;
         }
-        unsafe private void UpdateWaterMap(RectI range) {
+        unsafe private JobHandle UpdateWaterMap(RectI range, JobHandle dependency) {
             var waterMap = LandscapeData.GetWaterMap();
             var pxHeightData = runtimeData.HeightMap.GetTextureData();
-            for (int y = range.Min.Y; y < range.Max.Y; y++) {
-                var yI = y * waterMap.Size.X;
-                for (int x = range.Min.X; x < range.Max.X; x++) {
-                    int i = yI + x;
-                    var pnt = new Int2(x, y);
-                    ref var c = ref ((Color*)pxHeightData.Data)[i];
-                    c.A = waterMap[pnt].Data;
+            dependency = JobHandle.ScheduleBatch((yrange) => {
+                foreach (var y in yrange) {
+                    var yI = y * waterMap.Size.X;
+                    for (int x = range.Min.X; x < range.Max.X; x++) {
+                        int i = yI + x;
+                        var pnt = new Int2(x, y);
+                        ref var c = ref ((Color*)pxHeightData.Data)[i];
+                        c.A = waterMap[pnt].Data;
+                    }
                 }
-            }
-            // Mark the texture as having been changed
-            runtimeData.HeightMap.MarkChanged();
+            }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
+            dependency = JobHandle.Schedule((_) => {
+                // Mark the texture as having been changed
+                runtimeData.HeightMap.MarkChanged();
+            }, dependency);
+            return dependency;
         }
         unsafe private void UpdateChunkInstances(MeshDrawInstanced draw, Frustum localFrustum, HeightMetaData[] metadata, Int2 visMinI, Int2 visMaxI) {
             var items = stackalloc Short2[Int2.CMul(visMaxI - visMinI)];
@@ -449,7 +514,9 @@ namespace Weesals.Landscape {
             draw.SetInstanceData(items, count, 0, drawHash);
         }
         unsafe private void UpdateEdgeInstances(MeshDrawInstanced draw, Frustum localFrustum, HeightMetaData[] metadata, Int2 imin, Int2 imax) {
-            var items = stackalloc Short2[Int2.CSum(imax - imin) * 4 + 2];
+            int maxCount = Int2.CSum(imax - imin + 1) * 4;
+            var itemsRaw = stackalloc Short2[maxCount];
+            var items = new Span<Short2>(itemsRaw, maxCount);
             int count = 0;
             int drawHash = 0;
             var lmax = runtimeData.ChunkCount;
@@ -474,11 +541,18 @@ namespace Weesals.Landscape {
                     }
                 }
             }
-            draw.SetInstanceData(items, count, 0, drawHash);
+            draw.SetInstanceData(itemsRaw, count, 0, drawHash);
         }
+        private ConvexHull hull = new();
         private void IntlIntersectLocalFrustum(Frustum localFrustum, out Vector2 visMin, out Vector2 visMax) {
             var meta = runtimeData.LandscapeMeta;
-            Span<Vector3> points = stackalloc Vector3[8];
+            hull.FromFrustum(localFrustum);
+            hull.Slice(new Plane(Vector3.UnitY, -meta.MinHeightF));
+            hull.Slice(new Plane(-Vector3.UnitY, Math.Max(meta.MinHeightF + 0.1f, meta.MaxHeightF)));
+            var bounds = hull.GetAABB();
+            visMin = bounds.Min.toxz();
+            visMax = bounds.Max.toxz();
+            /*Span<Vector3> points = stackalloc Vector3[8];
             localFrustum.IntersectPlane(Vector3.UnitY, meta.MinHeightF, points.Slice(0, 4));
             localFrustum.IntersectPlane(Vector3.UnitY, meta.MaxHeightF, points.Slice(4, 4));
             visMin = points[0].toxz();
@@ -486,7 +560,7 @@ namespace Weesals.Landscape {
             foreach (var point in points) {
                 visMin = Vector2.Min(visMin, point.toxz());
                 visMax = Vector2.Max(visMax, point.toxz());
-            }
+            }*/
         }
         public BoundingBox GetVisibleBounds(Frustum frustum) {
             var localFrustum = frustum.TransformToLocal(GetWorldMatrix());
@@ -510,6 +584,7 @@ namespace Weesals.Landscape {
             return BoundingBox.FromMinMax(min, max);
         }
         unsafe public void Render(CSGraphics graphics, ScenePass pass) {
+            //if (!pass.TagsToInclude.Has(pass.RetainedRenderer.Scene.TagManager.RequireTag("Terrain"))) return;
             var localFrustum = pass.Frustum.TransformToLocal(GetWorldMatrix());
 
             ApplyDataChanges();

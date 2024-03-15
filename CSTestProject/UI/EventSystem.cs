@@ -31,12 +31,14 @@ namespace Weesals.UI {
         public uint ButtonState;
         public uint PreviousButtonState;
         public float DragDistance;
+        public float PreviousDragDistance;
         public Vector2 CurrentPosition;
         public Vector2 PreviousPosition;
         public EventTargets Targets;
         public object? Active => Targets.EffectiveActive;
         public States State = States.Active | States.Hover;
-        public bool IsDrag => DragDistance >= 2f && ButtonState != 0;
+        public bool IsDrag => DragDistance >= 5f && ButtonState != 0;
+        public bool WasDrag => PreviousDragDistance >= 5f && PreviousButtonState != 0;
         public bool IsButtonDown => ButtonState != 0;
         public PointerEvent(EventSystem system, uint deviceId) {
             System = system;
@@ -45,9 +47,10 @@ namespace Weesals.UI {
         public PointerEvent(PointerEvent other) : this(other.System, other.DeviceId) {
             ButtonState = other.ButtonState;
             PreviousButtonState = other.PreviousButtonState;
-            DragDistance = other.DragDistance;
             CurrentPosition = other.CurrentPosition;
-            PreviousButtonState = other.PreviousButtonState;
+            PreviousPosition = other.PreviousPosition;
+            DragDistance = other.DragDistance;
+            PreviousDragDistance = other.PreviousDragDistance;
         }
         public void Dispose() {
             System.SetStates(this, States.None);
@@ -60,6 +63,7 @@ namespace Weesals.UI {
         internal void Step() {
             PreviousButtonState = ButtonState;
             PreviousPosition = CurrentPosition;
+            PreviousDragDistance = DragDistance;
         }
         internal EventSystem.PointerUpdate StepPre(PointerEvent other) {
             EventSystem.PointerUpdate update = new(this);
@@ -111,18 +115,38 @@ namespace Weesals.UI {
     public interface ISelectable {
         void OnSelected(ISelectionGroup group, bool selected);
     }
+    public interface ISelectionProxy {
+        ISelectionGroup SelectionGroup { get; }
+    }
     public interface ISelectionGroup {
+        IReadOnlyCollection<ISelectable> Selected { get; }
+        void ClearSelected();
         void SetSelected(ISelectable? selectable);
+        void AppendSelected(ISelectable selectable);
+        void RemoveSelected(ISelectable selectable);
     }
     public static class SelectableExt {
-        public static void Select(this ISelectable selectable) {
-            ISelectionGroup? group = null;
+        public static ISelectionGroup? GetSelectionGroup(this ISelectable selectable) {
             if (selectable is CanvasRenderable renderable) {
-                if (!renderable.TryGetRecursive(out group)) {
-                    group = renderable.Canvas?.SelectionGroup;
+                if (renderable.TryGetRecursive(out ISelectionProxy? proxy)) {
+                    return proxy?.SelectionGroup;
                 }
+                if (renderable.TryGetRecursive(out ISelectionGroup? group)) {
+                    return group;
+                }
+                return renderable.Canvas?.SelectionGroup;
             }
-            group?.SetSelected(selectable);
+            return default;
+        }
+        public static void Select(this ISelectable selectable) {
+            GetSelectionGroup(selectable)?.SetSelected(selectable);
+        }
+        public static void SetSelected(this ISelectable selectable, bool selected) {
+            var group = GetSelectionGroup(selectable);
+            if (group != null) {
+                if (selected) group.AppendSelected(selectable);
+                else group.RemoveSelected(selectable);
+            }
         }
     }
 
@@ -157,7 +181,7 @@ namespace Weesals.UI {
     public interface IDropTarget {
         bool InitializePotentialDrop(PointerEvent events, CanvasRenderable source);
         void UninitializePotentialDrop(CanvasRenderable source);
-        void ReceiveDrop(CanvasRenderable item);
+        void ReceiveDrop(PointerEvent events, CanvasRenderable item);
     }
     public interface IDropTargetCustom {
         bool UpdatePotentialDrop(PointerEvent events, CanvasRenderable source);
@@ -205,7 +229,7 @@ namespace Weesals.UI {
             }
             public void OnEndDrag(PointerEvent events) {
                 Manager.CancelDrag(events);
-                if (Target != null) Target.ReceiveDrop(Source);
+                if (Target != null) Target.ReceiveDrop(events, Source);
             }
         }
         private CanvasRenderable root;
@@ -244,13 +268,19 @@ namespace Weesals.UI {
             selected.Clear();
             foreach (var item in toDeselect) item.OnSelected(this, false);
         }
-        public void SetSelected(ISelectable? item) {
-            ClearSelected();
-            if (item != null) AppendSelected(item);
+        public void SetSelected(ISelectable? newItem) {
+            using var toDeselect = new PooledList<ISelectable>(selected.Count);
+            foreach (var item in selected) if (item != newItem) toDeselect.Add(item);
+            if (toDeselect.Count == selected.Count) selected.Clear();
+            else foreach (var item in toDeselect) selected.Remove(item);
+            foreach (var item in toDeselect) item.OnSelected(this, false);
+            if (newItem != null) AppendSelected(newItem);
         }
-        private void AppendSelected(ISelectable item) {
-            selected.Add(item);
-            item.OnSelected(this, true);
+        public void AppendSelected(ISelectable item) {
+            if (selected.Add(item)) item.OnSelected(this, true);
+        }
+        public void RemoveSelected(ISelectable item) {
+            if (selected.Remove(item)) item.OnSelected(this, false);
         }
 
         public void OnPointerDown(PointerEvent events) {
@@ -385,6 +415,8 @@ namespace Weesals.UI {
         , ICharInputHandler
         {
 
+        public const bool AlwaysCallMoveHandlers = true;
+
         public Canvas Canvas { get; private set; }
         public readonly SelectionManager SelectionManager;
         public readonly DoubleClickManager DoubleClick = new();
@@ -396,6 +428,7 @@ namespace Weesals.UI {
         private int prevTimerUS;
         private int currTimerUS;
         private bool yielded;
+        private bool enableDebug;
         public float DeltaTime => (currTimerUS - prevTimerUS) / (1000.0f * 1000.0f);
 
         private List<IPointerDownHandler> pointerDownHandlers = new();
@@ -412,8 +445,10 @@ namespace Weesals.UI {
             SelectionManager = new(this);
             Canvas.SelectionGroup = SelectionManager;
             Canvas.KeyboardFilter = KeyboardFilter;
+            Canvas.OnRepaint += Canvas_Repaint;
             DragDropManager = new(Canvas);
             pointerDownHandlers.Add(SelectionManager);
+            enableDebug = false;
         }
 
         public void SetPointerOffset(Vector2 pointerOffset) {
@@ -421,6 +456,23 @@ namespace Weesals.UI {
         }
         public void SetInput(CSInput input) {
             this.input = input;
+        }
+
+        private void Canvas_Repaint(ref CanvasCompositor.Context context) {
+            if (!enableDebug) return;
+            foreach (var pointer in pointerEvents) {
+                var active = pointer.Value.Targets.Hover;
+                if (active is CanvasRenderable renderable) {
+                    var img = context.CreateTransient<CanvasImage>(Canvas);
+                    img.UpdateLayout(Canvas, renderable.GetComputedLayout());
+                    img.Append(ref context);
+                    var txt = context.CreateTransient<CanvasText>(Canvas);
+                    txt.Text = active.ToString();
+                    txt.UpdateLayout(Canvas, renderable.GetComputedLayout());
+                    txt.Append(ref context);
+                    Trace.WriteLine(active.ToString());
+                }
+            }
         }
 
         public void Update(float dt) {
@@ -532,7 +584,7 @@ namespace Weesals.UI {
             }
         }
         internal void UpdatePointerPost(PointerEvent events, uint buttonState, PointerUpdate update) {
-            if (events.PreviousPosition != events.CurrentPosition) {
+            if (events.PreviousPosition != events.CurrentPosition || AlwaysCallMoveHandlers) {
                 // Drags during click or release are accepted
                 if (events.IsDrag && !events.HasState(PointerEvent.States.Drag)) {
                     if (HierarchyExt.TryGetRecursive(events.Targets.EffectivePress, out IBeginDragHandler draggable) == true) {
@@ -581,6 +633,7 @@ namespace Weesals.UI {
 
         internal void SetHover(PointerEvent events, object? hit) {
             if (events.Targets.Hover == hit) return;
+            if (enableDebug) Canvas.MarkComposeDirty();
             //Debug.WriteLine("Setting hover " + hit);
             SetTargetStates(events, new(events.Targets) { Hover = hit, }, events.State);
         }

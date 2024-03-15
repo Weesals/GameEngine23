@@ -92,10 +92,10 @@ CSString CSIdentifier::GetWName(uint16_t id) {
 uint16_t CSIdentifier::GetIdentifier(CSString str) {
 	return Identifier::RequireStringId(AllocString(str));
 }
-void CSTexture::SetSize(NativeTexture* tex, Int2 size) {
-	tex->SetSize(size);
+void CSTexture::SetSize(NativeTexture* tex, Int3 size) {
+	tex->SetSize3D(size);
 }
-Int2C CSTexture::GetSize(NativeTexture* tex) {
+Int3C CSTexture::GetSize(NativeTexture* tex) {
 	return ToC(tex->GetSize());
 }
 void CSTexture::SetFormat(NativeTexture* tex, BufferFormat fmt) { tex->SetBufferFormat(fmt); }
@@ -119,6 +119,9 @@ void CSTexture::MarkChanged(NativeTexture* tex) {
 NativeTexture* CSTexture::_Create(CSString name) {
 	return new NativeTexture(ToWString(name));
 }
+void CSTexture::Swap(NativeTexture* from, NativeTexture* to) {
+	std::swap(*from, *to);
+}
 void CSTexture::Dispose(NativeTexture* texture) {
 	if (texture != nullptr) delete texture;
 }
@@ -139,9 +142,20 @@ void CSRenderTarget::Dispose(NativeRenderTarget* target) {
 	//delete target;
 }
 
+void CSFont::Dispose(NativeFont* font) { }		// Dont do anything, fonts are always cached by resources
 NativeTexture* CSFont::GetTexture(const NativeFont* font) { return font->GetTexture().get(); }
 int CSFont::GetLineHeight(const NativeFont* font) { return font->GetLineHeight(); }
 int CSFont::GetKerning(const NativeFont* font, wchar_t c1, wchar_t c2) { return font->GetKerning(c1, c2); }
+int CSFont::GetKerningCount(const NativeFont* font) { return font->GetKerningCount(); }
+void CSFont::GetKernings(const NativeFont* font, CSSpan kernings) {
+	short* items = (short*)kernings.mData;
+	for (auto& kerning : font->GetKernings()) {
+		items[0] = std::get<0>(kerning.first);
+		items[1] = std::get<1>(kerning.first);
+		items += 2;
+	}
+}
+int CSFont::GetGlyphCount(const NativeFont* font) { return font->GetGlyphCount(); }
 int CSFont::GetGlyphId(const NativeFont* font, wchar_t chr) { return font->GetGlyphId(chr); }
 const CSGlyph& CSFont::GetGlyph(const NativeFont* font, int id) { return (CSGlyph&)font->GetGlyph(id); }
 
@@ -287,7 +301,7 @@ CSMesh CSModel::GetMesh(const NativeModel* model, int id) {
 
 CSSpan CSConstantBuffer::GetValues(const CSConstantBufferData* cb) {
 	auto* constantBuffer = ((ShaderBase::ConstantBuffer*)cb);
-	return MakeSpan(constantBuffer->mValues);
+	return MakeSpan(constantBuffer->GetValues());
 }
 
 int CSPipeline::GetHasStencilState(const NativePipeline* pipeline) {
@@ -312,6 +326,32 @@ CSSpan CSPipeline::GetBindings(const NativePipeline* pipeline) {
 	return MakeSpan(pipeline->mBindings);
 }
 
+NativeCompiledShader* CSCompiledShader::_Create(CSIdentifier name, int byteSize, int cbcount, int rbcount) {
+	static_assert(sizeof(ShaderBase::UniformValue) == 4 * 3);
+	static_assert(sizeof(ShaderBase::ConstantBuffer) == 24);
+	auto* shader = new NativeCompiledShader();
+	shader->AllocateBuffer(byteSize);
+	shader->SetName(Identifier(name.mId));
+	shader->GetReflection().mConstantBuffers.resize(cbcount);
+	shader->GetReflection().mResourceBindings.resize(rbcount);
+	return shader;
+}
+void CSCompiledShader::InitializeValues(NativeCompiledShader* shader, int cb, int vcount) {
+	shader->GetReflection().mConstantBuffers[cb].SetValuesCount(vcount);
+}
+CSSpan CSCompiledShader::GetValues(NativeCompiledShader* shader, int cb) {
+	return MakeSpan(shader->GetReflection().mConstantBuffers[cb].GetValues());
+}
+CSSpan CSCompiledShader::GetConstantBuffers(const NativeCompiledShader* shader) {
+	return MakeSpan(shader->GetReflection().mConstantBuffers);
+}
+CSSpan CSCompiledShader::GetResources(const NativeCompiledShader* shader) {
+	return MakeSpan(shader->GetReflection().mResourceBindings);
+}
+CSSpan CSCompiledShader::GetBinaryData(const NativeCompiledShader* shader) {
+	return MakeSpan(shader->GetBinary());
+}
+
 void CSGraphics::Dispose(NativeGraphics* graphics) {
 	if (graphics != nullptr) {
 		delete graphics;
@@ -327,7 +367,7 @@ void CSGraphics::SetSurface(NativeGraphics* graphics, NativeSurface* surface) {
 	graphics->mCmdBuffer.SetSurface(surface);
 	graphics->mCmdBuffer.SetRenderTargets({ }, nullptr);
 }
-NativeSurface* GetSurface(NativeGraphics* graphics) {
+NativeSurface* CSGraphics::GetSurface(NativeGraphics* graphics) {
 	return graphics->mCmdBuffer.GetSurface();
 }
 void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget) {
@@ -339,9 +379,14 @@ void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets,
 	}
 	graphics->mCmdBuffer.SetRenderTargets(nativeTargets, RenderTargetBinding(depthTarget.mTarget, depthTarget.mMip, depthTarget.mSlice));
 }
+const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, CSString path, CSString entry, CSIdentifier identifier, CSSpan macros) {
+	return new NativeCompiledShader(graphics->mCmdBuffer.GetGraphics()->CompileShader(
+		ToWString(path), AllocString(entry), Identifier(identifier.mId).GetName().c_str(),
+		std::span<const MacroValue>((const MacroValue*)macros.mData, macros.mSize)));
+}
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
-	NativeShader* vertexShader, NativeShader* pixelShader, void* materialState,
-	CSSpan macros, CSIdentifier renderPass
+	NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
+	void* materialState
 ) {
 	InplaceVector<BufferLayout, 10> bindingsData;
 	InplaceVector<const BufferLayout*, 10> pobindings;
@@ -356,8 +401,8 @@ const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSp
 		pobindings.push_back(&bindingsData.back());
 	}
 	auto pipeline = graphics->mCmdBuffer.RequirePipeline(
-		*(Shader*)vertexShader, *(Shader*)pixelShader, *(MaterialState*)materialState,
-		pobindings, std::span<const MacroValue>((const MacroValue*)macros.mData, macros.mSize), IdentifierWithName(Identifier(renderPass.mId))
+		*vertexShader, *pixelShader, *(MaterialState*)materialState,
+		pobindings
 	);
 	return pipeline;
 }
@@ -414,6 +459,9 @@ uint64_t CSGraphics::GetGlobalPSOHash(NativeGraphics* graphics) {
 }
 
 void CSGraphicsSurface::Dispose(NativeSurface* surface) { decrement_shared(surface->This()); }
+NativeRenderTarget* CSGraphicsSurface::GetBackBuffer(const NativeSurface* surface) {
+	return surface->GetBackBuffer().get();
+}
 Int2C CSGraphicsSurface::GetResolution(const NativeSurface* surface) {
 	return ToC(surface->GetResolution());
 }
@@ -429,6 +477,9 @@ void CSGraphicsSurface::Present(NativeSurface* surface) {
 
 void CSWindow::Dispose(NativeWindow* window) {
 	window->Close();
+}
+int CSWindow::GetStatus(NativeWindow* window) {
+	return (int)window->GetStatus();
 }
 Int2C CSWindow::GetSize(const NativeWindow* window) {
 	return ToC(window->GetClientSize());
@@ -470,16 +521,6 @@ void CSInput::ReceiveTickEvent(NativeInput* input) {
 	input->GetMutator().ReceiveTickEvent();
 }
 
-NativeShader* CSResources::LoadShader(CSString path, CSString entryPoint) {
-	try {
-		auto shader = create_shared<Shader>(ToWString(path), AllocString(entryPoint));
-		return shader;
-	}
-	catch (...) {
-		std::wcerr << "Failed to load mesh " << ToWString(path) << std::endl;
-		return nullptr;
-	}
-}
 NativeModel* CSResources::LoadModel(CSString path) {
 	try {
 		auto wpath = ToWString(path);
@@ -541,3 +582,20 @@ NativeGraphics* Platform::CreateGraphics(NativePlatform* platform) {
 int Platform::MessagePump(NativePlatform* platform) {
 	return platform->MessagePump();
 }
+/*
+void NVTTCompressTextureBC1(InputData* img, void* outData) {
+	NVTTCompress::CompressTextureBC1(img, outData);
+}
+void NVTTCompressTextureBC2(InputData* img, void* outData) {
+	NVTTCompress::CompressTextureBC2(img, outData);
+}
+void NVTTCompressTextureBC3(InputData* img, void* outData) {
+	NVTTCompress::CompressTextureBC3(img, outData);
+}
+void NVTTCompressTextureBC4(InputData* img, void* outData) {
+	NVTTCompress::CompressTextureBC4(img, outData);
+}
+void NVTTCompressTextureBC5(InputData* img, void* outData) {
+	NVTTCompress::CompressTextureBC5(img, outData);
+}
+*/

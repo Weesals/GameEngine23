@@ -1,32 +1,41 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Importers;
 
 namespace Weesals.Engine {
-    public struct FloatKeyframe {
+    public enum CurveInterpolation { Step, Linear, Bezier, }
+    public struct Keyframe<T> where T : struct {
         public float Time;
-        public float Value;
-        public float InTangent, OutTangent;
-        public FloatKeyframe(float time, float value, float inTan = 0f, float outTan = 0f) {
+        public CurveInterpolation Interpolation = CurveInterpolation.Linear;
+        public T Value;
+        public T InTangent, OutTangent;
+        public Keyframe() { }
+        public Keyframe(float time, T value, T inTan = default, T outTan = default) {
             Time = time;
             Value = value;
             InTangent = inTan;
             OutTangent = outTan;
         }
+        public override string ToString() { return $"{Time} = {Value}"; }
     }
-    public class FloatCurve {
-        private FloatKeyframe[] keyframes = Array.Empty<FloatKeyframe>();
+    public class CurveBase<T> where T : struct {
+        protected Keyframe<T>[] keyframes = Array.Empty<Keyframe<T>>();
+        public Keyframe<T>[] Keyframes => keyframes;
+        public float Duration => keyframes.Length > 0 ? keyframes[^1].Time : 0f;
 
-        public FloatKeyframe[] Keyframes => keyframes;
-
-        public FloatCurve() { }
-        public FloatCurve(params FloatKeyframe[] _keyframes) {
-            keyframes = _keyframes;
+        public CurveBase() { }
+        public CurveBase(int keyframeCount) {
+            keyframes = new Keyframe<T>[keyframeCount];
+            foreach (ref var k in keyframes.AsSpan()) k = new();
         }
+        public CurveBase(params Keyframe<T>[] _keyframes) { keyframes = _keyframes; }
+        public override string ToString() { return $"<{Keyframes.Length} +{Duration}>"; }
 
-        public float Evaluate(float time) {
+        protected int FindNextKeyframe(float time) {
             int min = 0, max = keyframes.Length - 1;
             while (min < max) {
                 var mid = (min + max) / 2;
@@ -36,37 +45,150 @@ namespace Weesals.Engine {
                     max = mid;
                 }
             }
-            if (min == 0) return keyframes[min].Value;
-            var k0 = keyframes[min - 1];
-            var k1 = keyframes[min + 0];
-            var t = (time - k0.Time) / (k1.Time - k0.Time);
-            if (t > 1f) return k1.Value;
-            float duration = k1.Time - k0.Time;
-
+            return min;
+        }
+        protected Vector4 EvaluateBezier(float t) {
             float t2 = t * t, t3 = t2 * t;
+            return new Vector4(
+                2f * t3 - 3f * t2 + 1f,
+                t3 - 2f * t2 + t,
+                t3 - t2,
+                -2f * t3 + 3f * t2
+            );
+        }
+        protected Vector4 EvaluateBezier(float t, float tangentBoost) {
+            float t2 = t * t, t3 = t2 * t;
+            return new Vector4(
+                2f * t3 - 3f * t2 + 1f,
+                (t3 - 2f * t2 + t) * tangentBoost,
+                (t3 - t2) * tangentBoost,
+                -2f * t3 + 3f * t2
+            );
+        }
+        public void SetConstant(T value) {
+            if (keyframes.Length == 0) keyframes = new[] { new Keyframe<T>(0f, value), };
+            else foreach (ref var keyframe in keyframes.AsSpan()) keyframe.Value = value;
+        }
 
-            float a = 2f * t3 - 3f * t2 + 1f;
-            float b = t3 - 2f * t2 + t;
-            float c = t3 - t2;
-            float d = -2f * t3 + 3f * t2;
+        public static void InsertTimes(CurveBase<T> curve, List<float> times) {
+            int t = 0;
+            for (int i = 0; i < curve.Keyframes.Length; i++) {
+                var time = curve.Keyframes[i].Time;
+                if (t < times.Count && time > times[t]) ++t;
+                if (t >= times.Count || time < times[t]) times.Insert(t, time);
+                ++t;
+            }
+        }
+    }
+    public class FloatCurve : CurveBase<float> {
+    
+        public FloatCurve() : base() { }
+        public FloatCurve(int keyframeCount) : base(keyframeCount) { }
+        public FloatCurve(params Keyframe<float>[] _keyframes) : base(_keyframes) { }
 
-            return a * k0.Value
-                + (b * k0.OutTangent + c * k1.InTangent) * duration
-                + d * k1.Value;
+        public float Evaluate(float time) {
+            var keyI = FindNextKeyframe(time);
+            if (keyI == 0) return keyframes[keyI].Value;
+            var k0 = keyframes[keyI - 1];
+            var k1 = keyframes[keyI + 0];
+            var t = (time - k0.Time) / (k1.Time - k0.Time);
+            if (t >= 1f) return k1.Value;
+            switch (k0.Interpolation) {
+                case CurveInterpolation.Step: return k0.Value;
+                case CurveInterpolation.Linear: return float.Lerp(k0.Value, k1.Value, t);
+            }
+            var weights = EvaluateBezier(t);
+            return weights.X * k0.Value
+                + (weights.Y * k0.OutTangent + weights.Z * k1.InTangent) * (k1.Time - k0.Time)
+                + weights.W * k1.Value;
         }
 
         public static FloatCurve MakeSmoothStep() {
             return new FloatCurve(
-                new FloatKeyframe(0f, 0f, 0f, 0f),
-                new FloatKeyframe(1f, 1f, 0f, 0f)
+                new Keyframe<float>(0f, 0f, 0f, 0f),
+                new Keyframe<float>(1f, 1f, 0f, 0f)
             );
         }
 
         public static FloatCurve MakeLinear() {
             return new FloatCurve(
-                new FloatKeyframe(0f, 0f, 1f, 1f),
-                new FloatKeyframe(1f, 1f, 1f, 1f)
+                new Keyframe<float>(0f, 0f, 1f, 1f),
+                new Keyframe<float>(1f, 1f, 1f, 1f)
             );
         }
+    }
+
+    public class Vector3Curve : CurveBase<Vector3> {
+
+        public Vector3Curve() : base() { }
+        public Vector3Curve(int keyframeCount) : base(keyframeCount) { }
+        public Vector3Curve(params Keyframe<Vector3>[] _keyframes) : base(_keyframes) { }
+
+        public Vector3 Evaluate(float time) {
+            var keyI = FindNextKeyframe(time);
+            if (keyI == 0) return keyframes[keyI].Value;
+            var k0 = keyframes[keyI - 1];
+            var k1 = keyframes[keyI + 0];
+            var t = (time - k0.Time) / (k1.Time - k0.Time);
+            if (t >= 1f) return k1.Value;
+            switch (k0.Interpolation) {
+                case CurveInterpolation.Step: return k0.Value;
+                case CurveInterpolation.Linear: return Vector3.Lerp(k0.Value, k1.Value, t);
+            }
+            var weights = EvaluateBezier(t, k1.Time - k0.Time);
+            return weights.X * k0.Value
+                + (weights.Y * k0.OutTangent + weights.Z * k1.InTangent)
+                + weights.W * k1.Value;
+        }
+
+    }
+
+    public class QuaternionCurve : CurveBase<Quaternion> {
+
+        public QuaternionCurve() : base() { }
+        public QuaternionCurve(int keyframeCount) : base(keyframeCount) { }
+        public QuaternionCurve(params Keyframe<Quaternion>[] _keyframes) : base(_keyframes) { }
+
+        public Quaternion Evaluate(float time) {
+            var keyI = FindNextKeyframe(time);
+            if (keyI == 0) return keyframes[keyI].Value;
+            var k0 = keyframes[keyI - 1];
+            var k1 = keyframes[keyI + 0];
+            var t = (time - k0.Time) / (k1.Time - k0.Time);
+            if (t >= 1f) return k1.Value;
+            switch (k0.Interpolation) {
+                case CurveInterpolation.Step: return k0.Value;
+                case CurveInterpolation.Linear: return Quaternion.Lerp(k0.Value, k1.Value, t);
+            }
+            var weights = EvaluateBezier(t);
+            return Quaternion.Lerp(Quaternion.Identity, k0.Value, weights.X) * Quaternion.Lerp(Quaternion.Identity, k0.OutTangent, weights.Y) *
+                Quaternion.Lerp(Quaternion.Identity, k0.Value, weights.W) * Quaternion.Lerp(Quaternion.Identity, k0.OutTangent, weights.Z);
+        }
+
+    }
+
+    public class MatrixCurve : CurveBase<Matrix4x4> {
+
+        public MatrixCurve() : base() { }
+        public MatrixCurve(int keyframeCount) : base(keyframeCount) { }
+        public MatrixCurve(params Keyframe<Matrix4x4>[] _keyframes) : base(_keyframes) { }
+
+        public Matrix4x4 Evaluate(float time) {
+            var keyI = FindNextKeyframe(time);
+            if (keyI == 0) return keyframes[keyI].Value;
+            var k0 = keyframes[keyI - 1];
+            var k1 = keyframes[keyI + 0];
+            var t = (time - k0.Time) / (k1.Time - k0.Time);
+            if (t >= 1f) return k1.Value;
+            switch (k0.Interpolation) {
+                case CurveInterpolation.Step: return k0.Value;
+                case CurveInterpolation.Linear: return Matrix4x4.Lerp(k0.Value, k1.Value, t);
+            }
+            var weights = EvaluateBezier(t, k1.Time - k0.Time);
+            return k0.Value * weights.X
+                + (k0.OutTangent * weights.Y + k1.InTangent * weights.Z)
+                + k1.Value * weights.W;
+        }
+
     }
 }

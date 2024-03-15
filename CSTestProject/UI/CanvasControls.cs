@@ -8,9 +8,12 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
+using Weesals.Editor;
 using Weesals.Engine;
+using Weesals.Utility;
 
-namespace Weesals.UI {
+namespace Weesals.UI
+{
     public struct Tween : ITimedEvent {
         public float Time0;
         public float Time1;
@@ -73,7 +76,7 @@ namespace Weesals.UI {
         public string Text { get => TextElement.Text; set { if (TextElement.Text == value) return; TextElement.Text = value; MarkComposeDirty(); MarkTransformDirty(); } }
         public Color TextColor { get => TextElement.Color; set { TextElement.Color = value; MarkComposeDirty(); } }
         public float FontSize { get => TextElement.FontSize; set { TextElement.FontSize = value; MarkComposeDirty(); MarkTransformDirty(); } }
-        public CSFont Font { get => TextElement.Font; set { TextElement.Font = value; MarkComposeDirty(); MarkTransformDirty(); } }
+        public Font Font { get => TextElement.Font; set { TextElement.Font = value; MarkComposeDirty(); MarkTransformDirty(); } }
         public TextAlignment Alignment { get => TextElement.Alignment; set { TextElement.Alignment = value; MarkComposeDirty(); } }
         public TextDisplayParameters DisplayParameters { get => TextElement.DisplayParameters; set { TextElement.DisplayParameters = value; MarkComposeDirty(); } }
 
@@ -83,8 +86,6 @@ namespace Weesals.UI {
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
             TextElement.Initialize(Canvas);
-            if (!TextElement.Font.IsValid())
-                TextElement.SetFont(Resources.LoadFont("./Assets/Roboto-Regular.ttf"));
         }
         public override void Uninitialise(CanvasBinding binding) {
             TextElement.Dispose(Canvas);
@@ -248,34 +249,41 @@ namespace Weesals.UI {
         }
     }
     public class TextButton : Button {
-        public CanvasText Text = new();
+        public CanvasText TextElement = new();
+        public string Text { get => TextElement.Text; set => TextElement.Text = value; }
+        public float FontSize { get => TextElement.FontSize; set => TextElement.FontSize = value; }
+        public Color TextColor { get => TextElement.Color; set => TextElement.Color = value; }
+        public TextDisplayParameters TextDisplay { get => TextElement.DisplayParameters; set => TextElement.DisplayParameters = value; }
+        public TextAlignment TextAlignment { get => TextElement.Alignment; set => TextElement.Alignment = value; }
+        public Color BackgroundColor { get => Background.Color; set => Background.Color = value; }
+        public bool EnableBackground { get => Background.EnableDraw; set => Background.EnableDraw = value; }
 
         public TextButton() : this("Button") { }
         public TextButton(string label) {
-            Text.Text = label;
-            Text.SetFont(Resources.LoadFont("./Assets/Roboto-Regular.ttf"));
+            TextElement.Text = label;
+            TextElement.SetFont(Resources.LoadFont("./Assets/Roboto-Regular.ttf"));
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
-            Text.Initialize(Canvas);
+            TextElement.Initialize(Canvas);
         }
         public override void Uninitialise(CanvasBinding binding) {
-            Text.Dispose(Canvas);
+            TextElement.Dispose(Canvas);
             base.Uninitialise(binding);
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
             DrawBackground(ref composer);
-            if (HasDirtyFlag(DirtyFlags.Layout)) Text.MarkLayoutDirty();
-            Text.UpdateLayout(Canvas, mLayoutCache);
-            Text.Append(ref composer);
+            if (HasDirtyFlag(DirtyFlags.Layout)) TextElement.MarkLayoutDirty();
+            TextElement.UpdateLayout(Canvas, mLayoutCache);
+            TextElement.Append(ref composer);
             base.Compose(ref composer);
         }
         public override Vector2 GetDesiredSize(SizingParameters sizing) {
-            sizing.PreferredSize.X = sizing.ClampWidth(Text.GetPreferredWidth());
-            sizing.PreferredSize.Y = sizing.ClampHeight(Text.GetPreferredHeight(sizing.PreferredSize.X) + 4);
+            sizing.PreferredSize.X = sizing.ClampWidth(TextElement.GetPreferredWidth());
+            sizing.PreferredSize.Y = sizing.ClampHeight(TextElement.GetPreferredHeight(sizing.PreferredSize.X) + 4);
             return base.GetDesiredSize(sizing);
         }
-        public override string ToString() { return $"Button<{Text}>"; }
+        public override string ToString() { return $"Button<{TextElement}>"; }
     }
     public class ImageButton : Button {
         public CanvasImage Icon;
@@ -351,7 +359,7 @@ namespace Weesals.UI {
             return new Vector2(20f, 20f);
         }
     }
-    public class GridLayout : CanvasRenderable {
+    public class FixedGridLayout : CanvasRenderable {
         public Int2 CellCount = new Int2(4, 4);
         public Vector2 Spacing = new Vector2(10f, 10f);
         public override Vector2 GetDesiredSize(SizingParameters sizing) {
@@ -384,7 +392,7 @@ namespace Weesals.UI {
             return childSizing;
         }
         public override void UpdateChildLayouts() {
-            base.UpdateChildLayouts();
+            //base.UpdateChildLayouts();
             var layout = mLayoutCache;
             var childSizing = GetChildSizing(SizingParameters.Default.SetPreferredSize(layout.GetSize()));
             Int2 g = Int2.Zero;
@@ -410,19 +418,196 @@ namespace Weesals.UI {
             }
         }
     }
-    public class ListLayout : CanvasRenderable {
+    public class GridLayout : CanvasRenderable {
+        public struct ElementCells {
+            public Int2 CellBegin;
+            public Int2 CellCount;
+            public Int2 CellEnd => CellBegin + CellCount;
+        }
+        public struct CellSize {
+            public float MinimumSize = 0f;
+            public float PreferredSize = 80.0f;
+            public float MaximumSize = float.MaxValue;
+            public bool IsValid => PreferredSize != -1.0f;
+            public CellSize(float size = 80.0f) { PreferredSize = size; }
+            public static readonly CellSize Default = new(80.0f);
+            public static readonly CellSize Invalid = new(-1.0f);
+        }
+        public int ColumnCount => columns.Length;
+        public int RowCount => rows.Length;
+        private ElementCells[] elementCells = Array.Empty<ElementCells>();
+        private CellSize[] columns = new CellSize[] { CellSize.Default };
+        private CellSize[] rows = new CellSize[] { CellSize.Default };
+
+        private float[]? gridXs;
+        private float[]? gridYs;
+
+        public override void AppendChild(CanvasRenderable child) {
+            var childId = Children.Count;
+            AppendChild(child, new Int2(childId % ColumnCount, childId % RowCount), new Int2(1, 1));
+        }
+        public int AppendChild(CanvasRenderable child, Int2 cell) { return AppendChild(child, cell, Int2.One); }
+        public int AppendChild(CanvasRenderable child, Int2 cell, Int2 span) {
+            var childId = Children.Count;
+            base.AppendChild(child);
+            if (Children.Count > elementCells.Length)
+                Array.Resize(ref elementCells, (int)BitOperations.RoundUpToPowerOf2((uint)Children.Count));
+            elementCells[childId] = new ElementCells() { CellBegin = cell, CellCount = span, };
+            return childId;
+        }
+        public override void RemoveChild(CanvasRenderable child) {
+            base.RemoveChild(child);
+        }
+        public int GetChildIndex(CanvasRenderable child) {
+            for (int i = 0; i < Children.Count; i++) if (Children[i] == child) return i;
+            return -1;
+        }
+        public void SetChildCell(int childId, Int2 cell) { SetChildCell(childId, cell, Int2.One); }
+        public void SetChildCell(int childId, Int2 cell, Int2 span) {
+            var elCells = new ElementCells() { CellBegin = cell, CellCount = span, };
+            elementCells[childId] = elCells;
+        }
+
+        public void SetColumnSize(int columnId, CellSize size) {
+            SetSizeElement(ref columns, columnId, size);
+        }
+        public void SetRowSize(int rowId, CellSize size) {
+            SetSizeElement(ref rows, rowId, size);
+        }
+        public void SetSizeElement(ref CellSize[] array, int index, CellSize size) {
+            if (index >= array.Length) {
+                int oldCount = array.Length;
+                Array.Resize(ref array, (int)BitOperations.RoundUpToPowerOf2((uint)index + 4));
+                array.AsSpan(oldCount).Fill(CellSize.Invalid);
+            }
+            array[index] = size;
+        }
+        public override void UpdateChildLayouts() {
+            if (gridXs == null) ComputeLayout();
+            for (int c = 0; c < mChildren.Count; c++) {
+                var child = mChildren[c];
+                var cell = elementCells[c];
+                var left = cell.CellBegin.X == 0 ? 0f : gridXs[cell.CellBegin.X - 1];
+                var top = cell.CellBegin.Y == 0 ? 0f : gridYs[cell.CellBegin.Y - 1];
+                var right = gridXs[cell.CellEnd.X - 1];
+                var bot = gridYs[cell.CellEnd.Y - 1];
+                var layout = mLayoutCache;
+                layout.AxisX.W = (right - left);
+                layout.AxisY.W = (bot - top);
+                layout.Position = layout.TransformPosition2D(new Vector2(left, top));
+                child.UpdateLayout(layout);
+            }
+        }
+        protected override void NotifyTransformChanged() {
+            gridXs = default;
+            base.NotifyTransformChanged();
+        }
+        private void ComputeLayout() {
+            var size = ComputeGridSize();
+            using var tmpXSizes = new PooledArray<CellSize>(size.X);
+            using var tmpYSizes = new PooledArray<CellSize>(size.Y);
+            if (columns.Length < tmpXSizes.Count) SetSizeElement(ref columns, tmpXSizes.Count - 1, CellSize.Default);
+            if (rows.Length < tmpYSizes.Count) SetSizeElement(ref rows, tmpYSizes.Count - 1, CellSize.Default);
+            columns.AsSpan(0, tmpXSizes.Count).CopyTo(tmpXSizes);
+            rows.AsSpan(0, tmpYSizes.Count).CopyTo(tmpYSizes);
+            foreach (ref var item in tmpXSizes.AsSpan()) if (!item.IsValid) item = new();
+            foreach (ref var item in tmpYSizes.AsSpan()) if (!item.IsValid) item = new();
+            using var elements = PooledArray<ElementCells>.FromEnumerator(elementCells);
+            elements.AsSpan().Sort((c1, c2) => c1.CellCount.X.CompareTo(c2.CellCount.X));
+            for (int i = 0; i < elements.Count; i++) {
+                var cell = elements[i];
+                var child = Children[i];
+                var spanSizeX = GetSumSizing(tmpXSizes, cell.CellBegin.X, cell.CellEnd.X);
+                var spanSizeY = GetSumSizing(tmpYSizes, cell.CellBegin.Y, cell.CellEnd.Y);
+                var desiredSize = child.GetDesiredSize(new SizingParameters() {
+                    MinimumSize = new Vector2(spanSizeX.MinimumSize, spanSizeY.MinimumSize),
+                    PreferredSize = new Vector2(spanSizeX.PreferredSize, spanSizeY.PreferredSize),
+                    MaximumSize = new Vector2(spanSizeX.MaximumSize, spanSizeY.MaximumSize),
+                });
+                ApplySizing(tmpXSizes, cell.CellBegin.X, cell.CellEnd.X, spanSizeX, new CellSize() { MinimumSize = spanSizeX.MinimumSize, PreferredSize = desiredSize.X, MaximumSize = spanSizeX.MaximumSize, });
+                ApplySizing(tmpYSizes, cell.CellBegin.Y, cell.CellEnd.Y, spanSizeY, new CellSize() { MinimumSize = spanSizeY.MinimumSize, PreferredSize = desiredSize.Y, MaximumSize = spanSizeY.MaximumSize, });
+            }
+            if (gridXs == null) {
+                foreach (ref var item in tmpXSizes.AsSpan()) item.MaximumSize = Math.Min(item.MaximumSize, 10000);
+                foreach (ref var item in tmpYSizes.AsSpan()) item.MaximumSize = Math.Min(item.MaximumSize, 10000);
+                CellSize sumSizeX = default;
+                CellSize sumSizeY = default;
+                for (int i = 0; i < tmpXSizes.Count; i++) AddSizes(ref sumSizeX, tmpXSizes[i]);
+                for (int i = 0; i < tmpYSizes.Count; i++) AddSizes(ref sumSizeY, tmpYSizes[i]);
+                var levelX = GetSizingLevel(mLayoutCache.GetWidth(), sumSizeX);
+                var levelY = GetSizingLevel(mLayoutCache.GetHeight(), sumSizeY);
+                gridXs = new float[size.X];
+                gridYs = new float[size.Y];
+                for (int i = 0; i < tmpXSizes.Count; i++)
+                    gridXs[i] = (i == 0 ? 0 : gridXs[i - 1]) + GetSizing(tmpXSizes[i], levelX);
+                for (int i = 0; i < tmpYSizes.Count; i++)
+                    gridYs[i] = (i == 0 ? 0 : gridYs[i - 1]) + GetSizing(tmpYSizes[i], levelY);
+            }
+        }
+
+        private float GetSizingLevel(float width, CellSize sumSize) {
+            return width < sumSize.MinimumSize ? width / sumSize.MinimumSize
+                : width < sumSize.PreferredSize ? 1.0f + (width - sumSize.MinimumSize) / (sumSize.PreferredSize - sumSize.MinimumSize)
+                : width < sumSize.MaximumSize ? 2.0f + (width - sumSize.PreferredSize) / (sumSize.MaximumSize - sumSize.PreferredSize)
+                : 3.0f + width / sumSize.MaximumSize;
+        }
+        private float GetSizing(CellSize cellSize, float level) {
+            return level <= 1f ? cellSize.MinimumSize * level
+                : level <= 2f ? cellSize.MinimumSize + (cellSize.PreferredSize - cellSize.MinimumSize) * (level - 1f)
+                : level <= 3f ? cellSize.PreferredSize + (cellSize.MaximumSize - cellSize.PreferredSize) * (level - 2f)
+                : cellSize.MaximumSize * (level - 3f);
+        }
+
+        private void AddSizes(ref CellSize sum, CellSize s2) {
+            sum.MinimumSize += s2.MinimumSize;
+            sum.PreferredSize += s2.PreferredSize;
+            sum.MaximumSize += s2.MaximumSize;
+        }
+        private CellSize GetSumSizing(PooledArray<CellSize> sizes, int begin, int end) {
+            CellSize sum = default;
+            for (int i = begin; i < end; i++) AddSizes(ref sum, sizes[i]);
+            return sum;
+        }
+        private void ApplySizing(PooledArray<CellSize> sizes, int begin, int end, CellSize current, CellSize apply) {
+            if (apply.MinimumSize > current.MinimumSize) {
+                var ratio = current.MinimumSize == 0f ? 0f : apply.MinimumSize / current.MinimumSize;
+                var bias = current.MinimumSize == 0f ? apply.MinimumSize / (end - begin) : 0f;
+                for (int i = begin; i < end; i++) sizes[i].MinimumSize = sizes[i].MinimumSize * ratio + bias;
+            }
+            if (apply.PreferredSize > current.PreferredSize) {
+                var ratio = current.PreferredSize == 0f ? 0f : apply.PreferredSize / current.PreferredSize;
+                var bias = current.PreferredSize == 0f ? apply.PreferredSize / (end - begin) : 0f;
+                for (int i = begin; i < end; i++) sizes[i].PreferredSize = sizes[i].PreferredSize * ratio + bias;
+            }
+            if (apply.MaximumSize < current.MaximumSize) {
+                var ratio = apply.MaximumSize / current.MaximumSize;
+                for (int i = begin; i < end; i++) sizes[i].MaximumSize = sizes[i].MaximumSize * ratio;
+            }
+        }
+
+        private Int2 ComputeGridSize() {
+            Int2 size = Int2.Zero;
+            for (int i = 0; i < Children.Count; i++) {
+                var el = elementCells[i];
+                size = Int2.Max(size, el.CellEnd);
+            }
+            return size;
+        }
+    }
+    public class ListLayout : CanvasRenderable, ICanvasLayout {
         public enum Axes : byte { Horizontal, Vertical, };
         public enum ScaleModes : byte { None, Clamp, StretchOrClamp, };
         public ScaleModes ScaleMode = ScaleModes.Clamp;
         public Axes Axis = Axes.Vertical;
         public float ItemSize = 0f;
 
+        // Allow arbitrary insertion as public API for list
         public new void InsertChild(int index, CanvasRenderable child) {
             base.InsertChild(index, child);
         }
 
         public override void UpdateChildLayouts() {
-            base.UpdateChildLayouts();
+            //base.UpdateChildLayouts();
             var layout = mLayoutCache;
             Vector2 sizeMasked = default;
             ref var sizeAxis = ref (Axis == Axes.Horizontal ? ref sizeMasked.X : ref sizeMasked.Y);
@@ -462,8 +647,13 @@ namespace Weesals.UI {
             //sizing.PreferredSize = new Vector2(80f, 80f);
             float minSizeO = 0f;
             float sizeA = 0f;
+            var childSizing = sizing;
+            if (ItemSize == 0f) {
+                if (Axis == Axes.Horizontal) childSizing.PreferredSize.X = 20f;
+                else if (Axis == Axes.Vertical) childSizing.PreferredSize.Y = 20f;
+            }
             foreach (var child in Children) {
-                var size = child.GetDesiredSize(sizing);
+                var size = child.GetDesiredSize(childSizing);
                 minSizeO = MathF.Max(minSizeO,
                     Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f);
                 if (ItemSize == 0f) {
@@ -700,7 +890,7 @@ namespace Weesals.UI {
             }
         }
     }
-    public class ScrollView : CanvasRenderable, IBeginDragHandler, IDragHandler, IEndDragHandler, ITweenable, IHitTestGroup {
+    public class ScrollView : CanvasRenderable, ICanvasLayout, IBeginDragHandler, IDragHandler, IEndDragHandler, ITweenable, IHitTestGroup {
         protected enum Flags { None = 0, Dragging = 1, }
         public Vector2 ScrollMask = new Vector2(1f, 1f);
         public RectF Margins = new RectF(0f, 0f, 0f, 0f);

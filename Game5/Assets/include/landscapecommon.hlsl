@@ -23,7 +23,7 @@ Triangle ComputeTriangle(half2 pos)
     half2 quadPos = round(pos / 2) * 2;
     half2 quadBC = abs(pos - quadPos);
     Triangle t;
-    half4 rect = half4(quadPos.xy, quadPos.xy + (pos > quadPos ? 1 : -1));
+    half4 rect = half4(quadPos.xy, quadPos.xy + select(pos > quadPos, 1, -1));
     t.P0 = rect.xy;
     t.P2 = rect.zw;
     t.P1 = quadBC.x < quadBC.y ? rect.xw : rect.zy;

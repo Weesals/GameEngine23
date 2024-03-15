@@ -30,15 +30,17 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		ofbx::LoadFlags::IGNORE_BLEND_SHAPES |
 		ofbx::LoadFlags::IGNORE_CAMERAS |
 		ofbx::LoadFlags::IGNORE_LIGHTS |
-		ofbx::LoadFlags::IGNORE_SKIN |
-		ofbx::LoadFlags::IGNORE_BONES |
-		ofbx::LoadFlags::IGNORE_PIVOTS |
-		ofbx::LoadFlags::IGNORE_POSES |
 		ofbx::LoadFlags::IGNORE_VIDEOS |
-		ofbx::LoadFlags::IGNORE_LIMBS |
-		ofbx::LoadFlags::IGNORE_ANIMATIONS;
+		ofbx::LoadFlags::IGNORE_LIMBS;
 
 	auto fbxScene = ofbx::load(contents.data(), (int)contents.size(), (ofbx::u16)flags);
+
+	for (int i = 0; i < fbxScene->getAnimationStackCount(); ++i)
+	{
+		auto* fbxAnimStack = fbxScene->getAnimationStack(i);
+		auto* fbxLayer = fbxAnimStack->getLayer(0);
+		auto* fbxNode = fbxLayer->getCurveNode(0);
+	}
 
 	// The model that will be returned
 	auto outModel = std::make_shared<Model>();
@@ -85,7 +87,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		{
 			mesh->RequireVertexTexCoords(0, BufferFormat::FORMAT_R8G8_UNORM);
 			std::transform(uvs, uvs + vertCount, mesh->GetTexCoordsV(0, true).begin(), [=](const auto item) {
-				return Vector2((float)item.x, (float)item.y);
+				return Vector2((float)item.x, 1.0f - (float)item.y);
 			});
 		}
 
@@ -107,7 +109,7 @@ std::shared_ptr<Model> FBXImport::ImportAsModel(const std::wstring& filename)
 		for (int v = 0; v < vbuffer.mCount; ++v) {
 			size_t hash = 0;
 			for (auto& element : vbuffer.GetElements()) {
-				hash = AppendHash((uint8_t*)element.mData + element.mBufferStride * v, element.mFormat, hash);
+				hash = AppendHash((uint8_t*)element.mData + element.mBufferStride * v, BufferFormatType::GetType(element.mFormat).GetByteSize(), hash);
 			}
 			int index = (int)vertHashMap.size();
 			auto match = vertHashMap.find(hash);

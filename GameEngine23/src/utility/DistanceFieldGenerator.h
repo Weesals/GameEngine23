@@ -57,7 +57,8 @@ public:
                 corners.p10 = texdata[indices[1]].a;
                 corners.p11 = texdata[indices[2]].a;
                 corners.p01 = texdata[indices[3]].a;
-                if ((pN1 & 0x80808080) == 0x00000000 || (pN1 & 0x80808080) == 0x80808080) continue;
+                auto pN1Masked = ((uint32_t*)&pN64)[0] & 0x80808080;
+                if (pN1Masked == 0x00000000 || pN1Masked == 0x80808080) continue;
                 pN2 = pN1;
                 for (int i = 0; i < 4; ++i) {
                     auto sign4 = ((pN64 >> (i * 8)) & 0x80808080);
@@ -67,7 +68,8 @@ public:
                         auto e0 = (float)(127 - rcorners.p00) / (rcorners.p01 - rcorners.p00);
                         auto e1 = (float)(127 - rcorners.p10) / (rcorners.p11 - rcorners.p10);
                         Vector2 n(e0 - e1, 1.0f);
-                        n /= std::sqrt(Vector2::Dot(n, n));
+                        n.Normalize();
+                        //n /= std::sqrt(Vector2::Dot(n, n));
                         Vector2 n1 = n.x > 0.0f ? n : Vector2(0.0f, 1.0f);
                         Vector2 n2 = n.x < 0.0f ? n : Vector2(0.0f, 1.0f);
                         Observe(values[indices[(i + 0) & 3]], n1 * (e0 - 0.0f), i);
@@ -83,10 +85,10 @@ public:
                         auto eX = (float)(127 - rcorners.p00) / (rcorners.p10 - rcorners.p00);
                         auto eY = (float)(127 - rcorners.p00) / (rcorners.p01 - rcorners.p00);
                         Vector2 n(eY, eX);
-                        float nD = 1.0f / Vector2::Dot(n, n);
-                        Observe(values[indices[(i + 0) & 3]], n * ((n.y * eY) * nD), i);
+                        Vector2 nN = n; nN.Normalize();
+                        Observe(values[indices[(i + 0) & 3]], nN * ((n.y * eY)), i);
                         Observe(values[indices[(i + 1) & 3]], Vector2(eX - 1.0f, 0.0f), i);
-                        Observe(values[indices[(i + 2) & 3]], n * ((n.y * eY - n.x - n.y) * nD), i);
+                        Observe(values[indices[(i + 2) & 3]], nN * ((n.y * eY - n.x - n.y)), i);
                         Observe(values[indices[(i + 3) & 3]], Vector2(0.0f, eY - 1.0f), i);
                         break;
                     }
@@ -101,6 +103,7 @@ public:
 
         SeedAAEdges(texdata, tsize);
         
+        auto seedTime = std::chrono::system_clock::now();
         // Calculate distances along Y axis
         for (int x = 0; x < tsize.x; ++x) {
             int lastEdgeY = 0;
@@ -120,7 +123,7 @@ public:
                 lastEdgeY = y + 1;
             }
         }
-        auto timer1 = std::chrono::system_clock::now();
+        auto pass1Time = std::chrono::system_clock::now();
         // Spread distances along X axis
         for (int y = 0; y < tsize.y; ++y) {
             int iy = y * tsize.x;
@@ -158,10 +161,11 @@ public:
             }
         }
         auto endTime = std::chrono::system_clock::now();
-        char str[] = "Distance field gen 000 000 000 ms\n";
-        WriteTime(str + 19, endTime - startTime);
-        WriteTime(str + 23, timer1 - startTime);
-        WriteTime(str + 27, endTime - timer1);
+        char str[] = "Distance field gen   0   0   0 =   0 ms\n";
+        WriteTime(str + 19, seedTime - startTime);
+        WriteTime(str + 23, pass1Time - seedTime);
+        WriteTime(str + 27, endTime - pass1Time);
+        WriteTime(str + 33, endTime - startTime);
         OutputDebugStringA(str);
     }
     void ApplyDistances(std::span<ColorB4> texdata, Int2 tsize, float spread = 32.0f) {
@@ -178,13 +182,15 @@ public:
             }
         }
         auto endTime = std::chrono::system_clock::now();
-        char str[] = "Distance field write 000 ms\n";
+        char str[] = "Distance field write   0 ms\n";
         WriteTime(str + 21, endTime - startTime);
         OutputDebugStringA(str);
     }
 
     static void WriteTime(char* str, std::chrono::system_clock::duration duration) {
         int ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-        for (int i = 100; i >= 1; i /= 10) *(str++) = '0' + ((ms / i) % 10);
+        int i = 100;
+        for (; i > 1; i /= 10, str++) if (((ms / i) % 10) != 0) break;
+        for (; i >= 1; i /= 10) *(str++) = '0' + ((ms / i) % 10);
     }
 };

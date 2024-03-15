@@ -7,6 +7,9 @@ using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
 using Weesals.Engine;
+using Weesals.Engine.Importers;
+using Weesals.Engine.Jobs;
+using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.Utility;
 
@@ -15,6 +18,10 @@ namespace Game5.Game {
     public struct CModel {
         public Model Model;
         public override string ToString() { return Model.Name; }
+    }
+    public struct CAnimation {
+        public AnimationHandle Animation;
+        public override string? ToString() { return Animation.ToString(); }
     }
     public struct CPosition {
         public Vector3 Value;
@@ -31,7 +38,7 @@ namespace Game5.Game {
         public override string ToString() { return $"Selected {Selected}"; }
     }
 
-    public class EntityProxy : IEntityPosition, IEntitySelectable, IEntityRedirect, IEntityStringifier {
+    public class EntityProxy : IItemPosition, IEntitySelectable, IEntityRedirect, IItemStringifier {
 
         public readonly World World;
         public EntityMapSystem EntityMapSystem;
@@ -45,14 +52,14 @@ namespace Game5.Game {
 
         public Vector3 GetPosition(ulong id = ulong.MaxValue) {
             //return World.GetComponent<CPosition>(GenericTarget.UnpackEntity(id)).Value;
-            return World.GetComponent<ECTransform>(GenericTarget.UnpackEntity(id)).GetWorldPosition();
+            return World.GetComponent<ECTransform>(UnpackEntity(id)).GetWorldPosition();
         }
         public Quaternion GetRotation(ulong id = ulong.MaxValue) {
             return Quaternion.Identity;
         }
         public void SetPosition(Vector3 pos, ulong id = ulong.MaxValue) {
-            ref var tform = ref World.GetComponentRef<ECTransform>(GenericTarget.UnpackEntity(id));
-            moveContract.MoveEntity(GenericTarget.UnpackEntity(id), ref tform, SimulationWorld.WorldToSimulation(pos).XZ);
+            ref var tform = ref World.GetComponentRef<ECTransform>(UnpackEntity(id));
+            moveContract.MoveEntity(UnpackEntity(id), ref tform, SimulationWorld.WorldToSimulation(pos).XZ);
             EntityMapSystem.CommitContract(moveContract);
             moveContract.Clear();
         }
@@ -60,16 +67,33 @@ namespace Game5.Game {
         }
 
         public void NotifySelected(ulong id, bool selected) {
-            var entity = GenericTarget.UnpackEntity(id);
+            var entity = UnpackEntity(id);
             if (World.IsValid(entity))
                 World.AddComponent<CSelectable>(entity).Selected = selected;
         }
-        public GenericTarget GetOwner(ulong id) {
-            return GenericTarget.FromEntity(World, GenericTarget.UnpackEntity(id));
+        public ItemReference GetOwner(ulong id) {
+            return new ItemReference(World, id);
         }
 
         public string ToString(ulong id) {
-            return GenericTarget.UnpackEntity(id).ToString();
+            return UnpackEntity(id).ToString();
+        }
+
+        public ItemReference MakeHandle(Entity entity) {
+            return new ItemReference(this, PackEntity(entity));
+        }
+        public static ulong PackEntity(Entity entity) {
+            return ((ulong)(uint)entity.Index << 32) | (uint)entity.Version;
+        }
+        public static Entity UnpackEntity(ulong id) {
+            return new Entity() { Index = (uint)(id >> 32), Version = (uint)id, };
+        }
+    }
+    public static class EntityProxyExt {
+        public static Entity GetEntity(this ItemReference target) {
+            return target.Owner is EntityProxy ? EntityProxy.UnpackEntity(target.Data)
+                : target.Owner is World ? EntityProxy.UnpackEntity(target.Data)
+                : default;
         }
     }
 
@@ -117,8 +141,8 @@ namespace Game5.Game {
 
         public void GenerateWorld() {
             var rand = new Random();
-            using var tmpEntities = new PooledList<Entity>();
-            /*for (int i = 0; i < 10; i++) {
+            /*using var tmpEntities = new PooledList<Entity>();
+            for (int i = 0; i < 10; i++) {
                 while (tmpEntities.Count > 0 && rand.NextSingle() < 0.6f) {
                     World.DeleteEntity(tmpEntities[0]);
                     tmpEntities.RemoveAt(0);
@@ -131,16 +155,64 @@ namespace Game5.Game {
                 tmpEntities.Add(entity1);
             }*/
 
-            var houseModel = Resources.LoadModel("./Assets/SM_House.fbx");
+            var archerModel = Resources.LoadModel("./Assets/Characters/Character_Archer.fbx", out var archerHandle);
+            var spiderModel = Resources.LoadModel("./Assets/Models/BattleSpider01.FBX", out var spiderHandle);
+            var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var archerRunHandle);
+            var houseModels = new[] {
+                Resources.LoadModel("./Assets/SM_House.fbx", out var house1Handle),
+                Resources.LoadModel("./Assets/B_House2.fbx", out var house2Handle),
+                Resources.LoadModel("./Assets/B_House3.fbx", out var house3Handle),
+                Resources.LoadModel("./Assets/B_Granary1.fbx", out var granary1Handle),
+                Resources.LoadModel("./Assets/B_Granary2.fbx", out var granary2Handle),
+                Resources.LoadModel("./Assets/B_Granary3.fbx", out var granary3Handle),
+            };
+            var houseHandles = JobHandle.CombineDependencies(house1Handle, house2Handle, house3Handle);
+            var granaryHandles = JobHandle.CombineDependencies(granary1Handle, granary2Handle, granary3Handle);
+            var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, spiderHandle, archerRunHandle, houseHandles, granaryHandles);
 
-            var house = ProtoSystem.CreatePrototype("House")
-                .AddComponent<CModel>(new() { Model = houseModel, })
+            modelLoadHandle.Complete();
+
+            foreach (var mesh in archerModel.Meshes) {
+                mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/T_CharactersAtlas.png"));
+            }
+            foreach (var houseModel in houseModels) {
+                foreach (var mesh in houseModel.Meshes) {
+                    mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/T_ToonBuildingsAtlas.png"));
+                }
+            }
+            //var houseModel = (AnimatedModel)FBXImporter.Import("./Assets/Characters/TestAnim.fbx");
+
+            var archer = ProtoSystem.CreatePrototype("Archer")
+                .AddComponent<CModel>(new() { Model = archerModel, })
+                .AddComponent<CAnimation>(new() { Animation = runAnim.Animations[0], })
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
-                .AddComponent<ECMobile>(new() { MovementSpeed = 10000, TurnSpeed = 500, NavMask = 1, })
+                .AddComponent<ECMobile>(new() { MovementSpeed = 6000, TurnSpeed = 500, NavMask = 1, })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
                 .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
                 .Build();
+
+            var spider = ProtoSystem.CreatePrototype("Spider")
+                .AddComponent<CModel>(new() { Model = spiderModel, })
+                //.AddComponent<CAnimation>(new() { Animation = runAnim.Animations[0], })
+                .AddComponent<CHitPoints>(new() { Current = 10, })
+                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
+                .AddComponent<ECMobile>(new() { MovementSpeed = 6000, TurnSpeed = 500, NavMask = 1, })
+                .AddComponent<ECTeam>(new() { SlotId = 0 })
+                .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
+                .Build();
+
+            var house = ProtoSystem.CreatePrototype("House",
+                new PrototypeData() {
+                    Footprint = new EntityFootprint() { Size = 4000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
+                })
+                .AddComponent<CModel>(new() { Model = houseModels[0], })
+                .AddComponent<CHitPoints>(new() { Current = 10, })
+                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
+                .AddComponent<ECTeam>(new() { SlotId = 0 })
+                .AddComponent<ECObstruction>(new() { })
+                .Build();
+
             var townCentre = ProtoSystem.CreatePrototype("TownCentre",
                 new PrototypeData() {
                     Footprint = new EntityFootprint() { Size = 6000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
@@ -153,20 +225,34 @@ namespace Game5.Game {
                 .Build();
 
             var houseInstance = PrefabRegistry.Instantiate(World, house.Prefab);
-            World.GetComponentRef<ECTransform>(houseInstance).Position = new Int2(-2000, 2000);
+            World.GetComponentRef<ECTransform>(houseInstance).Position = new Int2(20000, 20000);
+
+            var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
+            World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
+
+            var spiderInstance = PrefabRegistry.Instantiate(World, spider.Prefab);
+            World.GetComponentRef<ECTransform>(spiderInstance).Position = new Int2(50000, 28000);
+
+            var houseProto = new PrototypeData() {
+                Footprint = new EntityFootprint() { Size = 4000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
+            };
 
             var command = new EntityCommandBuffer(World.Stage);
-            const int Count = 10;
+            const int Count = 1000;// 10;
             var SqrtCount = (int)MathF.Sqrt(Count);
             for (int i = 0; i < Count; i++) {
                 var newEntity = command.CreateDeferredEntity();
-                var pos = new Vector3(i / SqrtCount, 0f, i % SqrtCount) * 40.0f;
-                command.AddComponent<CModel>(newEntity) = new() { Model = houseModel, };
+                var pos = new Int2(i / SqrtCount, i % SqrtCount) * 6000;
+                var houseId = rand.Next(houseModels.Length);
+                var orientation = rand.Next(4) * (short.MinValue / 2);
+                command.AddComponent<CModel>(newEntity) = new() { Model = houseModels[houseId], };
                 command.AddComponent<CHitPoints>(newEntity) = new() { Current = 10, };
-                command.AddComponent<ECTransform>(newEntity) = new() { Position = new Int2(i / SqrtCount, i % SqrtCount) * 6000, Orientation = short.MinValue };
-                command.AddComponent<ECMobile>(newEntity) = new() { MovementSpeed = 10000, TurnSpeed = 500, NavMask = 1, };
+                command.AddComponent<ECTransform>(newEntity) = new() { Position = pos, Orientation = (short)orientation };
+                //command.AddComponent<ECMobile>(newEntity) = new() { MovementSpeed = 10000, TurnSpeed = 500, NavMask = 1, };
                 command.AddComponent<ECTeam>(newEntity) = new() { SlotId = (byte)i };
                 command.AddComponent<ECAbilityAttackMelee>(newEntity) = new() { Damage = 1, Interval = 1000, };
+                command.AddComponent<PrototypeData>(newEntity) = houseProto;
+                command.AddComponent<ECObstruction>(newEntity);
                 //command.AddComponent<ECActionMove>(newEntity) = new() { Location = 5000, };
             }
             command.Commit();
@@ -241,9 +327,9 @@ namespace Game5.Game {
                 }
             }*/
         }
-        public GenericTarget HitTest(Ray ray) {
+        public ItemReference HitTest(Ray ray) {
             float nearestDst2 = float.MaxValue;
-            GenericTarget nearest = GenericTarget.None;
+            ItemReference nearest = ItemReference.None;
             foreach (var accessor in World.QueryAll<ECTransform, CModel>()) {
                 var epos = (ECTransform)accessor;
                 var emodel = (CModel)accessor;
@@ -252,7 +338,7 @@ namespace Game5.Game {
                     lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
                     var dst = mesh.BoundingBox.RayCast(lray);
                     if (dst >= 0f && dst < nearestDst2) {
-                        nearest = new GenericTarget(EntityProxy, GenericTarget.PackEntity(accessor));
+                        nearest = EntityProxy.MakeHandle(accessor);
                         nearestDst2 = dst;
                     }
                 }

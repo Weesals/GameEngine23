@@ -11,65 +11,62 @@ using System.Threading.Tasks;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
-    unsafe public class ShaderBase {
-        public NativeShader* mNativeShader;
-        public ShaderBase(string path, string entry) {
-            mNativeShader = CSResources.LoadShader(path, entry);
-        }
-        unsafe public static implicit operator NativeShader*(ShaderBase? shader) { return shader == null ? null : shader.mNativeShader; }
-
-        public static ShaderBase FromPath(string path, string entry) {
-            return new ShaderBase(path, entry);
-        }
-    }
     public struct Parameters {
-        public struct Item {
+        public struct Item : IComparable<Item>, IEquatable<Item> {
+            public CSIdentifier Identifier;
             public Type Type;
             public int ByteOffset;
             public int Count;
             public static readonly Item Default = new Item() { ByteOffset = -1, };
+            public int CompareTo(Item other) { return Identifier.CompareTo(other.Identifier); }
+            public bool Equals(Item other) { return Identifier.Equals(other.Identifier); }
         }
-        private SortedList<CSIdentifier, Item> Items = new();
+        private Item[] Items = Array.Empty<Item>();
+        private int itemCount;
         private byte[] Data = Array.Empty<byte>();
         private int dataConsumed;
-        public IList<CSIdentifier> ParamterNames => Items.Keys;
         public Parameters() { }
-        unsafe public Span<byte> SetValue<T>(CSIdentifier identifier, Span<T> data) where T : unmanaged {
-            if (!Items.TryGetValue(identifier, out var item)) {
-                item = new Item() { ByteOffset = -1, };
+        unsafe public Span<byte> SetValue<T>(CSIdentifier identifier, ReadOnlySpan<T> data) where T : unmanaged {
+            var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
+            if (index < 0) {
+                index = ~index;
+                ArrayExt.InsertAt(ref Items, ref itemCount, index, new Item() { Identifier = identifier, ByteOffset = -1, });
             }
+            ref var item = ref Items[index];
             if (item.Type == null || (item.Type == typeof(T) ? item.Count != data.Length : item.Count * Marshal.SizeOf(item.Type) != sizeof(T) * data.Length)) {
                 Debug.Assert(item.ByteOffset == -1);
                 int size = sizeof(T) * data.Length;
                 if (dataConsumed + size > Data.Length) {
-                    Array.Resize(ref Data, Math.Max(Data.Length * 2, 256));
+                    Array.Resize(ref Data, (int)BitOperations.RoundUpToPowerOf2((uint)(dataConsumed + size)));
                 }
                 item.ByteOffset = dataConsumed;
                 dataConsumed += size;
             }
             item.Type = typeof(T);
             item.Count = data.Length;
-            Items[identifier] = item;
             var outBytes = Data.AsSpan(item.ByteOffset);
             MemoryMarshal.AsBytes(data).CopyTo(outBytes);
             return outBytes;
         }
         public Item GetValueItem(CSIdentifier identifier) {
-            if (!Items.TryGetValue(identifier, out var item)) return Item.Default;
-            return item;
+            var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
+            if (index < 0) return Item.Default;
+            return Items[index];
         }
         unsafe public Span<byte> GetItemData(Item item) {
             return Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
         }
         unsafe public Span<byte> GetValueData(CSIdentifier identifier) {
-            if (!Items.TryGetValue(identifier, out var item)) return default;
+            var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
+            if (index < 0) return default;
+            var item = Items[index];
             return Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
         }
         public int GetItemIdentifiers(Span<CSIdentifier> outlist) {
 	        int count = 0;
-	        foreach (var item in Items.Keys) {
+	        foreach (var item in Items) {
 		        if (count > outlist.Length) break;
-		        outlist[count] = item;
+		        outlist[count] = item.Identifier;
 		        ++count;
 	        }
 	        return count;
@@ -77,17 +74,16 @@ namespace Weesals.Engine {
         public Span<byte> GetDataRaw() {
 	        return Data;
         }
-        public ICollection<KeyValuePair<CSIdentifier, Item>> GetItemsRaw() {
-            return Items;
+        public Span<Item> GetItemsRaw() {
+            return Items.AsSpan(0, itemCount);
         }
         public override int GetHashCode() {
             int hash = 0;
-            foreach (var itemKV in Items) {
-                var item = itemKV.Value;
-                var data = Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
+            foreach (var item in Items.AsSpan(0, itemCount)) {
+                var data = Data.AsSpan((int)item.ByteOffset, (int)(item.Count * Marshal.SizeOf((Type)item.Type)));
                 int dataHash = 0;
                 for (int i = 0; i < data.Length; ++i) dataHash = dataHash * 53 + data[i];
-                hash += HashCode.Combine(itemKV.Key, dataHash);
+                hash += HashCode.Combine(item.Identifier, dataHash);
             }
             return hash;
         }
@@ -237,10 +233,10 @@ namespace Weesals.Engine {
         Parameters Macros = new();
 
         // Parameters are inherited from parent materials
-        internal List<Material> InheritParameters = new();
+        internal List<Material> InheritParameters;
 
         // These parameters can automatically compute themselves
-        SortedList<CSIdentifier, ComputedParameterBase> ComputedParameters = new();
+        SortedList<CSIdentifier, ComputedParameterBase> ComputedParameters;
 
         // Incremented whenever data within this material changes
         int mRevision = 0;
@@ -294,23 +290,29 @@ namespace Weesals.Engine {
 
         // Configure shader feature set
         public void SetMacro(CSIdentifier name, CSIdentifier v) {
-            Macros.SetValue(name, new Span<CSIdentifier>(ref v));
+            Macros.SetValue(name, new ReadOnlySpan<CSIdentifier>(ref v));
             MarkChanged();
         }
 
-        public Span<byte> SetValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
+        public Span<byte> SetArrayValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
+            return SetArrayValue(name, (ReadOnlySpan<T>)v);
+        }
+        public Span<byte> SetArrayValue<T>(CSIdentifier name, ReadOnlySpan<T> v) where T : unmanaged {
             var r = Parameters.SetValue(name, v);
             MarkChanged();
             return r;
         }
         public T GetValue<T>(CSIdentifier name) where T : unmanaged {
-            return MemoryMarshal.Cast<byte, T>(GetUniformBinaryData(name))[0];
+            return MemoryMarshal.Read<T>(GetUniformBinaryData(name));
+        }
+        public Span<T> GetValueArray<T>(CSIdentifier name) where T : unmanaged {
+            return MemoryMarshal.Cast<byte, T>(GetUniformBinaryData(name));
         }
 
         // Set various uniform values
         unsafe public Span<byte> SetValue<T>(CSIdentifier name, T v) where T : unmanaged {
 #pragma warning disable CS9087 // This returns a parameter by reference but it is not a ref parameter
-            return SetValue(name, new Span<T>(ref v));
+            return SetArrayValue(name, new ReadOnlySpan<T>(ref v));
 #pragma warning restore CS9087 // This returns a parameter by reference but it is not a ref parameter
         }
         unsafe public Span<byte> SetTexture(CSIdentifier name, CSTexture tex) {
@@ -327,11 +329,12 @@ namespace Weesals.Engine {
         }
 
         public void SetComputedUniform<T>(CSIdentifier name, ComputedParameter<T>.Getter lambda) where T : unmanaged {
+            if (ComputedParameters == null) ComputedParameters = new();
             ComputedParameters.Add(name, new ComputedParameter<T>(name, lambda));
             MarkChanged();
         }
         public int FindComputedIndex(CSIdentifier name) {
-            var index = ComputedParameters.IndexOfKey(name);
+            var index = ComputedParameters == null ? -1 : ComputedParameters.IndexOfKey(name);
             return index;
         }
         public ComputedParameterBase? GetComputedByIndex(int index) {
@@ -342,6 +345,7 @@ namespace Weesals.Engine {
         // Add a parent material that this material will inherit
         // properties from
         public void InheritProperties(Material other) {
+            if (InheritParameters == null) InheritParameters = new();
             InheritParameters.Add(other);
             MarkChanged();
         }
@@ -385,17 +389,27 @@ namespace Weesals.Engine {
                 var dataPtr = CSMaterial.GetValueData(otherMat.GetNativeMaterial(), identifiers[i]);
                 var type = CSMaterial.GetValueType(otherMat.GetNativeMaterial(), identifiers[i]);
                 var data = new MemoryBlock<byte>((byte*)dataPtr.mData, dataPtr.mSize);
-                if (type == 0) SetValue(identifiers[i], data.Reinterpret<float>().AsSpan());
-                else if (type == 1) SetValue(identifiers[i], data.Reinterpret<int>().AsSpan());
+                if (type == 0) SetArrayValue(identifiers[i], data.Reinterpret<float>().AsSpan());
+                else if (type == 1) SetArrayValue(identifiers[i], data.Reinterpret<int>().AsSpan());
                 else SetValue(identifiers[i], *((nint*)data.Data));
             }
         }
 
         public override string ToString() {
             var builder = new StringBuilder();
-            foreach (var parameter in Parameters.ParamterNames) {
-                builder.Append(parameter.GetName() + ",");
+            builder.Append("Mat");
+            if (State.PixelShader != null) {
+                builder.Append("{");
+                builder.Append(State.PixelShader.ToString());
+                builder.Append("}");
             }
+            builder.Append("<");
+            var parameters = Parameters.GetItemsRaw();
+            for (int i = 0; i < parameters.Length; i++) {
+                if (i > 0) builder.Append(",");
+                builder.Append(parameters[i].Identifier.GetName());
+            }
+            builder.Append(">");
             return builder.ToString();
         }
         public int GetIdentifier() { return mIdentifier; }
@@ -453,12 +467,17 @@ namespace Weesals.Engine {
                 return Matrix4x4.Invert(mvp, out var result) ? result : default;
             });
             SetComputedUniform<Vector3>("_ViewSpaceLightDir0", (ref ComputedContext context) => {
-                var lightDir = context.GetUniform<Vector3>(iLightDir);
+                var lightDir = -context.GetUniform<Vector3>(iLightDir);
                 var view = context.GetUniform<Matrix4x4>(iVMat);
-                return Vector3.TransformNormal(lightDir, view);
+                //Matrix4x4.Invert(view, out view);
+                var dir = Vector3.TransformNormal(lightDir, view);
+                //Debug.WriteLine(dir.ToString());
+                return -dir;
             });
             SetComputedUniform<Vector3>("_ViewSpaceUpVector", (ref ComputedContext context) => {
-                return Vector3.TransformNormal(Vector3.UnitY, context.GetUniform<Matrix4x4>(iVMat));
+                var view = context.GetUniform<Matrix4x4>(iVMat);
+                //Matrix4x4.Invert(view, out view);
+                return Vector3.TransformNormal(Vector3.UnitY, view);
             });
         }
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
@@ -6,6 +7,12 @@ using System.Reflection;
 namespace Weesals.ECS {
     public class SparseComponentAttribute : Attribute { }
     public class NoCloneComponentAttribute : Attribute { }
+    public class RequireSystemAttribute : Attribute {
+        public Type System;
+        public RequireSystemAttribute(Type system) {
+            System = system;
+        }
+    }
 
     // Uniquely allocated for each unique component type
     public abstract class ComponentType {
@@ -28,6 +35,15 @@ namespace Weesals.ECS {
         }
         public static bool GetIsNoClone(Type type) {
             return type.GetCustomAttribute<NoCloneComponentAttribute>() != null;
+        }
+        public static Type[]? GetRequiredSystems(Type type) {
+            var attributes = type.GetCustomAttributes<RequireSystemAttribute>();
+            int count = attributes.Count();
+            if (count == 0) return default;
+            Type[] items = new Type[count];
+            int i = 0;
+            foreach (var attribute in attributes) items[i++] = attribute.System;
+            return items;
         }
     }
     public readonly struct TypeId {
@@ -58,9 +74,11 @@ namespace Weesals.ECS {
 
         public new static readonly bool IsSparse;
         public new static readonly bool IsNoClone;
+        public static readonly Type[]? RequiredSystems;
         static ComponentType() {
             IsSparse = ComponentType.GetIsFloating(typeof(Component));
             IsNoClone = ComponentType.GetIsNoClone(typeof(Component));
+            //RequiredSystems = ComponentType.GetRequiredSystems(typeof(Component));
         }
         static ComponentFlags GetFlags() {
             return ComponentFlags.None

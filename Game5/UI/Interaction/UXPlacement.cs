@@ -12,9 +12,10 @@ using Weesals.Utility;
 
 namespace Game5.UI.Interaction {
     public struct Placement {
-        public GenericTarget Container;
+        public ItemReference Container;
         public Int2 Position;
         public short Orientation;
+        public static readonly Placement Default = new() { Orientation = short.MinValue, };
     }
     public class UXPlacement : IInteraction, IBeginInteractionHandler, IPointerMoveHandler, IPointerClickHandler {
         public readonly UIPlay PlayUI;
@@ -26,7 +27,7 @@ namespace Game5.UI.Interaction {
         }
         public class Instance {
             public PrototypeData Prototype;
-            public Placement Placement;
+            public Placement Placement = Placement.Default;
             public Renderable Visuals;
         }
 
@@ -53,13 +54,15 @@ namespace Game5.UI.Interaction {
         public Entity PerformPlacement() {
             if (instance != null && instance.Placement.Container.IsValid) {
                 var mover = Play.Simulation.PrefabRegistry.BeginInstantiate(Play.Simulation.World, instance.Prototype.Prefab);
-                var target = new GenericTarget(Play.Simulation.EntityProxy, GenericTarget.PackEntity(mover.Entity));
+                var target = Play.Simulation.EntityProxy.MakeHandle(mover.Entity);
                 var tform = Play.World.TryGetComponentRef<ECTransform>(mover.Entity);
                 if (tform.HasValue) {
                     tform.Value.Position = instance.Placement.Position;
                     tform.Value.Orientation = instance.Placement.Orientation;
                 } else {
+                    var rot = MathF.PI * instance.Placement.Orientation / (float)short.MinValue;
                     target.SetWorldPosition(SimulationWorld.SimulationToWorld(instance.Placement.Position));
+                    target.SetWorldRotation(Quaternion.CreateFromAxisAngle(Vector3.UnitY, rot));
                 }
                 mover.Commit();
                 return mover.Entity;
@@ -96,12 +99,15 @@ namespace Game5.UI.Interaction {
             var mray = PlayUI.Play.Camera.ViewportToRay(m);
             instance.Placement.Position =
                 SimulationWorld.WorldToSimulation(mray.ProjectTo(new Plane(Vector3.UnitY, 0f))).XZ;
-            var tform = Matrix4x4.CreateTranslation(
-                SimulationWorld.SimulationToWorld(instance.Placement.Position));
+            var rot = MathF.PI * instance.Placement.Orientation / (float)short.MinValue;
+            var tform =
+                Matrix4x4.CreateFromQuaternion(Quaternion.CreateFromAxisAngle(Vector3.UnitY, rot))*
+                Matrix4x4.CreateTranslation(SimulationWorld.SimulationToWorld(instance.Placement.Position));
             foreach (var meshInstance in instance.Visuals.Instances) {
                 Play.Scene.SetTransform(meshInstance, tform);
+                Play.Scene.SetHighlight(meshInstance, new Color(64, 64, 64, 64));
             }
-            instance.Placement.Container = new GenericTarget(Play.World);
+            instance.Placement.Container = new ItemReference(Play.World);
         }
         public void OnPointerClick(PointerEvent events) {
             if (events.HasButton(1)) {

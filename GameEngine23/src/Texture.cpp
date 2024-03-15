@@ -28,12 +28,15 @@ void Texture::ResizeData(Sizing oldSize) {
 }
 
 void Texture::SetSize(Int2 size) {
+	SetSize3D(Int3(size, 1));
+}
+void Texture::SetSize3D(Int3 size) {
 	if (mSize.mSize == size) return;
 	auto oldSize = mSize;
 	mSize.mSize = size;
 	ResizeData(oldSize);
 }
-Int2 Texture::GetSize() const {
+Int3 Texture::GetSize() const {
 	return mSize.mSize;
 }
 
@@ -81,7 +84,7 @@ std::span<uint8_t> Texture::GetRawData(int mip, int slice) {
 	}
 	{
 		auto mipSize = GetMipResolution(mSize.mSize, mFormat, mip);
-		imgSize = GetRawImageSize(mSize.mSize, mFormat);
+		imgSize = GetRawImageSize(mipSize, mFormat);
 	}
 	return std::span<uint8_t>(mData.begin() + imgOffset, imgSize);
 }
@@ -89,7 +92,7 @@ std::span<const uint8_t> Texture::GetData(int mip, int slice) const {
 	return const_cast<Texture*>(this)->GetRawData(mip, slice);
 }
 
-int Texture::GetSliceSize(Int2 res, int mips, BufferFormat fmt) {
+int Texture::GetSliceSize(Int3 res, int mips, BufferFormat fmt) {
 	uint32_t sliceSize = GetRawImageSize(res, fmt);
 	for (int m = 0; m < mips; ++m) {
 		auto mipSize = GetMipResolution(res, fmt, m);
@@ -97,13 +100,21 @@ int Texture::GetSliceSize(Int2 res, int mips, BufferFormat fmt) {
 	}
 	return sliceSize;
 }
-Int2 Texture::GetMipResolution(Int2 res, BufferFormat fmt, int mip) {
-	return Int2(
+Int3 Texture::GetMipResolution(Int3 res, BufferFormat fmt, int mip) {
+	return Int3(
 		std::max(1, res.x >> mip),
-		std::max(1, res.y >> mip)
+		std::max(1, res.y >> mip),
+		std::max(1, res.z >> mip)
 	);
 }
-uint32_t Texture::GetRawImageSize(Int2 res, BufferFormat fmt) {
-	// TODO: Support compressed formats
-	return res.x * res.y * BufferFormatType::GetType(fmt).GetByteSize();
+uint32_t Texture::GetRawImageSize(Int3 res, BufferFormat fmt) {
+	auto meta = BufferFormatType::GetType(fmt);
+	if (meta.size == BufferFormatType::Sizes::Other) {
+		int bitSize = BufferFormatType::GetBitSize(fmt);
+		int blockSize = BufferFormatType::GetCompressedBlockSize(fmt);
+		int blocksX = (res.x + blockSize - 1) / blockSize;
+		int blocksY = (res.y + blockSize - 1) / blockSize;
+		return blocksX * blocksY * bitSize * (blockSize * blockSize) / 8 * res.z;
+	}
+	return res.x * res.y * res.z * meta.GetByteSize();
 }

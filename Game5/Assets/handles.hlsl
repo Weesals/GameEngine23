@@ -28,13 +28,15 @@ struct PSInput
 PSInput VSLine(VSInput input)
 {
     PSInput result;
+    
+    float thickness = length(input.tangent);
 
     float3 worldPos = input.position.xyz;
     result.position = mul(ViewProjection, float4(worldPos, 1.0));
-    float4 clipPos2 = mul(ViewProjection, float4(worldPos + input.tangent * 0.01, 1.0));
+    float4 clipPos2 = mul(ViewProjection, float4(worldPos + input.tangent * (0.01 / thickness), 1.0));
     float2 clipTangent = normalize(clipPos2.xy / clipPos2.w - result.position.xy / result.position.w);
     clipTangent = float2(clipTangent.y, -clipTangent.x);
-    result.position.xy += clipTangent * (4.0 * (input.uv.x - 0.5) * result.position.w / Resolution);
+    result.position.xy += clipTangent * (thickness * 4.0 * (input.uv.x - 0.5) * result.position.w / Resolution);
     result.uv = input.uv;
     result.color = input.color;
         

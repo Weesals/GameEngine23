@@ -3,6 +3,7 @@ using System.Linq;
 using System.Collections;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 
 namespace Weesals.ECS {
 
@@ -94,10 +95,15 @@ namespace Weesals.ECS {
             public uint Version;
             public override string ToString() { return $"Archetype {ArchetypeId} Row {Row}"; }
         }
+        public struct EntityMeta {
+            public string Name;
+        }
 
-        public StageContext Context = new();
+        public readonly StageContext Context;
 
-        private List<EntityData> entities = new();
+        private EntityData[] entities = Array.Empty<EntityData>();
+        private EntityMeta[] entityMeta = Array.Empty<EntityMeta>();
+        private int entityCount = 0;
         private List<Archetype> archetypes = new();
         private LambdaCache lambdaCache = new();
         //private List<SystemLambda.Cache> lambdaCaches = new();
@@ -110,23 +116,35 @@ namespace Weesals.ECS {
         // of existing instances
         private Dictionary<BitField, ArchetypeId> archetypesByTypes = new();
         private Dictionary<Query.Key, QueryId> queriesByTypes = new();
+        private DynamicBitField2 seenComponents = new();
 
         private Archetype zeroArchetype;
         private int deletedEntity = -1;
 
-        public Stage() {
+        public Stage(StageContext context) {
+            Context = context;
             var entityTypeId = Context.RequireComponentTypeId<Entity>();
             Debug.Assert(entityTypeId.Packed == -1, "Entity must be invalid type id");
             zeroArchetype = new(new ArchetypeId(0), Context, default);
             archetypes.Add(zeroArchetype);
             archetypesByTypes.Add(default, new ArchetypeId(0));
-            entities.Add(default);
+            var entityId = AllocateEntity();
+            entities[entityId] = default;
+            entityMeta[entityId] = new EntityMeta() { Name = "None", };
+        }
+        private uint AllocateEntity() {
+            if (entityCount >= entities.Length) {
+                int capacity = (int)BitOperations.RoundUpToPowerOf2((uint)entityCount + 32);
+                Array.Resize(ref entities, capacity);
+                Array.Resize(ref entityMeta, capacity);
+            }
+            return (uint)(entityCount++);
         }
 
-        public Entity CreateEntity() {
+        public Entity CreateEntity(string name = "unknown") {
             lock (entities) {
                 var entity = new Entity() {
-                    Index = (uint)entities.Count,
+                    Index = 0,
                     Version = 1,
                 };
                 if (deletedEntity != -1) {
@@ -137,11 +155,15 @@ namespace Weesals.ECS {
                     entityData.Address = EntityAddress.Invalid;
                     entities[(int)entity.Index] = entityData;
                 } else {
-                    entities.Add(new EntityData() {
+                    entity.Index = AllocateEntity();
+                    entities[entity.Index] = new EntityData() {
                         Address = EntityAddress.Invalid,
                         Version = entity.Version,
-                    });
+                    };
                 }
+                entityMeta[entity.Index] = new EntityMeta() {
+                    Name = name,
+                };
                 return entity;
             }
         }
@@ -157,6 +179,9 @@ namespace Weesals.ECS {
                 entities[(int)entity.Index] = entityData;
                 deletedEntity = (int)entity.Index;
             }
+        }
+        public EntityMeta GetEntityMeta(Entity entity) {
+            return entityMeta[entity.Index];
         }
 
         public EntityAddress RequireEntityAddress(Entity entity) {
@@ -361,7 +386,7 @@ namespace Weesals.ECS {
                 Stage.entities[(int)entity.Index] = newData;
                 if (newData.Row >= 0) {
                     Stage.archetypes[From.ArchetypeId].CopyRowTo(From.Row,
-                        Stage.archetypes[newData.ArchetypeId], newData.Row);
+                        Stage.archetypes[newData.ArchetypeId], newData.Row, Stage.Context);
                 }
             }
             public ref TComponent GetComponentRef<TComponent>() {
@@ -732,12 +757,22 @@ namespace Weesals.ECS {
     }
 
     public class World {
-        public Stage Stage = new();
-        public StageContext Context => Stage.Context;
+        public readonly StageContext Context = new();
+        public readonly Stage Stage;
 
         private List<SystemBase> systems = new();
 
+        public World() {
+            Stage = new(Context);
+            Context.OnTypeIdCreated += Context_OnTypeIdCreated;
+        }
+
+        private void Context_OnTypeIdCreated(TypeId typeId) {
+            
+        }
+
         public Entity CreateEntity() { return Stage.CreateEntity(); }
+        public Entity CreateEntity(string name) { return Stage.CreateEntity(name); }
         public Entity CreateEntity(Entity prefab) {
             var instance = Stage.CreateEntity();
             var prefabAddr = Stage.RequireEntityAddress(prefab);
@@ -753,15 +788,31 @@ namespace Weesals.ECS {
         }
         public bool IsValid(Entity entity) { return Stage.IsValid(entity); }
         public void DeleteEntity(Entity entity) { Stage.DeleteEntity(entity); }
+        public string GetEntityName(Entity entity) {
+            return Stage.GetEntityMeta(entity).Name;
+        }
 
         public Query.Builder BeginQuery() {
             return new Query.Builder(Stage);
         }
 
+        private void PrimeComponent<T>() {
+            var systemTypes = ComponentType<T>.RequiredSystems;
+            if (systemTypes == null) return;
+            foreach (var type in systemTypes) {
+                bool found = false;
+                foreach (var system in systems) {
+                    if (system.GetType() == type) { found = true; break; }
+                }
+                if (!found) systems.Add((SystemBase)Activator.CreateInstance(type));
+            }
+        }
         public ref T AddComponent<T>(Entity entity) {
+            PrimeComponent<T>();
             return ref Stage.AddComponent<T>(entity);
         }
         public ref T AddComponent<T>(Entity entity, T value) {
+            PrimeComponent<T>();
             ref var component = ref Stage.AddComponent<T>(entity);
             component = value;
             return ref component;

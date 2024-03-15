@@ -13,6 +13,7 @@ struct Getter {
 };
 void CommandBuffer::DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config, const char* name)
 {
+#if false
     mesh->CreateMeshLayout(tBindingLayout);
     const Material* materials[]{ material };
 
@@ -42,6 +43,7 @@ void CommandBuffer::DrawMesh(const Mesh* mesh, const Material* material, const D
         std::span<const void*>(resources, i),
         config, material->GetInstanceCount(), name);
     tBindingLayout.clear();
+#endif
 }
 
 

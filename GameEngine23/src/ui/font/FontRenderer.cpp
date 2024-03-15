@@ -146,7 +146,7 @@ public:
             FT_Set_Pixel_Sizes(mFace, 0, mLineHeight >> m);
             auto mipDataRaw = mTexture->GetData(m, 0);
             std::span<ColorB4> mipDataPX((ColorB4*)mipDataRaw.data(), (int)mipDataRaw.size() / 4);
-            Int2 mipSize = Texture::GetMipResolution(mTexture->GetSize(), mTexture->GetBufferFormat(), m);
+            Int2 mipSize = Texture::GetMipResolution(mTexture->GetSize(), mTexture->GetBufferFormat(), m).xy();
             // Generate mips
             for (auto& entry : entries) {
                 auto ci1 = FT_Get_Char_Index(mFace, entry.mGlyph.mGlyph);
@@ -170,17 +170,17 @@ public:
         }
         FT_Done_Face(mFace);
 
-        for (int m = 0; m < std::min(1, mTexture->GetMipCount()); ++m) {
+        /*for (int m = 0; m < std::min(1, mTexture->GetMipCount()); ++m) {
             auto mipDataRaw = mTexture->GetData(m, 0);
             std::span<ColorB4> mipDataPX((ColorB4*)mipDataRaw.data(), (int)mipDataRaw.size() / 4);
-            Int2 mipSize = Texture::GetMipResolution(mTexture->GetSize(), mTexture->GetBufferFormat(), m);
+            Int2 mipSize = Texture::GetMipResolution(mTexture->GetSize(), mTexture->GetBufferFormat(), m).xy();
             // Generate distance field
             for (int t = 0; t < 1; ++t) {
                 DistanceFieldGenerator dfgen;
                 dfgen.Generate(mipDataPX, mipSize);
                 dfgen.ApplyDistances(mipDataPX, mipSize, 7.0f / (1 << m));
             }
-        }
+        }*/
         mTexture->MarkChanged();
 
         std::sort(entries.begin(), entries.end(), [](auto& g1, auto& g2) {

@@ -230,7 +230,7 @@ void Material::ResolveResources(CommandBuffer& cmdBuffer, std::vector<const void
 	// Get constant buffer data for this batch
 	for (auto* cb : pipeline->mConstantBuffers) {
 		uint8_t tmpData[512];
-		for (auto& val : cb->mValues) {
+		for (auto& val : cb->GetValues()) {
 			auto data = GetUniformBinaryData(val.mName);
 			std::memcpy(tmpData + val.mOffset, data.data(), data.size());
 		}

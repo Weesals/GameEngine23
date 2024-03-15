@@ -57,6 +57,10 @@ namespace Weesals.ECS {
             }
             return (SparseColumn<TComponent>)columns[typeToColumn[typeId]];
         }
+        public bool GetHasComponent<TComponent>(int entity) {
+            var typeId = Context.RequireComponentTypeId<TComponent>();
+            return GetHasComponent(typeId, entity);
+        }
         public bool GetHasComponent(TypeId typeId, int entity) {
             Debug.Assert(typeId.IsBasic, "Prefabs cannot have sparse components");
             if (typeId >= typeToColumn.Length) return false;
@@ -138,7 +142,7 @@ namespace Weesals.ECS {
 
         public Stage.EntityMover BeginInstantiate(World world, EntityPrefab prefab) {
             var prefabData = World.GetComponent<Prefab>(prefab.Index);
-            var entity = world.Stage.CreateEntity();
+            var entity = world.Stage.CreateEntity(prefabData.Name);
             var archetypeId = world.Stage.RequireArchetypeIndex(prefabData.TypeBitField);
             using var mover = world.Stage.BeginMoveEntity(entity, archetypeId);
             //var archetype = world.Stage.GetArchetype(archetypeId);

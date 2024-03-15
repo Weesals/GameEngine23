@@ -6,7 +6,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Weesals.Engine {
+namespace Weesals.Editor {
     public class PropertyPath {
         public object Owner;
 
@@ -29,6 +29,10 @@ namespace Weesals.Engine {
         public void DefrenceField(FieldInfo field) {
             Array.Resize(ref Fields, Fields.Length + 1);
             Fields[^1] = field;
+        }
+        public void DefrenceProperty(PropertyInfo property) {
+            Debug.Assert(Property == null);
+            Property = property;
         }
 
         /*public void CreateFromPath(string path) {
