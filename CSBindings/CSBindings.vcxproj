@@ -143,6 +143,7 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="src\CSBindings.cpp" />
+    <ClCompile Include="src\Tracy.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\GameEngine23\GameEngine23.vcxproj">

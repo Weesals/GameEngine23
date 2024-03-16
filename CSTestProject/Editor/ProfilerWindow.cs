@@ -21,8 +21,32 @@ namespace Weesals.Editor {
             private Vector2 offset;
             public readonly ProfilerWindow Window;
             private List<string> threads = new();
+            private List<int> threadDepths = new();
             public ProfilerContent(ProfilerWindow window) {
                 Window = window;
+            }
+            private float TickToPX(long tick) {
+                return 2f * tick / TimeSpan.TicksPerMillisecond - offset.X;
+            }
+            private long PXToTick(float px) {
+                return (long)((px + offset.X) * TimeSpan.TicksPerMillisecond / 2f);
+            }
+            private int GetSnapshotAt(long tick) {
+                var snapshots = ProfilerMarker.AllSnapshots;
+                int min = 0, max = snapshots.Count - 1;
+                while (min < max) {
+                    int mid = (min + max) / 2;
+                    if (tick <= snapshots[mid].BeginTick) max = mid;
+                    else min = mid + 1;
+                }
+                return min;
+            }
+            private int SkipToDepth0Tick(long tick, int index) {
+                var snapshots = ProfilerMarker.AllSnapshots;
+                for (; index < snapshots.Count; ++index)
+                    if (snapshots[index].ThreadDepth == 0 &&
+                        snapshots[index].BeginTick <= tick) break;
+                return index;
             }
             public override void Compose(ref CanvasCompositor.Context composer) {
                 const float ThreadHeight = 20f;
@@ -32,13 +56,25 @@ namespace Weesals.Editor {
                 var windowSize = Window.Size;
                 var snapshots = ProfilerMarker.AllSnapshots;
                 var bgSprite = Resources.TryLoadSprite("PanelBG");
-                foreach (var snapshot in snapshots) {
+                var minSnapshot = GetSnapshotAt(PXToTick(0f));
+                var maxSnapshot = GetSnapshotAt(PXToTick(windowSize.X));
+                maxSnapshot = SkipToDepth0Tick(PXToTick(windowSize.X), maxSnapshot);
+                if (maxSnapshot < snapshots.Count) ++maxSnapshot;
+                for (int s = minSnapshot; s < maxSnapshot; s++) {
+                    var snapshot = snapshots[s];
                     if (threads.Contains(snapshot.ThreadName)) continue;
                     threads.Add(snapshot.ThreadName);
+                    threadDepths.Add(0);
                 }
+                for (int i = 0; i < threads.Count; i++) threadDepths[i] = 0;
+                for (int s = minSnapshot; s < maxSnapshot; s++) {
+                    var snapshot = snapshots[s];
+                    var threadId = threads.IndexOf(snapshot.ThreadName);
+                    threadDepths[threadId] = Math.Max(threadDepths[threadId], snapshot.ThreadDepth);
+                }
+                var threadOffset = new Vector2(0f, offset.Y);
                 for (int i = 0; i <= threads.Count; i++) {
                     var img = composer.CreateTransient<CanvasImage>(Canvas);
-                    var threadOffset = new Vector2(0f, offset.Y);
                     var layout = CanvasLayout.MakeBox(
                         new Vector2(windowSize.X, ThreadSeparation),
                         new Vector2(0f, i * RowHeight) - threadOffset
@@ -48,15 +84,16 @@ namespace Weesals.Editor {
                         img.UpdateLayout(Canvas, layout);
                     img.Append(ref composer);
                 }
-                foreach (var snapshot in snapshots) {
+                for (int s = minSnapshot; s < maxSnapshot; s++) {
+                    var snapshot = snapshots[s];
                     var threadId = threads.IndexOf(snapshot.ThreadName);
-                    var sx = 5f * snapshot.BeginTick / TimeSpan.TicksPerMillisecond;
-                    var ex = 5f * snapshot.EndTick / TimeSpan.TicksPerMillisecond;
+                    var sx = TickToPX(snapshot.BeginTick);
+                    var ex = TickToPX(snapshot.EndTick) + 1;
                     var img = composer.CreateTransient<CanvasImage>(Canvas);
                     var txt = composer.CreateTransient<CanvasText>(Canvas);
                     var layout = CanvasLayout.MakeBox(
                         new Vector2(ex - sx, ThreadHeight),
-                        new Vector2(sx, threadId * RowHeight + ThreadSeparation) - offset
+                        new Vector2(sx, threadId * RowHeight + ThreadSeparation) - threadOffset
                     );
                     layout.Position += mLayoutCache.Position;
                     if (img.HasDirtyFlags) {

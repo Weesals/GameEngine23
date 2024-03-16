@@ -70,6 +70,8 @@ namespace Game5.Game {
 
     public class Play : IDisposable {
 
+        private static ProfilerMarker ProfileMarker_PlayUpdate = new ProfilerMarker("Play.Update");
+
         LandscapeData landscape;
         LandscapeRenderer landscapeRenderer;
 
@@ -192,7 +194,8 @@ namespace Game5.Game {
         }
 
         public void Update(float dt) {
-            using var marker = new ProfilerMarker("Play.Update").Auto();
+            Tracy.FrameMarkStart(0);
+            using var marker = ProfileMarker_PlayUpdate.Auto();
             time += dt;
             if (dt > 0.02f) dt = 0.02f;
 
@@ -229,7 +232,8 @@ namespace Game5.Game {
             foreach (var accessor in World.QueryAll<CAnimation, ECActionMove>()) {
                 accessor.Component1Ref.Animation = runAnim.Animations[0];
             }
-       }
+            Tracy.FrameMarkEnd(0);
+        }
 
         [EditorButton]
         public void ToggleNavDebug() {

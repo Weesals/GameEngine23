@@ -241,7 +241,6 @@
     <ClCompile Include="src\Texture.cpp" />
     <ClCompile Include="src\TextureCompression.cpp" />
     <ClCompile Include="src\ui\font\FontRenderer.cpp" />
-    <ClCompile Include="src\ui\sprite\Sprite.cpp" />
     <ClCompile Include="src\VulkanShader.cpp" />
     <ClCompile Include="src\WindowWin32.cpp" />
   </ItemGroup>

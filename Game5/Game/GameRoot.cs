@@ -8,12 +8,18 @@ using System.Threading.Tasks;
 using Weesals.ECS;
 using Weesals.Editor;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
 using Weesals.Utility;
 
 namespace Game5.Game {
     public class GameRoot {
+
+        private static ProfilerMarker ProfileMarker_Update = new("Update");
+        private static ProfilerMarker ProfileMarker_PreRender = new("PreRender");
+        private static ProfilerMarker ProfileMarker_Render = new("Render");
+        private static ProfilerMarker ProfileMarker_ResetFrame = new("Reset Frame");
 
         public readonly Scene Scene;
 
@@ -50,9 +56,15 @@ namespace Game5.Game {
         public Play Play;
 
         public GameRoot() {
-            Scene = new();
-            scenePasses = new(Scene);
-            EventSystem = new(Canvas);
+            using (var passesMarker = new ProfilerMarker("Create Scene").Auto()) {
+                Scene = new();
+            }
+            using (var passesMarker = new ProfilerMarker("Create SceneManager").Auto()) {
+                scenePasses = new(Scene);
+            }
+            using (var passesMarker = new ProfilerMarker("Create EventSystem").Auto()) {
+                EventSystem = new(Canvas);
+            }
 
             SetupPasses();
         }
@@ -62,70 +74,71 @@ namespace Game5.Game {
         }
 
         private void SetupPasses() {
-            shadowPass = new ShadowPass(Scene) {
-                OnPreRender = (graphics) => {
-                    RenderBasePass(graphics, shadowPass);
-                },
-                OnPostRender = () => {
-                    basePass.UpdateShadowParameters(shadowPass);
-                    transPass.UpdateShadowParameters(shadowPass);
-                    fogPass?.UpdateShadowParameters(shadowPass);
-                    skyboxPass?.UpdateShadowParameters(shadowPass);
-                }
-            };
-            clearPass = new DeferredPass("Clear",
-                default,
-                new[] {
-                    new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
-                    new RenderPass.PassOutput("SceneColor"),
-                    new RenderPass.PassOutput("SceneVelId"),
-                },
-                (CSGraphics graphics, ref RenderPass.Context context) => {
-                    graphics.SetViewport(context.Viewport);
-                    graphics.Clear();
-                });
-            skyboxPass = new() { ScenePasses = scenePasses };
-            basePass = new BasePass(Scene) {
-                OnPreRender = (graphics) => {
-                    RenderBasePass(graphics, basePass);
-                },
-            };
-            transPass = new TransparentPass(Scene) {
-                OnPreRender = (graphics) => {
-                    RenderBasePass(graphics, transPass);
-                }
-            };
-            fogPass = new() { ScenePasses = scenePasses, };
-            fogPass?.OverrideMaterial.InheritProperties(Scene.RootMaterial);
-            highZPass = new();
-            aoPass = new();
-            bloomPass = new();
-            temporalJitter = new TemporalJitter("TJitter") {
-                ScenePasses = scenePasses,
-            };
-            basePass.UpdateShadowParameters(shadowPass);
-            transPass.UpdateShadowParameters(shadowPass);
-            fogPass?.UpdateShadowParameters(shadowPass);
-            skyboxPass?.UpdateShadowParameters(shadowPass);
-            postProcessPass = new();
-            canvasPass = new DeferredPass("Canvas",
-                new[] { new RenderPass.PassInput("SceneColor", false) },
-                new[] { new RenderPass.PassOutput("SceneColor", 0), },
-                (CSGraphics graphics, ref RenderPass.Context context) => {
-                    Canvas.Render(graphics);
-                });
-            finalPass = new("Final",
-                new[] { new RenderPass.PassInput("SceneColor", false) },
-                new[] { new RenderPass.PassOutput("SceneColor", 0), },
-                (CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) => {
-                    context.OverwriteOutput(context.Outputs[0], graphics.GetSurface().GetBackBuffer());
-                    return true;
-                });
+            using (var passesMarker = new ProfilerMarker("Create Passes").Auto()) {
+                shadowPass = new ShadowPass(Scene) {
+                    OnPreRender = (graphics) => {
+                        RenderBasePass(graphics, shadowPass);
+                    },
+                    OnPostRender = () => {
+                        basePass.UpdateShadowParameters(shadowPass);
+                        transPass.UpdateShadowParameters(shadowPass);
+                        fogPass?.UpdateShadowParameters(shadowPass);
+                        skyboxPass?.UpdateShadowParameters(shadowPass);
+                    }
+                };
+                clearPass = new DeferredPass("Clear",
+                    default,
+                    new[] {
+                        new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
+                        new RenderPass.PassOutput("SceneColor"),
+                        new RenderPass.PassOutput("SceneVelId"),
+                    },
+                    (CSGraphics graphics, ref RenderPass.Context context) => {
+                        graphics.SetViewport(context.Viewport);
+                        graphics.Clear();
+                    });
+                skyboxPass = new() { ScenePasses = scenePasses };
+                basePass = new BasePass(Scene) {
+                    OnPreRender = (graphics) => {
+                        RenderBasePass(graphics, basePass);
+                    },
+                };
+                transPass = new TransparentPass(Scene) {
+                    OnPreRender = (graphics) => {
+                        RenderBasePass(graphics, transPass);
+                    }
+                };
+                fogPass = new() { ScenePasses = scenePasses, };
+                fogPass?.OverrideMaterial.InheritProperties(Scene.RootMaterial);
+                highZPass = new();
+                aoPass = new();
+                bloomPass = new();
+                temporalJitter = new TemporalJitter("TJitter") {
+                    ScenePasses = scenePasses,
+                };
+                basePass.UpdateShadowParameters(shadowPass);
+                transPass.UpdateShadowParameters(shadowPass);
+                fogPass?.UpdateShadowParameters(shadowPass);
+                skyboxPass?.UpdateShadowParameters(shadowPass);
+                postProcessPass = new();
+                canvasPass = new DeferredPass("Canvas",
+                    new[] { new RenderPass.PassInput("SceneColor", false) },
+                    new[] { new RenderPass.PassOutput("SceneColor", 0), },
+                    (CSGraphics graphics, ref RenderPass.Context context) => {
+                        Canvas.Render(graphics);
+                    });
+                finalPass = new("Final",
+                    new[] { new RenderPass.PassInput("SceneColor", false) },
+                    new[] { new RenderPass.PassOutput("SceneColor", 0), },
+                    (CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) => {
+                        context.OverwriteOutput(context.Outputs[0], graphics.GetSurface().GetBackBuffer());
+                        return true;
+                    });
 
-            scenePasses.AddPass(shadowPass);
-            scenePasses.AddPass(basePass);
-            scenePasses.AddPass(transPass);
-
+                scenePasses.AddPass(shadowPass);
+                scenePasses.AddPass(basePass);
+                scenePasses.AddPass(transPass);
+            }
             Play = new Play(this);
         }
 
@@ -138,6 +151,7 @@ namespace Game5.Game {
         }
 
         public void Update(float dt) {
+            using var updateMarker = ProfileMarker_Update.Auto();
             UnityEngine.Time.Update(dt);
 
             EventSystem.Update(dt);
@@ -153,6 +167,7 @@ namespace Game5.Game {
         }
 
         public void PreRender() {
+            using var updateMarker = ProfileMarker_PreRender.Auto();
             var Camera = Play.Camera;
             if (scenePasses.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) {
                 RenderRevision++;
@@ -173,6 +188,7 @@ namespace Game5.Game {
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics, float dt) {
+            using var updateMarker = ProfileMarker_Render.Auto();
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
             Play.UpdateParticles(graphics, dt);
@@ -216,6 +232,7 @@ namespace Game5.Game {
             Scene.CommitMotion();
         }
         public void ResetFrame() {
+            using var updateMarker = ProfileMarker_ResetFrame.Auto();
             // Clear dynamic meshes (probably added in Update() )
             ScenePasses.ClearDynamicDraws();
 

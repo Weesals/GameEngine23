@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Profiling;
 using Weesals.Geometry;
 using Weesals.Utility;
 
@@ -28,6 +29,10 @@ namespace Weesals.Engine {
         bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context);
     }
     public class RenderPass {
+
+        private static ProfilerMarker ProfileMarker_Bind = new("Bind");
+        private static ProfilerMarker ProfileMarker_DrawQuad = new("DrawQuad");
+
         protected static Material blitMaterial;
         protected static Mesh quadMesh;
 
@@ -75,6 +80,7 @@ namespace Weesals.Engine {
         }
 
         public readonly string Name;
+        public readonly ProfilerMarker RenderMarker;
         protected PassInput[] Inputs { get; set; } = Array.Empty<PassInput>();
         // First item is always Depth
         protected PassOutput[] Outputs { get; set; } = Array.Empty<PassOutput>();
@@ -86,6 +92,7 @@ namespace Weesals.Engine {
 
         public RenderPass(string name) {
             Name = name;
+            RenderMarker = new ProfilerMarker("Pass_" + Name);
             OverrideMaterial = new();
             OverrideMaterial.SetValue("View", Matrix4x4.Identity);
             OverrideMaterial.SetValue("Projection", Matrix4x4.Identity);
@@ -146,6 +153,7 @@ namespace Weesals.Engine {
             public Context(Target depth, Span<Target> targets) { ResolvedDepth = depth; ResolvedTargets = targets; }
         }
         protected void BindRenderTargets(CSGraphics graphics, ref Context context) {
+            using var marker = ProfileMarker_Bind.Auto();
             using var colorTargets = new PooledList<CSRenderTarget>();
             foreach (var item in context.ResolvedTargets) colorTargets.Add(item.Texture);
             graphics.SetRenderTargets(colorTargets, context.ResolvedDepth.Texture);
@@ -155,6 +163,7 @@ namespace Weesals.Engine {
             BindRenderTargets(graphics, ref context);
         }
         unsafe protected void DrawQuad(CSGraphics graphics, CSTexture texture, Material material = null) {
+            using var marker = ProfileMarker_DrawQuad.Auto();
             if (material == null) {
                 if (blitMaterial == null) {
                     blitMaterial = new Material("./Assets/blit.hlsl");
@@ -193,6 +202,8 @@ namespace Weesals.Engine {
         public override string ToString() { return Name; }
     }
     public class ScenePass : RenderPass {
+        private static ProfilerMarker ProfileMarker_PreRender = new("PreRender");
+
         public readonly RenderQueue RenderQueue;
         public readonly RetainedRenderer RetainedRenderer;
         public Scene Scene => RetainedRenderer.Scene;
@@ -240,7 +251,9 @@ namespace Weesals.Engine {
         }
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
             OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
-            OnPreRender?.Invoke(graphics);
+            using (var marker = ProfileMarker_PreRender.Auto()) {
+                OnPreRender?.Invoke(graphics);
+            }
             RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
             Scene.SubmitToGPU(graphics);
             RenderQueue.Render(graphics);

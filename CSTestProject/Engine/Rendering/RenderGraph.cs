@@ -583,7 +583,9 @@ namespace Weesals.Engine {
                     context.Viewport = selfPassData.Viewport;
                     if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, selfPassData.OutputSize);
                     if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, Graphics.GetSurface().GetResolution());
-                    selfPassData.RenderPass.Render(Graphics, ref context);
+                    using (var markerRender = selfPassData.RenderPass.RenderMarker.Auto()) {
+                        selfPassData.RenderPass.Render(Graphics, ref context);
+                    }
                     targetsSpan.Clear();
                 }
                 // Clean up temporary RTs

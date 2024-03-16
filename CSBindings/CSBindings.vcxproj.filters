@@ -3,6 +3,7 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="src\CSBindings.cpp" />
+    <ClCompile Include="src\Tracy.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\CSBindings.h" />

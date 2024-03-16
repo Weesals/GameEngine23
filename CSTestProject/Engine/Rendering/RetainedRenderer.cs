@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Profiling;
 using Weesals.Geometry;
 using Weesals.Utility;
 
@@ -138,6 +139,8 @@ namespace Weesals.Engine {
         }
     }
     public class Scene {
+        private static ProfilerMarker ProfileMarker_SubmitToGPU = new("SubmitToGPU");
+
         const uint DefaultListenerMask = 1;
         public struct Instance {
             public RangeInt Data;
@@ -278,6 +281,7 @@ namespace Weesals.Engine {
 
         public void SubmitToGPU(CSGraphics graphics) {
             if (gpuSceneDirty.Ranges.Count == 0) return;
+            using var marker = ProfileMarker_SubmitToGPU.Auto();
             const int MaxRanges = 50;
             if (gpuSceneDirty.Ranges.Count > MaxRanges) {
                 using var items = new PooledList<ValueTuple<int, int>>();
@@ -329,6 +333,7 @@ namespace Weesals.Engine {
     }
 
     unsafe public class RenderQueue {
+        private static ProfilerMarker ProfileMarker_SubmitDraw = new("SubmitDraw");
         struct DrawBatch {
             public string Name;
             public CSPipeline PipelineLayout;
@@ -408,6 +413,7 @@ namespace Weesals.Engine {
         }
 
         public void Render(CSGraphics graphics) {
+            using var marker = ProfileMarker_SubmitDraw.Auto();
             if (instanceDirty.Ranges.Count > 0) {
                 graphics.CopyBufferData(InstanceBufferLayout, instanceDirty.RangesAsSpan());
                 instanceDirty.Clear();
@@ -431,6 +437,12 @@ namespace Weesals.Engine {
     }
 
     public class RetainedRenderer : IDisposable {
+
+        private static ProfilerMarker ProfileMarker_SubmitToRQ = new ProfilerMarker("Submit To RQ");
+        private static ProfilerMarker ProfileMarker_ComputeHull = new ProfilerMarker("Hull");
+        private static ProfilerMarker ProfileMarker_FrustumCull = new ProfilerMarker("FrustumCull");
+        private static ProfilerMarker ProfileMarker_ComputeResources = new ProfilerMarker("ComputeResources");
+
         public struct StateKey : IEquatable<StateKey>, IComparable<StateKey> {
             public Mesh Mesh;
             public int MaterialSet;
@@ -553,11 +565,13 @@ namespace Weesals.Engine {
 
         // Generate a drawlist for rendering currently visible objects
         unsafe public void SubmitToRenderQueue(CSGraphics graphics, RenderQueue queue, in Frustum frustum) {
+            using var marker = ProfileMarker_SubmitToRQ.Auto();
             Scene.ClearListener(changeListenerId);
             bool change = false;
 
             ulong visMask;
             {       // Generate a mask representing the cells intersecting the frustum
+                using var hullMarker = ProfileMarker_ComputeHull.Auto();
                 var activeRange = Scene.GetActiveBounds();
                 hull.FromFrustum(frustum);
                 hull.Slice(activeRange);
@@ -576,17 +590,19 @@ namespace Weesals.Engine {
                 var bbox = mesh.BoundingBox;
                 var bboxCtr = bbox.Centre;
                 var bboxExt = bbox.Extents;
-                foreach (var instance in batch.Instances) {
-                    if ((Scene.GetInstanceVisibilityMask(instance) & visMask) == 0) continue;
-                    var data = Scene.GetInstanceData(instance);
-                    var matrix = *(Matrix4x4*)(data.Data);
-                    if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
-                    var id = instance.GetInstanceId();
-                    change |= queue.AppendInstance((uint)id);
-                    Scene.MarkListener(changeListenerId, id);
+                using (var frustumMarker = ProfileMarker_FrustumCull.Auto()) {
+                    foreach (var instance in batch.Instances) {
+                        if ((Scene.GetInstanceVisibilityMask(instance) & visMask) == 0) continue;
+                        var data = Scene.GetInstanceData(instance);
+                        var matrix = *(Matrix4x4*)(data.Data);
+                        if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
+                        var id = instance.GetInstanceId();
+                        change |= queue.AppendInstance((uint)id);
+                        Scene.MarkListener(changeListenerId, id);
 
-                    //Handles.matrix = matrix;
-                    //Gizmos.DrawWireCube(mesh.BoundingBox.Centre, mesh.BoundingBox.Size);
+                        //Handles.matrix = matrix;
+                        //Gizmos.DrawWireCube(mesh.BoundingBox.Centre, mesh.BoundingBox.Size);
+                    }
                 }
                 // If no instances were created, quit
                 if (queue.InstanceCount == instBegin) continue;
@@ -625,22 +641,24 @@ namespace Weesals.Engine {
                 var resources = graphics.RequireFrameData<nint>(psoconstantBuffers.Length + pipeline.GetResourceCount());
                 int r = 0;
 
-                // Get constant buffer data for this batch
-                for (int i = 0; i < resolved.mResolvedCBs.Count; ++i) {
-                    var cbid = resolved.mResolvedCBs[i];
-                    nint resource = 0;
-                    if (cbid >= 0) {
-                        var psocb = psoconstantBuffers[i];
-                        ref var resolvedMat = ref Scene.ResolvedMaterials.GetResolved(cbid);
-                        resource = RequireConstantBuffer(graphics, resolvedMat.mEvaluator);
+                using (var frustumMarker = ProfileMarker_ComputeResources.Auto()) {
+                    // Get constant buffer data for this batch
+                    for (int i = 0; i < resolved.mResolvedCBs.Count; ++i) {
+                        var cbid = resolved.mResolvedCBs[i];
+                        nint resource = 0;
+                        if (cbid >= 0) {
+                            var psocb = psoconstantBuffers[i];
+                            ref var resolvedMat = ref Scene.ResolvedMaterials.GetResolved(cbid);
+                            resource = RequireConstantBuffer(graphics, resolvedMat.mEvaluator);
+                        }
+                        resources[r++] = resource;
                     }
-                    resources[r++] = resource;
-                }
-                // Get other resource data for this batch
-                if (r > 0) {
-                    ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.mResolvedResources);
-                    resCB.mEvaluator.EvaluateSafe(resources.Slice(r).Reinterpret<byte>());
-                    r += resources.Length;
+                    // Get other resource data for this batch
+                    if (r > 0) {
+                        ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.mResolvedResources);
+                        resCB.mEvaluator.EvaluateSafe(resources.Slice(r).Reinterpret<byte>());
+                        r += resources.Length;
+                    }
                 }
 
                 // Need to force this to use queues instance buffer

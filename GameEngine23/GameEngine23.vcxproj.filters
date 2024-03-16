@@ -227,7 +227,6 @@
     <ClCompile Include="src\RenderTarget2D.cpp" />
     <ClCompile Include="src\Lighting.cpp" />
     <ClCompile Include="src\ui\font\FontRenderer.cpp" />
-    <ClCompile Include="src\ui\sprite\Sprite.cpp" />
     <ClCompile Include="src\TextureCompression.cpp" />
     <ClCompile Include="src\D3DShader.cpp" />
     <ClCompile Include="src\D3DUtility.cpp" />

@@ -10,3 +10,6 @@
 [submodule "GameEngine23/externals/freetype"]
 	path = GameEngine23/externals/freetype
 	url = https://github.com/freetype/freetype
+[submodule "GameEngine23/externals/tracy"]
+	path = GameEngine23/externals/tracy
+	url = https://github.com/wolfpld/tracy.git
