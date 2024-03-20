@@ -368,6 +368,7 @@ namespace Weesals.Engine.Jobs {
             public uint RunState;
             public int RunCount => (int)(RunState & 0xffff);
             public int CompleteCount => (int)((RunState >> 16) & 0xffff);
+            public bool IsMainThread => BatchBegin == ushort.MaxValue;
         }
         public struct JobRun {
             public int TaskId;
@@ -379,6 +380,7 @@ namespace Weesals.Engine.Jobs {
         private JobTask[] taskArray = new JobTask[1024];
         private int lastTaskIndex = -1;
         private Queue<TaskPool> globalPool = new();
+        private TaskPool mainThreadTasks = new();
 
         public class JobThread {
             public readonly string Name;
@@ -469,17 +471,16 @@ namespace Weesals.Engine.Jobs {
                 ref var task = ref Scheduler.taskArray[run.TaskId];
                 if (task.BatchCount == 0) {
                     ((Action<object?>)task.Callback)(task.Context);
-                    MarkComplete(run.TaskId);
+                    MarkComplete(ref task);
                 } else {
                     ((Action<RangeInt>)task.Callback)(new RangeInt(run.BatchBegin, run.BatchCount));
                     var runCount = GetRunCount(task.BatchCount);
                     var newState = Interlocked.Add(ref task.RunState, 0x10000);
                     if (((newState >> 16) & 0xffff) >= runCount)
-                        MarkComplete(run.TaskId);
+                        MarkComplete(ref task);
                 }
             }
-            private void MarkComplete(int taskId) {
-                ref var task = ref Scheduler.taskArray[taskId];
+            public static void MarkComplete(ref JobTask task) {
                 var dep = task.Dependency;
                 task = default;
                 JobDependencies.Instance.MarkComplete(dep);
@@ -532,6 +533,7 @@ namespace Weesals.Engine.Jobs {
         [ThreadStatic] static string ThreadName;
 
         public static string CurrentThreadName => ThreadName ?? "Unknown";
+        public static bool IsMainThread => ThreadName == "Main Thread";
 
         public JobScheduler() {
             ThreadName = "Main Thread";
@@ -555,19 +557,30 @@ namespace Weesals.Engine.Jobs {
 #pragma warning disable
         public ushort CreateJob(Action<object?> action, object? context = null) {
             if (!EnableThreading) { action(context); return ushort.MaxValue; }
-            return IntlPushTask(new JobTask() { Callback = action, Context = context, BatchCount = 0, });
+            return IntlPushTask(new JobTask() { Callback = action, Context = context, BatchBegin = 0, BatchCount = 0, });
         }
         public ushort CreateBatchJob(Action<RangeInt> action, int count) {
             if (!EnableThreading) { action(new RangeInt(0, count)); return ushort.MaxValue; }
-            return IntlPushTask(new JobTask() { Callback = action, Context = null, BatchCount = (ushort)count, });
+            return IntlPushTask(new JobTask() { Callback = action, Context = null, BatchBegin = 0, BatchCount = (ushort)count, });
         }
         public ushort CreateBatchJob(Action<RangeInt> action, RangeInt range) {
             if (!EnableThreading) { action(range); return ushort.MaxValue; }
             return IntlPushTask(new JobTask() { Callback = action, Context = null, BatchBegin = (ushort)range.Start, BatchCount = (ushort)range.Length, });
         }
+        public void MarkRunOnMain(ushort job) {
+            Debug.Assert(taskArray[job].BatchCount == 0,
+                "Batch jobs cannot run on main");
+            taskArray[job].BatchBegin = ushort.MaxValue;
+        }
 #pragma warning restore
         public void ScheduleJob(ushort jobId, JobHandle handle) {
             taskArray[jobId].Dependency = handle;
+            if (taskArray[jobId].IsMainThread) {
+                while (!mainThreadTasks.TryPush(jobId)) {
+                    Thread.Sleep(0);
+                }
+                return;
+            }
             PushJobToThread(jobId);
             int wakeThreads = Math.Min(jobThreads.Length, taskArray[jobId].BatchCount);
             for (int c = 0; c < wakeThreads; ++c) jobThreads[c].RequireWake();
@@ -605,6 +618,18 @@ namespace Weesals.Engine.Jobs {
             for (int i = 0; i < jobThreads.Length; i++) {
                 jobThreads[i].Wake();
             }
+        }
+
+        internal bool TryRunMainThreadTask() {
+            if (!mainThreadTasks.TryPop(out var taskId)) return false;
+            ref var task = ref taskArray[taskId];
+            Debug.Assert(task.BatchCount == 0);
+            ((Action<object?>)task.Callback)(task.Context);
+            JobThread.MarkComplete(ref task);
+            return true;
+        }
+        public void RunMainThreadTasks() {
+            while (TryRunMainThreadTask()) ;
         }
 
         public void WaitForAll() {

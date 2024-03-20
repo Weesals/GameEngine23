@@ -15,7 +15,7 @@ namespace Weesals.UI {
     public struct CanvasElement {
         public int ElementId { get; private set; }
         public Material Material { get; private set; }
-        public bool IsValid() { return ElementId != -1; }
+        public bool IsValid => ElementId != -1;
         public void SetMaterial(Material mat) { Material = mat; }
 		public void SetElementId(int id) {
 			Debug.Assert(ElementId == id || ElementId == -1, "Element already has an ElementId");
@@ -108,7 +108,7 @@ namespace Weesals.UI {
         public RectF Border { get => border; set { border = value; dirty |= DirtyFlags.UV; } }
         public Color Color { get => blending.Color; set { blending.Color = value; dirty |= DirtyFlags.Color; } }
         public bool IsNinePatch => (drawFlags & DrawFlags.NinePatch) != 0;
-        public bool IsInitialized => element.IsValid();
+        public bool IsInitialized => element.IsValid;
         public bool HasDirtyFlags => dirty != DirtyFlags.None;
         public bool EnableDraw { get => (drawFlags & DrawFlags.Never) == 0; set { if (value) drawFlags &= ~DrawFlags.Never; else drawFlags |= DrawFlags.Never; } }
         public CanvasBlending.BlendModes BlendMode { get => blending.BlendMode; }
@@ -119,14 +119,14 @@ namespace Weesals.UI {
             blending = CanvasBlending.Default;
         }
         unsafe public void Initialize(Canvas canvas) {
-            Debug.Assert(!element.IsValid());
+            Debug.Assert(!element.IsValid);
             dirty = DirtyFlags.Indices;
             SetTexture(Texture);
         }
         public void Dispose(Canvas canvas) { element.Dispose(canvas); dirty |= DirtyFlags.Indices; }
         public void SetTexture(CSTexture texture) {
             Texture = texture;
-            if (Texture.IsValid()) {
+            if (Texture.IsValid) {
                 RequireMaterial().SetTexture("Texture", Texture);
                 MarkLayoutDirty();
             }
@@ -200,7 +200,7 @@ namespace Weesals.UI {
                 Span<Vector2> p = IsNinePatch
                     ? stackalloc Vector2[] { new Vector2(0, 0), Vector2.Zero, Vector2.Zero, layout.GetSize(), }
                     : stackalloc Vector2[] { new Vector2(0, 0), layout.GetSize(), };
-                if (IsNinePatch && Texture.IsValid()) {
+                if (IsNinePatch && Texture.IsValid) {
                     var spriteSize = (Vector2)Texture.GetSize() * UVRect.Size * spriteScale;
                     p[1] = Border.Min * spriteSize;
                     p[2] = p[3] - (Vector2.One - Border.Max) * spriteSize;
@@ -227,7 +227,7 @@ namespace Weesals.UI {
         }
 
         public void PreserveAspect(ref CanvasLayout layout, Vector2 imageAnchor) {
-            if (!Texture.IsValid()) return;
+            if (!Texture.IsValid) return;
             var size = layout.GetSize();
             var imgSize = (Vector2)Texture.GetSize() * UVRect.Size;
             var ratio = new Vector2(size.X * imgSize.Y, size.Y * imgSize.X);
@@ -337,7 +337,7 @@ namespace Weesals.UI {
             styles.Dispose();
             glyphPlacements.Dispose();
             glyphLayout.Dispose();
-            if (element.IsValid()) element.Dispose(canvas);
+            if (element.IsValid) element.Dispose(canvas);
             MarkLayoutDirty();
 		}
 

@@ -6,15 +6,21 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
 	unsafe public class MeshDraw {
+
+        protected static ProfilerMarker ProfileMarker_MeshDraw = new("Mesh Draw");
+        protected static ProfilerMarker ProfileMarker_GetPass = new("Get Pass");
+        protected static ProfilerMarker ProfileMarker_ResolveResources = new("Resolve Resources");
+
         protected struct RenderPassCache {
             public CSIdentifier mRenderPass;
             public ulong mPipelineHash;
             public CSPipeline mPipeline;
-            public bool IsValid() { return mPipeline.IsValid(); }
+            public bool IsValid => mPipeline.IsValid;
         }
 
         protected Mesh mMesh;
@@ -40,6 +46,7 @@ namespace Weesals.Engine {
         }
 
         unsafe protected RenderPassCache GetPassCache(CSGraphics graphics) {
+            using var marker = ProfileMarker_GetPass.Auto();
             if (resourceGeneration != Resources.Generation) InvalidateMesh();
             var renderPass = CSName.None;
             if (mBufferLayout.Count == 0) InvalidateMesh();
@@ -64,11 +71,15 @@ namespace Weesals.Engine {
             return mPassCache[min];
         }
         unsafe public void Draw(CSGraphics graphics, CSDrawConfig config) {
+            using var marker = ProfileMarker_MeshDraw.Auto();
             if (mBufferLayout.Count == 0) InvalidateMesh();
             var passCache = GetPassCache(graphics);
-            if (!passCache.IsValid()) return;
+            if (!passCache.IsValid) return;
             Debug.Assert(passCache.mPipeline.GetBindingCount() == mBufferLayout.Count);
-            var resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
+            MemoryBlock<nint> resources;
+            using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
+                resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
+            }
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config);
         }
     }
@@ -128,26 +139,34 @@ namespace Weesals.Engine {
             }
         }
         new unsafe public void Draw(CSGraphics graphics, CSDrawConfig config) {
+            using var marker = ProfileMarker_MeshDraw.Auto();
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
             var passCache = GetPassCache(graphics);
-            if (!passCache.IsValid()) return;
+            if (!passCache.IsValid) return;
             Debug.Assert(passCache.mPipeline.GetBindingCount() == mBufferLayout.Count);
 
-            var resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
+            MemoryBlock<nint> resources;
+            using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
+                resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
+            }
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config, instanceCount);
         }
 		unsafe public void Draw(CSGraphics graphics, ScenePass pass, CSDrawConfig config) {
+            using var marker = ProfileMarker_MeshDraw.Auto();
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
             var passCache = GetPassCache(graphics);
-            if (!passCache.IsValid()) return;
+            if (!passCache.IsValid) return;
             Debug.Assert(passCache.mPipeline.GetBindingCount() == mBufferLayout.Count);
 
             using var materials = new PooledArray<Material>(mMaterials.Count + 1);
             materials[0] = pass.OverrideMaterial;
             CollectionsMarshal.AsSpan(mMaterials).CopyTo(materials.AsSpan(1));
-            var resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, materials);
+            MemoryBlock<nint> resources;
+            using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
+                resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, materials);
+            }
             var buffers = graphics.RequireFrameData(mBufferLayout);
 
             pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount);

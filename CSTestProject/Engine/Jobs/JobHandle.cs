@@ -91,11 +91,17 @@ namespace Weesals.Engine.Jobs {
             return JobDependencies.Instance.CreateHandle(job, dependency);
         }
 
+        public static JobHandle RunOnMain(Action<object?> value, JobHandle dependency = default) {
+            var job = JobScheduler.Instance.CreateJob(value);
+            JobScheduler.Instance.MarkRunOnMain(job);
+            return JobDependencies.Instance.CreateHandle(job, dependency);
+        }
+
         public void Complete() {
             while (!JobDependencies.Instance.GetIsComplete(this)) {
+                if (JobScheduler.IsMainThread && JobScheduler.Instance.TryRunMainThreadTask()) continue;
                 Thread.Sleep(0);
             }
-            //throw new NotImplementedException();
         }
 
         public static readonly JobHandle None = new();

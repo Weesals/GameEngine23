@@ -140,6 +140,9 @@ namespace Weesals.ECS {
             }
             return (uint)(entityCount++);
         }
+        public int GetMaximumEntityId() {
+            return entityCount;
+        }
 
         public Entity CreateEntity(string name = "unknown") {
             lock (entities) {

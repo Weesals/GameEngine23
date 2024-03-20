@@ -1,6 +1,7 @@
 ﻿using Navigation;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -21,6 +22,8 @@ namespace Game5.Game {
     }
     public struct CAnimation {
         public AnimationHandle Animation;
+        public AnimationHandle WalkAnim;
+        public AnimationHandle IdleAnim;
         public override string? ToString() { return Animation.ToString(); }
     }
     public struct CPosition {
@@ -155,9 +158,12 @@ namespace Game5.Game {
                 tmpEntities.Add(entity1);
             }*/
 
+            var chickenModel = Resources.LoadModel("./Assets/Models/chickenV2.fbx", out var chickenHandle);
+            chickenHandle.Complete();
             var archerModel = Resources.LoadModel("./Assets/Characters/Character_Archer.fbx", out var archerHandle);
-            var spiderModel = Resources.LoadModel("./Assets/Models/BattleSpider01.FBX", out var spiderHandle);
-            var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var archerRunHandle);
+            var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
+            var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
+            var animHandles = JobHandle.CombineDependencies(idleAnimHandle, runAnimHandle);
             var houseModels = new[] {
                 Resources.LoadModel("./Assets/SM_House.fbx", out var house1Handle),
                 Resources.LoadModel("./Assets/B_House2.fbx", out var house2Handle),
@@ -168,7 +174,7 @@ namespace Game5.Game {
             };
             var houseHandles = JobHandle.CombineDependencies(house1Handle, house2Handle, house3Handle);
             var granaryHandles = JobHandle.CombineDependencies(granary1Handle, granary2Handle, granary3Handle);
-            var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, spiderHandle, archerRunHandle, houseHandles, granaryHandles);
+            var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, chickenHandle, animHandles, houseHandles, granaryHandles);
 
             modelLoadHandle.Complete();
 
@@ -184,7 +190,11 @@ namespace Game5.Game {
 
             var archer = ProtoSystem.CreatePrototype("Archer")
                 .AddComponent<CModel>(new() { Model = archerModel, })
-                .AddComponent<CAnimation>(new() { Animation = runAnim.Animations[0], })
+                .AddComponent<CAnimation>(new() {
+                    Animation = runAnim.Animations[0],
+                    IdleAnim = idleAnim.Animations[0],
+                    WalkAnim = runAnim.Animations[0],
+                })
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECMobile>(new() { MovementSpeed = 6000, TurnSpeed = 500, NavMask = 1, })
@@ -192,9 +202,13 @@ namespace Game5.Game {
                 .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
                 .Build();
 
-            var spider = ProtoSystem.CreatePrototype("Spider")
-                .AddComponent<CModel>(new() { Model = spiderModel, })
-                //.AddComponent<CAnimation>(new() { Animation = runAnim.Animations[0], })
+            var chicken = ProtoSystem.CreatePrototype("Chicken")
+                .AddComponent<CModel>(new() { Model = chickenModel, })
+                .AddComponent<CAnimation>(new() {
+                    Animation = chickenModel.Animations[3],
+                    IdleAnim = chickenModel.Animations[2],
+                    WalkAnim = chickenModel.Animations[3],
+                })
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECMobile>(new() { MovementSpeed = 6000, TurnSpeed = 500, NavMask = 1, })
@@ -224,25 +238,26 @@ namespace Game5.Game {
                 .AddComponent<ECObstruction>(new() { })
                 .Build();
 
-            var houseInstance = PrefabRegistry.Instantiate(World, house.Prefab);
-            World.GetComponentRef<ECTransform>(houseInstance).Position = new Int2(20000, 20000);
+            var tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
+            World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(-20000, -20000);
 
             var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
             World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
 
-            var spiderInstance = PrefabRegistry.Instantiate(World, spider.Prefab);
-            World.GetComponentRef<ECTransform>(spiderInstance).Position = new Int2(50000, 28000);
+            var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
+            World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
 
             var houseProto = new PrototypeData() {
                 Footprint = new EntityFootprint() { Size = 4000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
             };
 
             var command = new EntityCommandBuffer(World.Stage);
-            const int Count = 1000;// 10;
+            const int Count = 25;
             var SqrtCount = (int)MathF.Sqrt(Count);
             for (int i = 0; i < Count; i++) {
                 var newEntity = command.CreateDeferredEntity();
-                var pos = new Int2(i / SqrtCount, i % SqrtCount) * 6000;
+                var pos = 2000 + new Int2(i / SqrtCount, i % SqrtCount) * 6000;
+                if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
                 var houseId = rand.Next(houseModels.Length);
                 var orientation = rand.Next(4) * (short.MinValue / 2);
                 command.AddComponent<CModel>(newEntity) = new() { Model = houseModels[houseId], };
@@ -252,7 +267,7 @@ namespace Game5.Game {
                 command.AddComponent<ECTeam>(newEntity) = new() { SlotId = (byte)i };
                 command.AddComponent<ECAbilityAttackMelee>(newEntity) = new() { Damage = 1, Interval = 1000, };
                 command.AddComponent<PrototypeData>(newEntity) = houseProto;
-                command.AddComponent<ECObstruction>(newEntity);
+                //command.AddComponent<ECObstruction>(newEntity);
                 //command.AddComponent<ECActionMove>(newEntity) = new() { Location = 5000, };
             }
             command.Commit();

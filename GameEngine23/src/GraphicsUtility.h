@@ -42,39 +42,61 @@ static T* GetOrCreate(std::unordered_map<K, std::unique_ptr<T>>& map, const K ke
 template<typename T>
 static T PostIncrement(T& v, T a) { int t = v; v += a; return t; }
 
-static size_t AppendHash(const uint8_t* ptr, size_t size, size_t hash)
+/*static size_t AppendHash(const uint8_t* ptr, size_t size, size_t hash)
 {
-    auto ApplyHash = [&]<typename Z>(Z z)
-    {
-        hash += z;// *(Z*)ptr;
-        hash *= 0x9E3779B97F4A7C15uL;
-        hash ^= hash >> 15;
-        ptr += sizeof(Z);
-        size -= sizeof(Z);
-    };
-    while (size >= sizeof(uint64_t)) {
-        uint64_t z;
-        memcpy(&z, ptr, sizeof(uint64_t));
-        ApplyHash.operator()<uint64_t>(z);
+    while (size >= sizeof(__m128)) {
+        __m128 dat
+        memcpy(&dat, ptr, sizeof(__m128));
+        ApplyHash256(z);
+        ptr += sizeof(__m128);
+        size -= sizeof(__m128);
     }
     if (size > 0) {
-        uint64_t z = 0;
-        memcpy(&z, ptr, size);
-        ApplyHash.operator()<uint64_t>(z);
+        uint64_t z[4] = { 0, 0, 0, 0 };
+        memcpy(z, ptr, size);
+        ApplyHash256(z);
     }
-    //if (size >= sizeof(uint32_t)) ApplyHash.operator()<uint32_t>();
-    //if (size >= sizeof(uint16_t)) ApplyHash.operator()<uint16_t>();
-    //if (size >= sizeof(uint8_t)) ApplyHash.operator()<uint8_t>();
+}*/
+#pragma optimize("t", on)
+template<int Count = 4>
+static size_t AppendHashT(const uint8_t* ptr, size_t size, size_t hash) {
+    typedef uint64_t Base;
+    Base z[Count] = { 0 };
+    while ((int64_t)size > 0) {
+        memcpy(z, ptr, size < sizeof(z) ? size : sizeof(z));
+
+        constexpr uint64_t prime1 = 0x9E3779B97F4A7C15uLL;
+        constexpr uint64_t prime2 = 0xC2B2AE3D27D4EB4FuLL;
+#if defined(_MSC_VER)
+        hash = _rotl64(hash, 15);
+#else
+        hash ^= hash >> 15;
+#endif
+        hash *= prime1;
+        hash += z[0] * (Base)(prime2);
+        if constexpr (Count >= 2) hash += z[1] * (Base)(prime2 * prime2);
+        if constexpr (Count >= 3) hash += z[2] * (Base)(prime2 * prime2 * prime2);
+        if constexpr (Count >= 4) hash += z[3] * (Base)(prime2 * prime2 * prime2 * prime2);
+
+        ptr += sizeof(z);
+        size -= sizeof(z);
+    }
     return hash;
 }
+#pragma optimize("t", off)
+static size_t AppendHash(const uint8_t* ptr, size_t size, size_t hash) {
+    return AppendHashT<4>(ptr, size, hash);
+}
 template<typename T>
-static size_t AppendHash(const T& value, size_t hash)
-{
+static size_t AppendHash(const T& value, size_t hash) {
+    if (sizeof(T) < sizeof(uint64_t)) return AppendHashT<1>((const uint8_t*)&value, sizeof(T), hash);
+    if (sizeof(T) < sizeof(uint64_t) * 2) return AppendHashT<2>((const uint8_t*)&value, sizeof(T), hash);
     return AppendHash((const uint8_t*)&value, sizeof(T), hash);
 }
 template<typename T>
-static size_t GenericHash(const T& value)
-{
+static size_t GenericHash(const T& value) {
+    if (sizeof(T) < sizeof(uint64_t)) return AppendHashT<1>((const uint8_t*)&value, sizeof(T), 0);
+    if (sizeof(T) < sizeof(uint64_t) * 2) return AppendHashT<2>((const uint8_t*)&value, sizeof(T), 0);
     return AppendHash((const uint8_t*)&value, sizeof(T), 0);
 }
 static size_t GenericHash(const void* data, size_t size)
@@ -331,7 +353,8 @@ public:
         if (itemKV != mItemsByHash.end()) {
             // If this is the first time we're using it this frame
             // update its last used frame
-            auto& item = *itemKV->second;
+            Item& item = *itemKV->second;
+            assert(item.mLayoutHash == layoutHash);
             if ((mLocks[item.mLockId].mHandles & lockBits) != lockBits) {
                 auto newMask = mLocks[item.mLockId].mHandles | lockBits;
                 int lockId = RequireLock(newMask);

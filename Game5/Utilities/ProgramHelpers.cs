@@ -78,7 +78,7 @@ namespace Game5 {
 
         public float Step(int newRenderHash, bool forceChange = false) {
             float elapsed = timeSinceRender;
-            IsThrottled = renderHash == newRenderHash && timeSinceRender <= (onBattery ? 1f : 0.1f) && !forceChange;
+            IsThrottled = renderHash == newRenderHash && timeSinceRender <= (onBattery ? 1f : 0.05f) && !forceChange;
             renderHash = newRenderHash;
             if (!IsThrottled) NotifyRendered();
             return elapsed;

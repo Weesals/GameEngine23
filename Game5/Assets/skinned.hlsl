@@ -6,7 +6,7 @@
 #include <module_skinned.hlsl>
 #include <module_retained.hlsl>
 #include <module_temporal.hlsl>
-
+// Force Change
 SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);
 

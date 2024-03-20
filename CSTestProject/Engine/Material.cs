@@ -265,7 +265,7 @@ namespace Weesals.Engine {
         public ref Parameters GetParametersRaw() { return ref Parameters; }
         public ref Parameters GetMacrosRaw() { return ref Macros; }
 
-        public void SetRenderPassOverride(CSIdentifier pass) { State.RenderPass = pass; State.SetFlag(StateData.Flags.RenderPass, State.RenderPass.IsValid()); }
+        public void SetRenderPassOverride(CSIdentifier pass) { State.RenderPass = pass; State.SetFlag(StateData.Flags.RenderPass, State.RenderPass.IsValid); }
         public CSIdentifier GetRenderPassOverride() { return State.RenderPass; }
 
         // Set shaders bound to this material
@@ -316,16 +316,13 @@ namespace Weesals.Engine {
 #pragma warning restore CS9087 // This returns a parameter by reference but it is not a ref parameter
         }
         unsafe public Span<byte> SetTexture(CSIdentifier name, CSTexture tex) {
-            return SetValue(name, (nint)tex.mTexture);
+            return SetValue(name, new CSBufferReference(tex));
 	    }
         unsafe public Span<byte> SetTexture(CSIdentifier name, CSRenderTarget tex) {
-            return SetValue(name, (nint)tex.mRenderTarget);
-        }
-        unsafe public Span<byte> SetBuffer(CSIdentifier name, CSTexture tex) {
-            return SetValue(name, (nint)tex.mTexture);
+            return SetValue(name, new CSBufferReference(tex));
         }
         unsafe public void SetBuffer(CSIdentifier name, CSBufferLayout buffer) {
-            SetValue(name, (nint)buffer.identifier);
+            SetValue(name, new CSBufferReference(buffer));
         }
 
         public void SetComputedUniform<T>(CSIdentifier name, ComputedParameter<T>.Getter lambda) where T : unmanaged {
@@ -361,9 +358,15 @@ namespace Weesals.Engine {
             return GetUniformBinaryData(name, new Span<Material>(ref self));
 #pragma warning restore CS9091 // This returns local by reference but it is not a ref local
         }
-        unsafe public CSTexture GetUniformTexture(CSIdentifier name) {
+        unsafe public CSBufferReference GetUniformBuffer(CSIdentifier name) {
             Material self = this;
-            return GetUniformTexture(name, new Span<Material>(ref self));
+            return GetUniformBuffer(name, new Span<Material>(ref self));
+        }
+        unsafe public CSTexture GetUniformTexture(CSIdentifier name) {
+            return GetUniformBuffer(name).AsTexture();
+        }
+        unsafe public CSRenderTarget GetUniformRenderTarget(CSIdentifier name) {
+            return GetUniformBuffer(name).AsRenderTarget();
         }
 
         // Get the binary data for a specific parameter
@@ -375,14 +378,14 @@ namespace Weesals.Engine {
             collector.Clear();
             return ret;
         }
-        unsafe public static CSTexture GetUniformTexture(CSIdentifier name, Span<Material> materialStack) {
+        unsafe public static CSBufferReference GetUniformBuffer(CSIdentifier name, Span<Material> materialStack) {
             var data = GetUniformBinaryData(name, materialStack);
-            if (data.Length < sizeof(ulong)) return default;
-            return new CSTexture((NativeTexture*)BitConverter.ToUInt64(data));
+            if (data.Length < sizeof(CSBufferReference)) return default;
+            return MemoryMarshal.Read<CSBufferReference>(data);
         }
 
         unsafe public void CopyFrom(CSMaterial otherMat) {
-            if (!otherMat.IsValid()) return;
+            if (!otherMat.IsValid) return;
             var identifiers = stackalloc CSIdentifier[16];
             int identCount = CSMaterial.GetParameterIdentifiers(otherMat.GetNativeMaterial(), identifiers, 16);
             for (int i = 0; i < identCount; ++i) {

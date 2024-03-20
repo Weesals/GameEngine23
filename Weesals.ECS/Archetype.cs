@@ -305,17 +305,17 @@ namespace Weesals.ECS {
             Columns[index] = new(context.GetComponentType(typeId));
             return index;
         }
-        public bool TryGetSparseComponent(TypeId componentTypeId, out int index, StageContext? context = default) {
-            if (!SparseTypeMask.IsEmpty && SparseTypeMask.TryGetBitIndex(componentTypeId.Index, out index)) {
-                index += ColumnCount;
+        public bool TryGetSparseComponent(TypeId componentTypeId, out int column, StageContext? context = default) {
+            if (!SparseTypeMask.IsEmpty && SparseTypeMask.TryGetBitIndex(componentTypeId.Index, out column)) {
+                column += ColumnCount;
                 return true;
             }
-            index = -1;
+            column = -1;
             return false;
         }
         public int RequireSparseComponent(TypeId componentTypeId, StageContext context) {
-            if (!SparseTypeMask.IsEmpty && SparseTypeMask.TryGetBitIndex(componentTypeId.Index, out var index)) {
-                return ColumnCount + index;
+            if (!SparseTypeMask.IsEmpty && SparseTypeMask.TryGetBitIndex(componentTypeId.Index, out var column)) {
+                return ColumnCount + column;
             }
             return AddSparseComponent(componentTypeId, context);
         }

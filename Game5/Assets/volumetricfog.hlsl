@@ -27,9 +27,9 @@ PSInput VSMain(VSInput input) {
 }
 
 
-static const float cloudMaxY = 16;
-static const float cloudMinY = 12;
-static const int cloudSampleCount = 2;
+static const float cloudMaxY = 40;
+static const float cloudMinY = 34;
+static const int cloudSampleCount = 4;
 static const float cloudTextureDensity = 30.0;
 static const float cloudShadowSampleCount = 0;
 static const float finalCloudShadowVarianceCount = 1;
@@ -52,7 +52,7 @@ float SampleClouds(float3 p) {
     ) / cloudTextureDensity;
     
     // Blend between 3 frames
-    float timeN = Time * 0.02 + (p.x - p.z) * 0.008;
+    float timeN = Time * 0.02 + (p.x - p.z) * 0.012;
     float3 cloudSamples = FogDensity.SampleLevel(BilinearSampler, uv.xzy, 0).rgb;
     float3 cloudTangents = (cloudSamples.yzx - cloudSamples.zxy);
     float3 cloudTimes = frac(timeN - float3(0, 0.333, 0.666)) * 3 - 1.0;
@@ -60,8 +60,8 @@ float SampleClouds(float3 p) {
     float clouds = dot(cloudPhase, cloudSamples + (cloudTangents * cloudTimes));
     
     // Mask above/below
-    clouds *= saturate((cloudMaxY + 0.5 - p.y) / 2.0);
-    clouds *= saturate((p.y + cloudMinY - 0.5) / 2.0);
+    clouds *= saturate((cloudMaxY + 0.5 - p.y) / 3.0);
+    clouds *= saturate((p.y + cloudMinY - 0.5) / 3.0);
     
     clouds = saturate(clouds * 5.0 - 2.5);
     // Add density multiplier

@@ -153,50 +153,60 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
     ComPtr<IDxcBlob> dxcReflection;
     while (true) {
         ComPtr<IDxcBlobEncoding> sourceBlob;
-        dxcUtils->LoadFile(path.data(), nullptr, &sourceBlob);
+        auto hr = dxcUtils->LoadFile(path.data(), nullptr, &sourceBlob);
 
-        StandardInclude stdInclude;
-        stdInclude.SetLocalPath(std::filesystem::path(path).parent_path().string() + "/");
-        stdInclude.SetAbsolutePath("Assets/include/");
-        auto aPath = ToAscii(path);
-        std::vector<D3D_SHADER_MACRO> d3dMacros;
-        std::vector<std::string> d3dMacroStore;
-        for (const DxcDefine* macro = macros; macro->Name != nullptr; ++macro) {
-            d3dMacroStore.push_back(ToAscii(macro->Name));
-            d3dMacroStore.push_back(ToAscii(macro->Value));
+        if (SUCCEEDED(hr)) {
+            StandardInclude stdInclude;
+            stdInclude.SetLocalPath(std::filesystem::path(path).parent_path().string() + "/");
+            stdInclude.SetAbsolutePath("Assets/include/");
+            auto aPath = ToAscii(path);
+            std::vector<D3D_SHADER_MACRO> d3dMacros;
+            std::vector<std::string> d3dMacroStore;
+            for (const DxcDefine* macro = macros; macro->Name != nullptr; ++macro) {
+                d3dMacroStore.push_back(ToAscii(macro->Name));
+                d3dMacroStore.push_back(ToAscii(macro->Value));
+            }
+            for (int m = 0; m < d3dMacroStore.size(); m += 2) {
+                d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = d3dMacroStore[m].c_str(), .Definition = d3dMacroStore[m + 1].c_str(), });
+            }
+            d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = nullptr, .Definition = nullptr, });
+            auto srcDat = sourceBlob->GetBufferPointer();
+            auto srcLen = sourceBlob->GetBufferSize();
+            ComPtr<ID3DBlob> preprocessed;
+            ComPtr<ID3DBlob> preErrors;
+            D3DPreprocess(srcDat, srcLen,
+                aPath.c_str(), d3dMacros.data(), &stdInclude, &preprocessed, &preErrors);
+            dxcUtils->CreateBlob(preprocessed->GetBufferPointer(), (UINT32)preprocessed->GetBufferSize(), 0, &sourceBlob);
         }
-        for (int m = 0; m < d3dMacroStore.size(); m += 2) {
-            d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = d3dMacroStore[m].c_str(), .Definition = d3dMacroStore[m + 1].c_str(), });
+
+        if (SUCCEEDED(hr)) {
+            std::vector<DxcDefine> defines;
+            int macroCount = 0;
+            if (macros != nullptr)
+                for (; macros[macroCount].Name != nullptr; ++macroCount);
         }
-        d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = nullptr, .Definition = nullptr, });
-        auto srcDat = sourceBlob->GetBufferPointer();
-        auto srcLen = sourceBlob->GetBufferSize();
-        ComPtr<ID3DBlob> preprocessed;
-        ComPtr<ID3DBlob> preErrors;
-        D3DPreprocess(srcDat, srcLen,
-            aPath.c_str(), d3dMacros.data(), &stdInclude, &preprocessed, &preErrors);
-        dxcUtils->CreateBlob(preprocessed->GetBufferPointer(), (UINT32)preprocessed->GetBufferSize(), 0, &sourceBlob);
 
-        std::vector<DxcDefine> defines;
-        int macroCount = 0;
-        if (macros != nullptr)
-            for (; macros[macroCount].Name != nullptr; ++macroCount);
-
-        // Compile shader
-        DxcBuffer sourceBuffer = { sourceBlob->GetBufferPointer(), sourceBlob->GetBufferSize(), 0, };
-        auto hr = compiler->Compile(&sourceBuffer,
-            arguments.data(), (UINT32)arguments.size(),
-            &inc, IID_PPV_ARGS(pResult.GetAddressOf()));
+        if (SUCCEEDED(hr)) {
+            // Compile shader
+            DxcBuffer sourceBuffer = { sourceBlob->GetBufferPointer(), sourceBlob->GetBufferSize(), 0, };
+            hr = compiler->Compile(&sourceBuffer,
+                arguments.data(), (UINT32)arguments.size(),
+                &inc, IID_PPV_ARGS(pResult.GetAddressOf()));
+        }
         /*auto hr = compiler->Compile(sourceBlob.Get(), path.c_str(), wEntry.c_str(),
             wProfile.c_str(), arguments.data(), (UINT32)arguments.size(),
             macros, macroCount, includeHandler.Get(), &pResult);*/
 
         ComPtr<IDxcBlobUtf16> pDebugDataPath;
-        pResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxcOutput), &pDebugDataPath);
+        if (pResult != nullptr) {
+            pResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxcOutput), &pDebugDataPath);
+        }
         //if (dxcOutput->GetBufferSize() == 0)
         {
             ComPtr<IDxcBlobEncoding> errors;
-            pResult->GetErrorBuffer(&errors);
+            if (pResult != nullptr) {
+                pResult->GetErrorBuffer(&errors);
+            }
 
             // Retrieve error messages
             const char* errorMsg =
@@ -206,7 +216,7 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
                 nullptr;
             if (errorMsg != nullptr) {
                 OutputDebugStringA(errorMsg);
-                if (dxcOutput->GetBufferSize() == 0)
+                if (dxcOutput == nullptr || dxcOutput->GetBufferSize() == 0)
                 {
                     MessageBoxA(0, errorMsg, "Shader Compile Fail", 0);
                     //throw std::exception(errorMsg);

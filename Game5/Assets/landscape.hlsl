@@ -135,9 +135,9 @@ PSInput VSMain(VSInput input) {
 #endif
 
     result.localPos = worldPos;
-    result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
-    result.viewPos = mul(ModelView, float4(worldPos, 1.0)).xyz;
     result.normal = mul(Model, float4(worldNrm, 0.0)).xyz;
+    result.viewPos = mul(ModelView, float4(worldPos, 1.0)).xyz;
+    result.position = mul(ModelViewProjection, float4(worldPos, 1.0));
         
     return result;
 }

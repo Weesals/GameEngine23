@@ -199,7 +199,7 @@ namespace Weesals.Engine {
         public static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return new Int2(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y)); }
         public static int DotI(Int2 v1, Int2 v2) { return v1.X * v2.X + v1.Y * v2.Y; }
         public static long Dot(Int2 v1, Int2 v2) { return (long)v1.X * v2.X + (long)v1.Y * v2.Y; }
-        public static int CSum(Int2 v) { return v.X + v.X; }
+        public static int CSum(Int2 v) { return v.X + v.Y; }
         public static int CMul(Int2 v) { return v.X * v.Y; }
         public static long DistanceSquared(Int2 v1, Int2 v2) { v1 -= v2; return Dot(v1, v1); }
 
@@ -472,7 +472,7 @@ namespace Weesals.Engine {
         }
     }
 
-    public struct BoundingBox {
+    public struct BoundingBox : IEquatable<BoundingBox> {
         public Vector3 Min, Max;
         public Vector3 Centre => (Min + Max) / 2.0f;
         public Vector3 Extents => (Max - Min) / 2.0f;
@@ -483,8 +483,6 @@ namespace Weesals.Engine {
             Min = min;
             Max = max;
         }
-        public static BoundingBox FromMinMax(Vector3 min, Vector3 max) { return new BoundingBox(min, max); }
-
         public float RayCast(Ray ray) {
             var invRayDir = Vector3.Divide(Vector3.One, ray.Direction);
             var d0 = (Min - ray.Origin) * invRayDir;
@@ -499,12 +497,29 @@ namespace Weesals.Engine {
             return rmin <= rmax ? rmin : -1f;
         }
 
+        public bool Equals(BoundingBox other) { return Min.Equals(other.Min) && Max.Equals(other.Max); }
+        public override bool Equals(object? obj) { return obj is BoundingBox box && Equals(box); }
+        public override string ToString() { return $"BB<{Min} - {Max}>"; }
+        public override int GetHashCode() { return HashCode.Combine(Min, Max); }
+
+        public float GetDisOverlap(BoundingBox other) {
+            var over = Vector3.Abs(Min - other.Min) + Vector3.Abs(Max - other.Max);
+            return over.X + over.Y + over.Z;
+        }
+
         public static BoundingBox Union(BoundingBox box1, BoundingBox box2) {
-            return BoundingBox.FromMinMax(Vector3.Min(box1.Min, box2.Min), Vector3.Max(box1.Max, box2.Max));
+            return FromMinMax(Vector3.Min(box1.Min, box2.Min), Vector3.Max(box1.Max, box2.Max));
+        }
+        public static BoundingBox FromMinMax(Vector3 min, Vector3 max) { return new BoundingBox(min, max); }
+
+        public Vector3 Lerp(Vector3 lerp) {
+            return Min + (Max - Min) * lerp;
         }
 
         public static readonly BoundingBox Infinite = new BoundingBox(new Vector3(float.MinValue), new Vector3(float.MaxValue));
         public static readonly BoundingBox Invalid = new BoundingBox(new Vector3(float.MaxValue), new Vector3(float.MinValue));
+        public static bool operator ==(BoundingBox left, BoundingBox right) { return left.Equals(right); }
+        public static bool operator !=(BoundingBox left, BoundingBox right) { return !(left == right); }
     };
 
     public struct Ray {

@@ -29,6 +29,7 @@ Identifier Identifier::RequireStringId(const std::wstring_view& wname) {
     std::string name = converter.to_bytes(wname.data());
     auto identifier = RequireStringId(name);
     std::lock_guard<std::mutex> lock(gInsertMutex);
+    if (identifier.mId >= gIdToWString.size()) gIdToWString.resize(gIdToString.size());
     gIdToWString[identifier] = wname;
     return identifier;
 }

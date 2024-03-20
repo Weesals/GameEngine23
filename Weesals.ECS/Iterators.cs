@@ -9,6 +9,7 @@ namespace Weesals.ECS {
     public readonly struct EntityComponentAccessor<C1> {
         public readonly Archetype Archetype;
         private readonly int row, column1;
+        public int Row => row;
         public readonly Entity Entity => Archetype.Entities[row];
         public readonly C1 Component1 => Archetype.GetColumn(column1).GetValue<C1>(row);
         public readonly ref C1 Component1Ref => ref Archetype.GetColumn(column1).GetValueRefMut<C1>(row);
@@ -23,6 +24,7 @@ namespace Weesals.ECS {
     public readonly struct EntityComponentAccessor<C1, C2> {
         public readonly Archetype Archetype;
         private readonly int row, column1, column2;
+        public int Row => row;
         public readonly Entity Entity => Archetype.Entities[row];
         public readonly C1 Component1 => Archetype.GetColumn(column1).GetValue<C1>(row);
         public readonly C2 Component2 => Archetype.GetColumn(column2).GetValue<C2>(row);
@@ -41,6 +43,7 @@ namespace Weesals.ECS {
     public readonly struct EntityComponentAccessor<C1, C2, C3> {
         public readonly Archetype Archetype;
         private readonly int row, column1, column2, column3;
+        public int Row => row;
         public readonly Entity Entity => Archetype.Entities[row];
         public readonly C1 Component1 => Archetype.GetColumn(column1).GetValue<C1>(row);
         public readonly C2 Component2 => Archetype.GetColumn(column2).GetValue<C2>(row);

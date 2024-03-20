@@ -39,6 +39,7 @@ namespace Game5.Game {
         BasePass basePass;
         TransparentPass transPass;
         VolumetricFogPass fogPass;
+        GTAOPass gtaoPass;
         HiZPass highZPass;
         AmbientOcclusionPass aoPass;
         BloomPass bloomPass;
@@ -110,6 +111,8 @@ namespace Game5.Game {
                 };
                 fogPass = new() { ScenePasses = scenePasses, };
                 fogPass?.OverrideMaterial.InheritProperties(Scene.RootMaterial);
+                gtaoPass = new() { ScenePasses = scenePasses, };
+                gtaoPass?.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 highZPass = new();
                 aoPass = new();
                 bloomPass = new();
@@ -168,6 +171,7 @@ namespace Game5.Game {
 
         public void PreRender() {
             using var updateMarker = ProfileMarker_PreRender.Auto();
+            Play.PreRender();
             var Camera = Play.Camera;
             if (scenePasses.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) {
                 RenderRevision++;
@@ -184,7 +188,6 @@ namespace Game5.Game {
             foreach (var pass in scenePasses.ScenePasses) {
                 if (pass.GetHasSceneChanges()) ++RenderRevision;
             }
-            Play.PreRender();
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics, float dt) {
@@ -208,6 +211,7 @@ namespace Game5.Game {
             renderGraph.BeginPass(skyboxPass);
             //renderGraph.BeginPass(highZPass);
             //renderGraph.BeginPass(aoPass);
+            if (Play.EnableAO && gtaoPass != null) renderGraph.BeginPass(gtaoPass);
             renderGraph.BeginPass(transPass);
             if (Play.EnableFog && fogPass != null) renderGraph.BeginPass(fogPass);
 

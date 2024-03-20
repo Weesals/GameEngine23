@@ -11,6 +11,7 @@ using System.Xml.XPath;
 using Weesals.ECS;
 using Weesals.Editor.Assets;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
 
@@ -84,6 +85,8 @@ namespace Weesals.Editor {
 
 
     public class EditorWindow : ApplicationWindow, IDisposable {
+        private static ProfilerMarker ProfileMarker_Update = new("Editor Update");
+        private static ProfilerMarker ProfileMarker_Render = new("Editor Render");
         public Editor Editor;
         public UIInspector Inspector;
         public UIGameView GameView;
@@ -136,12 +139,14 @@ namespace Weesals.Editor {
         }
 
         public void Update(float dt, Int2 size) {
+            using var marker = ProfileMarker_Update.Auto();
             Canvas.SetSize(size);
             EventSystem.Update(dt);
             Canvas.Update(dt);
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics) {
+            using var marker = ProfileMarker_Render.Auto();
             Canvas.Render(graphics);
         }
 

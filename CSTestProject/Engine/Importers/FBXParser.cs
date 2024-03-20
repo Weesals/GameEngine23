@@ -44,6 +44,13 @@ namespace Weesals.Engine.Importers {
             public double AsDouble(ReadOnlySpan<byte> data) { return MemoryMarshal.Read<double>(AsSpan(data)); }
             public double AsTime(ReadOnlySpan<byte> data) { return UnpackTime(AsI64(data)); }
             public string AsString(ReadOnlySpan<byte> data) { return Encoding.UTF8.GetString(AsSpan(data)); }
+            public string AsStringNull(ReadOnlySpan<byte> data) {
+                int e = 0;
+                data = AsSpan(data);
+                for (; e < data.Length && data[e] != '\0'; ++e) ;
+                if (e < data.Length) data = data.Slice(0, e);
+                return Encoding.UTF8.GetString(data);
+            }
 
             public bool ValueEquals(ReadOnlySpan<byte> data, ReadOnlySpan<byte> value) { return AsSpan(data).SequenceEqual(value); }
             public override string? ToString() {
@@ -484,7 +491,7 @@ namespace Weesals.Engine.Importers {
             }
         }*/
         public string GetNodeName(FBXNode node) {
-            return node.Properties.Count >= 2 ? node.Properties[1].AsString(Data) : "";
+            return node.Properties.Count >= 2 ? node.Properties[1].AsStringNull(Data) : "";
         }
         /*private void ParseObjects(FBXScene scene) {
             var fbxObjs = scene.FindNode("Objects");
@@ -597,7 +604,7 @@ namespace Weesals.Engine.Importers {
                     value[i - 4] = (float)prop.Properties[i].AsDouble();
                 }*/
                 material.Properties.Add(
-                    prop.Properties[0].AsString(Data),
+                    prop.Properties[0].AsStringNull(Data),
                     value
                 );
             }

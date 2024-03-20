@@ -138,6 +138,7 @@ public:
             auto viewFmt = (DXGI_FORMAT)target->GetFormat();
             if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
             if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
+            if (viewFmt == DXGI_FORMAT_D16_UNORM) viewFmt = DXGI_FORMAT_R16_UNORM;
 
             // Create a shader resource view (SRV) for the texture
             D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = { .Format = viewFmt, .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D };
@@ -147,13 +148,15 @@ public:
             d3dDevice->CreateShaderResourceView(d3dRt->mBuffer.Get(), &srvDesc, srvHandle);
             d3dRt->mSRVOffset = cache.mCBOffset;
             cache.mCBOffset += mDevice->GetDevice().GetDescriptorHandleSizeSRV();
+            /*d3dRt->mSRVOffset = cache.GetTextureSRV(d3dRt->mBuffer.Get(),
+                viewFmt, false, target->GetArrayCount(), 0xffffffff);*/
         }
         return d3dRt;
     }
     void AllocateRTBuffer(D3DResourceCache::D3DRenderSurface* surface, const D3D12_RESOURCE_DESC& texDesc, const D3D12_CLEAR_VALUE& clearValue) {
         // Create the render target
-        auto heapParams = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        mDevice->GetD3DDevice()->CreateCommittedResource(&heapParams, D3D12_HEAP_FLAG_NONE, &texDesc,
+        mDevice->GetD3DDevice()->CreateCommittedResource(&D3D::DefaultHeap,
+            D3D12_HEAP_FLAG_NONE, &texDesc,
             D3D12_RESOURCE_STATE_COMMON, &clearValue, IID_PPV_ARGS(&surface->mBuffer));
         surface->mBuffer->SetName(L"Texture RT");
         surface->mDesc.mWidth = (uint16_t)texDesc.Width;
@@ -280,9 +283,9 @@ public:
         return hash;
     }
 
-    void* RequireConstantBuffer(std::span<const uint8_t> data) override {
+    void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash) override {
         auto& cache = mDevice->GetResourceCache();
-        return cache.RequireConstantBuffer(mCmdList.Get(), mFrameHandle, data);
+        return cache.RequireConstantBuffer(mCmdList.Get(), mFrameHandle, data, hash);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) override {
         auto& cache = mDevice->GetResourceCache();
@@ -356,33 +359,42 @@ public:
         // Require and bind other resources (textures)
         for (int i = 0; i < pipelineState->mResourceBindings.size(); ++i) {
             auto* rb = pipelineState->mResourceBindings[i];
-            auto* resource = resources[r++];
+            auto* resource = (BufferReference*)&resources[r++];
+            ++r;
             int srvOffset = -1;
             if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
-                auto* rbinding = cache.GetBinding((uint64_t)resource);
+                assert(resource->mType == BufferReference::BufferTypes::Buffer);
+                auto* rbinding = cache.GetBinding((uint64_t)resource->mBuffer);
                 assert(rbinding != nullptr); // "Did you call CopyBufferData on this resource?");
                 srvOffset = rbinding->mSRVOffset;
             }
             else {
-                auto* textureBase = (TextureBase*)resource;
-                if (auto* rt = dynamic_cast<RenderTarget2D*>(textureBase)) {
+                if (resource->mType == BufferReference::BufferTypes::RenderTarget) {
+                    auto* rt = static_cast<RenderTarget2D*>(resource->mBuffer);
                     auto* surface = cache.RequireD3DRT(rt);
-                    if (surface->mBuffer == nullptr) {
-                        // TODO: Print log message (first time)
-                        srvOffset = cache.RequireDefaultTexture(mCmdList.Get(), mFrameHandle)->mSRVOffset;
-                    }
-                    else {
+                    if (surface->mBuffer != nullptr) {
                         assert(surface->mBuffer.Get() != nullptr);
                         D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
                         if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
                         surface->RequireState(mDelayedBarriers, mDevice->GetResourceCache().mBarrierStateManager,
                             barrierState, -1);
-                        srvOffset = surface->mSRVOffset;
+                        //srvOffset = surface->mSRVOffset;
+                        auto viewFmt = surface->mFormat;
+                        if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+                        if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
+                        if (viewFmt == DXGI_FORMAT_D16_UNORM) viewFmt = DXGI_FORMAT_R16_UNORM;
+                        srvOffset = cache.GetTextureSRV(surface->mBuffer.Get(),
+                            viewFmt, false, rt->GetArrayCount(), mFrameHandle,
+                            resource->mSubresourceId, resource->mSubresourceCount);
                         FlushBarriers();
                     }
                 } else {
-                    auto tex = dynamic_cast<Texture*>(textureBase);
+                    auto tex = reinterpret_cast<Texture*>(resource->mBuffer);
                     srvOffset = cache.RequireCurrentTexture(tex, mCmdList.Get(), mFrameHandle)->mSRVOffset;
+                }
+                if (srvOffset == -1) {
+                    // TODO: Print log message (first time)
+                    srvOffset = cache.RequireDefaultTexture(mCmdList.Get(), mFrameHandle)->mSRVOffset;
                 }
             }
             if (srvOffset == -1) break;

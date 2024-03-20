@@ -46,6 +46,7 @@ namespace Weesals.Engine.Profiling {
         }
 
         public readonly struct Scope : IDisposable {
+            public const bool EnableTracy = true;
             public readonly ProfilerMarker Marker;
             private readonly long beginTicks;
             private readonly nuint zone;
@@ -54,14 +55,14 @@ namespace Weesals.Engine.Profiling {
                 Marker = marker;
                 beginTicks = stopwatch.ElapsedTicks;
                 ++depth;
-                zone = Tracy.StartScopedZone(Marker.tracyLocation);
+                if (EnableTracy) zone = Tracy.StartScopedZone(Marker.tracyLocation);
             }
             public void Dispose() {
-                Tracy.EndScopedZone(zone);
+                if (EnableTracy) Tracy.EndScopedZone(zone);
                 --depth;
                 if (Marker.Name == null) return;
+                if (snapshots.Count > 5000) return;
                 lock (snapshots) {
-                    if (snapshots.Count > 5000) return;
                     snapshots.Add(new() {
                         Name = Marker.Name,
                         BeginTick = beginTicks,

@@ -60,7 +60,7 @@ namespace Weesals.UI
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
             var layout = mLayoutCache;
-            if (Element.Texture.IsValid()) {
+            if (Element.Texture.IsValid) {
                 if (AspectMode == AspectModes.PreserveAspectContain) {
                     Element.PreserveAspect(ref layout, ImageAnchor);
                 }

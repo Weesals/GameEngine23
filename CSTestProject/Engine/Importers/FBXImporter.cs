@@ -119,7 +119,8 @@ namespace Weesals.Engine.Importers {
 
             public static Quaternion CreateQuaternion(Vector3 euler) {
                 var degToRad = MathF.PI / 180f;
-                return Quaternion.CreateFromAxisAngle(Vector3.UnitZ, euler.Z * degToRad) *
+                return
+                    Quaternion.CreateFromAxisAngle(Vector3.UnitZ, euler.Z * degToRad) *
                     Quaternion.CreateFromAxisAngle(Vector3.UnitY, euler.Y * degToRad) *
                     Quaternion.CreateFromAxisAngle(Vector3.UnitX, euler.X * degToRad);
             }
@@ -295,7 +296,7 @@ namespace Weesals.Engine.Importers {
                         foreach (var fbxTexChild in fbxObj.Children) {
                             if (fbxTexChild.Id == "FileName" || fbxTexChild.Id == "RelativeFilename")
                                 tex = Resources.LoadTexture(Path.Combine(rootPath, Path.GetFileName(fbxTexChild.Properties[0].AsString(parser.Data))));
-                            if (tex.IsValid()) break;
+                            if (tex.IsValid) break;
                             //if (fbxTexChild.Id == "Media") tex.Media = fbxTexChild.Properties[0].Value;
                         }
                         fbxObjectMap.Append(id, tex);
@@ -482,17 +483,13 @@ namespace Weesals.Engine.Importers {
                                     var time = times[t];
                                     ref var keyframe = ref curve.Keyframes[t];
                                     keyframe.Time = (float)FBXParser.UnpackTime(time);
-                                    /*keyframe.Value = Quaternion.CreateFromYawPitchRoll(
-                                        EvaluateCurve(fbxCurveY, time, ref itY) * degToRad,
-                                        EvaluateCurve(fbxCurveX, time, ref itX) * degToRad,
-                                        EvaluateCurve(fbxCurveZ, time, ref itZ) * degToRad
-                                    );*/
                                     keyframe.Value = FBXTransform.CreateQuaternion(new(
-                                        EvaluateCurve(fbxCurveX, time, ref itZ),
-                                        EvaluateCurve(fbxCurveY, time, ref itZ),
+                                        EvaluateCurve(fbxCurveX, time, ref itX),
+                                        EvaluateCurve(fbxCurveY, time, ref itY),
                                         EvaluateCurve(fbxCurveZ, time, ref itZ)
-                                        ));
+                                    ));
                                 }
+                                curve.Optimize();
                                 if (fbxCurveNode.Name[0] == 'R') bone.Rotation = curve;
                             } else {
                                 var curve = new Vector3Curve(times.Count);
@@ -505,9 +502,6 @@ namespace Weesals.Engine.Importers {
                                     keyframe.Value.Z = EvaluateCurve(fbxCurveZ, time, ref itZ);
                                 }
                                 if (fbxCurveNode.Name[0] == 'T') {
-                                    foreach (ref var key in curve.Keyframes.AsSpan()) {
-                                        key.Value = Vector3.Transform(key.Value, globalTransform);
-                                    }
                                     bone.Position = curve;
                                 } else if (fbxCurveNode.Name[0] == 'S') bone.Scale = curve;
                             }
@@ -666,11 +660,6 @@ namespace Weesals.Engine.Importers {
             var boneIndices = new FBXParser.VertexData<Int4>() { Mapping = FBXParser.VertexData<Int4>.Mappings.Vertex };
             var boneWeights = new FBXParser.VertexData<Vector4>() { Mapping = FBXParser.VertexData<Vector4>.Mappings.Vertex };
 
-            foreach (ref var vert in verts.AsSpan()) vert = Vector3.Transform(vert, transform);
-            if (normalData.IsValid) {
-                foreach (ref var norm in normalData.Data.AsSpan()) norm = Vector3.Transform(norm, transform);
-            }
-
             Vector3 boundsMin = new Vector3(float.MaxValue);
             Vector3 boundsMax = new Vector3(float.MinValue);
             if (fbxSkin.Clusters != null) {
@@ -699,17 +688,22 @@ namespace Weesals.Engine.Importers {
                 foreach (ref var weight in boneWeights.Data.AsSpan()) weight /= Vector4.Dot(weight, Vector4.One);
                 var fbxCluster0 = fbxObjectMap.Get<FBXCluster>(fbxSkin.Clusters[0]);
                 Matrix4x4.Invert(transform, out var invTransform);
-                var boneTform0 = invTransform * fbxCluster0.TransformLink * transform;
+                var boneTform0 = /*invTransform * */fbxCluster0.TransformLink * transform;
                 foreach (var vert in verts) {
                     var tvert = Vector3.Transform(vert, boneTform0);
                     boundsMin = Vector3.Min(boundsMin, tvert);
                     boundsMax = Vector3.Max(boundsMax, tvert);
                 }
             } else {
+                foreach (ref var vert in verts.AsSpan()) vert = Vector3.Transform(vert, transform);
+                if (normalData.IsValid) {
+                    foreach (ref var norm in normalData.Data.AsSpan()) norm = Vector3.Transform(norm, transform);
+                }
                 foreach (var vert in verts) {
                     boundsMin = Vector3.Min(boundsMin, vert);
                     boundsMax = Vector3.Max(boundsMax, vert);
                 }
+                transform = Matrix4x4.Identity;
             }
 
             if (uvData.IsValid) {
@@ -774,6 +768,7 @@ namespace Weesals.Engine.Importers {
             mesh.SetIndexCount(inds.Length);
             mesh.GetIndicesV<int>().Set(inds);
             mesh.SetBoundingBox(BoundingBox.FromMinMax(boundsMin, boundsMax));
+            mesh.Transform = transform;
             return mesh;
         }
 

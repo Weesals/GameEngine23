@@ -171,6 +171,7 @@ private:
 	static int GetGlyphId(const NativeFont* font, wchar_t chr);
 	static const CSGlyph& GetGlyph(const NativeFont* font, int id);
 };
+static_assert(sizeof(BufferReference) == 16);
 class DLLCLASS CSMaterial {
 	NativeMaterial* mMaterial;
 public:
@@ -315,7 +316,7 @@ private:
 		NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
 		void* materialState);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
-	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
+	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, size_t hash = 0);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
 	static void Reset(NativeGraphics* graphics);

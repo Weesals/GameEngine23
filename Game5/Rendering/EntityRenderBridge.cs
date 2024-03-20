@@ -129,8 +129,9 @@ namespace Weesals.Rendering {
                 UpdateAnimation(entityAddr);
             }
             for (int i = 0; i < sceneProxy.SceneIndex.Length; i++) {
-                var instance = Scene.CreateInstance();
-                ScenePasses.AddInstance(instance, model.Meshes[i], sceneProxy.AnimMaterial, RenderTags.Default);
+                var mesh = model.Meshes[i];
+                var instance = Scene.CreateInstance(mesh.BoundingBox);
+                ScenePasses.AddInstance(instance, mesh, sceneProxy.AnimMaterial, RenderTags.Default);
                 sceneProxy.SceneIndex[i] = instance;
             }
             binding.ChangedSelected.TryRemove(entityAddr.Row);
@@ -140,10 +141,14 @@ namespace Weesals.Rendering {
         public void UpdateTransform(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
             var epos = binding.TransformLookup.GetValue(World.Stage, entityAddr);
+            var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
-            foreach (var index in sceneProxy.SceneIndex)
-                Scene.SetTransform(index, epos.AsMatrix());
+            var tform = epos.AsMatrix();
+            for (int i = 0; i < sceneProxy.SceneIndex.Length; i++) {
+                var mesh = emodel.Model.Meshes[i];
+                Scene.SetTransform(sceneProxy.SceneIndex[i], mesh.Transform * tform);
+            }
         }
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];

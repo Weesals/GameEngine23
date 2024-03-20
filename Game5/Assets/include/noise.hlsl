@@ -45,8 +45,8 @@ float SimplexNoise(float2 p)
 float Permute(float v) {
     return frac(v * 105.18f - 0.01f);
 }
-float PermuteV2(float2 v2) {
-    return frac(frac(dot(v2, float2(0.6796, 0.4273))) * 188.1);
+float PermuteV2(float2 v2, float seed = 0.0) {
+    return frac(frac(dot(v2, float2(0.6796 + seed, 0.4273))) * 188.1);
 }
 float PermuteV3(float3 v) {
     return frac(frac(dot(v, float3(0.6796, 0.4273, 0.7273))) * 188.1);

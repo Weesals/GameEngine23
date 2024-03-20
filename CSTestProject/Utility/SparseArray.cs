@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Weesals.Utility {
@@ -30,6 +32,27 @@ namespace Weesals.Utility {
     public static class SpanExt {
         public static Span<T> Slice<T>(this Span<T> span, RangeInt range) {
             return span.Slice(range.Start, range.Length);
+        }
+        unsafe public static ulong GenerateDataHash(this MemoryBlock<byte> data) {
+            const int Count = 4;
+            const ulong Prime1 = 0x9E3779B97F4A7C15ul;
+            const ulong Prime2 = 0xC2B2AE3D27D4EB4Ful;
+            const int ZSize = sizeof(ulong) * Count;
+            var z = stackalloc ulong[Count] { 0, 0, 0, 0 };
+            ulong hash = 0;
+            while (data.Length > 0) {
+                int cpysize = Math.Min(data.Length, ZSize);
+                Buffer.MemoryCopy(data.Data, z, ZSize, cpysize);
+                hash = BitOperations.RotateLeft(hash, 15);
+                hash *= Prime1;
+                hash += z[0] * unchecked(Prime2);
+                hash += z[1] * unchecked(Prime2 * Prime2);
+                hash += z[2] * unchecked(Prime2 * Prime2 * Prime2);
+                hash += z[3] * unchecked(Prime2 * Prime2 * Prime2 * Prime2);
+                data.Data += ZSize;
+                data.Length -= ZSize;
+            }
+            return hash;
         }
     }
 

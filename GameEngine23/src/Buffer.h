@@ -783,3 +783,13 @@ struct TypedBufferView {
 	template<typename V>
 	void Set(int offset, const V value) { mView.Set(offset + mRange.start, value); }
 };
+
+struct BufferReference {
+	enum BufferTypes : uint8_t { Texture, RenderTarget, Buffer, };
+	void* mBuffer;
+	int16_t mSubresourceId;
+	int16_t mSubresourceCount;
+	BufferTypes mType;
+	BufferFormat mFormat;
+	int16_t mPadding;
+};

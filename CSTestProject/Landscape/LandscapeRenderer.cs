@@ -19,6 +19,10 @@ namespace Weesals.Landscape {
         public const int TileSize = 8;
         public const int HeightScale = LandscapeData.HeightScale;
 
+        private static ProfilerMarker ProfileMarker_Render = new("Render Landscape");
+        private static ProfilerMarker ProfileMarker_UpdateChunks = new("Update Chunks");
+        private static ProfilerMarker ProfileMarker_UpdateEdges = new("Update Edges");
+
         public interface ILandscapeDataListener {
             void NotifyDataChanged(LandscapeData odata, LandscapeData ndata);
         }
@@ -89,12 +93,17 @@ namespace Weesals.Landscape {
 
         private List<ILandscapeDataListener> listeners = new();
 
-        MeshDrawInstanced landscapeDraw;
-        MeshDrawInstanced waterDraw;
-        MeshDrawInstanced edgeDraw;
-        MeshDrawInstanced waterEdgeDraw;
-        int materialPropHash;
+        struct PassCache {
+            public readonly ScenePass Pass;
+            public MeshDrawInstanced landscapeDraw;
+            public MeshDrawInstanced waterDraw;
+            public MeshDrawInstanced edgeDraw;
+            public MeshDrawInstanced waterEdgeDraw;
+            public PassCache(ScenePass pass) { Pass = pass; }
+        }
+        private PooledList<PassCache> passCache = new();
 
+        int materialPropHash;
         int mRevision;
 
         public LandscapeRenderer() { }
@@ -108,10 +117,10 @@ namespace Weesals.Landscape {
                 Changed = LandscapeChangeEvent.MakeAll(landscapeData.Size),
                 Bounds = BoundingBox.FromMinMax(Vector3.Zero, landscapeData.Sizing.LandscapeToWorld(landscapeData.Size)),
             };
-            if (!runtimeData.BaseTextures.IsValid()) {
+            if (!runtimeData.BaseTextures.IsValid) {
                 runtimeData.BaseTextures = Resources.TryLoadTexture(BaseMapsKey);
             }
-            if (!runtimeData.BaseTextures.IsValid()) {
+            if (!runtimeData.BaseTextures.IsValid) {
                 runtimeData.BaseTextures = CSTexture.Create("BaseMaps")
                     .SetSize(512)
                     .SetArrayCount(Layers.LayerCount);
@@ -133,10 +142,10 @@ namespace Weesals.Landscape {
                 runtimeData.BaseTextures.CompressTexture(BufferFormat.FORMAT_BC3_UNORM);
                 Resources.TryPutTexture(BaseMapsKey, runtimeData.BaseTextures);
             }
-            if (!runtimeData.BumpTextures.IsValid()) {
+            if (!runtimeData.BumpTextures.IsValid) {
                 runtimeData.BumpTextures = Resources.TryLoadTexture(BumpMapsKey);
             }
-            if (!runtimeData.BumpTextures.IsValid()) {
+            if (!runtimeData.BumpTextures.IsValid) {
                 runtimeData.BumpTextures = CSTexture.Create("BumpMaps")
                     .SetSize(256)
                     .SetArrayCount(Layers.LayerCount);
@@ -157,30 +166,33 @@ namespace Weesals.Landscape {
             if (rootMaterial != null) LandMaterial.InheritProperties(rootMaterial);
             LandMaterial.SetTexture("BaseMaps", runtimeData.BaseTextures);
             LandMaterial.SetTexture("BumpMaps", runtimeData.BumpTextures);
-            landscapeDraw = new MeshDrawInstanced(tileMesh, LandMaterial);
-            landscapeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             EdgeMaterial = new Material(LandMaterial);
             EdgeMaterial.SetMacro("EDGE", "1");
             EdgeMaterial.SetTexture("EdgeTex", Resources.LoadTexture("./Assets/T_WorldsEdge.jpg"));
             //EdgeMaterial.SetRasterMode(RasterMode.MakeNoCull());
-            edgeDraw = new MeshDrawInstanced(edgeMesh, EdgeMaterial);
-            edgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             WaterMaterial = new("./Assets/water.hlsl", LandMaterial);
             WaterMaterial.SetTexture("NoiseTex", Resources.LoadTexture("./Assets/Noise.jpg"));
             WaterMaterial.SetTexture("FoamTex", Resources.LoadTexture("./Assets/FoamMask.jpg"));
             WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
             WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
-            waterDraw = new MeshDrawInstanced(tileMesh, WaterMaterial);
-            waterDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             WaterEdgeMaterial = new Material(WaterMaterial);
             WaterEdgeMaterial.SetMacro("EDGE", "1");
-            waterEdgeDraw = new MeshDrawInstanced(edgeMesh, WaterEdgeMaterial);
-            waterEdgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
 
             LandscapeData.OnLandscapeChanged += LandscapeChanged;
+        }
+
+        private void InitialisePassCache(ref PassCache cache) {
+            cache.landscapeDraw = new MeshDrawInstanced(tileMesh, LandMaterial);
+            cache.landscapeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
+            cache.edgeDraw = new MeshDrawInstanced(edgeMesh, EdgeMaterial);
+            cache.edgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
+            cache.waterDraw = new MeshDrawInstanced(tileMesh, WaterMaterial);
+            cache.waterDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
+            cache.waterEdgeDraw = new MeshDrawInstanced(edgeMesh, WaterEdgeMaterial);
+            cache.waterEdgeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
         }
 
         private void LandscapeChanged(LandscapeData data, LandscapeChangeEvent changed) {
@@ -239,9 +251,9 @@ namespace Weesals.Landscape {
             JobHandle metaDependency = UpdateMetadata(changed);
 
             var size = LandscapeData.GetSize();
-            if (!runtimeData.HeightMap.IsValid())
+            if (!runtimeData.HeightMap.IsValid)
                 runtimeData.HeightMap = CSTexture.Create("HeightMap", size.X, size.Y);
-            if (!runtimeData.ControlMap.IsValid())
+            if (!runtimeData.ControlMap.IsValid)
                 runtimeData.ControlMap = CSTexture.Create("ControlMap", size.X, size.Y);
 
             JobHandle heightDep = default;
@@ -492,6 +504,7 @@ namespace Weesals.Landscape {
             return dependency;
         }
         unsafe private void UpdateChunkInstances(MeshDrawInstanced draw, Frustum localFrustum, HeightMetaData[] metadata, Int2 visMinI, Int2 visMaxI) {
+            using var marker = ProfileMarker_UpdateChunks.Auto();
             var items = stackalloc Short2[Int2.CMul(visMaxI - visMinI)];
             int count = 0;
             int drawHash = 0;
@@ -514,6 +527,7 @@ namespace Weesals.Landscape {
             draw.SetInstanceData(items, count, 0, drawHash);
         }
         unsafe private void UpdateEdgeInstances(MeshDrawInstanced draw, Frustum localFrustum, HeightMetaData[] metadata, Int2 imin, Int2 imax) {
+            using var marker = ProfileMarker_UpdateEdges.Auto();
             int maxCount = Int2.CSum(imax - imin + 1) * 4;
             var itemsRaw = stackalloc Short2[maxCount];
             var items = new Span<Short2>(itemsRaw, maxCount);
@@ -584,6 +598,7 @@ namespace Weesals.Landscape {
             return BoundingBox.FromMinMax(min, max);
         }
         unsafe public void Render(CSGraphics graphics, ScenePass pass) {
+            using var marker = ProfileMarker_Render.Auto();
             //if (!pass.TagsToInclude.Has(pass.RetainedRenderer.Scene.TagManager.RequireTag("Terrain"))) return;
             var localFrustum = pass.Frustum.TransformToLocal(GetWorldMatrix());
 
@@ -598,18 +613,29 @@ namespace Weesals.Landscape {
             }
             if (visMaxI.X <= visMinI.X || visMaxI.Y <= visMinI.Y) return;
 
+            ref var cache = ref RequirePassCache(pass);
+
             if (pass.TagsToInclude.HasAny(RenderTag.Default | RenderTag.ShadowCast)) {
-                UpdateChunkInstances(landscapeDraw, localFrustum, runtimeData.LandscapeChunkMeta, visMinI, visMaxI);
-                UpdateEdgeInstances(edgeDraw, localFrustum, runtimeData.LandscapeChunkMeta, visMinI, visMaxI);
-                landscapeDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
-                edgeDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
+                UpdateChunkInstances(cache.landscapeDraw, localFrustum, runtimeData.LandscapeChunkMeta, visMinI, visMaxI);
+                UpdateEdgeInstances(cache.edgeDraw, localFrustum, runtimeData.LandscapeChunkMeta, visMinI, visMaxI);
+                cache.landscapeDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
+                cache.edgeDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
             }
             if (pass.TagsToInclude.Has(RenderTag.Transparent) && LandscapeData.WaterEnabled) {
-                UpdateChunkInstances(waterDraw, localFrustum, runtimeData.WaterChunkMeta, visMinI, visMaxI);
-                UpdateEdgeInstances(waterEdgeDraw, localFrustum, runtimeData.WaterChunkMeta, visMinI, visMaxI);
-                waterDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
-                waterEdgeDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
+                UpdateChunkInstances(cache.waterDraw, localFrustum, runtimeData.WaterChunkMeta, visMinI, visMaxI);
+                UpdateEdgeInstances(cache.waterEdgeDraw, localFrustum, runtimeData.WaterChunkMeta, visMinI, visMaxI);
+                cache.waterDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
+                cache.waterEdgeDraw.Draw(graphics, pass, CSDrawConfig.MakeDefault());
             }
+        }
+
+        private ref PassCache RequirePassCache(ScenePass pass) {
+            for (int i = 0; i < passCache.Count; i++) {
+                if (passCache[i].Pass == pass) return ref passCache[i];
+            }
+            passCache.Add(new PassCache(pass));
+            InitialisePassCache(ref passCache[^1]);
+            return ref passCache[^1];
         }
     }
 }

@@ -152,6 +152,7 @@ namespace Weesals.Engine {
         private SparseIndices gpuSceneDirty = new();
         private SparseArray<Instance> instances = new();
         private ulong[] instanceVisibility = Array.Empty<ulong>();
+        private BoundingBox[] instanceBounds = Array.Empty<BoundingBox>();
         private uint listenerMask = DefaultListenerMask;
         private uint listenerFlags = 0;
         private BoundingBox activeBounds = BoundingBox.Invalid;
@@ -187,12 +188,15 @@ namespace Weesals.Engine {
         }
 
         public CSInstance CreateInstance() {
+            return CreateInstance(new BoundingBox(Vector3.Zero, new Vector3(10f)));
+        }
+        public CSInstance CreateInstance(BoundingBox bounds) {
             int size = 10;
             var range = gpuSceneFree.Take(size);
             if (range.Length == -1) {
                 range = new RangeInt(gpuScene.BufferLayout.mCount, size);
                 if (range.End > gpuScene.BufferCapacityCount) {
-                    int resize = Math.Max(gpuScene.BufferCapacityCount, 1024) * 2;
+                    int resize = (int)BitOperations.RoundUpToPowerOf2((ulong)range.End + 1500);
                     gpuScene.AllocResize(resize);
                     new TypedBufferView<Vector4>(gpuScene.Elements[0], RangeInt.FromBeginEnd(range.Start, resize))
                         .Set(Vector4.Zero);
@@ -201,7 +205,9 @@ namespace Weesals.Engine {
             }
             var id = instances.Add(new Instance() { Data = range, });
             if (id >= instanceVisibility.Length) Array.Resize(ref instanceVisibility, instances.Items.Length);
+            if (id >= instanceBounds.Length) Array.Resize(ref instanceBounds, instances.Items.Length);
             instanceVisibility[id] = 1;
+            instanceBounds[id] = bounds;
             var data = GetInstanceData(new CSInstance(id));
             data.AsSpan().Fill(Vector4.Zero);
             ref var instanceData = ref instances[id];
@@ -264,16 +270,27 @@ namespace Weesals.Engine {
             return *((Matrix4x4*)data.Data);
         }
         unsafe public void SetTransform(CSInstance instance, Matrix4x4 mat) {
-            const float MaxSize = 10.0f;
             if (!UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4))) return;
             var instanceId = instance.GetInstanceId();
-            var aabbMin = mat.Translation - new Vector3(MaxSize);
-            var aabbMax = mat.Translation + new Vector3(MaxSize);
-            activeBounds.Min = Vector3.Min(activeBounds.Min, aabbMin);
-            activeBounds.Max = Vector3.Max(activeBounds.Max, aabbMax);
-            instanceVisibility[instanceId] = GenerateCellMask(aabbMin, aabbMax);
+            var aabb = TransformBounds(mat, instanceBounds[instance.GetInstanceId()]);
+            activeBounds.Min = Vector3.Min(activeBounds.Min, aabb.Min);
+            activeBounds.Max = Vector3.Max(activeBounds.Max, aabb.Max);
+            instanceVisibility[instanceId] = GenerateCellMask(aabb.Min, aabb.Max);
             movedInstances.Add(instance);
         }
+
+        public static BoundingBox TransformBounds(Matrix4x4 mat, BoundingBox boundingBox) {
+            var pos = Vector3.Transform(boundingBox.Centre, mat);
+            var ext = boundingBox.Extents;
+            var mx = Vector3.Abs(new Vector3(mat.M11, mat.M12, mat.M13));
+            var my = Vector3.Abs(new Vector3(mat.M21, mat.M22, mat.M23));
+            var mz = Vector3.Abs(new Vector3(mat.M31, mat.M32, mat.M33));
+            ext = Vector3.Max(Vector3.Max(ext.X * mx, ext.Y * my), ext.Z * mz);
+            var aabbMin = pos - ext;
+            var aabbMax = pos + ext;
+            return BoundingBox.FromMinMax(aabbMin, aabbMax);
+        }
+
         unsafe public void SetHighlight(CSInstance instance, Color color) {
             Vector4 col = color;
             UpdateInstanceData(instance, sizeof(Matrix4x4) * 2, &col, sizeof(Vector4));
@@ -334,6 +351,7 @@ namespace Weesals.Engine {
 
     unsafe public class RenderQueue {
         private static ProfilerMarker ProfileMarker_SubmitDraw = new("SubmitDraw");
+        private static ProfilerMarker ProfileMarker_AppendMesh = new("AppendMesh");
         struct DrawBatch {
             public string Name;
             public CSPipeline PipelineLayout;
@@ -379,7 +397,8 @@ namespace Weesals.Engine {
             return renBufferLayouts;
         }
         public int AppendMesh(string name, CSPipeline pipeline, MemoryBlock<CSBufferLayout> buffers, MemoryBlock<nint> resources, int instances = 1) {
-            int hash = HashCode.Combine(pipeline.GetHashCode());
+            using var marker = ProfileMarker_AppendMesh.Auto();
+            int hash = pipeline.GetHashCode();
             foreach (var buffer in buffers) {
                 hash = hash * 668265263 + (int)buffer.identifier * 374761393 + buffer.revision;
             }
@@ -570,11 +589,12 @@ namespace Weesals.Engine {
             bool change = false;
 
             ulong visMask;
+            bool enableFrustum = true;
             {       // Generate a mask representing the cells intersecting the frustum
                 using var hullMarker = ProfileMarker_ComputeHull.Auto();
                 var activeRange = Scene.GetActiveBounds();
-                hull.FromFrustum(frustum);
-                hull.Slice(activeRange);
+                hull.FromBox(activeRange);
+                enableFrustum = hull.Slice(frustum);
                 var aabb = hull.GetAABB();
                 if (aabb.Extents.X <= 0) return;
                 visMask = Scene.GenerateCellMask(aabb.Min, aabb.Max);
@@ -587,21 +607,31 @@ namespace Weesals.Engine {
                 var instBegin = queue.InstanceCount;
 
                 // Calculate visible instances
-                var bbox = mesh.BoundingBox;
-                var bboxCtr = bbox.Centre;
-                var bboxExt = bbox.Extents;
                 using (var frustumMarker = ProfileMarker_FrustumCull.Auto()) {
-                    foreach (var instance in batch.Instances) {
-                        if ((Scene.GetInstanceVisibilityMask(instance) & visMask) == 0) continue;
-                        var data = Scene.GetInstanceData(instance);
-                        var matrix = *(Matrix4x4*)(data.Data);
-                        if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
-                        var id = instance.GetInstanceId();
-                        change |= queue.AppendInstance((uint)id);
-                        Scene.MarkListener(changeListenerId, id);
+                    if (enableFrustum) {
+                        var bbox = mesh.BoundingBox;
+                        var bboxCtr = bbox.Centre;
+                        var bboxExt = bbox.Extents;
+                        foreach (var instance in batch.Instances) {
+                            if ((Scene.GetInstanceVisibilityMask(instance) & visMask) == 0) continue;
+                            var data = Scene.GetInstanceData(instance);
+                            var matrix = *(Matrix4x4*)(data.Data);
+                            if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
+                            //var aabb = Scene.TransformBounds(matrix, bbox);
+                            //if (!frustum.GetIsVisible(aabb.Centre, aabb.Extents)) continue;
+                            var id = instance.GetInstanceId();
+                            change |= queue.AppendInstance((uint)id);
+                            Scene.MarkListener(changeListenerId, id);
 
-                        //Handles.matrix = matrix;
-                        //Gizmos.DrawWireCube(mesh.BoundingBox.Centre, mesh.BoundingBox.Size);
+                            //Handles.matrix = matrix;
+                            //Gizmos.DrawWireCube(mesh.BoundingBox.Centre, mesh.BoundingBox.Size);
+                        }
+                    } else {
+                        foreach (var instance in batch.Instances) {
+                            var id = instance.GetInstanceId();
+                            change |= queue.AppendInstance((uint)id);
+                            Scene.MarkListener(changeListenerId, id);
+                        }
                     }
                 }
                 // If no instances were created, quit
@@ -628,8 +658,8 @@ namespace Weesals.Engine {
                         var res = psoresources[i];
                         tresources[i] = new CSUniformValue {
                             mName = res.mName,
-                            mOffset = (int)(i * sizeof(void*)),
-                            mSize = (int)sizeof(void*),
+                            mOffset = (int)(i * sizeof(CSBufferReference)),
+                            mSize = (int)sizeof(CSBufferReference),
                         };
                     }
                     resolved.mResolvedResources = tresources.Count == 0 ? default
@@ -638,10 +668,10 @@ namespace Weesals.Engine {
 
                 var pipeline = resolved.mPipeline;
                 var psoconstantBuffers = pipeline.GetConstantBuffers();
-                var resources = graphics.RequireFrameData<nint>(psoconstantBuffers.Length + pipeline.GetResourceCount());
-                int r = 0;
+                var resources = graphics.RequireFrameData<nint>(psoconstantBuffers.Length + pipeline.GetResourceCount() * 2);
 
-                using (var frustumMarker = ProfileMarker_ComputeResources.Auto()) {
+                using (var resourceMarker = ProfileMarker_ComputeResources.Auto()) {
+                    int r = 0;
                     // Get constant buffer data for this batch
                     for (int i = 0; i < resolved.mResolvedCBs.Count; ++i) {
                         var cbid = resolved.mResolvedCBs[i];
@@ -681,8 +711,9 @@ namespace Weesals.Engine {
             }
         }
 
-        private nint RequireConstantBuffer(CSGraphics graphics, MaterialEvaluator evaluator) {
-            Span<byte> outdata = stackalloc byte[evaluator.mDataSize];
+        unsafe private nint RequireConstantBuffer(CSGraphics graphics, MaterialEvaluator evaluator) {
+            var outdataPtr = stackalloc byte[evaluator.mDataSize];
+            var outdata = new MemoryBlock<byte>(outdataPtr, evaluator.mDataSize);
             evaluator.Evaluate(outdata);
             return graphics.RequireConstantBuffer(outdata);
         }

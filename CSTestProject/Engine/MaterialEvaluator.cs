@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
@@ -29,6 +30,8 @@ namespace Weesals.Engine {
 		}
 	}
     public class MaterialEvaluator {
+        private static ProfilerMarker ProfileMarker_GenCB = new("Gen CB");
+        private static ProfilerMarker ProfileMarker_ReqCB = new("Req CB");
         public struct Value {
             public ushort OutputOffset;	// Offset in the output data array
             public ushort ValueOffset;  // Offset within the material
@@ -86,7 +89,7 @@ namespace Weesals.Engine {
             return ResolveResources(graphics, pipeline, CollectionsMarshal.AsSpan(materialStack));
         }
 		public static MemoryBlock<nint> ResolveResources(CSGraphics graphics, CSPipeline pipeline, Span<Material> materialStack) {
-            int resCount = pipeline.GetConstantBufferCount() + pipeline.GetResourceCount();
+            int resCount = pipeline.GetConstantBufferCount() + pipeline.GetResourceCount() * 2;
             if (pipeline.GetHasStencilState()) ++resCount;
             var resources = graphics.RequireFrameData<nint>(resCount);
 			ResolveResources(graphics, pipeline, materialStack, resources);
@@ -100,15 +103,22 @@ namespace Weesals.Engine {
             }
 			// Get constant buffer data for this batch
 			foreach (var cb in pipeline.GetConstantBuffers()) {
-				Span<byte> tmpData = stackalloc byte[cb.mSize];
-                ResolveConstantBuffer(cb, materialStack, tmpData);
-				outResources[r++] = graphics.RequireConstantBuffer(tmpData.Slice(0, cb.mSize));
+                byte* tmpDataPtr = stackalloc byte[cb.mSize];
+                var tmpData = new MemoryBlock<byte>(tmpDataPtr, cb.mSize);
+                using (var marker = ProfileMarker_GenCB.Auto()) {
+                    ResolveConstantBuffer(cb, materialStack, tmpData);
+                }
+                var hash = tmpData.GenerateDataHash();
+                using (var marker = ProfileMarker_ReqCB.Auto()) {
+                    outResources[r++] = graphics.RequireConstantBuffer(tmpData, hash);
+                }
 			}
 			// Get other resource data for this batch
 			{
-				foreach (var rb in pipeline.GetResources()) {
-					var data = Material.GetUniformTexture(rb.mName, materialStack);
-					outResources[r++] = (nint)data.mTexture;
+                var resourceData = MemoryMarshal.Cast<nint, CSBufferReference>(outResources.Slice(r));
+                r = 0;
+                foreach (var rb in pipeline.GetResources()) {
+                    resourceData[r++] = Material.GetUniformBuffer(rb.mName, materialStack);
 				}
 			}
 		}
@@ -171,8 +181,8 @@ namespace Weesals.Engine {
             int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, 32), materials);
             var macros = new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, count);
             var materialState = ResolvePipelineState(materials);
-            var vertShader = Resources.RequireShader(graphics, materialState.VertexShader!, "vs_6_0", macros);
-            var pixShader = Resources.RequireShader(graphics, materialState.PixelShader!, "ps_6_0", macros);
+            var vertShader = Resources.RequireShader(graphics, materialState.VertexShader!, "vs_6_0", macros, materialState.RenderPass);
+            var pixShader = Resources.RequireShader(graphics, materialState.PixelShader!, "ps_6_0", macros, materialState.RenderPass);
             var pipeline = graphics.RequirePipeline(pbuffLayout,
                 vertShader.CompiledShader,
                 pixShader.CompiledShader,

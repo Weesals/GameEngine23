@@ -58,7 +58,14 @@ public:
             for (auto& value : GetValues()) hash = AppendHash(((int)value.mName << 16) | value.mOffset, hash);
             return hash;
         }
-        bool operator ==(const ConstantBuffer& other) const = default;
+        bool operator ==(const ConstantBuffer& other) const {
+            if (!(mName == other.mName && mSize == other.mSize && mBindPoint == other.mBindPoint &&
+                mValueCount == other.mValueCount)) return false;
+            for (int i = 0; i < mValueCount; ++i) {
+                if (mValues.get()[i] != other.mValues.get()[i]) return false;
+            }
+            return true;
+        }
     };
     enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, };
     struct ResourceBinding {
@@ -198,7 +205,7 @@ public:
     virtual void SetViewport(RectInt viewport) { }
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual uint64_t GetGlobalPSOHash() const { return (uint64_t)this; }
-    virtual void* RequireConstantBuffer(std::span<const uint8_t> data) { return 0; }
+    virtual void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash) { return 0; }
     virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
     virtual const PipelineLayout* RequirePipeline(
         const CompiledShader& vertexShader, const CompiledShader& pixelShader,
@@ -247,8 +254,8 @@ public:
         std::transform(data.begin(), data.end(), outData.data(), fn);
         return outData;
     }
-    void* RequireConstantBuffer(std::span<const uint8_t> data) {
-        return mInterop->RequireConstantBuffer(data);
+    void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash = 0) {
+        return mInterop->RequireConstantBuffer(data, hash);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) {
         mInterop->CopyBufferData(buffer, ranges);

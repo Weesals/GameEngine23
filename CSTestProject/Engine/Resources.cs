@@ -112,11 +112,13 @@ namespace Weesals.Engine {
 
         public static ShaderBase LoadShader(string path, string entry) {
             var key = new ValueTuple<string, string>(path, entry);
-            if (!loadedShaders.TryGetValue(key, out var shader)) {
-                shader = ShaderBase.FromPath(path, entry);
-                loadedShaders.Add(key, shader);
+            lock (loadedShaders) {
+                if (!loadedShaders.TryGetValue(key, out var shader)) {
+                    shader = ShaderBase.FromPath(path, entry);
+                    loadedShaders.Add(key, shader);
+                }
+                return shader;
             }
-            return shader;
         }
 
         public static Model LoadModel(string path) {
@@ -200,7 +202,7 @@ namespace Weesals.Engine {
             return texture;
         }
         public static bool TryPutTexture(string key, CSTexture texture) {
-            if (!texture.IsValid()) return false;
+            if (!texture.IsValid) return false;
             using var entry = ResourceCacheManager.TrySave(key, 0);
             if (!entry.IsValid) return false;
             using (var writer = new BinaryWriter(entry.FileStream)) {
@@ -229,7 +231,7 @@ namespace Weesals.Engine {
                 }
                 using var marker = new ProfilerMarker("Texture Load").Auto();
                 texture = CSResources.LoadTexture(path);
-                if (texture.IsValid()) {
+                if (texture.IsValid) {
                     if (texture.Format != format) {
                         bool isMul4 = (texture.Size.X & 3) == 0 && (texture.Size.Y & 3) == 0;
                         if (isMul4 && format >= BufferFormat.FORMAT_BC4_TYPELESS) {
@@ -318,11 +320,12 @@ namespace Weesals.Engine {
             }
         }
 
-        unsafe public static Shader RequireShader(CSGraphics graphics, ShaderBase shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
+        unsafe public static Shader RequireShader(CSGraphics graphics, ShaderBase shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass) {
             if (shader == null) return null;
 
             // TODO: Cache in 'shader'
-            ulong hash = (ulong)shader.GetHashCode();
+            ulong hash = shader.Path.ComputeStringHash();
+            hash += renderPass.IsValid ? (ulong)renderPass.GetHashCode() : shader.Entry.ComputeStringHash();
             foreach (var macro in macros) {
                 var macroHash = (((ulong)macro.Key.mId * 1254739) ^ ((ulong)macro.Value.mId * 37139213));
                 macroHash ^= macroHash >> 13;
@@ -381,8 +384,9 @@ namespace Weesals.Engine {
                     }
                 }
                 if (compiledshader.CompiledBlob == null) {
-                    Debug.WriteLine($"Compiling Shader {shader}");
-                    var nativeshader = graphics.CompileShader(shader.Path, shader.Entry, new CSIdentifier(profile), macros);
+                    var entryFn = renderPass.IsValid ? renderPass.GetName() + "_" + shader.Entry : shader.Entry;
+                    Debug.WriteLine($"Compiling Shader {shader} : {entryFn}");
+                    var nativeshader = graphics.CompileShader(shader.Path, entryFn, new CSIdentifier(profile), macros);
                     compiledshader.CompiledBlob = nativeshader.GetBinaryData().ToArray();
                     compiledshader.Reflection = new ShaderReflection();
                     var nativeCBs = nativeshader.GetConstantBuffers();

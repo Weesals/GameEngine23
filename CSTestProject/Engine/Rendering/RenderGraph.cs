@@ -352,7 +352,7 @@ namespace Weesals.Engine {
                             buffer.Description.Size = selfOutput.Output.TargetDesc.Size;
                         if (buffer.Description.MipCount == 1)
                             buffer.Description.MipCount = selfOutput.Output.TargetDesc.MipCount;
-                        if (selfOutput.SpecifiedRT.IsValid())
+                        if (selfOutput.SpecifiedRT.IsValid)
                             buffer.Target = new(selfOutput.SpecifiedRT);
                     }
                 }
@@ -434,7 +434,7 @@ namespace Weesals.Engine {
                         // Match size with any explicit or resolved output sizes
                         for (int i = 0; i < selfOutputs.Length; i++) {
                             var buffer = buffers[selfOutputs[i].TargetId];
-                            if (buffer.Target.IsValid()) { newSize = buffer.Target.Texture.GetSize(); break; }
+                            if (buffer.Target.IsValid) { newSize = buffer.Target.Texture.GetSize(); break; }
                             if (buffer.Description.Size.X > 0) { newSize = buffer.Description.Size; break; }
                         }
                         if (newSize.X <= 0) continue;
@@ -548,7 +548,7 @@ namespace Weesals.Engine {
                 using var tempTargets = new PooledList<int>(16);
                 for (var it = buffers.GetEnumerator(); it.MoveNext();) {
                     ref var buffer = ref it.Current;
-                    if (buffer.Target.IsValid()) continue;
+                    if (buffer.Target.IsValid) continue;
                     if (buffer.RequireAttachment) RequireBuffer(ref tempTargets.AsMutable(), it.Index);
                 }
                 using var targetsSpan = new PooledList<RenderPass.Target>(16);
@@ -573,9 +573,9 @@ namespace Weesals.Engine {
                     for (int i = 0; i < selfOutputs.Length; i++) {
                         var bufferId = selfOutputs[i].TargetId;
                         ref var buffer = ref buffers[bufferId];
-                        if (!buffer.Target.IsValid()) RequireBuffer(ref tempTargets.AsMutable(), bufferId);
+                        if (!buffer.Target.IsValid) RequireBuffer(ref tempTargets.AsMutable(), bufferId);
                         var target = buffer.Target;
-                        var fmt = target.Texture.IsValid() ? target.Texture.GetFormat() : selfOutputs[i].Output.TargetDesc.Format;
+                        var fmt = target.Texture.IsValid ? target.Texture.GetFormat() : selfOutputs[i].Output.TargetDesc.Format;
                         if (BufferFormatType.GetIsDepthBuffer(fmt)) depth = target;
                         else targetsSpan.Add(target);
                     }
@@ -590,7 +590,7 @@ namespace Weesals.Engine {
                 }
                 // Clean up temporary RTs
                 foreach (var item in tempTargets) {
-                    if (buffers[item].Target.IsValid()) rtPool.Return(buffers[item].Target.Texture);
+                    if (buffers[item].Target.IsValid) rtPool.Return(buffers[item].Target.Texture);
                 }
             }
             public void Dispose() {

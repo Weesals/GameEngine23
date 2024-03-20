@@ -34,6 +34,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Remove="Assets\ParticleAtlas.png" />
+    <None Remove="assets\shader\GTAO.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Assets\Characters\" />

@@ -3,6 +3,8 @@ matrix CurrentVP;
 float2 TemporalJitter;
 
 SamplerState BilinearSampler : register(s1);
+SamplerState MinSampler : register(s4);
+SamplerState MaxSampler : register(s5);
 
 Texture2D<float4> CurrentFrame : register(t0);
 Texture2D<float4> PreviousFrame : register(t1);
@@ -76,6 +78,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
         colorMin = min(colorMin, otherColor);
         colorMax = max(colorMax, otherColor);
     }
+    colorMin = CurrentFrame.Sample(MinSampler, input.uv + texelSize * sign * 0.5);
+    colorMax = CurrentFrame.Sample(MaxSampler, input.uv + texelSize * sign * 0.5);
     scenePrev = clamp(scenePrev, colorMin, colorMax);
     sceneColor = lerp(sceneColor, scenePrev, 0.85);
 

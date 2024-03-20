@@ -479,7 +479,7 @@ namespace Weesals.UI {
             prevTimerUS = currTimerUS;
             currTimerUS += (int)(dt * 1000.0f * 1000.0f + 0.5f);
 
-            if (input.IsValid()) {
+            if (input.IsValid) {
                 var inputPointers = input.GetPointers();
                 using var pointers = new PooledList<CSPointer>(inputPointers.Length);
                 foreach (var ptr in inputPointers) pointers.Add(ptr);

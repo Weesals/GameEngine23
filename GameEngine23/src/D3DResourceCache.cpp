@@ -172,8 +172,7 @@ D3DResourceCache::D3DTexture* D3DResourceCache::RequireD3DTexture(const Texture&
 ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(size_t uploadSize, int lockBits) {
     uploadSize = (uploadSize + BufferAlignment) & (~BufferAlignment);
     auto& uploadBufferItem = mUploadBufferCache.RequireItem(uploadSize, lockBits,
-        [&](auto& item) // Allocate a new item
-        {
+        [&](auto& item) { // Allocate a new item
             auto uploadBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(item.mLayoutHash);
             ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommittedResource(
                 &D3D::UploadHeap,
@@ -265,6 +264,60 @@ void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int 
     );
 }
 
+D3D12_RESOURCE_DESC D3DResourceCache::GetTextureDesc(const Texture& tex) {
+    auto size = tex.GetSize();
+    auto fmt = tex.GetBufferFormat();
+    auto mipCount = tex.GetMipCount(), arrCount = tex.GetArrayCount();
+    auto bitsPerPixel = BufferFormatType::GetBitSize(fmt);
+    //assert(size.z == 1);
+    // Create the texture resource
+    auto textureDesc =
+        size.z > 1 ? CD3DX12_RESOURCE_DESC::Tex3D((DXGI_FORMAT)fmt, size.x, size.y, size.z, mipCount)
+        : CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)fmt, size.x, size.y, arrCount, mipCount);
+    if (textureDesc.Width * textureDesc.Height * textureDesc.DepthOrArraySize * bitsPerPixel / 8 <= 0x10000) {
+        textureDesc.Alignment = D3D12_SMALL_RESOURCE_PLACEMENT_ALIGNMENT;
+    }
+    return textureDesc;
+}
+int D3DResourceCache::GetTextureSRV(ID3D12Resource* buffer,
+    DXGI_FORMAT fmt, bool is3D, int arrayCount,
+    int lockBits, int mipB, int mipC) {
+    size_t hash = (size_t)buffer;
+    hash += mipB * 12341237 + mipC * 123412343;
+    const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
+        [&](auto& item) {
+            item.mData.mRTVOffset = mCBOffset;
+            mCBOffset += mD3D12.GetDescriptorHandleSizeSRV();
+        },
+        [&](auto& item) {
+            auto device = mD3D12.GetD3DDevice();
+            // Create a shader resource view (SRV) for the texture
+            //auto size = tex.GetSize();
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Format = fmt;
+            if (is3D) {
+                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+                srvDesc.Texture3D.MostDetailedMip = mipB;
+                srvDesc.Texture3D.MipLevels = mipC;
+            }
+            else if (arrayCount > 1) {
+                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                srvDesc.Texture2DArray.MipLevels = mipC;
+                srvDesc.Texture2DArray.MostDetailedMip = mipB;
+                srvDesc.Texture2DArray.ArraySize = arrayCount;
+            }
+            else {
+                srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                srvDesc.Texture2D.MostDetailedMip = mipB;
+                srvDesc.Texture2D.MipLevels = mipC;
+            }
+            // Get the CPU handle to the descriptor in the heap
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
+            device->CreateShaderResourceView(buffer, &srvDesc, srvHandle);
+        }, [&](auto& item) {});
+    return result.mData.mRTVOffset;
+}
 void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits) {
     auto device = mD3D12.GetD3DDevice();
     auto size = tex.GetSize();
@@ -274,14 +327,7 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
 
     // Get d3d cache instance
     if (d3dTex->mBuffer == nullptr) {
-        //assert(size.z == 1);
-        // Create the texture resource
-        auto textureDesc = 
-            size.z > 1 ? CD3DX12_RESOURCE_DESC::Tex3D((DXGI_FORMAT)tex.GetBufferFormat(), size.x, size.y, size.z, tex.GetMipCount())
-            : CD3DX12_RESOURCE_DESC::Tex2D((DXGI_FORMAT)tex.GetBufferFormat(), size.x, size.y, tex.GetArrayCount(), tex.GetMipCount());
-        if (textureDesc.Width * textureDesc.Height * textureDesc.DepthOrArraySize * bitsPerPixel / 8 <= 0x10000) {
-            textureDesc.Alignment = D3D12_SMALL_RESOURCE_PLACEMENT_ALIGNMENT;
-        }
+        auto textureDesc = GetTextureDesc(tex);
         //textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
         ThrowIfFailed(device->CreateCommittedResource(
             &D3D::DefaultHeap,
@@ -291,32 +337,11 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
             nullptr,
             IID_PPV_ARGS(&d3dTex->mBuffer)
         ));
-        d3dTex->mBuffer->SetName(L"UserTexture");
-
-        // Create a shader resource view (SRV) for the texture
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = textureDesc.Format;
-        if (size.z > 1) {
-            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
-            srvDesc.Texture3D.MipLevels = textureDesc.MipLevels;
-        } else if (tex.GetArrayCount() > 1) {
-            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
-            srvDesc.Texture2DArray.MipLevels = textureDesc.MipLevels;
-            srvDesc.Texture2DArray.ArraySize = tex.GetArrayCount();
-        }
-        else {
-            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-            srvDesc.Texture2D.MipLevels = textureDesc.MipLevels;
-        }
-
-        // Get the CPU handle to the descriptor in the heap
-        auto descriptorSize = mD3D12.GetDescriptorHandleSizeSRV();
-        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), mCBOffset);
-        device->CreateShaderResourceView(d3dTex->mBuffer.Get(), &srvDesc, srvHandle);
-        d3dTex->mSRVOffset = mCBOffset;
+        d3dTex->mBuffer->SetName(tex.GetName().c_str());
         d3dTex->mFormat = textureDesc.Format;
-        mCBOffset += descriptorSize;
+        d3dTex->mSRVOffset = GetTextureSRV(d3dTex->mBuffer.Get(),
+            textureDesc.Format, textureDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+            textureDesc.DepthOrArraySize, 0xffffffff);
     }
 
     auto uploadSize = (GetRequiredIntermediateSize(d3dTex->mBuffer.Get(), 0, 1) + D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1) & ~(D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT - 1);
@@ -677,10 +702,10 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
     return pipelineState;
 }
 // Find or allocate a constant buffer for the specified material and CB layout
-D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, int lockBits, std::span<const uint8_t> tData) {
+D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, int lockBits, std::span<const uint8_t> tData, size_t dataHash) {
     // CB should be padded to multiples of 256
     auto allocSize = (int)(tData.size() + 255) & ~255;
-    auto dataHash = allocSize + GenericHash(tData.data(), tData.size());
+    if (dataHash == 0) dataHash = allocSize + GenericHash(tData.data(), tData.size());
 
     auto CBState = D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 
@@ -711,11 +736,12 @@ D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(ID3D12GraphicsCommand
                 item.mData.mConstantBuffer->Unmap(0, nullptr);
             }
             mStatistics.BufferWrite(tData.size());*/
+            int copySize = (tData.size() + 15) & ~15;
             auto beginWrite = { CD3DX12_RESOURCE_BARRIER::Transition(item.mData.mConstantBuffer.Get(), CBState, D3D12_RESOURCE_STATE_COPY_DEST), };
             cmdList->ResourceBarrier((UINT)beginWrite.size(), beginWrite.begin());
-            ID3D12Resource* uploadBuffer = AllocateUploadBuffer(tData.size(), lockBits);
+            ID3D12Resource* uploadBuffer = AllocateUploadBuffer(copySize, lockBits);
             D3D::FillBuffer(uploadBuffer, [&](uint8_t* data) { std::memcpy(data, tData.data(), tData.size()); });
-            cmdList->CopyBufferRegion(item.mData.mConstantBuffer.Get(), 0, uploadBuffer, 0, tData.size());
+            cmdList->CopyBufferRegion(item.mData.mConstantBuffer.Get(), 0, uploadBuffer, 0, copySize);
             mStatistics.BufferWrite(tData.size());
             auto endWrite = { CD3DX12_RESOURCE_BARRIER::Transition(item.mData.mConstantBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, CBState), };
             cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());

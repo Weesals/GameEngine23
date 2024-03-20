@@ -47,7 +47,7 @@ namespace Weesals.Engine {
             Window.SetInput(Input);
         }
         public bool Validate() {
-            if (!Window.IsValid()) return false;
+            if (!Window.IsValid) return false;
             var size = Size;
             if (size.Y <= 0) return false;
             if (size != Surface.GetResolution())
@@ -55,7 +55,7 @@ namespace Weesals.Engine {
             return true;
         }
         public void Dispose() {
-            if (Surface.IsValid()) Surface.Dispose();
+            if (Surface.IsValid) Surface.Dispose();
         }
     }
 

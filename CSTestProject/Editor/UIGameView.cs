@@ -58,7 +58,7 @@ namespace Weesals.Editor {
             base.Uninitialise(binding);
         }
         public void UpdateValues() {
-            return;
+            if (World.Stage.GetMaximumEntityId() > 100) return;
             int i = 0;
             if (World != null) {
                 foreach (var entity in World.GetEntities()) {

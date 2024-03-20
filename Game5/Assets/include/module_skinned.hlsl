@@ -2,7 +2,7 @@
 #define __MODULE_SKINNED__
 
 cbuffer SkinCB {
-    matrix BoneTransforms[32];
+    matrix BoneTransforms[64];
 }
 
 template<class ModuleBase> struct ModuleSkinned : ModuleBase {

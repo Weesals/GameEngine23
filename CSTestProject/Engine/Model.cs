@@ -82,6 +82,7 @@ namespace Weesals.Engine {
     public struct AnimationHandle {
         public readonly AnimationProvider Provider;
         public readonly int Identifier;
+        public bool IsValid => Provider != null;
         public TimeSpan Duration => GetMetadata().Duration;
         public AnimationHandle(AnimationProvider provider, int identifier) {
             Provider = provider;

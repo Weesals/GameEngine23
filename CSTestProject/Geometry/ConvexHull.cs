@@ -46,6 +46,17 @@ namespace Weesals.Geometry {
             edges.Clear();
         }
         // Winding should be (0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), ...
+        public void FromBox(BoundingBox box) {
+            Span<Vector3> corners = stackalloc Vector3[8];
+            for (int z = 0; z < 2; z++) {
+                for (int y = 0; y < 2; y++) {
+                    for (int x = 0; x < 2; x++) {
+                        corners[x + y * 2 + z * 4] = box.Lerp(new Vector3(x, y, z));
+                    }
+                }
+            }
+            FromBox(corners);
+        }
         public void FromBox(Span<Vector3> points) {
             Clear();
             Debug.Assert(points.Length == 8);
@@ -78,16 +89,24 @@ namespace Weesals.Geometry {
             }
         }
 
-        public void Slice(Plane plane) {
-            Span<ulong> pointMasks = stackalloc ulong[(corners.MaximumCount + 63) >> 6];
+        public bool Slice(Plane plane) {
+            //Span<ulong> pointMasks = stackalloc ulong[(corners.MaximumCount + 63) >> 6];
+            int cullCount = 0;
+            Span<float> dpCache = stackalloc float[corners.MaximumCount];
             for (var it = corners.GetEnumerator(); it.MoveNext();) {
-                if (Plane.DotCoordinate(plane, it.Current.Position) <= 0.01f) continue;
-                pointMasks[it.Index >> 6] |= 1ul << (it.Index & 63);
+                var dp = Plane.DotCoordinate(plane, it.Current.Position);
+                //if (dp <= 0.01f) continue;
+                //pointMasks[it.Index >> 6] |= 1ul << (it.Index & 63);
+                dpCache[it.Index] = dp;
+                if (dp <= 0.01f) cullCount++;
             }
             using var insertedCorners = new PooledList<Int2>();
+            //using var insertedCornerP = new PooledList<Vector3>();
             for (var it = edges.GetEnumerator(); it.MoveNext();) {
-                var bit1 = GetBit(pointMasks, it.Current.Corner1);
-                var bit2 = GetBit(pointMasks, it.Current.Corner2);
+                var dp1 = dpCache[it.Current.Corner1];
+                var dp2 = dpCache[it.Current.Corner2];
+                var bit1 = dp1 >= 0.01f;// GetBit(pointMasks, it.Current.Corner1);
+                var bit2 = dp2 >= 0.01f;// GetBit(pointMasks, it.Current.Corner2);
                 if (bit1 == bit2) {
                     if (!bit1) {
                         RemoveEdge(it.Index);
@@ -97,16 +116,15 @@ namespace Weesals.Geometry {
                 }
                 var corner1 = corners[it.Current.Corner1].Position;
                 var corner2 = corners[it.Current.Corner2].Position;
-                var dp1 = Plane.DotCoordinate(plane, corner1);
-                var dp2 = Plane.DotCoordinate(plane, corner2);
+                //var dp1 = Plane.DotCoordinate(plane, corner1);
+                //var dp2 = Plane.DotCoordinate(plane, corner2);
                 var dpDelta = (dp2 - dp1);
-                if (Math.Abs(dpDelta) < 0.0001f) dpDelta = 1f;
-                var intersect = RequireCorner(Vector3.Lerp(corner1, corner2, (0 - dp1) / dpDelta));
+                var intersect = Math.Abs(dpDelta) < 0.0000000001f ? it.Current.Corner1
+                    : RequireCorner(Vector3.Lerp(corner1, corner2, (0 - dp1) / dpDelta));
                 //pointMasks[intersect >> 6] |= 1ul << (intersect & 63);
-                int edgeCornerIndex = bit1 ? 1 : 0;
-                OverwriteCorner(ref (edgeCornerIndex == 0 ? ref it.Current.Corner1 : ref it.Current.Corner2), intersect);
+                OverwriteCorner(ref (bit1 ? ref it.Current.Corner2 : ref it.Current.Corner1), intersect);
                 Debug.Assert(it.Current.HasCorner(intersect));
-                insertedCorners.Add(new Int2(it.Index, edgeCornerIndex));
+                insertedCorners.Add(new Int2(it.Index, bit1 ? 1 : 0));
             }
             var newPoly = AllocatePolygon();
             for (int c1 = 0; c1 < insertedCorners.Count; ++c1) {
@@ -131,14 +149,26 @@ namespace Weesals.Geometry {
                     == edge2.GetPolygonBySign(!(corner2.Y != 0)));
                 InsertEdge(edge1.GetCorner(corner1.Y), edge2.GetCorner(corner2.Y), newPoly, nextPoly1);
             }
+            return cullCount > 0;
         }
-        public void Slice(BoundingBox bounds) {
-            Slice(new Plane(new Vector3(+1f, 0f, 0f), -bounds.Min.X));
-            Slice(new Plane(new Vector3(-1f, 0f, 0f), +bounds.Max.X));
-            Slice(new Plane(new Vector3(0f, +1f, 0f), -bounds.Min.Y));
-            Slice(new Plane(new Vector3(0f, -1f, 0f), +bounds.Max.Y));
-            Slice(new Plane(new Vector3(0f, 0f, +1f), -bounds.Min.Z));
-            Slice(new Plane(new Vector3(0f, 0f, -1f), +bounds.Max.Z));
+        public bool Slice(BoundingBox bounds) {
+            bool change = false;
+            change |= Slice(new Plane(new Vector3(+1f, 0f, 0f), -bounds.Min.X));
+            change |= Slice(new Plane(new Vector3(-1f, 0f, 0f), +bounds.Max.X));
+            change |= Slice(new Plane(new Vector3(0f, +1f, 0f), -bounds.Min.Y));
+            change |= Slice(new Plane(new Vector3(0f, -1f, 0f), +bounds.Max.Y));
+            change |= Slice(new Plane(new Vector3(0f, 0f, +1f), -bounds.Min.Z));
+            change |= Slice(new Plane(new Vector3(0f, 0f, -1f), +bounds.Max.Z));
+            return change;
+        }
+        public bool Slice(Frustum frustum) {
+            Span<Plane> planes = stackalloc Plane[6];
+            frustum.GetPlanes(planes);
+            bool change = false;
+            for (int i = 0; i < planes.Length; i++) {
+                change |= Slice(planes[i]);
+            }
+            return change;
         }
 
         private void OverwriteCorner(ref int edgeCorner, int newCorner) {

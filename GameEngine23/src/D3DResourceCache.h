@@ -178,9 +178,11 @@ public:
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
         std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
-    D3DConstantBuffer* RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, int lockBits, std::span<const uint8_t> data);
+    D3DConstantBuffer* RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, int lockBits, std::span<const uint8_t> data, size_t hash);
     D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, int lockBits);
 
+    D3D12_RESOURCE_DESC GetTextureDesc(const Texture& tex);
+    int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, int lockBits, int mipB = 0, int mipC = -1);
     void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DTexture* RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DTexture* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, int lockBits);

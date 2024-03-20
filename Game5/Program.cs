@@ -49,6 +49,7 @@ class Program {
                     profilerWindow = default;
                 }
             }
+
             bool isActive = false;
 
             foreach (var window in windows) isActive |= window.Validate();
@@ -83,6 +84,9 @@ class Program {
                 // Setup for game viewport rendering
                 root.SetViewport(gameViewport);
                 root.Update(dt);
+
+                // Run anything that needs to run on main thread
+                JobScheduler.Instance.RunMainThreadTasks();
 
                 // If the frame hasnt changed, dont render anything
                 var newRenderHash = root.RenderHash

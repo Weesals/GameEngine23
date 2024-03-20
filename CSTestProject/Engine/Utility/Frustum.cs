@@ -72,7 +72,14 @@ namespace Weesals.Engine {
         public static Vector4 dot4(Vector4 xs, Vector4 ys, Vector4 zs, float mx, float my, float mz) {
             return xs * mx + ys * my + zs * mz;
         }
-	};
+
+        public void GetPlanes(Span<Plane> planes) {
+            planes[0] = new Plane(mPlaneXs.X, mPlaneYs.X, mPlaneZs.X, mPlaneDs.X);
+            planes[1] = new Plane(mPlaneXs.Y, mPlaneYs.Y, mPlaneZs.Y, mPlaneDs.Y);
+            planes[2] = new Plane(mPlaneXs.Z, mPlaneYs.Z, mPlaneZs.Z, mPlaneDs.Z);
+            planes[3] = new Plane(mPlaneXs.W, mPlaneYs.W, mPlaneZs.W, mPlaneDs.W);
+        }
+    };
 	public struct Frustum {
 		Frustum4 mFrustum4;
         Vector4 mNearPlane;
@@ -152,6 +159,12 @@ namespace Weesals.Engine {
                 Vector3.Dot(mNearPlane.toxyz(), pos) + mNearPlane.W,
                 Vector3.Dot(mFarPlane.toxyz(), pos) + mFarPlane.W
             );
+        }
+
+        public void GetPlanes(Span<Plane> planes) {
+            mFrustum4.GetPlanes(planes);
+            planes[4] = new Plane(mNearPlane.X, mNearPlane.Y, mNearPlane.Z, mNearPlane.W);
+            planes[5] = new Plane(mFarPlane.X, mFarPlane.Y, mFarPlane.Z, mFarPlane.W);
         }
     }
 }

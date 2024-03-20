@@ -22,7 +22,7 @@ namespace Weesals.Engine {
         }
         public override string ToString() { return $"{Time} = {Value}"; }
     }
-    public class CurveBase<T> where T : struct {
+    public class CurveBase<T> where T : struct, IEquatable<T> {
         protected Keyframe<T>[] keyframes = Array.Empty<Keyframe<T>>();
         public Keyframe<T>[] Keyframes => keyframes;
         public float Duration => keyframes.Length > 0 ? keyframes[^1].Time : 0f;
@@ -78,6 +78,20 @@ namespace Weesals.Engine {
                 if (t >= times.Count || time < times[t]) times.Insert(t, time);
                 ++t;
             }
+        }
+        public void Optimize() {
+            int offset = 0;
+            for (int i = 0; i < keyframes.Length; i++) {
+                bool require = false;
+                var k1 = keyframes[i];
+                if (offset != 0) keyframes[i - offset] = k1;
+                var i0 = i - 1 - offset;
+                var i1 = i + 1;
+                if (i0 >= 0 && !keyframes[i0].Value.Equals(k1.Value)) require = true;
+                if (i1 < keyframes.Length && !keyframes[i1].Value.Equals(k1.Value)) require = true;
+                if (!require) ++offset;
+            }
+            if (offset != 0) Array.Resize(ref keyframes, Math.Max(keyframes.Length - offset, 1));
         }
     }
     public class FloatCurve : CurveBase<float> {
@@ -158,13 +172,12 @@ namespace Weesals.Engine {
             if (t >= 1f) return k1.Value;
             switch (k0.Interpolation) {
                 case CurveInterpolation.Step: return k0.Value;
-                case CurveInterpolation.Linear: return Quaternion.Lerp(k0.Value, k1.Value, t);
+                case CurveInterpolation.Linear: return Quaternion.Slerp(k0.Value, k1.Value, t);
             }
             var weights = EvaluateBezier(t);
             return Quaternion.Lerp(Quaternion.Identity, k0.Value, weights.X) * Quaternion.Lerp(Quaternion.Identity, k0.OutTangent, weights.Y) *
                 Quaternion.Lerp(Quaternion.Identity, k0.Value, weights.W) * Quaternion.Lerp(Quaternion.Identity, k0.OutTangent, weights.Z);
         }
-
     }
 
     public class MatrixCurve : CurveBase<Matrix4x4> {

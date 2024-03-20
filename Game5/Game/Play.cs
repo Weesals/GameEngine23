@@ -101,6 +101,7 @@ namespace Game5.Game {
         public ParticleSystemManager ParticleManager => particleManager;
 
         [EditorField] public bool EnableFog = true;
+        [EditorField] public bool EnableAO = true;
         [EditorField] public float FogIntensity = 0.1f;
         [EditorField] public bool DrawVisibilityVolume = false;
 
@@ -223,14 +224,13 @@ namespace Game5.Game {
                 ((ECParticleBinding)accessor).Emitter.Position =
                     ((ECTransform)accessor).GetWorldPosition();
             }
-            var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
-            var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
-            JobHandle.CombineDependencies(idleAnimHandle, runAnimHandle).Complete();
+            var moveTypeId = World.Context.RequireComponentTypeId<ECActionMove>();
             foreach (var accessor in World.QueryAll<CAnimation>()) {
-                accessor.Component1Ref.Animation = idleAnim.Animations[0];
-            }
-            foreach (var accessor in World.QueryAll<CAnimation, ECActionMove>()) {
-                accessor.Component1Ref.Animation = runAnim.Animations[0];
+                var anim = (CAnimation)accessor;
+                bool isMoving =
+                    accessor.Archetype.TryGetSparseComponent(moveTypeId, out var moveColumn) &&
+                    accessor.Archetype.GetHasSparseComponent(moveColumn, accessor.Row);
+                accessor.Component1Ref.Animation = isMoving ? anim.WalkAnim : anim.IdleAnim;
             }
             Tracy.FrameMarkEnd(0);
         }

@@ -410,8 +410,8 @@ void* CSGraphics::RequireFrameData(NativeGraphics* graphics, int byteSize) {
 	// TODO: Alignment?
 	return graphics->mCmdBuffer.RequireFrameData<uint8_t>(byteSize).data();
 }
-void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span) {
-	return graphics->mCmdBuffer.RequireConstantBuffer(std::span<uint8_t>((uint8_t*)span.mData, span.mSize));
+void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, size_t hash) {
+	return graphics->mCmdBuffer.RequireConstantBuffer(std::span<uint8_t>((uint8_t*)span.mData, span.mSize), hash);
 }
 void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* buffer, CSSpan ranges) {
 	graphics->mCmdBuffer.CopyBufferData(*(const BufferLayout*)buffer, std::span<const RangeInt>((const RangeInt*)ranges.mData, ranges.mSize));

@@ -46,7 +46,7 @@ namespace Game5.UI.Interaction {
             };
             var emodel = Play.Simulation.PrefabRegistry.GetComponent<CModel>(proto.Prefab);
             foreach (var mesh in emodel.Model.Meshes) {
-                var meshInstance = Play.Scene.CreateInstance();
+                var meshInstance = Play.Scene.CreateInstance(mesh.BoundingBox);
                 renderable.Instances.Add(meshInstance);
                 Play.ScenePasses.AddInstance(meshInstance, mesh);
             }

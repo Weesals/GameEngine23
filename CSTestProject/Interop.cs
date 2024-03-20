@@ -718,8 +718,8 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireFrameData@CSGraphics@@CAPEAXPEAVNativeGraphics@@H@Z", ExactSpelling = true)]
         private static extern void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireConstantBuffer@CSGraphics@@CAPEAXPEAVNativeGraphics@@UCSSpan@@@Z", ExactSpelling = true)]
-        private static extern void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireConstantBuffer@CSGraphics@@CAPEAXPEAVNativeGraphics@@UCSSpan@@_K@Z", ExactSpelling = true)]
+        private static extern void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, [NativeTypeName("size_t")] nuint hash = 0);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyBufferData@CSGraphics@@CAXPEAVNativeGraphics@@PEBUCSBufferLayout@@UCSSpan@@@Z", ExactSpelling = true)]
         private static extern void CopyBufferData(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* layout, CSSpan ranges);

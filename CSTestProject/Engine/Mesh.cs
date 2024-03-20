@@ -31,6 +31,7 @@ namespace Weesals.Engine {
         public BoundingBox BoundingBox => boundingBox;
         public int Revision => revision;
         public Material Material => material;
+        public Matrix4x4 Transform = Matrix4x4.Identity;
 
         public int VertexCount => vertexBuffer.Count;
         public int IndexCount => indexBuffer.Count;
