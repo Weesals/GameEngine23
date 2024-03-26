@@ -3,13 +3,13 @@
     "Texture": "./Assets/ParticleAtlas.png"
   },
   "Metadata": {
-    "SpawnRate": 500,
+    "SpawnRate": 10,
     "MaximumDuration": 5.0
   },
   "ParticleSpawn": [
     {
       "name": "PositionInSphere",
-      "Radius": "1.0"
+      "Radius": "0.1"
     }
   ],
   "ParticleStep": [
@@ -20,20 +20,16 @@
       "name": "ApplyVelocity"
     },
     {
-      "name": "Custom",
-      "Code": "{ float3 delta = Position - AvoidPoint;  Velocity += 1.0 * delta / pow(dot(delta, delta), 2.0); }"
-    },
-    {
       "name": "ApplyDrag",
       "Drag": "0.2"
     },
     {
       "name": "Turbulence",
-      "Speed": "10.0"
+      "Speed": "2.0"
     },
     {
       "name": "Custom",
-      "Code": "Velocity.x += 10.0 * DeltaTime;"
+      "Code": "Velocity.y += 2.0 * DeltaTime;"
     },
     {
       "name": "KillDeadParticles"
@@ -42,18 +38,22 @@
   "ParticleVertex": [
     {
       "name": "UVRotate",
-      "Rotation": "Age * 4.0 + Seed * 6.0"
+      "Rotation": "Age * (Seed - 0.5) * 3.0"
     },
     {
       "name": "UVAtlas",
       "AtlasCount": "2.0",
       "AtlasIndex": "0.0"
+    },
+    {
+      "name": "Custom",
+      "Code": "SpriteSize *= sqrt(Age);"
     }
   ],
   "ParticlePixel": [
     {
       "name": "Opacity",
-      "Opacity": "0.1"
+      "Opacity": "0.25 * (1.0 - pow(NormalizedAge, 2.0))"
     },
     {
       "name": "TextureSample"

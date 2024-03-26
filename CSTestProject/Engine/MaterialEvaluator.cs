@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -442,5 +443,48 @@ namespace Weesals.Engine {
 		    values.Add(v);
 		    if (parameterStack.Count != 0) parameterIds.Add((byte)(values.Count - 1));
 	    }
+    }
+
+    public struct MaterialStack : IDisposable {
+        private PooledList<Material> materialStack;
+        public ref struct Scope {
+            public ref MaterialStack Stack;
+            public ulong Mask;
+            public Scope(ref MaterialStack stack, ulong mask) {
+                Stack = ref stack;
+                Mask = mask;
+            }
+            public void Dispose() {
+                Stack.Pop(Mask);
+            }
+        }
+        public MaterialStack(Material root) {
+            materialStack = new();
+            materialStack.Add(root);
+        }
+        public void Dispose() {
+            materialStack.Dispose();
+        }
+        unsafe public Scope Push(Material mat) {
+            return Push(new Span<Material>(ref mat));
+        }
+        unsafe public Scope Push(Span<Material> materials) {
+            ulong mask = 0;
+            int m = 0;
+            foreach (var mat in materials) {
+                mask |= 1ul << m;
+                materialStack.Insert(m, mat);
+            }
+            return new Scope(ref this, mask);
+        }
+        public void Pop(ulong mask) {
+            while (mask != 0) {
+                int id = 63 - BitOperations.LeadingZeroCount(mask);
+                mask &= ~(1ul << id);
+                materialStack.RemoveAt(id);
+            }
+        }
+        public Span<Material> GetMaterials() { return materialStack; }
+        public static implicit operator Span<Material>(MaterialStack stack) { return stack.GetMaterials(); }
     }
 }

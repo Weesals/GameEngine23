@@ -27,10 +27,12 @@ namespace Game5.UI {
         private UXPlacement placement;
 
         private Int3 cameraMove = Int3.Zero;
+        private TextBlock FPSCounter = new() { HitTestEnabled = true, };
 
         public UIPlay(Play play) {
             Play = play;
             Play.Updatables.RegisterUpdatable(this, true);
+            if (FPSCounter != null) AppendChild(FPSCounter);
         }
 
         public override void Initialise(CanvasBinding binding) {
@@ -117,6 +119,9 @@ namespace Game5.UI {
             camera.Orientation = rot * camera.Orientation;
             camera.Position += (pivot - camera.Position)
                 - Vector3.Transform(pivot - camera.Position, rot);
+
+            if (FPSCounter != null)
+                FPSCounter.Text = (1.0f / dt).ToString("0.0");
         }
 
         public Ray ScreenToRay(Vector2 mpos) {

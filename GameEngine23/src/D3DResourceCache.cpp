@@ -113,8 +113,8 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     if (FAILED(mD3DDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 
-    CD3DX12_ROOT_PARAMETER1 rootParameters[16];
-    CD3DX12_DESCRIPTOR_RANGE1 srvR[8];
+    CD3DX12_ROOT_PARAMETER1 rootParameters[14];
+    CD3DX12_DESCRIPTOR_RANGE1 srvR[10];
     int rootParamId = 0;
     for (int i = 0; i < mRootSignature.mNumConstantBuffers; ++i)
         rootParameters[rootParamId++].InitAsConstantBufferView(i);
@@ -218,18 +218,30 @@ D3DResourceCache::D3DBinding& D3DResourceCache::RequireBinding(const BufferLayou
 }
 void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& binding, std::span<const RangeInt> ranges) {
     auto& d3dBin = RequireBinding(binding);
-    bool fullRefresh = false;
+    bool fullRefresh = true;
     if (RequireBuffer(binding, d3dBin, lockBits)) {
         fullRefresh = true;
+    }
+    // Special case - update full buffer if revision mismatch
+    if (ranges.size() == 1 && ranges[0].start == -1) {
+        if (d3dBin.mRevision == binding.mRevision) return;
+        fullRefresh = true;
+    }
+    if (fullRefresh) {
+        ProcessBindings(binding, d3dBin,
+            [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
+                CopyBufferData(cmdList, lockBits, binding, d3dBin, itemSize, 0, binding.mSize);
+            },
+            [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {},
+            [&](const BufferLayout& binding, const BufferLayout::Element& element, UINT offset, D3D12_INPUT_CLASSIFICATION classification) {},
+            [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {}
+        );
+        return;
     }
     int totalCount = std::accumulate(ranges.begin(), ranges.end(), 0, [](int counter, RangeInt range) { return counter + range.length; });
     if (totalCount == 0) return;
     ProcessBindings(binding, d3dBin,
         [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
-            if (fullRefresh) {
-                CopyBufferData(cmdList, lockBits, binding, d3dBin, itemSize, 0, binding.mSize);
-                return;
-            }
             // Map and fill the buffer data (via temporary upload buffer)
             ID3D12Resource* uploadBuffer = AllocateUploadBuffer(totalCount, lockBits);
             UINT8* mappedData;
@@ -256,12 +268,12 @@ void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int 
             }
             auto endWrite = { CD3DX12_RESOURCE_BARRIER::Transition(d3dBin.mBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, BufferState), };
             cmdList->ResourceBarrier((UINT)endWrite.size(), endWrite.begin());
-            d3dBin.mRevision = binding.mRevision;
         },
         [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {},
         [&](const BufferLayout& binding, const BufferLayout::Element& element, UINT offset, D3D12_INPUT_CLASSIFICATION classification) {},
         [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {}
     );
+    d3dBin.mRevision = binding.mRevision;
 }
 
 D3D12_RESOURCE_DESC D3DResourceCache::GetTextureDesc(const Texture& tex) {
@@ -549,7 +561,8 @@ D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     }
     CommandAllocator allocator;
     ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator.mCmdAllocator)));
-    mCommandAllocators.push_back(allocator);
+    allocator.mCmdAllocator->SetPrivateData(WKPDID_D3DDebugObjectName, 5, "CmdAl");
+    mCommandAllocators.push_back(std::move(allocator));
     return &mCommandAllocators.back();
 }
 void D3DResourceCache::UnlockFrame(size_t frameHash) {

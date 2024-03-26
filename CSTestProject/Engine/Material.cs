@@ -251,6 +251,8 @@ namespace Weesals.Engine {
             hashCache = 0;
         }
 
+        int Priority { get; set; }
+
         public Material() { mIdentifier = gIdentifier++; }
         public Material(Material parent) : this() {
             if (parent != null) InheritProperties(parent);
@@ -442,6 +444,7 @@ namespace Weesals.Engine {
         public static CSIdentifier iVMat = "View";
         public static CSIdentifier iPMat = "Projection";
         public static CSIdentifier iMVMat = "ModelView";
+        public static CSIdentifier iVPMat = "ViewProjection";
         public static CSIdentifier iMVPMat = "ModelViewProjection";
         public static CSIdentifier iLightDir = "_WorldSpaceLightDir0";
         public static CSIdentifier iRes = "Resolution";
@@ -464,6 +467,22 @@ namespace Weesals.Engine {
                 var mv = context.GetUniform<Matrix4x4>(iMVMat);
                 var p = context.GetUniform<Matrix4x4>(iPMat);
                 return (mv * p);
+            });
+            SetComputedUniform<Matrix4x4>("InvModel", (ref ComputedContext context) => {
+                var m = context.GetUniform<Matrix4x4>(iMMat);
+                return Matrix4x4.Invert(m, out var result) ? result : default;
+            });
+            SetComputedUniform<Matrix4x4>("InvView", (ref ComputedContext context) => {
+                var v = context.GetUniform<Matrix4x4>(iVMat);
+                return Matrix4x4.Invert(v, out var result) ? result : default;
+            });
+            SetComputedUniform<Matrix4x4>("InvProjection", (ref ComputedContext context) => {
+                var p = context.GetUniform<Matrix4x4>(iPMat);
+                return Matrix4x4.Invert(p, out var result) ? result : default;
+            });
+            SetComputedUniform<Matrix4x4>("InvViewProjection", (ref ComputedContext context) => {
+                var vp = context.GetUniform<Matrix4x4>(iVPMat);
+                return Matrix4x4.Invert(vp, out var result) ? result : default;
             });
             SetComputedUniform<Matrix4x4>("InvModelViewProjection", (ref ComputedContext context) => {
                 var mvp = context.GetUniform<Matrix4x4>(iMVPMat);

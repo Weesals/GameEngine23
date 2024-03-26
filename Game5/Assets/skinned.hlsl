@@ -1,6 +1,7 @@
 #include <retained.hlsl>
 #include <lighting.hlsl>
 #include <shadowreceive.hlsl>
+#include <basepass.hlsl>
 
 #include <module_common.hlsl>
 #include <module_skinned.hlsl>
@@ -54,51 +55,30 @@ PSInput VSMain(VSInput input) {
     return result;
 }
 
-void PSMain(PSInput input, out PSOutput result) {
+void PSMain(PSInput input, out BasePassOutput result) {
     ShaderModule module = (ShaderModule)0;
     module.SetupPixelIntermediates(input);
-    result = (PSOutput)0;
 
     InstanceData instance = instanceData[input.primitiveId];
     
     TemporalAdjust(input.uv);
     
-    float3 viewDir = normalize(input.viewPos);
-    input.normal = normalize(input.normal);
     float4 tex = Texture.Sample(BilinearSampler, input.uv);
-    float3 Albedo = tex.rgb;
-    float3 Specular = 0.06;
-    float Roughness = 0.7;
-    float Metallic = 0.0;
+    PBRInput pbrInput = PBRDefault();
+    pbrInput.Albedo = tex.rgb;
+    pbrInput.Alpha = tex.a;
+    pbrInput.Specular = 0.06;
+    pbrInput.Roughness = 0.7;
+    pbrInput.Emissive = instance.Highlight;
+    pbrInput.Normal = normalize(input.normal);
 
     float3 shadowPos = ViewToShadow(input.viewPos);
     float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;
+    //pbrInput.Occlusion *= shadow;
     
-    // The light
-    float3 o = ComputeLight(
-        Albedo,
-        Specular,
-        input.normal,
-        Roughness,
-        _LightColor0 * shadow,
-        _ViewSpaceLightDir0,
-        -viewDir,
-        Metallic
-    );
-    
-    // Indirect
-    o += ComputeIndiret(Albedo, Specular, input.normal, Roughness, Metallic, -viewDir);
-    
-    o.rgb *= 1.0f - instance.Highlight.a;
-    o.rgb += instance.Highlight.rgb;
-    //o.rgb = pow(o.rgb, 4) * 5.0;
-
-    result.color = float4(o, tex.a);
-    //result.velocity = float4(input.velocity, instance.Selected, 1);
-    //module.PixelOutput(input, result);
-    result.velocity.xy = module.GetClipVelocity(input);
-    result.velocity.z = instance.Selected;
-    //OutColor.rg = OutVelocity.rg * 10.0 + 0.5;
+    result = PBROutput(pbrInput, normalize(input.viewPos));
+    OutputVelocity(result, input.velocity);
+    OutputSelected(result, instance.Selected);
 }
 
 //#include "include/shadowcast.hlsl"

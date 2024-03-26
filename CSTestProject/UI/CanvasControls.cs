@@ -988,10 +988,12 @@ namespace Weesals.UI
         }
         public override void AppendChild(CanvasRenderable child) {
             //base.AppendChild(child);
+            if (mChildren == null) mChildren = new();
             mChildren.Add(child);
         }
         public override void RemoveChild(CanvasRenderable child) {
             //base.RemoveChild(child);
+            if (mChildren == null) return;
             mChildren.Remove(child);
         }
         public void RemoveFromParent() {

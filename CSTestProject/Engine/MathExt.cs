@@ -189,8 +189,8 @@ namespace Weesals.Engine {
 	    public static bool operator !=(Int2 o1, Int2 o2) { return o1.X != o2.X || o1.Y != o2.Y; }
         public static Int2 operator >>(Int2 o1, int o) { return new Int2(o1.X >> o, o1.Y >> o); }
         public static Int2 operator <<(Int2 o1, int o) { return new Int2(o1.X << o, o1.Y << o); }
-        public static Int2 operator &(Int2 o1, Int3 o) { return new Int2(o1.X & o.X, o1.Y & o.Y); }
-        public static Int2 operator |(Int2 o1, Int3 o) { return new Int2(o1.X | o.X, o1.Y | o.Y); }
+        public static Int2 operator &(Int2 o1, Int2 o) { return new Int2(o1.X & o.X, o1.Y & o.Y); }
+        public static Int2 operator |(Int2 o1, Int2 o) { return new Int2(o1.X | o.X, o1.Y | o.Y); }
         public static Int2 operator ^(Int2 o1, int o) { return new Int2(o1.X ^ o, o1.Y ^ o); }
 
         public static Int2 Min(Int2 v1, Int2 v2) { return new Int2(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y)); }
@@ -532,6 +532,9 @@ namespace Weesals.Engine {
         public Vector3 ProjectTo(Plane p) {
             return Origin + Direction *
                 (p.D - Vector3.Dot(p.Normal, Origin)) / Vector3.Dot(p.Normal, Direction);
+        }
+        public float GetDistanceTo(Plane p) {
+            return (p.D - Vector3.Dot(p.Normal, Origin)) / Vector3.Dot(p.Normal, Direction);
         }
         // Get the distance between a point and the nearest point
         // along this ray

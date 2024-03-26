@@ -15,6 +15,22 @@ using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
 
+public static class EntityProxyExt {
+    public static Entity GetEntity(this ItemReference target) {
+        if (target.Owner is IItemRedirect redirect) target = redirect.GetOwner(target.Data);
+        return
+            //target.Owner is EntityProxy ? EntityProxy.UnpackEntity(target.Data) :
+            target.Owner is World ? UnpackEntity(target.Data) :
+            default;
+    }
+    public static ulong PackEntity(Entity entity) {
+        return ((ulong)(uint)entity.Index << 32) | (uint)entity.Version;
+    }
+    public static Entity UnpackEntity(ulong id) {
+        return new Entity() { Index = (uint)(id >> 32), Version = (uint)id, };
+    }
+}
+
 namespace Weesals.Editor {
     public class Editor {
         public Font DefaultFont;
@@ -117,6 +133,23 @@ namespace Weesals.Editor {
             flex.AppendRight(Inspector, 0.25f);
 
             Canvas.AppendChild(flex);
+
+            Editor.ProjectSelection.OnSelectionChanged += (selection) => {
+                foreach (var selected in selection) {
+                    if (selected.Owner is LandscapeRenderer landscape) {
+                        ActivateLandscapeTools(landscape);
+                        return;
+                    }
+                    var entity = selected;
+                    if (entity.Owner is IItemRedirect redirect)
+                        entity = redirect.GetOwner(entity.Data);
+                    if (entity.Owner is World world) {
+                        ActivateEntityInspector(world, entity.GetEntity());
+                        return;
+                    }
+                }
+                Inspector.SetInspector(default);
+            };
         }
 
         public override void RegisterRootWindow(CSWindow window) {

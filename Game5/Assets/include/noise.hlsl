@@ -1,3 +1,5 @@
+#ifndef __NOISE_HLSL__
+#define __NOISE_HLSL__
 
 float2 RandomDir(float2 coord)
 {
@@ -122,3 +124,5 @@ SimplexSample3D SimplexNoise3D(float3 position) {
     
     return sample;
 }
+
+#endif

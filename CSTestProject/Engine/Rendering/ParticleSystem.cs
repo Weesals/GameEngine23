@@ -437,6 +437,7 @@ namespace Weesals.Engine {
             blockMeta[blockIndex] = BlockMetadata.Invalid;
         }
         unsafe public void Update(CSGraphics graphics, float dt) {
+            if (dt > 0.2f) dt = 0.2f;
             if (time == 0f) {
                 SetTargets(graphics);
                 graphics.Clear();
@@ -543,16 +544,24 @@ namespace Weesals.Engine {
             materials[1] = rootMaterial;
             materials[2] = passMat;
             materials[3] = sceneRoot;
-            foreach (var system in systems) {
-                system.SetActiveBlocks(ref ActiveBlocks);
-                graphics.CopyBufferData(ActiveBlocks);
-                if (ActiveBlocks.Count == 0) continue;
+            ActiveBlocks.Clear();
+            Span<int> idOffsets = stackalloc int[systems.Count];
+            for (int i = 0; i < systems.Count; i++) {
+                idOffsets[i] = systems[i].SetActiveBlocks(ref ActiveBlocks);
+            }
+            graphics.CopyBufferData(ActiveBlocks);
+            for (int i = 0; i < systems.Count; i++) {
+                var system = systems[i];
+                var from = idOffsets[i];
+                var to = i + 1 >= idOffsets.Length ? ActiveBlocks.Count : idOffsets[i + 1];
+                if (to == from) continue;
                 materials[0] = system.DrawMaterial;
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
                 var drawConfig = CSDrawConfig.MakeDefault();
+                drawConfig.mInstanceBase = from;
                 graphics.Draw(pso, bindings, resources, drawConfig,
-                    ParticleSystem.AllocGroup.Count * ActiveBlocks.Count);
+                    ParticleSystem.AllocGroup.Count * (to - from));
             }
         }
 
@@ -665,7 +674,7 @@ namespace Weesals.Engine {
             );
             SpawnerMaterial.InheritProperties(CommonMaterial);
             SpawnerMaterial.SetRasterMode(RasterMode.MakeNoCull());
-            SpawnerMaterial.SetValue("Emitters", emitterData);
+            SpawnerMaterial.SetBuffer("Emitters", emitterData);
             var spawnDS = DepthMode.MakeWriteOnly().SetStencil(0x00, 0xff);
             spawnDS.StencilFront = spawnDS.StencilBack =
                 new DepthMode.StencilDesc(DepthMode.StencilOp.Replace, DepthMode.StencilOp.Replace, DepthMode.StencilOp.Replace, DepthMode.Comparisons.Always);
@@ -757,7 +766,7 @@ namespace Weesals.Engine {
 
                     int toConsume = Math.Min(allocated.RemainCount, count);
                     var verts = AppendBlockQuad(mesh, allocated.BlockPnt, allocated.ConsumeCount, toConsume);
-                    verts.GetColors().Set(new Color((byte)i, 0, 0, 0));
+                    verts.GetColors().Set(new Color((byte)i, (byte)Math.Clamp(dt * 255, 0, 255), 0, 0));
                     allocated.RemainCount -= toConsume;
                     allocated.Alloc.ExpireTimeMS = Manager.TimeMS + (int)(MaximumDuration * 1000);
                     count -= toConsume;
@@ -793,20 +802,27 @@ namespace Weesals.Engine {
             return verts;
         }
 
-        unsafe public void SetActiveBlocks(ref BufferLayoutPersistent activeBlocks) {
-            activeBlocks.BufferLayout.mCount = blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
+        unsafe public int SetActiveBlocks(ref BufferLayoutPersistent activeBlocks) {
+            int begin = activeBlocks.Count;
+            activeBlocks.BufferLayout.mCount += blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
             if (activeBlocks.BufferCapacityCount < activeBlocks.Count)
                 activeBlocks.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)blocks.Count + 4));
-            var activeBlockIds = new MemoryBlock<uint>((uint*)activeBlocks.Elements[0].mData, activeBlocks.BufferLayout.mCount);
+            var activeBlockIds = new MemoryBlock<uint>((uint*)activeBlocks.Elements[0].mData + begin, activeBlocks.BufferLayout.mCount);
             for (int i = 0; i < blocks.Count; i++) activeBlockIds[i] = blocks[i].BlockId;
             if (allocated.ConsumeCount > 0) activeBlockIds[blocks.Count] = allocated.BlockId;
             activeBlocks.BufferLayout.revision++;
+            return begin;
         }
         public override string ToString() {
             return DrawMaterial.ToString();
         }
     }
 
+    public struct CParticles {
+        public ParticleSystem ParticleSystem;
+        public Vector3 LocalPosition;
+    }
+    [SparseComponent]
     public struct ECParticleBinding {
         public ParticleSystem.Emitter Emitter;
     }

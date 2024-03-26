@@ -80,7 +80,7 @@ namespace Weesals.Landscape {
 
         public const int SerialVersion = 1;
         // How many units of Height is 1 unit in world space
-        public const int HeightScale = 1024;
+        public const int HeightScale = 512;
 
         // Hold data related to the position/size of the landscape in the world
         public struct SizingData {

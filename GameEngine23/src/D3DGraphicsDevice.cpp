@@ -1,4 +1,4 @@
-#define PIX 1
+#define PIX 0
 
 #include "D3DGraphicsDevice.h"
 #include <sstream>
@@ -66,8 +66,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
 #if defined(_DEBUG)
     {
         ComPtr<ID3D12Debug> debugController;
-        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
-        {
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
             debugController->EnableDebugLayer();
         }
     }
@@ -90,13 +89,15 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     }
 
     // Create the device
-    ThrowIfFailed(D3D12CreateDevice(adapters[0].Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mD3DDevice)));
+    ThrowIfFailed(D3D12CreateDevice(adapters[0].Get(), D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice)));
+    mD3DDevice->SetName(L"Device");
 
     // Create the command queue
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
     queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     ThrowIfFailed(mD3DDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCmdQueue)));
+    mCmdQueue->SetName(L"CmdQueue");
 
     // Create descriptor heaps.
     {
@@ -107,6 +108,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
         cbvSrvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         cbvSrvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&cbvSrvHeapDesc, IID_PPV_ARGS(&mSRVHeap)));
+        mSRVHeap->SetName(L"SRV Heap");
 
         // Describe and create a sampler descriptor heap.
         // NOTE: Currently unused/unsupported
@@ -115,6 +117,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
         samplerHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
         samplerHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&samplerHeapDesc, IID_PPV_ARGS(&mSamplerHeap)));
+        mSamplerHeap->SetName(L"Sampler Heap");
 
         // Describe and create a render target view (RTV) descriptor heap.
         D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
@@ -122,6 +125,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
         rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
         rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mRTVHeap)));
+        mRTVHeap->SetName(L"RTV Heap");
 
         // Describe and create a depth stencil view (DSV) descriptor heap.
         D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
@@ -129,6 +133,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
         dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
         dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         ThrowIfFailed(mD3DDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&mDSVHeap)));
+        mDSVHeap->SetName(L"DSV Heap");
 
         mDescriptorHandleSizeRTV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
         mDescriptorHandleSizeDSV = mD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
@@ -136,8 +141,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     }
 }
 
-D3DGraphicsDevice::~D3DGraphicsDevice()
-{
+D3DGraphicsDevice::~D3DGraphicsDevice() {
     CoUninitialize();
 }
 void D3DGraphicsDevice::CheckDeviceState() const

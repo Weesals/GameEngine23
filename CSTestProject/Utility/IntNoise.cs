@@ -60,22 +60,33 @@ namespace Weesals.Utility {
         public static int GetAt(Int2 from1024) {
             var cell = Floor1024(from1024);
             var l = (from1024 & Bitmask);
-            l = l * l * (3 * 1024 - 2 * l) / (1024 * 1024);
-            var n00 = DotGradient(from1024, cell + new Int2(0, 0)) / 1024;
-            var n10 = DotGradient(from1024, cell + new Int2(1, 0)) / 1024;
-            var n01 = DotGradient(from1024, cell + new Int2(0, 1)) / 1024;
-            var n11 = DotGradient(from1024, cell + new Int2(1, 1)) / 1024;
+            l = l * l * (3 * 1024 - 2 * l) >> (BitShift * 2);
+            var n00 = DotGradient(from1024, cell + new Int2(0, 0)) >> BitShift;
+            var n10 = DotGradient(from1024, cell + new Int2(1, 0)) >> BitShift;
+            var n01 = DotGradient(from1024, cell + new Int2(0, 1)) >> BitShift;
+            var n11 = DotGradient(from1024, cell + new Int2(1, 1)) >> BitShift;
             return (
-                n00 * (1024 - l.X) * (1024 - l.Y) +
-                n10 * l.X * (1024 - l.Y) +
-                n01 * (1024 - l.X) * l.Y +
-                n11 * l.X * l.Y
-            ) / 1024 / 1024;
+                (n00 * (1024 - l.X) + n10 * l.X) * (1024 - l.Y) +
+                (n01 * (1024 - l.X) + n11 * l.X) * l.Y
+            ) >> (BitShift * 2);
+        }
+        public static int GetAt(Int2 from1024, Int2 wrap) {
+            var cell = Floor1024(from1024);
+            var l = (from1024 & Bitmask);
+            l = l * l * (3 * 1024 - 2 * l) >> (BitShift * 2);
+            var n00 = DotGradient(from1024, cell + new Int2(0, 0), wrap) >> BitShift;
+            var n10 = DotGradient(from1024, cell + new Int2(1, 0), wrap) >> BitShift;
+            var n01 = DotGradient(from1024, cell + new Int2(0, 1), wrap) >> BitShift;
+            var n11 = DotGradient(from1024, cell + new Int2(1, 1), wrap) >> BitShift;
+            return (
+                (n00 * (1024 - l.X) + n10 * l.X) * (1024 - l.Y) +
+                (n01 * (1024 - l.X) + n11 * l.X) * l.Y
+            ) >> (BitShift * 2);
         }
         public static int GetAt(Int3 from1024) {
             var cell = Floor1024(from1024);
             var l = (from1024 & Bitmask);
-            l = l * l * (3 * 1024 - 2 * l) / (1024 * 1024);
+            l = l * l * (3 * 1024 - 2 * l) >> (BitShift * 2);
             var n000 = DotGradient(from1024, cell + new Int3(0, 0, 0)) / 1024;
             var n100 = DotGradient(from1024, cell + new Int3(1, 0, 0)) / 1024;
             var n010 = DotGradient(from1024, cell + new Int3(0, 1, 0)) / 1024;
@@ -92,7 +103,7 @@ namespace Weesals.Utility {
                 (n001 * (1024 - l.X) + n101 * l.X) * (1024 - l.Y) +
                 (n011 * (1024 - l.X) + n111 * l.X) * l.Y
             ) / 1024;
-            return (r0 * (1024 - l.Z) + r1 * l.Z) / 1024 / 1024;
+            return (r0 * (1024 - l.Z) + r1 * l.Z) >> (BitShift * 2);
         }
         public static int GetAt(Int3 from1024, Int3 wrap) {
             var cell = Floor1024(from1024);
@@ -117,6 +128,9 @@ namespace Weesals.Utility {
 
         private static int DotGradient(Int2 from1024, Int2 cell) {
             return Int2.DotI(from1024 - (cell << BitShift), PermuteS512(cell));
+        }
+        private static int DotGradient(Int2 from1024, Int2 cell, Int2 wrap) {
+            return Int2.DotI(from1024 - (cell << BitShift), PermuteS512(cell & (wrap - 1)));
         }
         private static int DotGradient(Int3 from1024, Int3 cell) {
             return Int3.DotI(from1024 - (cell << BitShift), PermuteS512(cell));

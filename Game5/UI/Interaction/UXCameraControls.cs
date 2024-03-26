@@ -44,14 +44,25 @@ namespace Game5.UI.Interaction {
                 var m0 = layout.InverseTransformPosition2D(events.PreviousPosition) / layout.GetSize();
                 var m1 = layout.InverseTransformPosition2D(events.CurrentPosition) / layout.GetSize();
                 if (m0 == m1) return;
-                var ray0 = camera.ViewportToRay(m0);
-                var ray1 = camera.ViewportToRay(m1);
+                var ray0 = camera.ViewportToRay(m0).Normalize();
+                var ray1 = camera.ViewportToRay(m1).Normalize();
+                var dst0 = ray0.GetDistanceTo(new Plane(Vector3.UnitY, 0f));
+                var dst1 = ray1.GetDistanceTo(new Plane(Vector3.UnitY, 0f));
+                dst0 = LimitDst(dst0);
+                dst1 = LimitDst(dst1);
                 // TODO: Project onto the coarse terrain
-                var pos0 = ray0.ProjectTo(new Plane(Vector3.UnitY, 0f));
-                var pos1 = ray1.ProjectTo(new Plane(Vector3.UnitY, 0f));
+                var pos0 = ray0.GetPoint(dst0);
+                var pos1 = ray1.GetPoint(dst1);
                 var delta = pos1 - pos0;
+                delta.Y = 0f;
                 camera.Position -= delta;
             }
+        }
+        private static float LimitDst(float d) {
+            const float CritDst = 1000.0f;
+            if (d < 0f) return CritDst;
+            else if (d > CritDst) return CritDst;// + MathF.Sqrt(d - CritDst);
+            return d;
         }
         public void OnEndDrag(PointerEvent events) {
         }

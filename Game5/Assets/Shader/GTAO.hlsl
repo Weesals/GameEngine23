@@ -1,18 +1,22 @@
 #include <common.hlsl>
 #include <noise.hlsl>
+#include <lighting.hlsl>
 
 #define PI 3.1415927
 
 matrix InvProjection;
 matrix Projection;
+matrix InvView;
 float4 ViewToProj;
 float2 NearFar;
 float2 TexelSize;
 float HalfProjScale;
 float2 ZBufferParams;
 
+SamplerState PointSampler : register(s0);
 SamplerState BilinearClampedSampler : register(s6);
 Texture2D<float4> SceneDepth : register(t0);
+Texture2D<float4> SceneAttri : register(t1);
 
 struct VSInput {
     float4 position : POSITION;
@@ -22,24 +26,35 @@ struct VSInput {
 struct PSInput {
     float4 position : SV_POSITION;
     float2 uv : TEXCOORD0;
+    float3 wpos : TEXCOORD1;
 };
 
 PSInput VSMain(VSInput input) {
     PSInput result;
     result.position = input.position;
+    result.position.z = 0.9999999;
+    result.position.w = 1.0;
     result.uv = input.uv;
+    result.wpos = input.position.xyz;
     return result;
 }
 
 float DepthToLinear(float d) {
     return 1.0 / (ZBufferParams.x * d + ZBufferParams.y);
 }
-float3 GetPosition(float2 uv) {
-    return float3(uv * ViewToProj.xy + ViewToProj.zw, 1.0)
-        * DepthToLinear(SceneDepth.Sample(BilinearClampedSampler, uv).r);
+float GetDeviceDepth(float2 uv) {
+    return SceneDepth.Sample(BilinearClampedSampler, uv).r;
 }
-inline half3 GetNormal(float3 pos) {
-	return normalize(cross(ddy(pos), ddx(pos)));
+float3 GetPosition(float2 uv, float deviceDepth) {
+    return float3((uv * ViewToProj.xy + ViewToProj.zw), 1.0)
+        * DepthToLinear(deviceDepth);
+}
+float3 GetPosition(float2 uv) {
+    return GetPosition(uv, SceneDepth.Sample(BilinearClampedSampler, uv).r);
+}
+inline half3 GetNormal(float2 uv) {
+	//return normalize(cross(ddy(pos), ddx(pos)));
+    return OctahedralDecode(SceneAttri.Sample(BilinearClampedSampler, uv).xy * 2.0 - 1.0);
 }
 
 float FastACos(float c) {
@@ -51,14 +66,15 @@ float2 FastACos(float2 c) {
     return select(c >= 0, z, PI - z);
 }
 
-half4 PSMain(PSInput input) : SV_Target {
+half4 PSMain(PSInput input) : SV_Target {    
     const int NumArc = 3, NumRad = 4,
         NumRadMin = NumRad - 1;
-    const float Radius = 2.5;
+    const float Radius = 3.0;
     
     half3 positionCS = GetPosition(input.uv);
-	half3 viewNormal = GetNormal(positionCS);
-    half3 viewDir = -normalize(positionCS.xyz);
+    half3 viewNormal = GetNormal(input.uv);
+    half3 viewDir = -normalize(positionCS);
+    viewNormal.x *= -1; // Dont know why this is here.
         
     float stepRadius = max(Radius * HalfProjScale / positionCS.z, NumRad);
     float2 texelStep = TexelSize * (stepRadius / NumRad);
@@ -78,15 +94,15 @@ half4 PSMain(PSInput input) : SV_Target {
         [unroll]
         for (int j = min(NumRad - 1 - i, NumRadMin); j >= 0; --j) {
             half2 radOff = arcStep * (j + radBias);
-            half3 posL = GetPosition(input.uv + radOff) - positionCS;
-            half3 posR = GetPosition(input.uv - radOff) - positionCS;
+            half3 posL = GetPosition(input.uv - radOff) - positionCS;
+            half3 posR = GetPosition(input.uv + radOff) - positionCS;
             
             half2 dst2LR = half2(dot(posL, posL), dot(posR, posR));
             half2 sliceLR = half2(dot(posL, viewDir), dot(posR, viewDir)) * rsqrt(dst2LR);
             sliceLR -= dst2LR * falloffFactor;
             horizons = max(sliceLR, horizons);
         }
-        
+
         half3 planeNrm = normalize(cross(half3(arcStep, 0), viewDir));
         half3 planeTan = cross(viewDir, planeNrm);
         half3 projectedNrm = (viewNormal - planeNrm * dot(viewNormal, planeNrm));
@@ -97,7 +113,7 @@ half4 PSMain(PSInput input) : SV_Target {
         horizons = FastACos(horizons);
         horizons.x = -min(horizons.x, PI / 2.0 - gamma);
         horizons.y = +min(horizons.y, PI / 2.0 + gamma);
-        
+                
         half bentAngle = dot(horizons, 0.5);
         BentNormal += viewDir * cos(bentAngle) - planeTan * sin(bentAngle);
         
@@ -113,9 +129,17 @@ half4 PSMain(PSInput input) : SV_Target {
     }
     
     BentNormal = normalize(BentNormal - viewDir * (0.5 * NumArc));
-    Occlusion = saturate(pow(Occlusion * (0.25 / NumArc), 1));
+    Occlusion = pow(saturate(Occlusion * (0.25 / NumArc)), 2);
     
+    BentNormal.x *= -1;
+    //BentNormal = viewDir;
+    //BentNormal = mul((float3x3)InvView, BentNormal);
+    //BentNormal = mul((float3x3)transpose(View), BentNormal).xzy;
+    //BentNormal.z *= -1;
+    //BentNormal.y *= -1;
     //return float4(Occlusion.rrr, 1.0);
-    return float4(0, 0, 0, (1.0 - Occlusion) * 0.8);
+    float4 r = float4(OctahedralEncode(BentNormal) * 0.5 + 0.5, 0, Occlusion);
+    r.rgb = 0.0;
+    return r;
     //return float4(BentNormal * 0.5 + 0.5, Occlusion);
 }

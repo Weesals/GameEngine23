@@ -73,6 +73,7 @@ void Texture::RequireData() {
 }
 std::span<uint8_t> Texture::GetRawData(int mip, int slice) {
 	RequireData();
+	if (mip < 0 || slice < 0) return std::span<uint8_t>(mData.begin(), mData.end());
 	uint32_t imgOffset = 0;
 	uint32_t imgSize = 0;
 	if (slice > 0) {

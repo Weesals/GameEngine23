@@ -6,6 +6,7 @@ using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Weesals.Engine;
 using Weesals.Landscape.Editor;
@@ -119,33 +120,31 @@ namespace Weesals.UI {
         ISelectionGroup SelectionGroup { get; }
     }
     public interface ISelectionGroup {
-        IReadOnlyCollection<ISelectable> Selected { get; }
+        IReadOnlyCollection<ItemReference> Selected { get; }
         void ClearSelected();
-        void SetSelected(ISelectable? selectable);
-        void AppendSelected(ISelectable selectable);
-        void RemoveSelected(ISelectable selectable);
+        void SetSelected(ItemReference selectable);
+        void AppendSelected(ItemReference selectable);
+        void RemoveSelected(ItemReference selectable);
     }
     public static class SelectableExt {
         public static ISelectionGroup? GetSelectionGroup(this ISelectable selectable) {
             if (selectable is CanvasRenderable renderable) {
-                if (renderable.TryGetRecursive(out ISelectionProxy? proxy)) {
-                    return proxy?.SelectionGroup;
-                }
-                if (renderable.TryGetRecursive(out ISelectionGroup? group)) {
-                    return group;
+                for (object? parent = renderable; parent != null; parent = HierarchyExt.TryGetParent(parent)) {
+                    if (parent is ISelectionGroup group) return group;
+                    if (parent is ISelectionProxy proxy) return proxy.SelectionGroup;
                 }
                 return renderable.Canvas?.SelectionGroup;
             }
             return default;
         }
         public static void Select(this ISelectable selectable) {
-            GetSelectionGroup(selectable)?.SetSelected(selectable);
+            GetSelectionGroup(selectable)?.SetSelected(new(selectable));
         }
         public static void SetSelected(this ISelectable selectable, bool selected) {
             var group = GetSelectionGroup(selectable);
             if (group != null) {
-                if (selected) group.AppendSelected(selectable);
-                else group.RemoveSelected(selectable);
+                if (selected) group.AppendSelected(new(selectable));
+                else group.RemoveSelected(new(selectable));
             }
         }
     }
@@ -253,34 +252,45 @@ namespace Weesals.UI {
         }
     }
     public class SelectionManager : ISelectionGroup, IPointerDownHandler {
-        private HashSet<ISelectable> selected = new();
+        private HashSet<ItemReference> selected = new();
 
-        public IReadOnlyCollection<ISelectable> Selected => selected;
+        public IReadOnlyCollection<ItemReference> Selected => selected;
         public EventSystem EventSystem { get; private set; }
+
+        public event Action<ItemReference, bool>? OnEntitySelected;
+        public event Action<ICollection<ItemReference>>? OnSelectionChanged;
 
         public SelectionManager(EventSystem eventSystem) {
             EventSystem = eventSystem;
         }
 
         public void ClearSelected() {
-            using var toDeselect = new PooledList<ISelectable>(selected.Count);
+            using var toDeselect = new PooledList<ItemReference>(selected.Count);
             foreach (var item in selected) toDeselect.Add(item);
             selected.Clear();
-            foreach (var item in toDeselect) item.OnSelected(this, false);
+            foreach (var item in toDeselect) NotifySelected(item, false);
         }
-        public void SetSelected(ISelectable? newItem) {
-            using var toDeselect = new PooledList<ISelectable>(selected.Count);
+        public void SetSelected(ItemReference newItem) {
+            using var toDeselect = new PooledList<ItemReference>(selected.Count);
             foreach (var item in selected) if (item != newItem) toDeselect.Add(item);
-            if (toDeselect.Count == selected.Count) selected.Clear();
+            if (selected.Count == toDeselect.Count) selected.Clear();
             else foreach (var item in toDeselect) selected.Remove(item);
-            foreach (var item in toDeselect) item.OnSelected(this, false);
-            if (newItem != null) AppendSelected(newItem);
+            foreach (var item in toDeselect) NotifySelected(item, false);
+            if (newItem.IsValid) AppendSelected(newItem);
         }
-        public void AppendSelected(ISelectable item) {
-            if (selected.Add(item)) item.OnSelected(this, true);
+        public void SetSelectedItems(ICollection<ItemReference> newItems) {
+            using var toDeselect = new PooledList<ItemReference>(selected.Count);
+            foreach (var item in selected) if (!newItems.Contains(item)) toDeselect.Add(item);
+            if (selected.Count == toDeselect.Count) selected.Clear();
+            else foreach (var item in toDeselect) selected.Remove(item);
+            foreach (var item in toDeselect) NotifySelected(item, false);
+            foreach (var item in newItems) AppendSelected(item);
         }
-        public void RemoveSelected(ISelectable item) {
-            if (selected.Remove(item)) item.OnSelected(this, false);
+        public void AppendSelected(ItemReference item) {
+            if (selected.Add(item)) NotifySelected(item, true);
+        }
+        public void RemoveSelected(ItemReference item) {
+            if (selected.Remove(item)) NotifySelected(item, false);
         }
 
         public void OnPointerDown(PointerEvent events) {
@@ -291,8 +301,15 @@ namespace Weesals.UI {
                 if (HierarchyExt.TryGetRecursive(events.Targets.EffectivePress, out ISelectionGroup? group) != true) {
                     group = events.System.Canvas.SelectionGroup;
                 }
-                if (group != null) group.SetSelected(null);
+                if (group != null) group.SetSelected(default);
             }
+        }
+
+        private void NotifySelected(ItemReference item, bool selected) {
+            /*if (item.Owner is ISelectable selectable)
+                selectable.NotifySelected(item.Data, selected);*/
+            if (OnEntitySelected != null) OnEntitySelected(item, selected);
+            if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
         }
     }
 

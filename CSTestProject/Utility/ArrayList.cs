@@ -173,10 +173,18 @@ namespace Weesals.Utility {
             Count += count;
             return new RangeInt(Count - count, count);
         }
+        public RangeInt AddRange(Span<T> values) {
+            if (values.Length == 0) return new RangeInt(Count, 0);
+            Reserve(Count + values.Length);
+            values.CopyTo(Data.AsSpan(Count, values.Length));
+            Count += values.Length;
+            return new RangeInt(Count - values.Length, values.Length);
+        }
         public int IndexOf(T value) { return Array.IndexOf(Data, value, 0, Count); }
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }
         public Span<T> AsSpan(int start) { return Data.AsSpan(start, Count - start); }
         unsafe public ref PooledList<T> AsMutable() { return ref this; }
+        public T[] ToArray() { return AsSpan().ToArray(); }
         public void Dispose() { if (Data != null) ArrayPool<T>.Shared.Return(Data); this = default; }
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
         public override string ToString() { return $"<count={Count}>"; }
@@ -186,7 +194,6 @@ namespace Weesals.Utility {
             Data[index1] = Data[index2];
             Data[index2] = t;
         }
-
         public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }
 

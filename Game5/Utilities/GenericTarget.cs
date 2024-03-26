@@ -22,9 +22,6 @@ namespace Game5.Game {
     interface IEntitySelectable {
         void NotifySelected(ulong id, bool selected);
     }
-    interface IEntityRedirect {
-        ItemReference GetOwner(ulong id);
-    }
 
     public static class ItemReferenceEx {
         public static int GetCount(this ItemReference target) {

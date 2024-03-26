@@ -80,7 +80,7 @@ PSInput VSMain(VSInput input) {
     PSInput result;
     result.position = input.position;
     result.uv = input.uv;
-    result.position.z = 0.99999;
+    result.position.z = 0.9999999;
     result.position.w = 1.0;
     return result;
 }
@@ -169,7 +169,7 @@ float4 ProceduralSkybox(float3 ro, float3 rd) {
 //////////////////////////////////////////////////////////////////////////////////////////////
 
 float4 PSMain(PSInput input) : SV_TARGET {
-    float2 vpos = input.position.xy / Resolution.xy * 2 - 1;
+    float2 vpos = input.uv * 2 - 1;
     vpos.y = -vpos.y;
         
     float4 clipSpacePosition = float4(vpos, 1.0f, 1.0f);

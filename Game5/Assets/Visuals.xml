@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<Visuals>
+	<Visual Name="House">
+		<Model Path="./Assets/SM_House.fbx" VariantMask="1" />
+		<Model Path="./Assets/B_House2.fbx" VariantMask="2" />
+		<Model Path="./Assets/B_House3.fbx" VariantMask="3" />
+		<Model Path="./Assets/B_Granary1.fbx" VariantMask="4" />
+		<Model Path="./Assets/B_Granary2.fbx" VariantMask="5" />
+		<Model Path="./Assets/B_Granary3.fbx" VariantMask="6" />
+		<Particle Path="./Assets/Particles/Smoke.json" LocalPosition="0.7, 3.2, -0.8" />
+	</Visual>
+	<Visual Name="TownCentre">
+		<Model Path="./Assets/SM_TownCentre.fbx" />
+		<Particle Path="./Assets/Particles/Fire.json" LocalPosition="-2, 0.5, 2" />
+	</Visual>
+	<Visual Name="Archer">
+		<Model Path="./Assets/Characters/Character_Archer.fbx" />
+	</Visual>
+	<Visual Name="Chicken">
+		<Model Path="./Assets/Models/Ignore/chickenV2.fbx" />
+	</Visual>
+</Visuals>

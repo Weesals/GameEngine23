@@ -593,6 +593,7 @@ namespace Weesals.Engine {
             {       // Generate a mask representing the cells intersecting the frustum
                 using var hullMarker = ProfileMarker_ComputeHull.Auto();
                 var activeRange = Scene.GetActiveBounds();
+                if (activeRange.Extents.X <= 0) return;
                 hull.FromBox(activeRange);
                 enableFrustum = hull.Slice(frustum);
                 var aabb = hull.GetAABB();

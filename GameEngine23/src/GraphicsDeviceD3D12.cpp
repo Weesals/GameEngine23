@@ -27,7 +27,7 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     ID3D12RootSignature* mLastRootSig;
     const D3DResourceCache::D3DPipelineState* mLastPipeline;
     const D3DConstantBuffer* mLastCBs[10];
-    D3D12_GPU_DESCRIPTOR_HANDLE mLastResources[10];
+    D3D12_GPU_DESCRIPTOR_HANDLE mLastResources[32];
     InplaceVector<D3DResourceCache::D3DRenderSurfaceView, 8> mFrameBuffers;
     D3DResourceCache::D3DRenderSurfaceView mDepthBuffer;
     std::vector<D3D12_VERTEX_BUFFER_VIEW> tVertexViews;
@@ -38,6 +38,8 @@ public:
         : mDevice(device)
         , mCmdAllocator(nullptr)
     {
+    }
+    ~D3DCommandBuffer() {
     }
     ID3D12Device* GetD3DDevice() const { return mDevice->GetD3DDevice(); }
     GraphicsDeviceBase* GetGraphics() const override {
@@ -402,6 +404,7 @@ public:
             auto handle = mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart();
             handle.ptr += srvOffset;
             auto bindingId = rootSig->mNumConstantBuffers + rb->mBindPoint;
+            assert(bindingId < _countof(mLastResources));
             if (mLastResources[bindingId].ptr == handle.ptr) continue;
             mCmdList->SetGraphicsRootDescriptorTable(bindingId, handle);
             mLastResources[bindingId] = handle;
@@ -428,9 +431,9 @@ public:
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
         if (stencilRef >= 0) mCmdList->OMSetStencilRef((UINT)stencilRef);
         if (indexView.Format != DXGI_FORMAT_UNKNOWN)
-            mCmdList->DrawIndexedInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0, 0);
+            mCmdList->DrawIndexedInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0, config.mInstanceBase);
         else
-            mCmdList->DrawInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, 0);
+            mCmdList->DrawInstanced(indexCount, std::max(1, instanceCount), config.mIndexBase, config.mInstanceBase);
         cache.mStatistics.mDrawCount++;
         cache.mStatistics.mInstanceCount += instanceCount;
     }
@@ -463,8 +466,19 @@ GraphicsDeviceD3D12::GraphicsDeviceD3D12()
 {
     //WaitForGPU();
 }
-GraphicsDeviceD3D12::~GraphicsDeviceD3D12()
-{
+GraphicsDeviceD3D12::~GraphicsDeviceD3D12() {
+}
+#ifdef _DEBUG
+#include <dxgidebug.h>
+#endif
+GraphicsDeviceD3D12::DisposeGuard::~DisposeGuard() {
+#ifdef _DEBUG       // Check for memory leaks
+    IDXGIDebug1* pDebug = nullptr;
+    if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug)))) {
+        pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_FLAGS(DXGI_DEBUG_RLO_DETAIL | DXGI_DEBUG_RLO_IGNORE_INTERNAL));
+        pDebug->Release();
+    }
+#endif
 }
 
 void GraphicsDeviceD3D12::CheckDeviceState() const
@@ -502,8 +516,9 @@ CompiledShader GraphicsDeviceD3D12::CompileShader(const std::wstring_view& path,
     d3dMacros[count] = { };
     D3DShader d3dshader;
     d3dshader.CompileFromFile(path.data(), entry.data(), profile.data(), d3dMacros);
-    auto blob = compiled.AllocateBuffer((int)d3dshader.mShader->GetBufferSize());
-    std::memcpy(blob.data(), d3dshader.mShader->GetBufferPointer(), blob.size());
+    int size = (int)d3dshader.mShader->GetBufferSize();
+    auto blob = compiled.AllocateBuffer(size);
+    std::memcpy(blob.data(), d3dshader.mShader->GetBufferPointer(), size);
     compiled.SetName(path);
     compiled.GetReflection() = d3dshader.mReflection;
     return compiled;

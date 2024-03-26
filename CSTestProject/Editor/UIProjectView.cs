@@ -47,7 +47,7 @@ namespace Weesals.Editor {
             ScrollView scrollView = new() { ScrollMask = new Vector2(0f, 1f), };
             ListLayout folderList = new() { Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
 
-            public IReadOnlyCollection<ISelectable> Selected => new[] { selectedFolder };
+            public IReadOnlyCollection<ItemReference> Selected => new[] { new ItemReference(selectedFolder) };
 
             public FolderList() {
                 scrollView.AppendChild(folderList);
@@ -69,21 +69,21 @@ namespace Weesals.Editor {
                     }
                 }
             }
-            public void SetSelected(ISelectable? selectable) {
-                if (selectedFolder == selectable) return;
-                if (selectedFolder != null) selectedFolder.OnSelected(this, false);
-                selectedFolder = selectable as FolderView;
-                if (selectedFolder != null) selectedFolder.OnSelected(this, true);
+            public void SetSelected(ItemReference selectable) {
+                if (selectedFolder == selectable.Owner) return;
+                if (selectedFolder is ISelectable oselectable) oselectable.OnSelected(this, false);
+                selectedFolder = selectable.Owner as FolderView;
+                if (selectedFolder is ISelectable nselectable) nselectable.OnSelected(this, true);
             }
 
             public void ClearSelected() {
-                SetSelected(null);
+                SetSelected(default);
             }
-            public void AppendSelected(ISelectable selectable) {
+            public void AppendSelected(ItemReference selectable) {
                 SetSelected(selectable);
             }
-            public void RemoveSelected(ISelectable selectable) {
-                if (selectedFolder == selectable) SetSelected(null);
+            public void RemoveSelected(ItemReference selectable) {
+                if (selectedFolder == selectable.Owner) SetSelected(default);
             }
         }
         public class FileGrid : CanvasRenderable {

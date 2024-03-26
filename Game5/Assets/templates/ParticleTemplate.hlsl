@@ -122,7 +122,7 @@ void PSSpawn(PSSpawnInput input
     //float Seed = frac(sin(frac(dot(input.position.xy, float2(0.34731, 0.7656))) * 651.5216) * 651.5216);
     float Seed = frac(frac(dot(input.position.xy, float2(0.6796, 0.4273))) * 188.1);
     float3 Velocity = float3(0, 0, 0);
-    float Age = 0.0;
+    float Age = 0.0 - DeltaTime * frac(Seed * 123.45);
     
     Position += Emitters[input.params.x * 255].Position;
     
@@ -169,6 +169,13 @@ void PSStep(PSStepInput input
     //float Seed = frac(frac(dot(input.position.xy, float2(0.34731, 0.7656))) * 651.5216);
     float3 Velocity = VelocityTexture[input.position.xy].xyz;
     float Age = VelocityTexture[input.position.xy].w;
+    float _global_DeltaTime = DeltaTime;
+    float DeltaTime = _global_DeltaTime;
+    if (Age < 0) {
+        float toApply = min(DeltaTime, -Age);
+        Age += DeltaTime;
+        DeltaTime -= toApply;
+    }
         
 %ParticleStep%
 
@@ -255,6 +262,7 @@ void PSMain(PSInput input
     float2 UV = input.uv;
     float4 Color = float4(1.0, 1.0, 1.0, 1.0);
     float Age = input.attributes.x;
+    float NormalizedAge = Age / Lifetime;
     
 %ParticlePixel%
     

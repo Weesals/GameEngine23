@@ -72,9 +72,6 @@ namespace Game5.Game {
 
         private static ProfilerMarker ProfileMarker_PlayUpdate = new ProfilerMarker("Play.Update");
 
-        LandscapeData landscape;
-        LandscapeRenderer landscapeRenderer;
-
         public Camera Camera { get; private set; }
         public readonly GameRoot GameRoot;
         public Scene Scene => GameRoot.Scene;
@@ -82,32 +79,36 @@ namespace Game5.Game {
         public Updatables Updatables => GameRoot.Updatables;
         public LandscapeData Landscape => landscape;
         public LandscapeRenderer LandscapeRenderer => landscapeRenderer;
+        public ParticleSystemManager ParticleManager => particleManager;
 
-        public World RenderWorld { get; private set; }
         public Simulation Simulation { get; private set; }
         public World World => Simulation.World;
 
         public SelectionManager SelectionManager = new();
         public EntityHighlighting EntityHighlighting;
+        public VisualsCollection EntityVisuals;
 
         public NavDebug? NavDebug;
 
         RenderWorldBinding renderBindings;
-        float time = 0;
+
+        LandscapeData landscape;
+        LandscapeRenderer landscapeRenderer;
+
+        ParticleSystemManager particleManager;
         ParticleSystem fireParticles;
         ParticleSystem.Emitter mouseFire;
 
-        ParticleSystemManager particleManager;
-        public ParticleSystemManager ParticleManager => particleManager;
-
         [EditorField] public bool EnableFog = true;
         [EditorField] public bool EnableAO = true;
-        [EditorField] public float FogIntensity = 0.1f;
+        [EditorField] public float FogIntensity = 0.25f;
         [EditorField] public bool DrawVisibilityVolume = false;
 
         [EditorField] public int LoadedModelCount => Resources.LoadedModelCount;
         [EditorField] public int LoadedShaderCount => Resources.LoadedShaderCount;
         [EditorField] public int LoadedTextureCount => Resources.LoadedTextureCount;
+
+        float time = 0;
 
         public Play(GameRoot root) {
             GameRoot = root;
@@ -143,7 +144,7 @@ namespace Game5.Game {
                 Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
                     * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),
                 NearPlane = 5.0f,
-                FarPlane = 5000.0f,
+                FarPlane = 50000.0f,
             };
 
 
@@ -151,19 +152,19 @@ namespace Game5.Game {
                 root.Canvas.AppendChild(new UIPlay(this));
             }
 
-            using (var marker = new ProfilerMarker("Create Simulation").Auto()) {
-                Simulation = new();
-            }
-            using (var marker = new ProfilerMarker("Set Landscape").Auto()) {
-                Simulation.SetLandscape(landscape);
+            using (var marker = new ProfilerMarker("Load Visuals").Auto()) {
+                EntityVisuals = new(this);
+                EntityVisuals.Load(File.ReadAllText("./Assets/Visuals.xml"));
             }
 
-            using (var marker = new ProfilerMarker("Create World").Auto()) {
-                RenderWorld = new World();
+            using (var marker = new ProfilerMarker("Create Simulation").Auto()) {
+                Simulation = new();
+                Simulation.SetLandscape(landscape);
+                Simulation.SetVisuals(EntityVisuals);
             }
 
             using (var marker = new ProfilerMarker("Render Bindings").Auto()) {
-                renderBindings = new(World, RenderWorld, Scene, root.ScenePasses);
+                renderBindings = new(World, Scene, root.ScenePasses, ParticleManager, EntityVisuals);
                 EntityHighlighting = new(renderBindings);
             }
 
@@ -175,17 +176,6 @@ namespace Game5.Game {
             if (false) {
                 var stParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/StressTest.json");
                 stParticles.CreateEmitter(new Vector3(0f, 0f, -5f));
-            } else if (false) {
-                var smokeParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/Smoke.json");
-                //smokeParticles.CreateEmitter(new Vector3(5f, 0f, 5f));
-                fireParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/Fire.json");
-                var auraParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/Aura.json");
-                /*foreach (var entity in Simulation.World.GetEntities()) {
-                    Simulation.World.AddComponent<ECParticleBinding>(entity) = new() {
-                        Emitter = auraParticles.CreateEmitter(default),
-                    };
-                    break;
-                }*/
             }
 
             GameRoot.RegisterEditable(this, true);
@@ -253,7 +243,9 @@ namespace Game5.Game {
             particleManager.Update(graphics, dt);
         }
         public void RenderBasePass(CSGraphics graphics, ScenePass pass) {
-            landscapeRenderer.Render(graphics, pass);
+            var materialStack = new MaterialStack(Scene.RootMaterial);
+            using var passMat = materialStack.Push(pass.OverrideMaterial);
+            landscapeRenderer.Render(graphics, ref materialStack, pass);
             if (pass.TagsToInclude.Has(RenderTag.Transparent)) {
                 particleManager.Draw(graphics, pass.GetPassMaterial(), Scene.RootMaterial);
             }

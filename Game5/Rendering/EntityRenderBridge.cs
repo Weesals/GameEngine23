@@ -8,14 +8,235 @@ using Weesals.ECS;
 using Weesals.Engine;
 using Game5.Game;
 using Game5.Game.Gameplay;
+using System.Xml.Linq;
+using Weesals.Utility;
+using System.Collections;
+using Weesals.Engine.Jobs;
 
 namespace Weesals.Rendering {
     [SparseComponent, NoCloneComponent]
     public struct SceneRenderable {
-        public CSInstance[] SceneIndex;
-        public Material? AnimMaterial;
+        public VisualInstance Instance;
 
-        public override string ToString() { return SceneIndex.Select(i => i.ToString()).Aggregate((i1, i2) => $"{i1}, {i2}").ToString(); }
+        //public override string ToString() { return SceneIndex.Select(i => i.ToString()).Aggregate((i1, i2) => $"{i1}, {i2}").ToString(); }
+    }
+
+    public class VisualPrefab {
+        public struct ModelInstance {
+            public int IdOffset;
+            public Model Model;
+            public IReadOnlyList<Mesh> Meshes => Model.Meshes;
+            public ModelInstance(Model model) {
+                Model = model;
+            }
+        }
+        public struct ParticleInstance {
+            public ParticleSystem Particle;
+            public Vector3 LocalPosition;
+            public ParticleInstance(ParticleSystem particle) {
+                Particle = particle;
+            }
+        }
+
+        public string Name;
+        public ModelInstance[] Models;
+        public ParticleInstance[] Particles;
+        public int MeshCount;
+
+        public void FinalizeLoad() {
+            int offset = 0;
+            for (int i = 0; i < Models.Length; i++) {
+                Models[i].IdOffset = offset;
+                offset += Models[i].Model.Meshes.Count;
+            }
+            MeshCount = offset;
+        }
+    }
+    public class VisualInstance {
+        public VisualPrefab Prefab;
+        public CSInstance[] Meshes;
+        public ParticleSystem.Emitter[] Particles;
+        public Material? AnimMaterial;
+        public VisualInstance(VisualPrefab prefab) {
+            Prefab = prefab;
+            Meshes = new CSInstance[Prefab.MeshCount];
+            Particles = new ParticleSystem.Emitter[Prefab.Particles.Length];
+        }
+    }
+
+    public class VisualsCollection {
+        public readonly Play Play;
+        public class VisualCollection {
+            public string Name;
+            public VisualPrefab[] Variants;
+            public VisualCollection(string name, VisualPrefab[] variants) {
+                Name = name;
+                Variants = variants;
+            }
+        }
+        public Dictionary<string, VisualCollection> VisualsByName = new();
+        public List<VisualCollection> Visuals = new();
+
+        public VisualsCollection(Play play) {
+            Play = play;
+        }
+        struct VariantBuilder : IDisposable {
+            public PooledList<VisualPrefab.ModelInstance> Models = new();
+            public PooledList<VisualPrefab.ParticleInstance> Particles = new();
+            public bool IsValid => Models.IsCreated;
+            public VariantBuilder() { }
+            public VisualPrefab Build() {
+                return new VisualPrefab() {
+                    Models = Models.ToArray(),
+                    Particles = Particles.ToArray(),
+                };
+            }
+            public void Dispose() {
+                Models.Dispose();
+                Particles.Dispose();
+            }
+        }
+        public void Load(string doc) {
+            JobHandle loadHandle = default;
+            var xml = XDocument.Parse(doc);
+            var xRoot = xml.Root;
+            foreach (var xVisual in xRoot.Elements("Visual")) {
+                using PooledList<VariantBuilder> variants = new();
+                foreach (var xModel in xVisual.Elements("Model")) {
+                    var model = new VisualPrefab.ModelInstance(Resources.LoadModel((string)xModel.Attribute("Path"), out var handle));
+                    loadHandle = JobHandle.CombineDependencies(loadHandle, handle);
+                    var xVariantMask = xModel.Attribute("VariantMask");
+                    foreach (var id in new IntEnumerator(xVariantMask?.Value, 0, true)) {
+                        while (id >= variants.Count) variants.Add(default);
+                        if (!variants[id].IsValid) variants[id] = new();
+                        variants[id].Models.Add(model);
+                    }
+                }
+                foreach (var xParticle in xVisual.Elements("Particle")) {
+                    var particle = new VisualPrefab.ParticleInstance(Play.ParticleManager.RequireSystemFromJSON((string)xParticle.Attribute("Path")));
+                    var xLocalPosition = xParticle.Attribute("LocalPosition");
+                    if (xLocalPosition != null) {
+                        var floatEn = new FloatEnumerator(xLocalPosition.Value);
+                        for (int i = 0; i < 3; ++i) {
+                            if (!floatEn.MoveNext()) break;
+                            particle.LocalPosition[i] = floatEn.Current;
+                        }
+                    }
+                    var xVariantMask = xParticle.Attribute("VariantMask");
+                    foreach (var id in new IntEnumerator(xVariantMask?.Value, 0, true)) {
+                        while (id >= variants.Count) variants.Add(default);
+                        if (!variants[id].IsValid) variants[id] = new();
+                        variants[id].Particles.Add(particle);
+                    }
+                }
+                if (variants[0].IsValid) {
+                    for (int i = 1; i < variants.Count; i++) {
+                        if (!variants[i].IsValid) continue;
+                        variants[i].Models.AddRange(variants[0].Models);
+                        variants[i].Particles.AddRange(variants[0].Particles);
+                    }
+                }
+                // If we have variants, ignore the common variant (0)
+                int var0 = variants.Count > 1 ? 1 : 0;
+                var visual = new VisualCollection(
+                    (string?)xVisual.Attribute("Name") ?? "",
+                    new VisualPrefab[variants.Count - var0]
+                );
+                for (int i = var0; i < variants.Count; i++) {
+                    if (!variants[i].IsValid) continue;
+                    visual.Variants[i - var0] = variants[i].Build();
+                    visual.Variants[i - var0].Name = i == 0 ? visual.Name : $"{visual.Name} ({i})";
+                    variants[i].Dispose();
+                }
+                Visuals.Add(visual);
+                VisualsByName.Add(visual.Name, visual);
+                variants.Clear();
+            }
+            loadHandle.Complete();
+            foreach (var context in Visuals) {
+                foreach (var variant in context.Variants) {
+                    if (variant == null) continue;
+                    variant.FinalizeLoad();
+                }
+            }
+        }
+
+        public VisualPrefab GetVisuals(string name) {
+            if (name != null && VisualsByName.TryGetValue(name, out var visual)) {
+                return visual.Variants[0];
+            }
+            return default!;
+        }
+
+        public struct IntEnumerator : IEnumerator<int> {
+            public readonly string? Source;
+            public int Index;
+            public int Current { get; private set; }
+            object IEnumerator.Current => Current;
+            public IntEnumerator(string? str, int index = 0, bool forceDefault = false) {
+                Source = str;
+                Index = index;
+                Current = forceDefault ? -1 : 0;
+            }
+            public void Dispose() { }
+            public void Reset() { }
+            public bool MoveNext() {
+                if (Source == null) {
+                    if (Current == 0) return false;
+                    Current = 0;
+                    return true;
+                }
+                Current = 0;
+                while (Index < Source.Length && char.IsWhiteSpace(Source[Index])) ++Index;
+                int begin = Index;
+                for (; Index < Source.Length && char.IsNumber(Source[Index]); ++Index) {
+                    Current = Current * 10 + (int)(Source[Index] - '0');
+                }
+                if (begin == Index) return false;
+                while (Index < Source.Length && char.IsWhiteSpace(Source[Index])) ++Index;
+                if (Index < Source.Length && Source[Index] == ',') ++Index;
+                return true;
+            }
+            public IntEnumerator GetEnumerator() { return this; }
+        }
+        public struct FloatEnumerator : IEnumerator<float> {
+            public readonly string? Source;
+            public int Index;
+            public float Current { get; private set; }
+            object IEnumerator.Current => Current;
+            public FloatEnumerator(string? str, int index = 0) {
+                Source = str;
+                Index = index;
+                Current = -1;
+            }
+            public void Dispose() { }
+            public void Reset() { }
+            public bool MoveNext() {
+                if (Source == null) return false;
+                Current = 0;
+                while (Index < Source.Length && char.IsWhiteSpace(Source[Index])) ++Index;
+                int begin = Index;
+                bool neg = Index < Source.Length && Source[Index] == '-';
+                if (neg) ++Index;
+                for (; Index < Source.Length && char.IsNumber(Source[Index]); ++Index) {
+                    Current = Current * 10 + (int)(Source[Index] - '0');
+                }
+                if (Index < Source.Length && Source[Index] == '.') {
+                    ++Index;
+                    float Div = 0.1f;
+                    for (; Index < Source.Length && char.IsNumber(Source[Index]); ++Index) {
+                        Current += Div * (int)(Source[Index] - '0');
+                        Div /= 10.0f;
+                    }
+                }
+                if (begin == Index) return false;
+                if (neg) Current = -Current;
+                while (Index < Source.Length && char.IsWhiteSpace(Source[Index])) ++Index;
+                if (Index < Source.Length && Source[Index] == ',') ++Index;
+                return true;
+            }
+            public FloatEnumerator GetEnumerator() { return this; }
+        }
     }
 
     public class RenderWorldBinding : IHighlightListener {
@@ -23,6 +244,8 @@ namespace Weesals.Rendering {
         //public readonly World RenderWorld;
         public readonly Scene Scene;
         public readonly ScenePassManager ScenePasses;
+        public readonly ParticleSystemManager ParticleSystem;
+        public readonly VisualsCollection EntityVisuals;
         public class TableBindings {
             public Entity[] SceneEntities = Array.Empty<Entity>();
             public ArchetypeComponentLookup<CModel> ModelLookup;
@@ -45,11 +268,13 @@ namespace Weesals.Rendering {
             }
         }
         public TableBindings[] Bindings = Array.Empty<TableBindings>();
-        public RenderWorldBinding(World world, World renderWorld, Scene scene, ScenePassManager scenePasses) {
+        public RenderWorldBinding(World world, Scene scene, ScenePassManager scenePasses, ParticleSystemManager particleSystem, VisualsCollection entityVisuals) {
             World = world;
             //RenderWorld = renderWorld;
             Scene = scene;
             ScenePasses = scenePasses;
+            ParticleSystem = particleSystem;
+            EntityVisuals = entityVisuals;
 
             var renderables = World.BeginQuery().With<ECTransform>().With<CModel>().Build();
             World.Stage.AddListener(renderables, new ArchetypeListener() {
@@ -62,7 +287,7 @@ namespace Weesals.Rendering {
                     binding.ChangedTransforms.Add(entityAddr.Row);
                     binding.ValidEntities.Add(entityAddr.Row);
                     World.Stage.AddComponent<SceneRenderable>(entity) = new() {
-                        SceneIndex = Array.Empty<CSInstance>(),
+                        //SceneIndex = Array.Empty<CSInstance>(),
                     };
                 },
                 OnMove = (move) => {
@@ -94,12 +319,41 @@ namespace Weesals.Rendering {
         }
         private void RemoveEntityScene(EntityAddress entityAddr) {
             ref var sceneProxy = ref World.Stage.GetComponentRef<SceneRenderable>(entityAddr);
-            foreach (var index in sceneProxy.SceneIndex) {
+            DestroyInstance(sceneProxy.Instance);
+            sceneProxy.Instance = default;
+        }
+
+        private VisualInstance CreateInstance(VisualPrefab prefab, bool animated = false) {
+            var visuals = new VisualInstance(prefab);
+            if (animated) visuals.AnimMaterial ??= new();
+            for (int i = 0; i < prefab.Models.Length; i++) {
+                var model = prefab.Models[i];
+                for (int m = 0; m < model.Meshes.Count; m++) {
+                    var mesh = model.Meshes[m];
+                    var instance = Scene.CreateInstance(mesh.BoundingBox);
+                    ScenePasses.AddInstance(instance, mesh, visuals.AnimMaterial, RenderTags.Default);
+                    visuals.Meshes[model.IdOffset + m] = instance;
+                }
+            }
+            for (int i = 0; i < prefab.Particles.Length; i++) {
+                var particle = prefab.Particles[i];
+                visuals.Particles[i] = particle.Particle.CreateEmitter(Vector3.Zero);
+            }
+            return visuals;
+        }
+        private void DestroyInstance(VisualInstance instance) {
+            if (instance == null) return;
+            foreach (var index in instance.Meshes) {
                 ScenePasses.RemoveInstance(index);
                 Scene.RemoveInstance(index);
             }
-            sceneProxy.SceneIndex = Array.Empty<CSInstance>();
+            foreach (var emitter in instance.Particles) {
+                emitter.MarkDead();
+            }
+            instance.Meshes = Array.Empty<CSInstance>();
+            instance.Particles = Array.Empty<ParticleSystem.Emitter>();
         }
+
         public TableBindings RequireBinding(EntityAddress entityAddr) {
             if (entityAddr.ArchetypeId >= Bindings.Length)
                 Array.Resize(ref Bindings, entityAddr.ArchetypeId + 16);
@@ -116,23 +370,16 @@ namespace Weesals.Rendering {
         public void UpdateModel(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
             var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
-            var model = emodel.Model;
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
-            foreach (var index in sceneProxy.SceneIndex) {
-                ScenePasses.RemoveInstance(index);
-                Scene.RemoveInstance(index);
+            if (sceneProxy.Instance != null) {
+                DestroyInstance(sceneProxy.Instance);
             }
-            sceneProxy.SceneIndex = new CSInstance[model != null ? model.Meshes.Count : 0];
+            var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
+            if (prefab == null) return;
+            sceneProxy.Instance = CreateInstance(prefab, binding.AnimationLookup.IsValid);
             if (binding.AnimationLookup.IsValid) {
-                sceneProxy.AnimMaterial ??= new();
                 UpdateAnimation(entityAddr);
-            }
-            for (int i = 0; i < sceneProxy.SceneIndex.Length; i++) {
-                var mesh = model.Meshes[i];
-                var instance = Scene.CreateInstance(mesh.BoundingBox);
-                ScenePasses.AddInstance(instance, mesh, sceneProxy.AnimMaterial, RenderTags.Default);
-                sceneProxy.SceneIndex[i] = instance;
             }
             binding.ChangedSelected.TryRemove(entityAddr.Row);
             if (binding.TransformLookup.IsValid) UpdateTransform(entityAddr);
@@ -144,10 +391,20 @@ namespace Weesals.Rendering {
             var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
+            if (sceneProxy.Instance == null) return;
             var tform = epos.AsMatrix();
-            for (int i = 0; i < sceneProxy.SceneIndex.Length; i++) {
-                var mesh = emodel.Model.Meshes[i];
-                Scene.SetTransform(sceneProxy.SceneIndex[i], mesh.Transform * tform);
+            var prefab = sceneProxy.Instance.Prefab;
+            foreach (var model in prefab.Models) {
+                for(int m = 0; m < model.Meshes.Count; m++) {
+                    var mesh = model.Model.Meshes[m];
+                    int i = model.IdOffset + m;
+                    Scene.SetTransform(sceneProxy.Instance.Meshes[i], mesh.Transform * tform);
+                }
+            }
+            for (int i = 0; i < sceneProxy.Instance.Particles.Length; i++) {
+                var particle = sceneProxy.Instance.Particles[i];
+                var ogparticle = prefab.Particles[i];
+                particle.Position = Vector3.Transform(ogparticle.LocalPosition, tform);
             }
         }
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
@@ -156,19 +413,21 @@ namespace Weesals.Rendering {
             var selected = binding.SelectedLookup.GetValue(archetype, entityAddr.Row);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
-            foreach (var index in sceneProxy.SceneIndex)
+            if (sceneProxy.Instance == null) return;
+            foreach (var index in sceneProxy.Instance.Meshes)
                 Scene.UpdateInstanceData(index, sizeof(float) * (16 + 16 + 4),
                     selected.Selected ? 1.0f : 0.0f);
         }
         private void UpdateAnimation(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
             var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
-            var model = emodel.Model;
             var archetype = World.Stage.GetArchetype(entityAddr.ArchetypeId);
             var eanim = binding.AnimationLookup.GetValueRef(archetype, entityAddr.Row);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
-            if (sceneProxy.AnimMaterial == null) return;
+            if (sceneProxy.Instance == null) return;
+            if (sceneProxy.Instance.AnimMaterial == null) return;
+            var model = sceneProxy.Instance.Prefab.Models[0];
             var skinnedMesh = model.Meshes[0] as SkinnedMesh;
             Span<Matrix4x4> bones = stackalloc Matrix4x4[32];
             var animation = eanim.Animation;
@@ -177,7 +436,7 @@ namespace Weesals.Rendering {
             animPlayback.SetAnimation(animation.GetAs<Animation>());
             animPlayback.UpdateClip(time);
             var boneTransforms = animPlayback.ApplyBindPose(skinnedMesh);
-            sceneProxy.AnimMaterial!.SetArrayValue("BoneTransforms", boneTransforms.AsSpan());
+            sceneProxy.Instance.AnimMaterial!.SetArrayValue("BoneTransforms", boneTransforms.AsSpan());
         }
 
         public void UpdateChanged() {
@@ -208,7 +467,8 @@ namespace Weesals.Rendering {
             if (!World.IsValid(target.GetEntity())) return;
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(target.GetEntity());
-            foreach (var index in sceneProxy.SceneIndex)
+            if (sceneProxy.Instance == null) return;
+            foreach (var index in sceneProxy.Instance.Meshes)
                 Scene.UpdateInstanceData(index, sizeof(float) * (16 + 16),
                     (Vector4)color);
         }

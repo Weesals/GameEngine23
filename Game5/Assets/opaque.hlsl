@@ -1,6 +1,7 @@
-#include "include/retained.hlsl"
-#include "include/lighting.hlsl"
-#include "include/shadowreceive.hlsl"
+#include <retained.hlsl>
+#include <lighting.hlsl>
+#include <shadowreceive.hlsl>
+#include <basepass.hlsl>
 
 SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);
@@ -51,49 +52,27 @@ PSInput VSMain(VSInput input)
     return result;
 }
 
-void PSMain(PSInput input
-, out float4 OutColor : SV_Target0
-, out float4 OutVelocity : SV_Target1
-) 
-{
+void PSMain(PSInput input, out BasePassOutput result) {
     InstanceData instance = instanceData[input.primitiveId];
     
     TemporalAdjust(input.uv);
     
-    float3 viewDir = normalize(input.viewPos);
-    input.normal = normalize(input.normal);
     float4 tex = Texture.Sample(BilinearSampler, input.uv);
-    float3 Albedo = tex.rgb;
-    float3 Specular = 0.06;
-    float Roughness = 0.7;
-    float Metallic = 0.0;
+    PBRInput pbrInput = PBRDefault();
+    pbrInput.Albedo = tex.rgb;
+    pbrInput.Alpha = tex.a;
+    pbrInput.Specular = 0.06;
+    pbrInput.Roughness = 0.7;
+    pbrInput.Emissive = instance.Highlight;
+    pbrInput.Normal = normalize(input.normal);
 
     float3 shadowPos = ViewToShadow(input.viewPos);
     float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;
-
-    // The light
-    float3 o = ComputeLight(
-        Albedo,
-        Specular,
-        input.normal,
-        Roughness,
-        _LightColor0 * shadow,
-        _ViewSpaceLightDir0,
-        -viewDir,
-        Metallic
-    );
+    //pbrInput.Occlusion *= shadow;
     
-    // Indirect
-    o += ComputeIndiret(Albedo, Specular, input.normal, Roughness, Metallic, -viewDir);
-    
-    o.rgb *= 1.0f - instance.Highlight.a;
-    o.rgb += instance.Highlight.rgb;
-    //o.rgb = pow(o.rgb, 4) * 5.0;
-
-    OutColor = float4(o, tex.a);
-    OutVelocity = float4(input.velocity * 16.0, instance.Selected, 1);
-    //OutColor.rg = OutVelocity.rg * 10.0 + 0.5;
-    //OutColor.rgb = _ViewSpaceLightDir0;
+    result = PBROutput(pbrInput, normalize(input.viewPos));
+    OutputVelocity(result, input.velocity);
+    OutputSelected(result, instance.Selected);
 }
 
 //#include "include/shadowcast.hlsl"
@@ -106,17 +85,11 @@ struct ShadowCast_PSInput {
     float4 position : SV_POSITION;
 };
 
-ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input) {
+void ShadowCast_VSMain(ShadowCast_VSInput input, out float4 positionCS : SV_POSITION) {
     ShadowCast_PSInput result;
     InstanceData instance = instanceData[input.primitiveId];
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
-    result.position = mul(ViewProjection, float4(worldPos, 1.0));
-#if defined(VULKAN)
-    result.position.y = -result.position.y;
-#endif
-    return result;
+    positionCS = mul(ViewProjection, float4(worldPos, 1.0));
 }
 
-void ShadowCast_PSMain(ShadowCast_PSInput input) {
-    //return 1.0;
-}
+void ShadowCast_PSMain() { }

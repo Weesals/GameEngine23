@@ -2,7 +2,7 @@ matrix PreviousVP;
 matrix CurrentVP;
 float2 TemporalJitter;
 
-SamplerState BilinearSampler : register(s1);
+SamplerState BilinearClampedSampler : register(s6);
 SamplerState MinSampler : register(s4);
 SamplerState MaxSampler : register(s5);
 
@@ -51,7 +51,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float4 velId = SceneVelId[input.position.xy];
     float2 velocity = velId.xy;
 
-    float4 otherVelId = SceneVelId.Sample(BilinearSampler, input.uv + texelSize * sign * 0.5);
+    float4 otherVelId = SceneVelId.Sample(BilinearClampedSampler, input.uv + texelSize * sign * 0.5);
     if (otherVelId.z != velId.z) return float4(1.0, 1.0, 0.0, 1.0);
 
     //return float4(velocity * 0.5 + 0.5, 0.0, 1.0);
@@ -69,7 +69,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     }
     
     float4 sceneColor = CurrentFrame[input.position.xy];
-    float4 scenePrev = PreviousFrame.Sample(BilinearSampler, previousUV * float2(1.0, -1.0) / 2.0 + 0.5);
+    float4 scenePrev = PreviousFrame.Sample(BilinearClampedSampler, previousUV * float2(1.0, -1.0) / 2.0 + 0.5);
 
     float4 colorMin = sceneColor;
     float4 colorMax = sceneColor;

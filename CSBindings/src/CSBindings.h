@@ -282,6 +282,7 @@ private:
 struct CSDrawConfig {
 	int mIndexBase;
 	int mIndexCount;
+	int mInstanceBase = 0;
 	CSDrawConfig(int indexStart, int indexCount)
 		: mIndexBase(indexStart), mIndexCount(indexCount) { }
 };

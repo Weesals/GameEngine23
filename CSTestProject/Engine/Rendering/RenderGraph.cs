@@ -531,6 +531,7 @@ namespace Weesals.Engine {
                         if (i > 0) output += ", ";
                         var target = buffers[selfOutputs[i].TargetId];
                         output += $"{selfOutputs[i].Output.Name}:{selfOutputs[i].TargetId}:{target.Description.Size} :: T{selfOutputs[i].TargetId}";
+                        if (!target.Target.IsValid) output += "##NULL##";
                     }
                     output += $")\n";
                 }

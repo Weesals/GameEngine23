@@ -138,6 +138,7 @@ private:
 struct DrawConfig {
     int mIndexBase = 0;
     int mIndexCount = 0;
+    int mInstanceBase = 0;
     static DrawConfig MakeDefault() { return { 0, -1, }; }
 };
 

@@ -85,7 +85,7 @@ namespace Weesals.UI {
         }
 
         public void OnPointerDown(PointerEvent events) {
-            events.System.SelectionManager.SetSelected(this);
+            events.System.SelectionManager.SetSelected(new(this));
             var localPos = mLayoutCache.InverseTransformPosition2D(events.CurrentPosition);
             float nearestDst2 = float.MaxValue;
             int nearest = -1;

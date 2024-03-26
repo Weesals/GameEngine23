@@ -34,18 +34,18 @@ namespace Game5.Game {
         public ObservableCollection<object> Editables = new();
 
         ShadowPass shadowPass;
-        DeferredPass clearPass;
+        ClearPass clearPass;
         SkyboxPass skyboxPass;
         BasePass basePass;
         TransparentPass transPass;
-        VolumetricFogPass fogPass;
         GTAOPass gtaoPass;
+        DeferredPass deferredPass;
+        VolumetricFogPass fogPass;
         HiZPass highZPass;
-        AmbientOcclusionPass aoPass;
         BloomPass bloomPass;
         TemporalJitter temporalJitter;
         PostProcessPass postProcessPass;
-        DeferredPass canvasPass;
+        DelegatePass canvasPass;
         FinalPass finalPass;
 
         RenderGraph renderGraph = new();
@@ -76,29 +76,25 @@ namespace Game5.Game {
 
         private void SetupPasses() {
             using (var passesMarker = new ProfilerMarker("Create Passes").Auto()) {
+                Action updateShadowParameters = () => {
+                    basePass.UpdateShadowParameters(shadowPass);
+                    transPass.UpdateShadowParameters(shadowPass);
+                    fogPass?.UpdateShadowParameters(shadowPass);
+                    skyboxPass?.UpdateShadowParameters(shadowPass);
+                    deferredPass?.UpdateShadowParameters(shadowPass);
+                };
                 shadowPass = new ShadowPass(Scene) {
                     OnPreRender = (graphics) => {
                         RenderBasePass(graphics, shadowPass);
                     },
                     OnPostRender = () => {
-                        basePass.UpdateShadowParameters(shadowPass);
-                        transPass.UpdateShadowParameters(shadowPass);
-                        fogPass?.UpdateShadowParameters(shadowPass);
-                        skyboxPass?.UpdateShadowParameters(shadowPass);
+                        updateShadowParameters();
                     }
                 };
-                clearPass = new DeferredPass("Clear",
-                    default,
-                    new[] {
-                        new RenderPass.PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
-                        new RenderPass.PassOutput("SceneColor"),
-                        new RenderPass.PassOutput("SceneVelId"),
-                    },
-                    (CSGraphics graphics, ref RenderPass.Context context) => {
-                        graphics.SetViewport(context.Viewport);
-                        graphics.Clear();
-                    });
-                skyboxPass = new() { ScenePasses = scenePasses };
+                clearPass = new();
+                skyboxPass = new(scenePasses);
+                skyboxPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                skyboxPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 basePass = new BasePass(Scene) {
                     OnPreRender = (graphics) => {
                         RenderBasePass(graphics, basePass);
@@ -109,22 +105,25 @@ namespace Game5.Game {
                         RenderBasePass(graphics, transPass);
                     }
                 };
-                fogPass = new() { ScenePasses = scenePasses, };
-                fogPass?.OverrideMaterial.InheritProperties(Scene.RootMaterial);
-                gtaoPass = new() { ScenePasses = scenePasses, };
-                gtaoPass?.OverrideMaterial.InheritProperties(Scene.RootMaterial);
+                gtaoPass = new(scenePasses);
+                gtaoPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                gtaoPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
+                fogPass = new(scenePasses);
+                fogPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                fogPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
+                deferredPass = new(scenePasses);
+                deferredPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                deferredPass.OverrideMaterial.InheritProperties(fogPass.OverrideMaterial);
+                deferredPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 highZPass = new();
-                aoPass = new();
                 bloomPass = new();
                 temporalJitter = new TemporalJitter("TJitter") {
                     ScenePasses = scenePasses,
                 };
-                basePass.UpdateShadowParameters(shadowPass);
-                transPass.UpdateShadowParameters(shadowPass);
-                fogPass?.UpdateShadowParameters(shadowPass);
-                skyboxPass?.UpdateShadowParameters(shadowPass);
+                updateShadowParameters();
+
                 postProcessPass = new();
-                canvasPass = new DeferredPass("Canvas",
+                canvasPass = new DelegatePass("Canvas",
                     new[] { new RenderPass.PassInput("SceneColor", false) },
                     new[] { new RenderPass.PassOutput("SceneColor", 0), },
                     (CSGraphics graphics, ref RenderPass.Context context) => {
@@ -208,10 +207,10 @@ namespace Game5.Game {
             // Render scene color
             renderGraph.BeginPass(clearPass);
             renderGraph.BeginPass(basePass);
-            renderGraph.BeginPass(skyboxPass);
             //renderGraph.BeginPass(highZPass);
-            //renderGraph.BeginPass(aoPass);
             if (Play.EnableAO && gtaoPass != null) renderGraph.BeginPass(gtaoPass);
+            renderGraph.BeginPass(deferredPass);
+            renderGraph.BeginPass(skyboxPass);
             renderGraph.BeginPass(transPass);
             if (Play.EnableFog && fogPass != null) renderGraph.BeginPass(fogPass);
 
@@ -289,20 +288,7 @@ namespace Game5.Game {
                 editorWindow.Hierarchy.NotifySelected(entity.GetEntity(), selected);
             };
             this.Play.SelectionManager.OnSelectionChanged += (selection) => {
-                foreach (var selected in selection) {
-                    if (selected.Owner is LandscapeRenderer landscape) {
-                        editorWindow.ActivateLandscapeTools(landscape);
-                        return;
-                    }
-                    var entity = selected;
-                    if (entity.Owner is IEntityRedirect redirect)
-                        entity = redirect.GetOwner(entity.Data);
-                    if (entity.Owner is World world) {
-                        editorWindow.ActivateEntityInspector(world, entity.GetEntity());
-                        return;
-                    }
-                }
-                editorWindow.Inspector.SetInspector(default);
+                editorWindow.Editor.ProjectSelection.SetSelectedItems(selection);
             };
             editorWindow.EventSystem.KeyboardFilter.Insert(0, this.EventSystem);
         }

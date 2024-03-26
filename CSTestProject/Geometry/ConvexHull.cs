@@ -98,8 +98,10 @@ namespace Weesals.Geometry {
                 //if (dp <= 0.01f) continue;
                 //pointMasks[it.Index >> 6] |= 1ul << (it.Index & 63);
                 dpCache[it.Index] = dp;
-                if (dp <= 0.01f) cullCount++;
+                if (dp <= 0.00000000000001f) cullCount++;
             }
+            if (cullCount == 0) return false;
+            float minDP = float.MaxValue;
             using var insertedCorners = new PooledList<Int2>();
             //using var insertedCornerP = new PooledList<Vector3>();
             for (var it = edges.GetEnumerator(); it.MoveNext();) {
@@ -119,6 +121,7 @@ namespace Weesals.Geometry {
                 //var dp1 = Plane.DotCoordinate(plane, corner1);
                 //var dp2 = Plane.DotCoordinate(plane, corner2);
                 var dpDelta = (dp2 - dp1);
+                minDP = Math.Min(minDP, Math.Abs(dpDelta));
                 var intersect = Math.Abs(dpDelta) < 0.0000000001f ? it.Current.Corner1
                     : RequireCorner(Vector3.Lerp(corner1, corner2, (0 - dp1) / dpDelta));
                 //pointMasks[intersect >> 6] |= 1ul << (intersect & 63);

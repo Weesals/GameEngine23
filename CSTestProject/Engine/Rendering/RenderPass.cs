@@ -45,7 +45,7 @@ namespace Weesals.Engine {
         public struct PassOutput {
             public readonly CSIdentifier Name;
             public readonly int PassthroughInput;
-            public TextureDesc TargetDesc { get; private set; } = new();
+            public TextureDesc TargetDesc { get; private set; } = new() { Size = -1, };
             public PassOutput(CSIdentifier name, int passthroughInput = -1) {
                 Name = name; PassthroughInput = passthroughInput;
             }
@@ -87,6 +87,7 @@ namespace Weesals.Engine {
 
         //public CSRenderTarget RenderTarget { get; protected set; }
         public Material OverrideMaterial { get; protected set; }
+        public Material DefaultMaterial { get; protected set; }
 
         private List<RenderPass> dependencies = new();
 
@@ -96,6 +97,10 @@ namespace Weesals.Engine {
             OverrideMaterial = new();
             OverrideMaterial.SetValue("View", Matrix4x4.Identity);
             OverrideMaterial.SetValue("Projection", Matrix4x4.Identity);
+        }
+
+        public void SetDefaultMaterial(Material material) {
+            DefaultMaterial = material;
         }
 
         public virtual void GetInputOutput(ref IOContext context) {
@@ -161,6 +166,7 @@ namespace Weesals.Engine {
         }
         public virtual void Render(CSGraphics graphics, ref Context context) {
             BindRenderTargets(graphics, ref context);
+            OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
         }
         unsafe protected void DrawQuad(CSGraphics graphics, CSBufferReference texture, Material material = null) {
             using var marker = ProfileMarker_DrawQuad.Auto();
@@ -250,7 +256,6 @@ namespace Weesals.Engine {
             RenderScene(graphics, ref context);
         }
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
-            OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
             using (var marker = ProfileMarker_PreRender.Auto()) {
                 OnPreRender?.Invoke(graphics);
             }
@@ -266,20 +271,23 @@ namespace Weesals.Engine {
 
     public class ShadowPass : ScenePass {
         public Action OnPostRender;
+        public Vector3 LightDirection = new Vector3(-4f, -5f, 7f);
 
         private ConvexHull activeArea = new();
+        public Material ShadowReceiverMaterial;
 
         public ShadowPass(Scene scene) : base(scene, "Shadows") {
             Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 1024, Format = BufferFormat.FORMAT_D16_UNORM, }) };
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
             TagsToInclude.Add(RenderTag.ShadowCast);
+            ShadowReceiverMaterial = new();
         }
         public bool UpdateShadowFrustum(Frustum frustum, BoundingBox relevantArea = default) {
             // Create shadow projection based on frustum near/far corners
             Span<Vector3> corners = stackalloc Vector3[8];
             frustum.GetCorners(corners);
 
-            var lightViewMatrix = Matrix4x4.CreateLookAt(new Vector3(40, 50, 70), Vector3.Zero, Vector3.UnitY);
+            var lightViewMatrix = Matrix4x4.CreateLookAt(-LightDirection, Vector3.Zero, Vector3.UnitY);
             var lightMin = new Vector3(float.MaxValue);
             var lightMax = new Vector3(float.MinValue);
 
@@ -303,7 +311,8 @@ namespace Weesals.Engine {
                 }
             }
 
-            lightMax.Z += 5.0f;
+            // Max is actually min
+            lightMax.Z += 20.0f;
 
             var lightSize = lightMax - lightMin;
 
@@ -322,19 +331,37 @@ namespace Weesals.Engine {
         public void DrawVolume() {
             activeArea.DrawGizmos();
         }
+        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 4.0f) {
+            var shadowPassViewProj = this.View * this.Projection;
+            Matrix4x4.Invert(this.View, out var shadowPassInvView);
+            Matrix4x4.Invert(view, out var basePassInvView);
+            basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);
+            basePassMat.SetValue("ShadowIVViewProjection", basePassInvView * shadowPassViewProj);
+            basePassMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
+            basePassMat.SetValue("_LightColor0", new Vector3(1.0f, 0.85f, 0.7f) * sunIntensity);
+        }
     }
     public class MainPass : ScenePass {
         public MainPass(Scene scene, string name) : base(scene, name) {
         }
-        public void UpdateShadowParameters(ScenePass shadowPass) {
-            var basePassMat = OverrideMaterial;
-            var shadowPassViewProj = shadowPass.View * shadowPass.Projection;
-            Matrix4x4.Invert(shadowPass.View, out var shadowPassInvView);
-            Matrix4x4.Invert(View, out var basePassInvView);
-            basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);
-            basePassMat.SetValue("ShadowIVViewProjection", basePassInvView * shadowPassViewProj);
-            basePassMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
-            basePassMat.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
+        public void UpdateShadowParameters(ShadowPass shadowPass) {
+            shadowPass.ApplyParameters(View, OverrideMaterial);
+        }
+    }
+    public class ClearPass : RenderPass {
+        public ClearPass() : base("Clear") {
+            Outputs = new[] {
+                new PassOutput("SceneDepth").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
+                new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_UNORM, }),
+                new PassOutput("SceneVelId").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_SNORM, }),
+                new PassOutput("SceneAttri").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_UNORM, }),
+                new PassOutput("SceneAO").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_UNORM, }),
+            };
+        }
+        public override void Render(CSGraphics graphics, ref Context context) {
+            base.Render(graphics, ref context);
+            graphics.SetViewport(context.Viewport);
+            graphics.Clear();
         }
     }
     public class BasePass : MainPass {
@@ -343,12 +370,14 @@ namespace Weesals.Engine {
                 new PassInput("SceneDepth", false),
                 new PassInput("SceneColor", false),
                 new PassInput("SceneVelId", false),
+                new PassInput("SceneAttri", false),
                 new PassInput("ShadowMap"),
             };
             Outputs = new[] {
-                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
-                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, MipCount = 1, }),
-                new PassOutput("SceneVelId", 2).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_SNORM, MipCount = 1, }),
+                new PassOutput("SceneDepth", 0),
+                new PassOutput("SceneColor", 1),
+                new PassOutput("SceneVelId", 2),
+                new PassOutput("SceneAttri", 3),
             };
             TagsToInclude.Add(scene.TagManager.RequireTag("MainPass"));
             TagsToInclude.Add(scene.TagManager.RequireTag("Terrain"));
@@ -362,8 +391,8 @@ namespace Weesals.Engine {
                 new PassInput("ShadowMap"),
             };
             Outputs = new[] {
-                new PassOutput("SceneDepth", 0).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_D24_UNORM_S8_UINT, }),
-                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, }),
+                new PassOutput("SceneDepth", 0),
+                new PassOutput("SceneColor", 1),
             };
             TagsToInclude.Clear();
             TagsToInclude.Add(scene.TagManager.RequireTag("Transparent"));
@@ -373,10 +402,53 @@ namespace Weesals.Engine {
             GetPassMaterial().SetDepthMode(DepthMode.MakeReadOnly());
         }
     }
+    public class DeferredPass : RenderPass {
+        public ScenePassManager ScenePasses;
+        Material deferredMaterial;
+        public DeferredPass(ScenePassManager scene) : base("DeferredLit") {
+            ScenePasses = scene;
+            Inputs = new[] {
+                new PassInput("SceneDepth"),
+                new PassInput("SceneColor"),
+                new PassInput("SceneAttri"),
+                new PassInput("SceneAO"),
+                new PassInput("ShadowMap"),
+            };
+            Outputs = new[] {
+                new PassOutput("SceneDepth", 0),
+                new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R11G11B10_FLOAT, MipCount = 1, }),
+            };
+            deferredMaterial = new Material("./Assets/deferred.hlsl", GetPassMaterial());
+            deferredMaterial.SetBlendMode(BlendMode.MakeOpaque());
+            deferredMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+        }
+        public override void Render(CSGraphics graphics, ref Context context) {
+            base.Render(graphics, ref context);
+            var proj = ScenePasses.JitteredProjection;
+            float near = Math.Abs(proj.M43 / proj.M33);
+            float far = Math.Abs(proj.M43 / (proj.M33 - 1));
+            Vector2 ZBufferParams = new(1.0f / far - 1.0f / near, 1.0f / near);
+            deferredMaterial.SetValue("ZBufferParams", ZBufferParams);
+            deferredMaterial.SetValue("ViewToProj", new Vector4(
+                +2.0f / proj.M11,
+                +2.0f / proj.M22,
+                -(1.0f + proj.M31) / proj.M11,
+                -(1.0f + proj.M32) / proj.M22
+            ));
+            deferredMaterial.SetValue("View", ScenePasses.View);
+            deferredMaterial.SetValue("Projection", proj);
+            DrawQuad(graphics, default, deferredMaterial);
+        }
+
+        public void UpdateShadowParameters(ShadowPass shadowPass) {
+            shadowPass.ApplyParameters(ScenePasses.View, deferredMaterial);
+        }
+    }
     public class SkyboxPass : RenderPass {
         public ScenePassManager ScenePasses;
         protected Material skyboxMat;
-        public SkyboxPass() : base("Skybox") {
+        public SkyboxPass(ScenePassManager scene) : base("Skybox") {
+            ScenePasses = scene;
             Inputs = new[] {
                 new PassInput("SceneDepth", false),
                 new PassInput("SceneColor", false),
@@ -389,73 +461,67 @@ namespace Weesals.Engine {
             skyboxMat.SetDepthMode(DepthMode.MakeReadOnly());
             skyboxMat.SetBlendMode(BlendMode.MakeAlphaBlend());
         }
-        public void UpdateShadowParameters(ScenePass shadowPass) {
-            Matrix4x4.Invert(shadowPass.View, out var shadowPassInvView);
-            skyboxMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
-            skyboxMat.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
+        public void UpdateShadowParameters(ShadowPass shadowPass) {
+            shadowPass.ApplyParameters(Matrix4x4.Identity, OverrideMaterial);
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
             var viewProj = ScenePasses.View * ScenePasses.Projection;
             Matrix4x4.Invert(viewProj, out var invVP);
             skyboxMat.SetValue("InvVP", invVP);
-            skyboxMat.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
             DrawQuad(graphics, default, skyboxMat);
         }
     }
     public class VolumetricFogPass : RenderPass {
         public ScenePassManager ScenePasses;
         Material fogMaterial;
-        CSTexture volumeTex;
-        public VolumetricFogPass() : base("VolumetricFog") {
+        public VolumetricFogPass(ScenePassManager scene) : base("VolumetricFog") {
+            ScenePasses = scene;
             Inputs = new[] {
                 new PassInput("SceneDepth"),
                 new PassInput("SceneColor", false),
                 new PassInput("ShadowMap"),
             };
             Outputs = new[] {
-                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, }),
+                new PassOutput("SceneColor", 1),
             };
             fogMaterial = new Material("./Assets/volumetricfog.hlsl", GetPassMaterial());
             fogMaterial.SetBlendMode(BlendMode.MakePremultiplied());
-            fogMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+            fogMaterial.SetDepthMode(DepthMode.MakeOff());
             var volumeTexGenerator = new NoiseTexture3D();
-            volumeTex = volumeTexGenerator.Require();
-            fogMaterial.SetTexture("FogDensity", volumeTex);
+            var volumeTex = volumeTexGenerator.Require();
+            OverrideMaterial.SetTexture("FogDensity", volumeTex);
+            var noiseTexGenerator = new NoiseTexture2D();
+            var noiseTex = noiseTexGenerator.Require();
+            OverrideMaterial.SetTexture("Noise2D", noiseTex);
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
-            var viewProj = ScenePasses.View * ScenePasses.Projection;
-            Matrix4x4.Invert(viewProj, out var invVP);
-            fogMaterial.SetValue("InvVP", invVP);
+            fogMaterial.SetValue("View", ScenePasses.View);
+            fogMaterial.SetValue("Projection", ScenePasses.Projection);
             DrawQuad(graphics, default, fogMaterial);
         }
 
         public void UpdateShadowParameters(ShadowPass shadowPass) {
-            var shadowPassViewProj = shadowPass.View * shadowPass.Projection;
-            Matrix4x4.Invert(shadowPass.View, out var shadowPassInvView);
-            Matrix4x4.Invert(ScenePasses.View, out var basePassInvView);
-            fogMaterial.SetValue("ShadowViewProjection", shadowPassViewProj);
-            fogMaterial.SetValue("ShadowIVViewProjection", shadowPassViewProj);
-            fogMaterial.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
-            fogMaterial.SetValue("_LightColor0", 2 * new Vector3(1.0f, 0.98f, 0.95f) * 2.0f);
+            shadowPass.ApplyParameters(Matrix4x4.Identity, OverrideMaterial);
         }
     }
     public class GTAOPass : RenderPass {
         public ScenePassManager ScenePasses;
         Material gtaoMaterial;
-        CSTexture volumeTex;
-        public GTAOPass() : base("GTAO") {
+        public GTAOPass(ScenePassManager scene) : base("GTAO") {
+            ScenePasses = scene;
             Inputs = new[] {
-                new PassInput("SceneDepth"),
-                new PassInput("SceneColor", false),
+                new PassInput("SceneDepth", true),
+                new PassInput("SceneAttri", true),
             };
             Outputs = new[] {
-                new PassOutput("SceneColor", 1).SetTargetDesc(new TextureDesc() { Size = -1, }),
+                new PassOutput("SceneDepth", 0),
+                new PassOutput("SceneAO"),
             };
             gtaoMaterial = new Material("./Assets/Shader/GTAO.hlsl", GetPassMaterial());
-            gtaoMaterial.SetBlendMode(BlendMode.MakePremultiplied());
-            gtaoMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+            gtaoMaterial.SetBlendMode(BlendMode.MakeOpaque());
+            gtaoMaterial.SetDepthMode(new DepthMode(DepthMode.Comparisons.Greater, false));
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
@@ -463,19 +529,20 @@ namespace Weesals.Engine {
             Matrix4x4.Invert(proj, out var invProj);
             var res = (Vector2)context.Viewport.Size;
             gtaoMaterial.SetValue(RootMaterial.iRes, res);
+            gtaoMaterial.SetValue("View", ScenePasses.View);
             gtaoMaterial.SetValue("InvProjection", invProj);
             gtaoMaterial.SetValue("TexelSize", new Vector2(1.0f) / (Vector2)context.Viewport.Size);
             gtaoMaterial.SetValue("ViewToProj", new Vector4(
-                1.0f / proj.M11,
-                1.0f / proj.M22,
-                1.0f / proj.M11 * -0.5f,
-                1.0f / proj.M22 * -0.5f
+                +2.0f / proj.M11,
+                +2.0f / proj.M22,
+                -1.0f / proj.M11,
+                -1.0f / proj.M22
             ));
             float near = Math.Abs(proj.M43 / proj.M33);
             float far = Math.Abs(proj.M43 / (proj.M33 - 1));
             Vector2 ZBufferParams = new(1.0f / far - 1.0f / near, 1.0f / near);
             gtaoMaterial.SetValue("ZBufferParams", ZBufferParams);
-            gtaoMaterial.SetValue("HalfProjScale", (res.Y / proj.M22) * 8.0f);
+            gtaoMaterial.SetValue("HalfProjScale", (res.Y / proj.M22) * 4.0f);
             //gtaoMaterial.SetValue("NearFar", ScenePasses.)
             DrawQuad(graphics, default, gtaoMaterial);
         }
@@ -483,7 +550,7 @@ namespace Weesals.Engine {
     public class TemporalJitter : RenderPass, ICustomOutputTextures {
         public ScenePassManager ScenePasses;
         public Action<Int2>? OnBegin;
-        public DeferredPass.RenderPassEvaluator? OnRender;
+        public DelegatePass.RenderPassEvaluator? OnRender;
         private Material temporalMaterial;
         CSRenderTarget[] targets = new CSRenderTarget[2];
         int frame = 0;
@@ -654,10 +721,10 @@ namespace Weesals.Engine {
         }
     }
 
-    public class DeferredPass : RenderPass {
+    public class DelegatePass : RenderPass {
         public delegate void RenderPassEvaluator(CSGraphics graphics, ref RenderPass.Context context);
         public RenderPassEvaluator OnRender;
-        public DeferredPass(string name, PassInput[]? inputs, PassOutput[]? outputs, RenderPassEvaluator onRender) : base(name) {
+        public DelegatePass(string name, PassInput[]? inputs, PassOutput[]? outputs, RenderPassEvaluator onRender) : base(name) {
             if (inputs != null) Inputs = inputs;
             if (outputs != null) Outputs = outputs;
             OnRender = onRender;
@@ -686,16 +753,21 @@ namespace Weesals.Engine {
         private List<ScenePass> scenePasses = new();
         private List<CSInstance> dynamicInstances = new();
         private int dynamicDrawHash = 0;
+        private Material mainSceneMaterial;
 
         public Matrix4x4 View => view;
         public Matrix4x4 Projection => projection;
         public Frustum Frustum => new Frustum(view * projection);
         Matrix4x4 previousView, previousProj;
+        public Matrix4x4 JitteredProjection { get; private set; }
 
         public IReadOnlyList<ScenePass> ScenePasses => scenePasses;
+        public Material MainSceneMaterial => mainSceneMaterial;
 
         public ScenePassManager(Scene scene) {
             Scene = scene;
+            mainSceneMaterial = new();
+            //mainSceneMaterial.InheritProperties(Scene.RootMaterial);
         }
 
         public void AddInstance(CSInstance instance, Mesh mesh) {
@@ -721,12 +793,14 @@ namespace Weesals.Engine {
 
         public void AddPass(ScenePass pass) {
             scenePasses.Add(pass);
+            pass.OverrideMaterial.InheritProperties(mainSceneMaterial);
         }
 
         public bool SetViewProjection(Matrix4x4 view, Matrix4x4 projection) {
             if (this.view == view && this.projection == projection) return false;
             this.view = view;
             this.projection = projection;
+            mainSceneMaterial.SetValue(RootMaterial.iVMat, View);
             return true;
         }
 
@@ -741,12 +815,17 @@ namespace Weesals.Engine {
             jitteredProjection.M32 += jitter.Y / viewportSize.Y;
             jitteredPrevProj.M31 += jitter.X / viewportSize.X;
             jitteredPrevProj.M32 += jitter.Y / viewportSize.Y;
+            JitteredProjection = jitteredPrevProj;
             var previousVP = previousView * jitteredPrevProj;
+            mainSceneMaterial.SetValue("PreviousViewProjection", previousVP);
+            mainSceneMaterial.SetValue("TemporalJitter", Input.GetKeyDown(KeyCode.Q) ? default : jitter * 0.5f);
+            mainSceneMaterial.SetValue("TemporalFrame", (float)jitterFrame);
+            mainSceneMaterial.SetValue(RootMaterial.iPMat, Projection);
             foreach (var pass in scenePasses) {
                 if (pass.TagsToInclude.Has(pass.Scene.TagManager.RequireTag("MainPass"))) {
-                    Scene.RootMaterial.SetValue("PreviousViewProjection", previousVP);
-                    Scene.RootMaterial.SetValue("TemporalJitter", Input.GetKeyDown(KeyCode.Q) ? default : jitter * 0.5f);
-                    Scene.RootMaterial.SetValue("TemporalFrame", (float)jitterFrame);
+                    //Scene.RootMaterial.SetValue("PreviousViewProjection", previousVP);
+                    //Scene.RootMaterial.SetValue("TemporalJitter", Input.GetKeyDown(KeyCode.Q) ? default : jitter * 0.5f);
+                    //Scene.RootMaterial.SetValue("TemporalFrame", (float)jitterFrame);
                     pass.SetViewProjection(view, jitteredProjection);
                 }
             }

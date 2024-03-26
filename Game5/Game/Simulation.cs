@@ -12,13 +12,18 @@ using Weesals.Engine.Importers;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Weesals.Landscape;
+using Weesals.Rendering;
 using Weesals.Utility;
 
 namespace Game5.Game {
 
     public struct CModel {
+        public string PrefabName;
+        public int Variant;
+        public ulong ModelVisibility;
+        public ulong ParticleVisibility;
         public Model Model;
-        public override string ToString() { return Model.Name; }
+        public override string ToString() { return PrefabName ?? ""; }
     }
     public struct CAnimation {
         public AnimationHandle Animation;
@@ -41,7 +46,7 @@ namespace Game5.Game {
         public override string ToString() { return $"Selected {Selected}"; }
     }
 
-    public class EntityProxy : IItemPosition, IEntitySelectable, IEntityRedirect, IItemStringifier {
+    public class EntityProxy : IItemPosition, IEntitySelectable, IItemRedirect, IItemStringifier {
 
         public readonly World World;
         public EntityMapSystem EntityMapSystem;
@@ -55,14 +60,14 @@ namespace Game5.Game {
 
         public Vector3 GetPosition(ulong id = ulong.MaxValue) {
             //return World.GetComponent<CPosition>(GenericTarget.UnpackEntity(id)).Value;
-            return World.GetComponent<ECTransform>(UnpackEntity(id)).GetWorldPosition();
+            return World.GetComponent<ECTransform>(EntityProxyExt.UnpackEntity(id)).GetWorldPosition();
         }
         public Quaternion GetRotation(ulong id = ulong.MaxValue) {
             return Quaternion.Identity;
         }
         public void SetPosition(Vector3 pos, ulong id = ulong.MaxValue) {
-            ref var tform = ref World.GetComponentRef<ECTransform>(UnpackEntity(id));
-            moveContract.MoveEntity(UnpackEntity(id), ref tform, SimulationWorld.WorldToSimulation(pos).XZ);
+            ref var tform = ref World.GetComponentRef<ECTransform>(EntityProxyExt.UnpackEntity(id));
+            moveContract.MoveEntity(EntityProxyExt.UnpackEntity(id), ref tform, SimulationWorld.WorldToSimulation(pos).XZ);
             EntityMapSystem.CommitContract(moveContract);
             moveContract.Clear();
         }
@@ -70,7 +75,7 @@ namespace Game5.Game {
         }
 
         public void NotifySelected(ulong id, bool selected) {
-            var entity = UnpackEntity(id);
+            var entity = EntityProxyExt.UnpackEntity(id);
             if (World.IsValid(entity))
                 World.AddComponent<CSelectable>(entity).Selected = selected;
         }
@@ -79,24 +84,11 @@ namespace Game5.Game {
         }
 
         public string ToString(ulong id) {
-            return UnpackEntity(id).ToString();
+            return EntityProxyExt.UnpackEntity(id).ToString();
         }
 
         public ItemReference MakeHandle(Entity entity) {
-            return new ItemReference(this, PackEntity(entity));
-        }
-        public static ulong PackEntity(Entity entity) {
-            return ((ulong)(uint)entity.Index << 32) | (uint)entity.Version;
-        }
-        public static Entity UnpackEntity(ulong id) {
-            return new Entity() { Index = (uint)(id >> 32), Version = (uint)id, };
-        }
-    }
-    public static class EntityProxyExt {
-        public static Entity GetEntity(this ItemReference target) {
-            return target.Owner is EntityProxy ? EntityProxy.UnpackEntity(target.Data)
-                : target.Owner is World ? EntityProxy.UnpackEntity(target.Data)
-                : default;
+            return new ItemReference(this, EntityProxyExt.PackEntity(entity));
         }
     }
 
@@ -104,6 +96,7 @@ namespace Game5.Game {
 
         public World World { get; private set; }
         public LandscapeData Landscape { get; private set; }
+        public VisualsCollection EntityVisuals { get; private set; }
 
         public EntityProxy EntityProxy { get; private set; }
         public TimeSystem TimeSystem { get; private set; }
@@ -141,6 +134,9 @@ namespace Game5.Game {
             EntityMapSystem.SetLandscape(landscape);
             navigationSystem.SetLandscape(landscape);
         }
+        public void SetVisuals(VisualsCollection entityVisuals) {
+            EntityVisuals = entityVisuals;
+        }
 
         public void GenerateWorld() {
             var rand = new Random();
@@ -158,8 +154,7 @@ namespace Game5.Game {
                 tmpEntities.Add(entity1);
             }*/
 
-            var chickenModel = Resources.LoadModel("./Assets/Models/chickenV2.fbx", out var chickenHandle);
-            chickenHandle.Complete();
+            var chickenModel = Resources.LoadModel("./Assets/Models/Ignore/chickenV2.fbx", out var chickenHandle);
             var archerModel = Resources.LoadModel("./Assets/Characters/Character_Archer.fbx", out var archerHandle);
             var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
             var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
@@ -189,7 +184,7 @@ namespace Game5.Game {
             //var houseModel = (AnimatedModel)FBXImporter.Import("./Assets/Characters/TestAnim.fbx");
 
             var archer = ProtoSystem.CreatePrototype("Archer")
-                .AddComponent<CModel>(new() { Model = archerModel, })
+                .AddComponent<CModel>(new() { PrefabName = "Archer", })
                 .AddComponent<CAnimation>(new() {
                     Animation = runAnim.Animations[0],
                     IdleAnim = idleAnim.Animations[0],
@@ -203,7 +198,7 @@ namespace Game5.Game {
                 .Build();
 
             var chicken = ProtoSystem.CreatePrototype("Chicken")
-                .AddComponent<CModel>(new() { Model = chickenModel, })
+                .AddComponent<CModel>(new() { PrefabName = "Chicken", })
                 .AddComponent<CAnimation>(new() {
                     Animation = chickenModel.Animations[3],
                     IdleAnim = chickenModel.Animations[2],
@@ -211,7 +206,7 @@ namespace Game5.Game {
                 })
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
-                .AddComponent<ECMobile>(new() { MovementSpeed = 6000, TurnSpeed = 500, NavMask = 1, })
+                .AddComponent<ECMobile>(new() { MovementSpeed = 4000, TurnSpeed = 500, NavMask = 1, })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
                 .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
                 .Build();
@@ -220,7 +215,7 @@ namespace Game5.Game {
                 new PrototypeData() {
                     Footprint = new EntityFootprint() { Size = 4000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
                 })
-                .AddComponent<CModel>(new() { Model = houseModels[0], })
+                .AddComponent<CModel>(new() { PrefabName = "House", })
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
@@ -231,7 +226,7 @@ namespace Game5.Game {
                 new PrototypeData() {
                     Footprint = new EntityFootprint() { Size = 6000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
                 })
-                .AddComponent<CModel>(new() { Model = Resources.LoadModel("./Assets/SM_TownCentre.fbx"), })
+                .AddComponent<CModel>(new() { PrefabName = "TownCentre", })
                 .AddComponent<CHitPoints>(new() { Current = 1000, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
@@ -239,7 +234,7 @@ namespace Game5.Game {
                 .Build();
 
             var tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
-            World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(-20000, -20000);
+            World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
 
             var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
             World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
@@ -260,7 +255,7 @@ namespace Game5.Game {
                 if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
                 var houseId = rand.Next(houseModels.Length);
                 var orientation = rand.Next(4) * (short.MinValue / 2);
-                command.AddComponent<CModel>(newEntity) = new() { Model = houseModels[houseId], };
+                command.AddComponent<CModel>(newEntity) = new() { PrefabName = "House", };
                 command.AddComponent<CHitPoints>(newEntity) = new() { Current = 10, };
                 command.AddComponent<ECTransform>(newEntity) = new() { Position = pos, Orientation = (short)orientation };
                 //command.AddComponent<ECMobile>(newEntity) = new() { MovementSpeed = 10000, TurnSpeed = 500, NavMask = 1, };
@@ -348,13 +343,17 @@ namespace Game5.Game {
             foreach (var accessor in World.QueryAll<ECTransform, CModel>()) {
                 var epos = (ECTransform)accessor;
                 var emodel = (CModel)accessor;
-                foreach (var mesh in emodel.Model.Meshes) {
-                    var lray = ray;
-                    lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
-                    var dst = mesh.BoundingBox.RayCast(lray);
-                    if (dst >= 0f && dst < nearestDst2) {
-                        nearest = EntityProxy.MakeHandle(accessor);
-                        nearestDst2 = dst;
+                var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
+                if (prefab == null) continue;
+                foreach (var model in prefab.Models) {
+                    foreach (var mesh in model.Meshes) {
+                        var lray = ray;
+                        lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
+                        var dst = mesh.BoundingBox.RayCast(lray);
+                        if (dst >= 0f && dst < nearestDst2) {
+                            nearest = EntityProxy.MakeHandle(accessor);
+                            nearestDst2 = dst;
+                        }
                     }
                 }
             }

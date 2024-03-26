@@ -17,6 +17,9 @@ namespace Weesals.Engine {
         Quaternion GetRotation(ulong id = ulong.MaxValue);
         void SetRotation(Quaternion rot, ulong id = ulong.MaxValue);
     }
+    public interface IItemRedirect {
+        ItemReference GetOwner(ulong id);
+    }
 
     public struct ItemReference : IEquatable<ItemReference> {
 

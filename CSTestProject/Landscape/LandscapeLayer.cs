@@ -23,7 +23,7 @@ namespace Weesals.Landscape {
         [Range(0, 360)] public float Rotation;
         [Range(0, 1)] public float Fringe = 0.5f;
         [Range(0, 1)] public float UniformMetal = 0f;
-        [Range(-1, 1)] public float UniformSmoothness = 0f;
+        [Range(-1, 1)] public float UniformRoughness = 0.7f;
         [Range(-2, 2)] public float UvYScroll = 0f;
         public AlignmentModes Alignment = AlignmentModes.Clustered;
         public TerrainFlags Flags = TerrainFlags.Ground;
@@ -35,7 +35,7 @@ namespace Weesals.Landscape {
         public override int GetHashCode() {
             return HashCode.Combine(
                 Scale, Rotation,
-                Fringe, UniformMetal, UniformSmoothness,
+                Fringe, UniformMetal, UniformRoughness,
                 UvYScroll, Alignment, Flags
             );
         }

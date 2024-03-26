@@ -636,6 +636,8 @@ namespace Weesals.Engine
 
         public int mIndexCount;
 
+        public int mInstanceBase;
+
         public CSDrawConfig(int indexStart, int indexCount)
         {
             mIndexBase = indexStart;

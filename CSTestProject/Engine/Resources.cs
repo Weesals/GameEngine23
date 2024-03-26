@@ -13,6 +13,7 @@ using Weesals.UI;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
+    // Use FileSystemWatcher
     public class ResourceCacheManager {
         public struct CacheEntry : IDisposable {
             public ulong SourceHash;
@@ -325,9 +326,9 @@ namespace Weesals.Engine {
 
             // TODO: Cache in 'shader'
             ulong hash = shader.Path.ComputeStringHash();
-            hash += renderPass.IsValid ? (ulong)renderPass.GetHashCode() : shader.Entry.ComputeStringHash();
+            hash += renderPass.IsValid ? (ulong)renderPass.GetStableHash() : shader.Entry.ComputeStringHash();
             foreach (var macro in macros) {
-                var macroHash = (((ulong)macro.Key.mId * 1254739) ^ ((ulong)macro.Value.mId * 37139213));
+                var macroHash = (((ulong)macro.Key.GetStableHash() * 1254739) ^ ((ulong)macro.Value.GetStableHash() * 37139213));
                 macroHash ^= macroHash >> 13;
                 hash += macroHash;
             }

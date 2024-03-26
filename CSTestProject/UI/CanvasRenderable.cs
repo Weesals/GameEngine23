@@ -81,7 +81,7 @@ namespace Weesals.UI {
         protected CanvasTransform mTransform = CanvasTransform.MakeDefault();
         protected CanvasLayout mLayoutCache;
         protected HittestGrid.Binding hitBinding;
-        protected List<CanvasRenderable> mChildren = new();
+        protected List<CanvasRenderable>? mChildren;
         protected List<ICustomTransformer>? customTransformers;
         protected byte mDepth;
         protected DirtyFlags dirtyFlags;
@@ -89,19 +89,26 @@ namespace Weesals.UI {
 
         public Canvas Canvas => mBinding.mCanvas;
         public CanvasRenderable? Parent => mBinding.mParent;
-        public IReadOnlyList<CanvasRenderable> Children => mChildren;
+        public IReadOnlyList<CanvasRenderable> Children { get { if (mChildren == null) mChildren = new(); return mChildren; } }
         public CanvasTransform Transform {
             get => mTransform;
             set => SetTransform(value);
+        }
+        public bool HitTestEnabled {
+            get => hitBinding.IsEnabled;
+            set => SetHitTestEnabled(value);
         }
         public virtual void Initialise(CanvasBinding binding) {
             mBinding = binding;
             if (mBinding.mCanvas != null) {
                 mDepth = (byte)(binding.mParent == null ? 0 : (binding.mParent.mDepth + 1));
                 SetHitTestEnabled(true);
-                foreach (var child in mChildren) if (child.Parent == null) child.Initialise(new CanvasBinding(this));
+                if (mChildren != null) {
+                    foreach (var child in mChildren) if (child.Parent == null) child.Initialise(new CanvasBinding(this));
+                }
                 stateFlags = StateFlags.None;
-                if (this is ICustomTransformer) stateFlags |= StateFlags.HasCustomTransformApplier;
+                // Should this default to on?
+                //if (this is ICustomTransformer) SetCustomTransformEnabled(true);
                 if (Parent != null) {
                     if (FindParent<IHitTestGroup>() != null) stateFlags |= StateFlags.HasCullParent;
                     if (Parent is ICanvasLayout || Parent.HasStateFlag(StateFlags.HasLayoutParent))
@@ -114,7 +121,9 @@ namespace Weesals.UI {
         public virtual void Uninitialise(CanvasBinding binding) {
             if (mBinding.mCanvas != null) {
                 mBinding.mCanvas.MarkComposeDirty();
-                foreach (var child in mChildren) if (child.Parent == this) child.Uninitialise(new CanvasBinding(this));
+                if (mChildren != null) {
+                    foreach (var child in mChildren) if (child.Parent == this) child.Uninitialise(new CanvasBinding(this));
+                }
                 SetHitTestEnabled(false);
             }
             mBinding = default;
@@ -135,9 +144,11 @@ namespace Weesals.UI {
             else stateFlags &= ~StateFlags.HasCustomTransformApplier;
         }
         public virtual void AppendChild(CanvasRenderable child) {
+            if (mChildren == null) mChildren = new();
             InsertChild(mChildren.Count, child);
         }
         protected void InsertChild(int index, CanvasRenderable child) {
+            if (mChildren == null) mChildren = new();
             mChildren.Insert(index, child);
             if (mBinding.mCanvas != null && child.Parent == null) {
                 child.Initialise(new CanvasBinding(this));
@@ -145,9 +156,11 @@ namespace Weesals.UI {
             MarkChildrenDirty();
         }
         public void ClearChildren() {
+            if (mChildren == null) return;
             while (mChildren.Count > 0) RemoveChild(mChildren[^1]);
         }
         public virtual void RemoveChild(CanvasRenderable child) {
+            if (mChildren == null) return;
             if (mBinding.mCanvas != null && child.Parent == this)
                 child.Uninitialise(new CanvasBinding(this));
             mChildren.Remove(child);
@@ -178,6 +191,8 @@ namespace Weesals.UI {
                 MarkChildrenDirty();
                 MarkComposeDirty();
                 NotifyTransformChanged();
+            } else if (!hitBinding.IsValid) {
+                UpdateHitBinding();
             }
         }
         public void RequireLayout() {
@@ -185,26 +200,30 @@ namespace Weesals.UI {
                 UpdateChildLayouts();
                 ClearDirtyFlag(DirtyFlags.Children);
             }
-            foreach (var child in mChildren) child.RequireLayout();
+            if (mChildren != null) {
+                foreach (var child in mChildren) child.RequireLayout();
+            }
         }
         public virtual void UpdateChildLayouts() {
             //if (!hitBinding.IsValid) UpdateHitBinding();
-            foreach (var child in mChildren) {
-                child.UpdateLayout(mLayoutCache);
+            if (mChildren != null) {
+                foreach (var child in mChildren) child.UpdateLayout(mLayoutCache);
             }
         }
         public virtual void Compose(ref CanvasCompositor.Context composer) {
             ClearDirtyFlag(DirtyFlags.Compose | DirtyFlags.Layout);
-            foreach (var child in mChildren) {
-                var childContext = composer.InsertChild(child);
-                child.Compose(ref childContext);
-                childContext.ClearRemainder();
+            if (mChildren != null) {
+                foreach (var child in mChildren) {
+                    var childContext = composer.InsertChild(child);
+                    child.Compose(ref childContext);
+                    childContext.ClearRemainder();
+                }
             }
         }
 
         public T? FindChild<T>() where T : CanvasRenderable {
-            foreach (var child in mChildren) {
-                if (child is T typed) return typed;
+            if (mChildren != null) {
+                foreach (var child in mChildren) if (child is T typed) return typed;
             }
             return null;
         }
@@ -304,9 +323,10 @@ namespace Weesals.UI {
             while (item2.mDepth > item1.mDepth) item2 = item2.Parent!;
             if (item1 == item2) return 1;
             while (item1 != null && item1 != item2) {
+                if (item2 == null) return 1;
                 if (item1.Parent == item2.Parent) {
                     var parent = item1.Parent!;
-                    return parent.mChildren.IndexOf(item2).CompareTo(parent.mChildren.IndexOf(item1));
+                    return parent.mChildren!.IndexOf(item2).CompareTo(parent.mChildren.IndexOf(item1));
                 }
                 item1 = item1.Parent!;
                 item2 = item2.Parent!;

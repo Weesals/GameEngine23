@@ -4,13 +4,13 @@
     "Texture": "./Assets/ParticleAtlas.png"
   },
   "Metadata": {
-    "SpawnRate": 2000,
+    "SpawnRate": 500,
     "MaximumDuration": 0.5
   },
   "ParticleSpawn": [
     {
       "name": "PositionInSphere",
-      "Radius": "1.0"
+      "Radius": "0.3"
     }
   ],
   "ParticleStep": [
@@ -26,7 +26,7 @@
     },
     {
       "name": "Turbulence",
-      "Speed": "10.0"
+      "Speed": "5.0"
     },
     {
       "name": "Custom",

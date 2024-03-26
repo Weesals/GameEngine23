@@ -83,15 +83,17 @@ namespace Weesals.Engine.Jobs {
         }
         private void DeleteHandle(JobHandle handle) {
             var mask = GetBitMask(handle.Id);
-            Trace.Assert((mask & Interlocked.And(ref Pages[GetPage(handle.Id)].DependenciesUsage, ~mask)) != 0);
+            Trace.Assert((mask & Interlocked.And(ref Pages[GetPage(handle.Id)].DependenciesUsage, ~mask)) != 0,
+                "Handle was already deleted");
         }
         private bool RegisterDependency(JobHandle handle, JobHandle dependent) {
             var depPage = Pages[GetPage(dependent.Id)];
             ref var entry = ref GetNode(handle);
             lock (depPage) {
                 if ((depPage.DependenciesUsage & GetBitMask(dependent.Id)) == 0) return false;
-                Interlocked.Increment(ref entry.DependencyCount);
                 ref var depEntry = ref depPage.Dependencies[GetBit(dependent.Id)];
+                if (depEntry.Version != dependent.Version) return false;
+                Interlocked.Increment(ref entry.DependencyCount);
                 int count = 0;
                 for (; count < MaxDepCount; ++count) if (depEntry.Dependents[count] == 0) break;
                 Debug.Assert(count < MaxDepCount);
@@ -179,7 +181,6 @@ namespace Weesals.Engine.Jobs {
             }
         }
         public JobHandle EndJoined(ref JoinCreator result) {
-            DecrementDependency(result.Handle.Id);
             if (result.Singleton.Id != JobHandle.Invalid.Id) {
                 var page = Pages[GetPage(result.Handle.Id)];
                 ref var entry = ref page.Dependencies[GetBit(result.Handle.Id)];
@@ -187,6 +188,7 @@ namespace Weesals.Engine.Jobs {
                 DeleteHandle(result.Handle);
                 return result.Singleton;
             }
+            DecrementDependency(result.Handle.Id);
             return result.Handle;
         }
         public void MarkComplete(JobHandle handle) {

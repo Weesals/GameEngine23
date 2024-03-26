@@ -20,6 +20,8 @@ using Microsoft::WRL::ComPtr;
 class GraphicsDeviceD3D12 :
     public GraphicsDeviceBase
 {
+    struct DisposeGuard { ~DisposeGuard(); };
+    DisposeGuard mGuard;
     D3DGraphicsDevice mDevice;
     D3DResourceCache mCache;
 

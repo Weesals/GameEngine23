@@ -30,6 +30,16 @@ namespace Weesals.Engine {
         unsafe public override string ToString() {
             return Encoding.UTF8.GetString((byte*)mBuffer, mSize);
         }
+        unsafe public Span<byte> AsSpan() {
+            return new Span<byte>(mBuffer, mSize);
+        }
+        unsafe public ulong ComputeStringHash() {
+            ulong hash = 0;
+            foreach (var chr in AsSpan()) {
+                hash = hash * 3074457345618258799ul + chr;
+            }
+            return hash;
+        }
     }
     public partial struct CSIdentifier : IEquatable<CSIdentifier>, IComparable<CSIdentifier> {
         unsafe public CSIdentifier(string str) {
@@ -40,6 +50,7 @@ namespace Weesals.Engine {
         public int GetId() { return mId; }
         public bool IsValid => mId != 0;
         public string GetName() { return GetName(mId).ToString(); }
+        public int GetStableHash() { return (int)GetName(mId).ComputeStringHash(); }
         public bool Equals(CSIdentifier other) { return mId == other.mId; }
         public int CompareTo(CSIdentifier other) { return mId - other.mId; }
         public override bool Equals(object? obj) { return obj is CSIdentifier identifier && Equals(identifier); }
@@ -182,7 +193,7 @@ namespace Weesals.Engine {
             fixed (char* namePtr = name) {
                 var tex = new CSTexture(_Create(new CSString(namePtr, name.Length)));
                 tex.SetSize(new Int2(sizeX, sizeY));
-                //tex.SetFormat(fmt);
+                tex.SetFormat(fmt);
                 return tex;
             }
         }
@@ -572,7 +583,7 @@ namespace Weesals.Engine {
             }
         }
         unsafe public void CopyBufferData(CSBufferLayout buffer) {
-            Span<RangeInt> ranges = stackalloc RangeInt[] { new(0, buffer.size) };
+            Span<RangeInt> ranges = stackalloc RangeInt[] { new(-1, buffer.size) };
             CopyBufferData(buffer, ranges);
         }
         unsafe public void CopyBufferData(CSBufferLayout buffer, RangeInt range) {

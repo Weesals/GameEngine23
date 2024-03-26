@@ -17,7 +17,6 @@ namespace Weesals.Engine {
         protected static ProfilerMarker ProfileMarker_ResolveResources = new("Resolve Resources");
 
         protected struct RenderPassCache {
-            public CSIdentifier mRenderPass;
             public ulong mPipelineHash;
             public CSPipeline mPipeline;
             public bool IsValid => mPipeline.IsValid;
@@ -45,12 +44,15 @@ namespace Weesals.Engine {
             resourceGeneration = Resources.Generation;
         }
 
-        unsafe protected RenderPassCache GetPassCache(CSGraphics graphics) {
+        unsafe protected RenderPassCache GetPassCache(CSGraphics graphics, Span<Material> materials = default) {
+            if (materials.Length == 0) materials = CollectionsMarshal.AsSpan(mMaterials);
             using var marker = ProfileMarker_GetPass.Auto();
             if (resourceGeneration != Resources.Generation) InvalidateMesh();
-            var renderPass = CSName.None;
             if (mBufferLayout.Count == 0) InvalidateMesh();
-            var pipelineHash = (ulong)renderPass.GetId() + graphics.GetGlobalPSOHash();
+            var pipelineHash = graphics.GetGlobalPSOHash();
+            for (int i = 0; i < materials.Length; i++) {
+                pipelineHash += (ulong)materials[i].GetHashCode() * 12345;
+            }
             int min = 0, max = mPassCache.Count - 1;
             while (min < max) {
                 int mid = (min + max) >> 1;
@@ -61,10 +63,10 @@ namespace Weesals.Engine {
                 }
             }
             if (min == mPassCache.Count || mPassCache[min].mPipelineHash != pipelineHash) {
-                var pipeline = MaterialEvaluator.ResolvePipeline(graphics, mBufferLayout, mMaterials);
+                var pipeline = MaterialEvaluator.ResolvePipeline(graphics,
+                    CollectionsMarshal.AsSpan(mBufferLayout), materials);
                 mPassCache.Insert(min, new RenderPassCache {
                     mPipelineHash = pipelineHash,
-			        mRenderPass = renderPass,
 			        mPipeline = pipeline,
 		        });
             }
@@ -152,17 +154,22 @@ namespace Weesals.Engine {
             }
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config, instanceCount);
         }
-		unsafe public void Draw(CSGraphics graphics, ScenePass pass, CSDrawConfig config) {
+		unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
-            var passCache = GetPassCache(graphics);
+
+            using var push = materials.Push(CollectionsMarshal.AsSpan(mMaterials));
+
+            //var passCache = GetPassCache(graphics, materials);
+            if (mBufferLayout.Count == 0) InvalidateMesh();
+            var pipeline = MaterialEvaluator.ResolvePipeline(graphics,
+                CollectionsMarshal.AsSpan(mBufferLayout), materials);
+            var passCache = new RenderPassCache() { mPipeline = pipeline, };
+
             if (!passCache.IsValid) return;
             Debug.Assert(passCache.mPipeline.GetBindingCount() == mBufferLayout.Count);
 
-            using var materials = new PooledArray<Material>(mMaterials.Count + 1);
-            materials[0] = pass.OverrideMaterial;
-            CollectionsMarshal.AsSpan(mMaterials).CopyTo(materials.AsSpan(1));
             MemoryBlock<nint> resources;
             using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
                 resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, materials);

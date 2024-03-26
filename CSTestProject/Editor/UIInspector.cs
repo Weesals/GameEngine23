@@ -25,9 +25,9 @@ namespace Weesals.Editor
         , IToolServiceProvider<BrushConfiguration>
         , IToolServiceProvider<ScenePassManager> {
 
-        public TextButton HeightButton = new("Edit Height");
-        public TextButton WaterButton = new("Edit Water");
-        public TextButton SaveButton = new("Save");
+        public TextButton HeightButton = new("Edit Height") { Name = "Edit Height Btn" };
+        public TextButton WaterButton = new("Edit Water") { Name = "Edit Water Btn" };
+        public TextButton SaveButton = new("Save") { Name = "Save Btn" };
         public InputDispatcher InputDispatcher = new();
 
         public UXLandscapeCliffTool CliffTool = new();
