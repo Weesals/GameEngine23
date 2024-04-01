@@ -442,14 +442,14 @@ namespace Weesals.UI
         private float[]? gridXs;
         private float[]? gridYs;
 
-        public override void AppendChild(CanvasRenderable child) {
+        public override void InsertChild(int index, CanvasRenderable child) {
             var childId = Children.Count;
             AppendChild(child, new Int2(childId % ColumnCount, childId % RowCount), new Int2(1, 1));
         }
         public int AppendChild(CanvasRenderable child, Int2 cell) { return AppendChild(child, cell, Int2.One); }
         public int AppendChild(CanvasRenderable child, Int2 cell, Int2 span) {
             var childId = Children.Count;
-            base.AppendChild(child);
+            base.InsertChild(childId, child);
             if (Children.Count > elementCells.Length)
                 Array.Resize(ref elementCells, (int)BitOperations.RoundUpToPowerOf2((uint)Children.Count));
             elementCells[childId] = new ElementCells() { CellBegin = cell, CellCount = span, };
@@ -640,13 +640,52 @@ namespace Weesals.UI
             }
         }
         public override Vector2 GetDesiredSize(SizingParameters sizing) {
-            if (ItemSize != 0f) {
+            {
+                var axisI = Axis == Axes.Horizontal ? 0 : 1;
+                var childSizing = sizing;
+                if (ItemSize != 0f && ScaleMode != ScaleModes.StretchOrClamp) {
+                    // Fixed size
+                    if (Axis == Axes.Horizontal) childSizing.SetFixedXSize(ItemSize);
+                    else if (Axis == Axes.Vertical) childSizing.SetFixedYSize(ItemSize);
+                }
+                if (ItemSize == 0f) {
+                    // Desire smaller sizes
+                    if (Axis == Axes.Horizontal) childSizing.PreferredSize.X = 20f;
+                    else if (Axis == Axes.Vertical) childSizing.PreferredSize.Y = 20f;
+                }
+                float sizeOMax = 0f, sizeA = 0f, sizeAMax = 0f;
+                foreach (var child in Children) {
+                    var size = child.GetDesiredSize(childSizing);
+                    var itemSizeA = Axis == Axes.Horizontal ? size.X : Axis == Axes.Vertical ? size.Y : 0f;
+                    var itemSizeO = Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f;
+                    sizeOMax = MathF.Max(sizeOMax, itemSizeO);
+                    sizeAMax = MathF.Max(sizeAMax, itemSizeA);
+                    if (ItemSize == 0f) {
+                        sizeA += itemSizeA;
+                    }
+                }
+                if (ItemSize != 0f && ScaleMode == ScaleModes.StretchOrClamp) {
+                    // Enforce uniform sizing (of largest item)
+                    sizeA = sizeAMax * Children.Count;
+                }
+                if (ScaleMode == ScaleModes.Clamp) {
+                    sizeA = Math.Min(sizeA, sizing.MaximumSize[axisI]);
+                }
+                if (ItemSize == 0f) {
+                    // Accumulated size along axis
+                    if (Axis == Axes.Horizontal) sizing.PreferredSize.X = sizing.ClampWidth(sizeA);
+                    else sizing.PreferredSize.Y = sizing.ClampHeight(sizeA);
+                }
+                // Minimum size along other axis
+                if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = sizing.ClampHeight(sizeOMax);
+                else if (Axis == Axes.Vertical) sizing.PreferredSize.X = sizing.ClampWidth(sizeOMax);
+            }
+            /*if (ItemSize != 0f) {
                 if (Axis == Axes.Horizontal) sizing.SetFixedXSize(ItemSize * Children.Count);
                 else if (Axis == Axes.Vertical) sizing.SetFixedYSize(ItemSize * Children.Count);
             }
             //sizing.PreferredSize = new Vector2(80f, 80f);
-            float minSizeO = 0f;
-            float sizeA = 0f;
+            float sizeO = 0f, sizeA = 0f;
             var childSizing = sizing;
             if (ItemSize == 0f) {
                 if (Axis == Axes.Horizontal) childSizing.PreferredSize.X = 20f;
@@ -654,7 +693,7 @@ namespace Weesals.UI
             }
             foreach (var child in Children) {
                 var size = child.GetDesiredSize(childSizing);
-                minSizeO = MathF.Max(minSizeO,
+                sizeO = MathF.Max(sizeO,
                     Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f);
                 if (ItemSize == 0f) {
                     sizeA += Axis == Axes.Horizontal ? size.X : Axis == Axes.Vertical ? size.Y : 0f;
@@ -665,8 +704,8 @@ namespace Weesals.UI
                 else sizing.PreferredSize.Y = sizing.ClampHeight(sizeA);
             }
             // Set other axis
-            if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = minSizeO;
-            else if (Axis == Axes.Vertical) sizing.PreferredSize.X = minSizeO;
+            if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = sizeO;
+            else if (Axis == Axes.Vertical) sizing.PreferredSize.X = sizeO;*/
             return base.GetDesiredSize(sizing);
         }
     }
@@ -712,11 +751,11 @@ namespace Weesals.UI
             return (depth & 0x01) == 0;
         }
 
-        public override void AppendChild(CanvasRenderable child) {
+        public override void InsertChild(int index, CanvasRenderable child) {
             AppendRight(child);
         }
         public override void RemoveChild(CanvasRenderable child) {
-            var index = mChildren.IndexOf(child);
+            var index = mChildren!.IndexOf(child);
             cache.Process(divisions);
             int divisionI = cache.Items[index].DivisionIndex;
             var parentI = GetParent(divisionI);
@@ -736,11 +775,11 @@ namespace Weesals.UI
             base.RemoveChild(child);
         }
         public void AppendRight(CanvasRenderable child, float width = 0.2f) {
-            base.AppendChild(child);
+            base.InsertChild(-1, child);
             AppendDivision(0, width);
         }
         public void InsertBelow(CanvasRenderable other, CanvasRenderable child, float height = 0.5f) {
-            var index = mChildren.IndexOf(other);
+            var index = mChildren!.IndexOf(other);
             base.InsertChild(index + 1, child);
             cache.Process(divisions);
             int divisionI = cache.Items[index].DivisionIndex;
@@ -748,7 +787,7 @@ namespace Weesals.UI
             InsertDivision(divisionI, height);
         }
         public void InsertRight(CanvasRenderable other, CanvasRenderable child, float width = 0.5f) {
-            var index = mChildren.IndexOf(other);
+            var index = mChildren!.IndexOf(other);
             base.InsertChild(index + 1, child);
             cache.Process(divisions);
             int divisionI = cache.Items[index].DivisionIndex;
@@ -931,7 +970,10 @@ namespace Weesals.UI
             var layout = mLayoutCache;
             layout.Position.toxy(layout.Position.toxy() - Scroll - Margins.Min);
             contentSize = default;
-            var sizing = SizingParameters.Default.SetPreferredSize(layout.GetSize() - Margins.Size);
+            var availableSize = layout.GetSize() - Margins.Size;
+            var sizing = SizingParameters.Default.SetPreferredSize(availableSize);
+            if (ScrollMask.X == 0f) sizing.SetFixedXSize(availableSize.X);
+            if (ScrollMask.Y == 0f) sizing.SetFixedYSize(availableSize.Y);
             foreach (var child in mChildren) {
                 contentSize = Vector2.Max(contentSize, child.GetDesiredSize(sizing));
             }
@@ -986,8 +1028,7 @@ namespace Weesals.UI
             //base.Initialise(binding);
             mBinding = binding;
         }
-        public override void AppendChild(CanvasRenderable child) {
-            //base.AppendChild(child);
+        public override void InsertChild(int index, CanvasRenderable child) {
             if (mChildren == null) mChildren = new();
             mChildren.Add(child);
         }

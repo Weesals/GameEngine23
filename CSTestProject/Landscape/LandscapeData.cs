@@ -373,6 +373,12 @@ namespace Weesals.Landscape {
                 File.WriteAllBytes(dataPath, stream.ToArray());
             }
         }
+        public void Reset() {
+            mHeightMap.AsSpan().Fill(HeightCell.Default);
+            mControlMap.AsSpan().Fill(ControlCell.Default);
+            if (WaterEnabled) mWaterMap.AsSpan().Fill(WaterCell.Default);
+            NotifyLandscapeChanged();
+        }
 
         // Read/write data to disk (untested)
         public void Serialize(BinaryWriter writer) {

@@ -7,15 +7,15 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Weesals.Engine {
-    unsafe public class ShaderBase {
+    unsafe public class Shader {
         public readonly string Path, Entry;
-        public ShaderBase(string path, string entry) {
+        public Shader(string path, string entry) {
             Path = path;
             Entry = entry;
         }
 
-        public static ShaderBase FromPath(string path, string entry) {
-            return new ShaderBase(path, entry);
+        public static Shader FromPath(string path, string entry) {
+            return new Shader(path, entry);
         }
         public override int GetHashCode() { var h = (Path + Entry).ComputeStringHash(); return (int)h ^ (int)(h >> 32); }
         public override string ToString() { return $"{Path}:{Entry}"; }
@@ -25,7 +25,10 @@ namespace Weesals.Engine {
         public enum ResourceTypes : byte { R_Texture, R_SBuffer, };
         public struct UniformValue {
             public CSIdentifier Name;
+            public CSIdentifier Type;
             public int Offset, Size;
+            public byte Rows, Columns;
+            public ushort Flags;
             public override string ToString() { return $"{Name} @{Offset}"; }
             public override int GetHashCode() { return (Name.mId * 53) + Offset * 1237; }
         }
@@ -62,8 +65,12 @@ namespace Weesals.Engine {
                 for (int v = 0; v < vcount; v++) {
                     var value = values![v];
                     writer.Write(value.Name.ToString());
+                    writer.Write(value.Type.ToString());
                     writer.Write(value.Offset);
                     writer.Write(value.Size);
+                    writer.Write(value.Rows);
+                    writer.Write(value.Columns);
+                    writer.Write(value.Flags);
                 }
             }
             writer.Write(rbcount);
@@ -88,8 +95,12 @@ namespace Weesals.Engine {
                 for (int v = 0; v < vcount; v++) {
                     ref var value = ref cbuffer.Values[v];
                     value.Name = new(reader.ReadString());
+                    value.Type = new(reader.ReadString());
                     value.Offset = reader.ReadInt32();
                     value.Size = reader.ReadInt32();
+                    value.Rows = reader.ReadByte();
+                    value.Columns = reader.ReadByte();
+                    value.Flags = reader.ReadUInt16();
                 }
             }
             int rbcount = reader.ReadInt32();
@@ -103,14 +114,16 @@ namespace Weesals.Engine {
             }
         }
     }
-    public class Shader {
+    public class CompiledShader {
 
         public byte[] CompiledBlob;
         private int dataHash;
 
         public ShaderReflection Reflection;
 
-        public CSCompiledShader CompiledShader;
+        public CSCompiledShader NativeShader;
+
+        public int ReferenceCount;
 
         public void Serialize(BinaryWriter writer) {
             writer.Write(CompiledBlob.Length);

@@ -53,7 +53,7 @@ float4 PSMain(PSInput input) : SV_Target {
         farCS = mul(InvViewProjection, farCS);
         farCS.xyz /= farCS.w;
         float3 groundPos = farCS.xyz;
-        //return float4(frac(groundPos / 10), 1);
+        //return float4(frac(groundPos), 1);
         
         float3 midCloud = groundPos + _WorldSpaceLightDir0 *
             ((cloudMinY + cloudMaxY) / 2.0 - groundPos.y) / _WorldSpaceLightDir0.y;

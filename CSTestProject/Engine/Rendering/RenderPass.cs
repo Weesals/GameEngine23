@@ -466,9 +466,8 @@ namespace Weesals.Engine {
         }
         unsafe public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
-            var viewProj = ScenePasses.View * ScenePasses.Projection;
-            Matrix4x4.Invert(viewProj, out var invVP);
-            skyboxMat.SetValue("InvVP", invVP);
+            skyboxMat.SetValue("View", ScenePasses.View);
+            skyboxMat.SetValue("Projection", ScenePasses.Projection);
             DrawQuad(graphics, default, skyboxMat);
         }
     }
@@ -499,6 +498,11 @@ namespace Weesals.Engine {
             base.Render(graphics, ref context);
             fogMaterial.SetValue("View", ScenePasses.View);
             fogMaterial.SetValue("Projection", ScenePasses.Projection);
+            var proj = ScenePasses.Projection;
+            float near = Math.Abs(proj.M43 / proj.M33);
+            float far = Math.Abs(proj.M43 / (proj.M33 - 1));
+            Vector2 ZBufferParams = new(1.0f / far - 1.0f / near, 1.0f / near);
+            fogMaterial.SetValue("ZBufferParams", ZBufferParams);
             DrawQuad(graphics, default, fogMaterial);
         }
 
@@ -561,7 +565,7 @@ namespace Weesals.Engine {
         public TemporalJitter(string name) : base(name) {
             Inputs = new[] { new RenderPass.PassInput("SceneDepth"), new RenderPass.PassInput("SceneColor", true), new RenderPass.PassInput("SceneVelId", true), };
             Outputs = new[] { new RenderPass.PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }), };
-            temporalMaterial = new Material("./Assets/temporal.hlsl", GetPassMaterial());
+            temporalMaterial = new Material("./Assets/temporalpass.hlsl", GetPassMaterial());
             temporalMaterial.SetDepthMode(DepthMode.MakeReadOnly());
         }
         public bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) {

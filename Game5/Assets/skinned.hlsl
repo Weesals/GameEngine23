@@ -85,11 +85,23 @@ void PSMain(PSInput input, out BasePassOutput result) {
 
 struct ShadowCast_PSInput {
     float4 position : SV_POSITION;
+    float3 normal : NORMAL;
 };
+
+template<class ModuleBase> struct ModuleNormalBias : ModuleBase {
+    using VSInput = typename ModuleBase::VSInput;
+    void SetupVertexIntermediates(VSInput input) {
+        ModuleBase::SetupVertexIntermediates(input);
+        ModuleBase::vertexPosition.xyz += input.normal * -0.03;
+    }
+};
+
 
 using ShadowModule =
     Module<ModuleCommon>
     ::Then<ModuleObject>
+    ::Then<ModuleVertexNormals>
+    ::Then<ModuleNormalBias>
     ::Then<ModuleSkinned>
     ::Then<ModuleRetained>
     ::Then<ModuleClipSpace>

@@ -112,6 +112,12 @@ namespace Weesals.Landscape {
         int materialPropHash;
         int mRevision;
 
+        [EditorField]
+        public bool HighQualityBlend {
+            get => LandMaterial.GetPixelShader().Path == "./Assets/landscape3x3.hlsl";
+            set => LandMaterial.SetPixelShader(Resources.LoadShader(value ? "./Assets/landscape3x3.hlsl" : "./Assets/landscape.hlsl", "PSMain"));
+        }
+
         public LandscapeRenderer() { }
 
         unsafe public void Initialise(LandscapeData landscapeData, Material rootMaterial) {
@@ -172,7 +178,7 @@ namespace Weesals.Landscape {
             layerDataBuffer.AppendElement(new CSBufferElement("DATA1", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
             layerDataBuffer.AppendElement(new CSBufferElement("DATA2", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
 
-            LandMaterial = new Material("./Assets/landscape.hlsl");
+            LandMaterial = new Material("./Assets/landscape3x3.hlsl");
             //if (rootMaterial != null) LandMaterial.InheritProperties(rootMaterial);
             LandMaterial.SetTexture("BaseMaps", runtimeData.BaseTextures);
             LandMaterial.SetTexture("BumpMaps", runtimeData.BumpTextures);
@@ -455,9 +461,9 @@ namespace Weesals.Landscape {
                         var cell = controlMap[pnt];
                         var layer = Layers[cell.TypeId];
                         var sample = VoronoiIntNoise.GetNearest_2x2(pnt * 128);
-                        var rnd = (uint)(sample.X + (sample.Y << 6));
+                        var rnd = (uint)(sample.X + (sample.Y << 11));
                         rnd *= 0xA3C59AC3;
-                        rnd ^= rnd >> 10;
+                        rnd ^= rnd >> 15;
                         var c = new Color(cell.TypeId, 0, 0, 255);
                         switch (layer.Alignment) {
                             case LandscapeLayer.AlignmentModes.Clustered: {
@@ -482,7 +488,7 @@ namespace Weesals.Landscape {
                                     var ang = Math.Abs(dd.X) > Math.Abs(dd.Y)
                                         ? (dd.X < 0 ? 128 : 0) + 32 * -dd.Y / dd.X
                                         : (dd.Y < 0 ? 192 : 64) + 32 * dd.X / dd.Y;
-                                    c.G = (byte)(ang + layer.Rotation * 256 / 360);
+                                    c.G = (byte)((int)(ang + layer.Rotation * 256 / 360 + 8) & 0xf0);
                                 }
                             }
                             break;
@@ -653,5 +659,12 @@ namespace Weesals.Landscape {
             InitialisePassCache(ref passCache[^1]);
             return ref passCache[^1];
         }
+
+        [EditorButton]
+        public void Save() { LandscapeData.Save(); }
+        [EditorButton]
+        public void Load() { LandscapeData.Load(); }
+        [EditorButton]
+        public void Reset() { LandscapeData.Reset(); }
     }
 }

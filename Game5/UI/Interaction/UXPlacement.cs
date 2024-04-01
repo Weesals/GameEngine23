@@ -45,10 +45,12 @@ namespace Game5.UI.Interaction {
                 Visuals = renderable,
             };
             var emodel = Play.Simulation.PrefabRegistry.GetComponent<CModel>(proto.Prefab);
-            foreach (var mesh in emodel.Model.Meshes) {
-                var meshInstance = Play.Scene.CreateInstance(mesh.BoundingBox);
-                renderable.Instances.Add(meshInstance);
-                Play.ScenePasses.AddInstance(meshInstance, mesh);
+            if (emodel.Model != null) {
+                foreach (var mesh in emodel.Model.Meshes) {
+                    var meshInstance = Play.Scene.CreateInstance(mesh.BoundingBox);
+                    renderable.Instances.Add(meshInstance);
+                    Play.ScenePasses.AddInstance(meshInstance, mesh);
+                }
             }
         }
         public Entity PerformPlacement() {

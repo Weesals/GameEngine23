@@ -21,64 +21,6 @@ using Weesals.Utility;
 namespace Weesals.Editor
 {
 
-    public class UILandscapeTools : CanvasRenderable
-        , IToolServiceProvider<BrushConfiguration>
-        , IToolServiceProvider<ScenePassManager> {
-
-        public TextButton HeightButton = new("Edit Height") { Name = "Edit Height Btn" };
-        public TextButton WaterButton = new("Edit Water") { Name = "Edit Water Btn" };
-        public TextButton SaveButton = new("Save") { Name = "Save Btn" };
-        public InputDispatcher InputDispatcher = new();
-
-        public UXLandscapeCliffTool CliffTool = new();
-        public BrushWaterTool WaterTool = new();
-
-        private BrushConfiguration brushConfig = new();
-
-        ToolContext toolContext;
-        ScenePassManager scenePassManager;
-        ScenePassManager IToolServiceProvider<ScenePassManager>.Service => scenePassManager;
-        BrushConfiguration IToolServiceProvider<BrushConfiguration>.Service => brushConfig;
-
-        private UXBrushTool? activeTool;
-
-        public UILandscapeTools() {
-            var list = new ListLayout() { Axis = ListLayout.Axes.Vertical, };
-
-            HeightButton.OnClick += () => { SetActiveTool(activeTool == CliffTool ? null : CliffTool); };
-            list.AppendChild(HeightButton);
-
-            WaterButton.OnClick += () => { SetActiveTool(activeTool == WaterTool ? null : WaterTool); };
-            list.AppendChild(WaterButton);
-
-            SaveButton.OnClick += () => { toolContext.LandscapeData.Save(); };
-            list.AppendChild(SaveButton);
-
-            AppendChild(list);
-        }
-        public override void Uninitialise(CanvasBinding binding) {
-            base.Uninitialise(binding);
-            SetActiveTool(null);
-        }
-
-        public void Initialize(UIGameView gameView, LandscapeRenderer landscape) {
-            scenePassManager = gameView.Scene;
-            toolContext = new ToolContext(landscape, InputDispatcher, gameView.Camera, this);
-            CliffTool.InitializeTool(toolContext);
-            WaterTool.InitializeTool(toolContext);
-        }
-
-        private void SetActiveTool(UXBrushTool? tool) {
-            if (activeTool != null) activeTool.SetActive(false);
-            if (activeTool is IInteraction otool) InputDispatcher.RemoveInteraction(otool);
-            activeTool = tool;
-            if (activeTool is IInteraction ntool) InputDispatcher.AddInteraction(ntool);
-            if (activeTool != null) activeTool.SetActive(true);
-            HeightButton.TextElement.Text = activeTool == CliffTool ? "End" : "Edit Height";
-            WaterButton.TextElement.Text = activeTool == WaterTool ? "End" : "Edit Water";
-        }
-    }
-
     public class UIPropertiesList : ListLayout, IUpdatable {
         public class TextBlockBound : TextBlock, IBindableValue {
             public void BindValue(PropertyPath path) {
@@ -160,7 +102,7 @@ namespace Weesals.Editor
             }
             public override Vector2 GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
-                size.X = Math.Max(size.X, 200.0f);
+                size.X = sizing.ClampWidth(Math.Max(size.X, 200.0f));
                 return size;
             }
         }
@@ -183,7 +125,7 @@ namespace Weesals.Editor
                     var oldValue = Binding.GetValueAs<object>();
                     var value = ToLinear((double)Convert.ChangeType(oldValue, typeof(double))!);
                     var drag = events.CurrentPosition - events.PreviousPosition;
-                    dragOver += drag.X * 0.1f;
+                    dragOver += drag.X * 0.05f;
                     value += dragOver;
                     var newValue = NumberConverter.ConvertTo(ToExponent(value), Binding.GetPropertyType());
                     var newValueDbl = ToLinear((double)Convert.ChangeType(newValue, typeof(double))!);
@@ -197,6 +139,92 @@ namespace Weesals.Editor
                 var size = base.GetDesiredSize(sizing);
                 size.X = Math.Max(size.X, 100.0f);
                 return size;
+            }
+        }
+        public class CurveEditor : CanvasRenderable, IBeginDragHandler, IDragHandler {
+            public readonly PropertyPath Binding;
+            public Action OnValueChanged;
+            public CanvasText TitleText;
+            public CanvasCurve CurveDisplay;
+            public CurveEditor(PropertyPath path) {
+                Binding = path;
+                TitleText = new(path.GetPropertyName());
+            }
+            public override void Initialise(CanvasBinding binding) {
+                base.Initialise(binding);
+                TitleText.Initialize(Canvas);
+            }
+            public override void Uninitialise(CanvasBinding binding) {
+                TitleText.Dispose(Canvas);
+                base.Uninitialise(binding);
+            }
+            public override void Compose(ref CanvasCompositor.Context composer) {
+                if (HasDirtyFlag(DirtyFlags.Layout)) TitleText.MarkLayoutDirty();
+
+                var layout = mLayoutCache;
+                TitleText.UpdateLayout(Canvas, layout.SliceTop(TitleText.GetPreferredHeight()));
+                TitleText.Append(ref composer);
+
+                ref var curveDisp = ref composer.CreateTransient<CanvasCurve>(Canvas);
+                var curve = Binding.GetValueAs<FloatCurve>();
+                Span<Vector3> points = stackalloc Vector3[curve.Keyframes.Length];
+                for (int i = 0; i < points.Length; i++) {
+                    var kf = curve.Keyframes[i];
+                    points[i] = layout.TransformPosition2DN(new Vector2(kf.Time, kf.Value));
+                }
+                curveDisp.Update(Canvas, points);
+                curveDisp.Append(ref composer);
+
+                base.Compose(ref composer);
+            }
+            public void OnBeginDrag(PointerEvent events) {
+                if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
+            }
+            public void OnDrag(PointerEvent events) {
+            }
+            public override Vector2 GetDesiredSize(SizingParameters sizing) {
+                var size = base.GetDesiredSize(sizing);
+                size = Vector2.Max(size, new Vector2(100f, 100f));
+                size = sizing.ClampSize(size);
+                return size;
+            }
+        }
+        public class DropDownSelector : TextButton {
+            public PropertyPath DataList;
+            public PropertyPath Property;
+            public ListLayout ItemsContainer;
+            public bool IsOpen => ItemsContainer != null && Children.Contains(ItemsContainer);
+            public DropDownSelector(PropertyPath dataList, PropertyPath property) {
+                DataList = dataList;
+                Property = property;
+                UpdateLabel();
+            }
+            public override void InvokeClick() {
+                base.InvokeClick();
+                if (IsOpen) Close(); else Open();
+            }
+            private void UpdateLabel() {
+                var selected = Property.GetValueAs<object>();
+                Text = selected?.ToString() ?? "-none-";
+            }
+            public void Open() {
+                var items = DataList.GetValueAs<IReadOnlyList<object>>();
+                if (ItemsContainer == null) ItemsContainer = new();
+                ItemsContainer.ClearChildren();
+                foreach (var iter in items) {
+                    var item = iter;
+                    var btn = new TextButton(item.ToString());
+                    btn.OnClick += () => {
+                        Property.SetValueAs(item);
+                        UpdateLabel();
+                        Close();
+                    };
+                    ItemsContainer.AppendChild(btn);
+                }
+                AppendChild(ItemsContainer);
+            }
+            public void Close() {
+                RemoveChild(ItemsContainer);
             }
         }
         public struct Bindables {
@@ -219,6 +247,10 @@ namespace Weesals.Editor
             if (Canvas != null) Canvas.Updatables.RegisterUpdatable(this, false);
             base.Uninitialise(binding);
         }
+        public new void ClearChildren() {
+            base.ClearChildren();
+            bindables.Clear();
+        }
         public void AppendProperty(PropertyPath path, Action onChanged = null) {
             var row = new ListLayout() { Axis = ListLayout.Axes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
             var label = new PropertyLabel(path) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat, };
@@ -233,6 +265,9 @@ namespace Weesals.Editor
                 if (onChanged != null) toggle.OnStateChanged += (newValue) => { onChanged(); };
                 row.AppendChild(toggle);
                 bindables.Add(new Bindables(path, toggle));
+            } else if (type == typeof(FloatCurve)) {
+                var curve = new CurveEditor(path) { };
+                row.AppendChild(curve);
             } else {
                 var text = new TextFieldBound() { FontSize = 14, };
                 text.BindValue(path);
@@ -242,6 +277,15 @@ namespace Weesals.Editor
             }
             AppendChild(row);
         }
+        public void AppendSelector(PropertyPath dataList, PropertyPath path, Action onChanged = null) {
+            var row = new ListLayout() { Axis = ListLayout.Axes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
+            var label = new PropertyLabel(path) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat, };
+            label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
+            row.AppendChild(label);
+            var selector = new DropDownSelector(dataList, path) { };
+            row.AppendChild(selector);
+            AppendChild(row);
+        }
         public void UpdateValues() {
             foreach (var bindable in bindables) {
                 bindable.Bindable.BindValue(bindable.Path);
@@ -249,6 +293,30 @@ namespace Weesals.Editor
         }
         public void Update(float dt) {
             UpdateValues();
+        }
+
+        public void AppendPropertiesFrom(object target) {
+            var scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            foreach (var member in target.GetType().GetMembers(scope)) {
+                AppendMemberOptional(target, member);
+            }
+            foreach (var method in target.GetType().GetMethods(scope)) {
+                if (method.GetCustomAttribute<EditorButtonAttribute>() != null) {
+                    var btn = new TextButton(method.Name) { Transform = CanvasTransform.MakeDefault().WithOffsets(5f, 0f, -5f, 0f) };
+                    btn.OnClick += () => { method.Invoke(target, null); };
+                    AppendChild(btn);
+                }
+            }
+        }
+
+        private void AppendMemberOptional(object target, MemberInfo member) {
+            var selector = member.GetCustomAttribute<EditorSelectorAttribute>();
+            if (selector != null) {
+                var dataField = target.GetType().GetMember(selector.DataFieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)[0];
+                AppendSelector(new PropertyPath(target, dataField), new PropertyPath(target, member));
+            } else if (member.GetCustomAttribute<EditorFieldAttribute>() != null) {
+                AppendProperty(new PropertyPath(target, member));
+            }
         }
     }
 
@@ -300,9 +368,11 @@ namespace Weesals.Editor
         }
     }
 
-    //[Conditional("DEBUG")]
     public class EditorFieldAttribute : Attribute { }
-    //[Conditional("DEBUG")]
+    public class EditorSelectorAttribute : EditorFieldAttribute {
+        public string DataFieldName { get; private set; }
+        public EditorSelectorAttribute(string dataFieldName) { DataFieldName = dataFieldName; }
+    }
     public class EditorButtonAttribute : Attribute { }
     public class UIEditablesInspector : CanvasRenderable {
         public List<object> Editables = new();
@@ -318,22 +388,7 @@ namespace Weesals.Editor
             foreach (var editable in Editables) {
                 List.AppendChild(new TextBlock(editable.GetType().Name) { TextColor = Color.DarkGray, });
                 var properties = new UIPropertiesList() { Name = "Editables Inspector" };
-                var scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-                foreach (var field in editable.GetType().GetFields(scope)) {
-                    if (field.GetCustomAttribute<EditorFieldAttribute>() != null)
-                        properties.AppendProperty(new PropertyPath(editable, field));
-                }
-                foreach (var property in editable.GetType().GetProperties(scope)) {
-                    if (property.GetCustomAttribute<EditorFieldAttribute>() != null)
-                        properties.AppendProperty(new PropertyPath(editable, property));
-                }
-                foreach (var method in editable.GetType().GetMethods(scope)) {
-                    if (method.GetCustomAttribute<EditorButtonAttribute>() != null) {
-                        var btn = new TextButton(method.Name) { Transform = CanvasTransform.MakeDefault().WithOffsets(5f, 0f, -5f, 0f) };
-                        btn.OnClick += () => { method.Invoke(editable, null); };
-                        properties.AppendChild(btn);
-                    }
-                }
+                properties.AppendPropertiesFrom(editable);
                 List.AppendChild(properties);
             }
         }

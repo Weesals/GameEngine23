@@ -125,7 +125,7 @@ namespace Weesals.Engine {
                 new(
                     "UVAtlas",
                     "",
-                    "{ UV = (UV - AtlasIndex) / AtlasCount; }",
+                    "{ UV = (saturate(UV) - AtlasIndex) / AtlasCount; }",
                     new Module.Argument[] { new("UV", "float2"), new("AtlasCount", "float2"), new("AtlasIndex", "float2"), },
                     new Module.Argument[] { new("UV", "float2"), }
                 ),
@@ -277,9 +277,11 @@ namespace Weesals.Engine {
                 }
             }
 
-            public ParticleSystem CreateParticleSystem(string path) {
+            public void WriteHLSL(string path) {
                 Directory.CreateDirectory("./Assets/Generated/");
                 File.WriteAllText(path, Generate());
+            }
+            public ParticleSystem CreateParticleSystem(string path) {
                 var system = new ParticleSystem(Name, path);
                 // TODO: Serialize this data into the hlsl (as comment? or pragma?)
                 system.DrawMaterial.SetBlendMode(RenderState.BlendMode);
@@ -352,8 +354,8 @@ namespace Weesals.Engine {
             rootMaterial.SetValue("Gravity", new Vector3(0f, -10f, 0f));
 
             pruneMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
-                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
+                Shader.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
+                Shader.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
             );
             pruneMaterial.SetRasterMode(RasterMode.MakeNoCull());
             pruneMaterial.SetDepthMode(DepthMode.MakeWriteOnly().SetStencil(
@@ -365,8 +367,8 @@ namespace Weesals.Engine {
             pruneMaterial.SetStencilRef(0x00);
             pruneMaterial.SetBlendMode(BlendMode.MakeNone());
             rebaseMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
-                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
+                Shader.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
+                Shader.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
             );
             rebaseMaterial.SetRasterMode(RasterMode.MakeNoCull());
             rebaseMaterial.SetDepthMode(DepthMode.MakeDefault(DepthMode.Comparisons.Less).SetStencil(0x00, 0xff));
@@ -374,8 +376,8 @@ namespace Weesals.Engine {
             rebaseMaterial.SetBlendMode(BlendMode.MakeNone());
 
             expireMaterial = new Material(
-                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
-                ShaderBase.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
+                Shader.FromPath("./Assets/Shader/ParticleUtility.hlsl", "VSBlank"),
+                Shader.FromPath("./Assets/Shader/ParticleUtility.hlsl", "PSBlank")
             );
             expireMaterial.SetValue("LocalTimeZ", 0.001f);
             expireMaterial.SetRasterMode(RasterMode.MakeNoCull());
@@ -591,8 +593,12 @@ namespace Weesals.Engine {
             var system = FindSystem(name);
             if (system != null) return system;
             var stParticleGenerator = new Particles.ParticleGenerator();
+            var outpath = $"./Assets/Generated/{name}.hlsl";
             stParticleGenerator.LoadJSON(filepath);
-            var stParticles = stParticleGenerator.CreateParticleSystem($"./Assets/Generated/{name}.hlsl");
+            if (!File.Exists(outpath) || File.GetLastWriteTimeUtc(outpath) < File.GetLastWriteTimeUtc(filepath)) {
+                stParticleGenerator.WriteHLSL(outpath);
+            }
+            var stParticles = stParticleGenerator.CreateParticleSystem(outpath);
             AppendSystem(stParticles);
             return stParticles;
         }
@@ -669,8 +675,8 @@ namespace Weesals.Engine {
             emitterData.AppendElement(new CSBufferElement("POSITION", BufferFormat.FORMAT_R32G32B32_FLOAT));
             emitterData.AllocResize(256);
             SpawnerMaterial = new Material(
-                ShaderBase.FromPath(particleShader, "VSSpawn"),
-                ShaderBase.FromPath(particleShader, "PSSpawn")
+                Shader.FromPath(particleShader, "VSSpawn"),
+                Shader.FromPath(particleShader, "PSSpawn")
             );
             SpawnerMaterial.InheritProperties(CommonMaterial);
             SpawnerMaterial.SetRasterMode(RasterMode.MakeNoCull());
@@ -681,16 +687,16 @@ namespace Weesals.Engine {
             SpawnerMaterial.SetDepthMode(spawnDS);
             SpawnerMaterial.SetBlendMode(BlendMode.MakeOpaque());
             StepperMaterial = new Material(
-                ShaderBase.FromPath(particleShader, "VSStep"),
-                ShaderBase.FromPath(particleShader, "PSStep")
+                Shader.FromPath(particleShader, "VSStep"),
+                Shader.FromPath(particleShader, "PSStep")
             );
             StepperMaterial.InheritProperties(CommonMaterial);
             StepperMaterial.SetRasterMode(RasterMode.MakeNoCull());
             StepperMaterial.SetDepthMode(DepthMode.MakeReadOnly(DepthMode.Comparisons.GEqual).SetStencil(0xff, 0x00));
             StepperMaterial.SetBlendMode(BlendMode.MakeOpaque());
             DrawMaterial = new Material(
-                ShaderBase.FromPath(particleShader, "VSMain"),
-                ShaderBase.FromPath(particleShader, "PSMain")
+                Shader.FromPath(particleShader, "VSMain"),
+                Shader.FromPath(particleShader, "PSMain")
             );
             DrawMaterial.InheritProperties(CommonMaterial);
             DrawMaterial.SetRasterMode(RasterMode.MakeNoCull());

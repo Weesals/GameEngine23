@@ -141,6 +141,7 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
     arguments.push_back(L"-T");
     arguments.push_back(wProfile.c_str());
     arguments.push_back(L"-HV 2021");
+    //arguments.push_back(L"-enable-16bit-types");
     for (const DxcDefine* macro = macros; macro->Name != nullptr; ++macro) {
         arguments.push_back(L"-D");
         arguments.push_back(macro->Name);
@@ -176,6 +177,14 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
             ComPtr<ID3DBlob> preErrors;
             D3DPreprocess(srcDat, srcLen,
                 aPath.c_str(), d3dMacros.data(), &stdInclude, &preprocessed, &preErrors);
+            if (preprocessed == nullptr) {
+                const char* errorMsg =
+                    preErrors != nullptr ? (const char*)preErrors->GetBufferPointer() :
+                    "Preprocessor failed";
+                OutputDebugStringA(errorMsg);
+                MessageBoxA(0, errorMsg, "Shader Compile Fail", 0);
+                continue;
+            }
             dxcUtils->CreateBlob(preprocessed->GetBufferPointer(), (UINT32)preprocessed->GetBufferSize(), 0, &sourceBlob);
         }
 
@@ -216,8 +225,7 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
                 nullptr;
             if (errorMsg != nullptr) {
                 OutputDebugStringA(errorMsg);
-                if (dxcOutput == nullptr || dxcOutput->GetBufferSize() == 0)
-                {
+                if (dxcOutput == nullptr || dxcOutput->GetBufferSize() == 0) {
                     MessageBoxA(0, errorMsg, "Shader Compile Fail", 0);
                     //throw std::exception(errorMsg);
                     continue;
@@ -243,6 +251,15 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
 
         D3D12_SHADER_DESC shaderDesc;
         pShaderReflection->GetDesc(&shaderDesc);
+
+        mReflection.mStatistics = {};
+        mReflection.mStatistics.mInstructionCount = shaderDesc.InstructionCount;
+        mReflection.mStatistics.mTempRegCount = shaderDesc.TempRegisterCount;
+        mReflection.mStatistics.mArrayIC = shaderDesc.ArrayInstructionCount;
+        mReflection.mStatistics.mTexIC = shaderDesc.TextureNormalInstructions + shaderDesc.TextureLoadInstructions + shaderDesc.TextureCompInstructions + shaderDesc.TextureBiasInstructions + shaderDesc.TextureGradientInstructions;
+        mReflection.mStatistics.mFloatIC = shaderDesc.FloatInstructionCount;
+        mReflection.mStatistics.mIntIC = shaderDesc.IntInstructionCount + shaderDesc.UintInstructionCount;
+        mReflection.mStatistics.mFlowIC = shaderDesc.DynamicFlowControlCount;
 
         // Get all constant buffers
         for (UINT i = 0; i < shaderDesc.ConstantBuffers; ++i)
@@ -275,12 +292,22 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
 
                 D3D12_SHADER_VARIABLE_DESC variableDesc;
                 pVariableReflection->GetDesc(&variableDesc);
+                D3D12_SHADER_TYPE_DESC typeDesc;
+                pVariableReflection->GetType()->GetDesc(&typeDesc);
 
                 // The values for this uniform
                 UniformValue value{
                     .mName = variableDesc.Name,
+                    .mType = typeDesc.Type == D3D_SVT_BOOL ? "bool"
+                        : typeDesc.Type == D3D_SVT_INT ? "int"
+                        : typeDesc.Type == D3D_SVT_FLOAT ? "float"
+                        : typeDesc.Type == D3D_SVT_FLOAT16 ? "half"
+                        : "unknown",
                     .mOffset = (int)variableDesc.StartOffset,
                     .mSize = (int)variableDesc.Size,
+                    .mRows = (uint8_t)typeDesc.Rows,
+                    .mColumns = (uint8_t)typeDesc.Columns,
+                    .mFlags = (uint16_t)((variableDesc.uFlags & D3D_SVF_USED) != 0 ? 1 : 0),
                 };
                 cbuffer.GetValues()[j] = (value);
             }

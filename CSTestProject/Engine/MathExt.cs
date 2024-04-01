@@ -129,6 +129,7 @@ namespace Weesals.Engine {
     public struct Half {
         public ushort Bits;
         unsafe public Half(float value) {
+            if (value == 0f) { Bits = 0; return; }
             uint valueBits = *(uint*)&value;
             Bits = (ushort)(
                 ((valueBits >> 16) & 0x8000) |
@@ -136,6 +137,7 @@ namespace Weesals.Engine {
             );
         }
         unsafe public static implicit operator float(Half h) {
+            if (h.Bits == 0) return 0.0f;
             uint valueBits =
                 (((uint)h.Bits << 16) & 0x80000000) |
                 ((((uint)h.Bits << 13) & (0x0f800000 | 0x03ff0000)) + ((uint)112 << 23));

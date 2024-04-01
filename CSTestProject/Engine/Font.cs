@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Editor.Assets;
 
 namespace Weesals.Engine {
     public class Font {
@@ -31,7 +32,7 @@ namespace Weesals.Engine {
         public CSGlyph GetGlyph(int id) { return Glyphs[id]; }
 
         public void Serialize(BinaryWriter writer) {
-            Resources.Serialize(writer, Texture);
+            TextureImporter.Serialize(writer, Texture);
             writer.Write(LineHeight);
             writer.Write(Glyphs.Length);
             for (int i = 0; i < Glyphs.Length; i++) {
@@ -54,7 +55,7 @@ namespace Weesals.Engine {
         }
         public void Serialize(BinaryReader reader) {
             Texture = CSTexture.Create("Font");
-            Resources.Serialize(reader, Texture);
+            TextureImporter.Serialize(reader, Texture);
             LineHeight = reader.ReadInt32();
             Glyphs = new CSGlyph[reader.ReadInt32()];
             for (int i = 0; i < Glyphs.Length; i++) {

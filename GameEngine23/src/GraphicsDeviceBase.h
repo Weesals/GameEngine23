@@ -15,8 +15,11 @@ public:
     // Reflected uniforms that can be set by the application
     struct UniformValue {
         Identifier mName;
+        Identifier mType;
         int mOffset;
         int mSize;
+        uint8_t mRows, mColumns;
+        uint16_t mFlags;
         bool operator ==(const UniformValue& other) const = default;
         size_t GenerateHash() const {
             return ((int)mName.mId << 16) | mOffset;
@@ -88,6 +91,16 @@ public:
         std::vector<ConstantBuffer> mConstantBuffers;
         std::vector<ResourceBinding> mResourceBindings;
         std::vector<InputParameter> mInputParameters;
+        struct Statistics {
+            int mInstructionCount;
+            int mTempRegCount;
+            int mArrayIC;
+            int mTexIC;
+            int mFloatIC;
+            int mIntIC;
+            int mFlowIC;
+        };
+        Statistics mStatistics;
     };
 };
 class CompiledShader : public ShaderBase {

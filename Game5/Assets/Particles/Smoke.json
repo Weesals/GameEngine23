@@ -41,11 +41,6 @@
       "Rotation": "Age * (Seed - 0.5) * 3.0"
     },
     {
-      "name": "UVAtlas",
-      "AtlasCount": "2.0",
-      "AtlasIndex": "0.0"
-    },
-    {
       "name": "Custom",
       "Code": "SpriteSize *= sqrt(Age);"
     }
@@ -54,6 +49,11 @@
     {
       "name": "Opacity",
       "Opacity": "0.25 * (1.0 - pow(NormalizedAge, 2.0))"
+    },
+    {
+      "name": "UVAtlas",
+      "AtlasCount": "2.0",
+      "AtlasIndex": "float2(floor(frac(Seed * 100) * 2), floor(frac(Seed * 160) * 2))"
     },
     {
       "name": "TextureSample"

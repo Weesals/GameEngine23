@@ -3,69 +3,12 @@
 #include <common.hlsl>
 #include <temporal.hlsl>
 #include <landscapecommon.hlsl>
+#include <landscapesampling.hlsl>
 #include <basepass.hlsl>
 
 cbuffer ConstantBuffer : register(b1) {
-    matrix Model;
     matrix ModelView;
     matrix ModelViewProjection;
-}
-
-SamplerState AnisotropicSampler : register(s2);
-#if EDGE
-    Texture2D<float4> EdgeTex : register(t3);
-#else
-    Texture2DArray<float4> BaseMaps : register(t3);
-    Texture2DArray<float4> BumpMaps : register(t4);
-#endif
-
-struct SampleContext {
-    Texture2DArray<float4> BaseMaps;
-    Texture2DArray<float4> BumpMaps;
-    float3 WorldPos;
-};
-struct ControlPoint {
-    uint4 Data;
-    uint Layer;
-    float Rotation;
-};
-struct TerrainSample {
-    float3 Albedo;
-    float3 Normal;
-    float Height;
-    float Metallic;
-    float Roughness;
-};
-ControlPoint DecodeControlMap(uint cp) {
-    ControlPoint o;
-    o.Data = ((cp >> uint4(0, 8, 16, 24)) & 0xff);
-    o.Layer = o.Data.r;
-    o.Rotation = o.Data.g * (3.1415 * 2.0 / 256.0);
-    return o;
-}
-TerrainSample SampleTerrain(SampleContext context, ControlPoint cp) {
-    TerrainSample o;
-    LayerData data = _LandscapeLayerData[cp.Layer];
-    
-    float2 uv = context.WorldPos.xz;
-    float2 sc; sincos(cp.Rotation, sc.x, sc.y);
-    float2x2 rot = float2x2(sc.y, -sc.x, sc.x, sc.y);
-    uv = mul(rot, uv);
-    uv *= data.Scale;
-    uv.y += data.UVScrollY * Time;
-    
-    float3 bumpSample = context.BumpMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
-    o.Normal = bumpSample.rgb * 2.0 - 1.0;
-    o.Normal.y *= -1;
-    o.Normal.xy = mul(rot, o.Normal.xy);
-    o.Metallic = data.Metallic;
-    o.Roughness = data.Roughness;
-    
-    float4 baseSample = context.BaseMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
-    o.Albedo = baseSample.rgb;
-    o.Height = baseSample.a;
-    
-    return o;
 }
 
 half3 ApplyHeightBlend(half3 bc, half3 heights) {
@@ -75,16 +18,6 @@ half3 ApplyHeightBlend(half3 bc, half3 heights) {
     bc *= rcp(dot(bc, 1.0));
     return bc;
 }
-
-void CalculateTerrainTBN(float3 n, out float3 tangent, out float3 bitangent) {
-    half4 bc = n.xzxz;
-    bc.xy *= n.z * rcp(n.y + 1.0);
-    tangent.x = n.y + bc.y;
-    tangent.yz = -bc.zx;
-    bitangent = bc.xwy;
-    bitangent.z -= 1;
-}
-
 
 struct VSInput {
     uint instanceId : SV_InstanceID;
@@ -132,7 +65,7 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
 
 void PSMain(PSInput input, out BasePassOutput result) {    
     PBRInput pbrInput = PBRDefault();
-    
+        
 #if EDGE
     TemporalAdjust(input.uv.xy);
     pbrInput.Albedo = EdgeTex.Sample(AnisotropicSampler, input.uv.xy).rgb;
@@ -144,8 +77,7 @@ void PSMain(PSInput input, out BasePassOutput result) {
     
     // Dont know why this requires /(size+1)
     uint4 cp = ControlMap.Gather(AnisotropicSampler, context.WorldPos.xz * _LandscapeSizing1.xy + _LandscapeSizing1.zw);
-    cp.xyzw = uint4(min(cp.xy, cp.zw), max(cp.xy, cp.zw));
-    cp.xzyw = uint4(min(cp.xz, cp.yw), max(cp.xz, cp.yw));
+    cp = Sort(cp);
     cp.xyz = uint3(cp[0], cp[tri.TriSign ? 2 : 1], cp[3]) & 0x3fffffff;
         
     TerrainSample t0 = (TerrainSample)0, t1 = (TerrainSample)0, t2 = (TerrainSample)0;

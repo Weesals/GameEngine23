@@ -48,6 +48,11 @@ namespace Weesals.Engine {
             MemoryMarshal.AsBytes(data).CopyTo(outBytes);
             return outBytes;
         }
+        public int GetItemIndex(CSIdentifier identifier) {
+            var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
+            if (index < 0) return -1;
+            return index;
+        }
         public Item GetValueItem(CSIdentifier identifier) {
             var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
             if (index < 0) return Item.Default;
@@ -121,7 +126,7 @@ namespace Weesals.Engine {
         public T GetUniform<T>(CSIdentifier name) where T : unmanaged {
             if (Mode == Modes.Source) {
                 var result = ((MaterialCollectorContext*)Context)->GetUniformSource(name);
-                return MemoryMarshal.Cast<byte, T>(result)[0];
+                return MemoryMarshal.Read<T>(result);
             } else {
                 return ((MaterialEvaluatorContext*)Context)->GetUniform<T>(name);
             }
@@ -162,8 +167,8 @@ namespace Weesals.Engine {
             public Flags Valid;
 
             // Shaders bound
-            public ShaderBase? VertexShader;
-            public ShaderBase? PixelShader;
+            public Shader? VertexShader;
+            public Shader? PixelShader;
 
             public StateData() { }
 
@@ -257,7 +262,7 @@ namespace Weesals.Engine {
         public Material(Material parent) : this() {
             if (parent != null) InheritProperties(parent);
         }
-        public Material(ShaderBase vert, ShaderBase pix) : this() {
+        public Material(Shader vert, Shader pix) : this() {
             SetVertexShader(vert);
             SetPixelShader(pix);
         }
@@ -271,12 +276,12 @@ namespace Weesals.Engine {
         public CSIdentifier GetRenderPassOverride() { return State.RenderPass; }
 
         // Set shaders bound to this material
-        public void SetVertexShader(ShaderBase? shader) { State.VertexShader = shader; State.SetFlag(StateData.Flags.VertexShader, State.VertexShader != null); }
-        public void SetPixelShader(ShaderBase? shader) { State.PixelShader = shader; State.SetFlag(StateData.Flags.PixelShader, State.PixelShader != null); }
+        public void SetVertexShader(Shader? shader) { State.VertexShader = shader; State.SetFlag(StateData.Flags.VertexShader, State.VertexShader != null); }
+        public void SetPixelShader(Shader? shader) { State.PixelShader = shader; State.SetFlag(StateData.Flags.PixelShader, State.PixelShader != null); }
 
         // Get shaders bound to this material
-        public ShaderBase? GetVertexShader() { return State.VertexShader; }
-        public ShaderBase? GetPixelShader() { return State.PixelShader; }
+        public Shader? GetVertexShader() { return State.VertexShader; }
+        public Shader? GetPixelShader() { return State.PixelShader; }
 
         // How to blend with the backbuffer
         public void SetBlendMode(BlendMode mode) { State.BlendMode = mode; State.Valid |= StateData.Flags.Blend; }

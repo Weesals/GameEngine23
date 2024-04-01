@@ -117,10 +117,10 @@ namespace Weesals.Engine {
                 + weights.W * k1.Value;
         }
 
-        public static FloatCurve MakeSmoothStep() {
+        public static FloatCurve MakeSmoothStep(float from = 0f, float to = 1f) {
             return new FloatCurve(
-                new Keyframe<float>(0f, 0f, 0f, 0f),
-                new Keyframe<float>(1f, 1f, 0f, 0f)
+                new Keyframe<float>(0f, from, 0f, 0f),
+                new Keyframe<float>(1f, to, 0f, 0f)
             );
         }
 

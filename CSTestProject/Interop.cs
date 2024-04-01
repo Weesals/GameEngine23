@@ -553,9 +553,20 @@ namespace Weesals.Engine
     {
         public CSIdentifier mName;
 
+        public CSIdentifier mType;
+
         public int mOffset;
 
         public int mSize;
+
+        [NativeTypeName("uint8_t")]
+        public byte mRows;
+
+        [NativeTypeName("uint8_t")]
+        public byte mColumns;
+
+        [NativeTypeName("uint16_t")]
+        public ushort mFlags;
     }
 
     public partial struct CSConstantBufferData
@@ -676,6 +687,27 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetBinaryData@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
         private static extern CSSpan GetBinaryData([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetStatistics@CSCompiledShader@@CAAEBUShaderStats@1@PEBVCompiledShader@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("const ShaderStats &")]
+        private static extern ShaderStats* GetStatistics([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
+
+        public partial struct ShaderStats
+        {
+            public int mInstructionCount;
+
+            public int mTempRegCount;
+
+            public int mArrayIC;
+
+            public int mTexIC;
+
+            public int mFloatIC;
+
+            public int mIntIC;
+
+            public int mFlowIC;
+        }
     }
 
     public unsafe partial struct CSGraphics

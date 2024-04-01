@@ -327,7 +327,7 @@ CSSpan CSPipeline::GetBindings(const NativePipeline* pipeline) {
 }
 
 NativeCompiledShader* CSCompiledShader::_Create(CSIdentifier name, int byteSize, int cbcount, int rbcount) {
-	static_assert(sizeof(ShaderBase::UniformValue) == 4 * 3);
+	static_assert(sizeof(ShaderBase::UniformValue) == 4 * 4);
 	static_assert(sizeof(ShaderBase::ConstantBuffer) == 24);
 	auto* shader = new NativeCompiledShader();
 	shader->AllocateBuffer(byteSize);
@@ -350,6 +350,10 @@ CSSpan CSCompiledShader::GetResources(const NativeCompiledShader* shader) {
 }
 CSSpan CSCompiledShader::GetBinaryData(const NativeCompiledShader* shader) {
 	return MakeSpan(shader->GetBinary());
+}
+const CSCompiledShader::ShaderStats& CSCompiledShader::GetStatistics(const NativeCompiledShader* shader) {
+	static_assert(sizeof(CSCompiledShader::ShaderStats) == sizeof(ShaderBase::ShaderReflection::Statistics));
+	return (CSCompiledShader::ShaderStats&)shader->GetReflection().mStatistics;
 }
 
 void CSGraphics::Dispose(NativeGraphics* graphics) {

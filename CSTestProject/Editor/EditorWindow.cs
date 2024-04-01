@@ -42,7 +42,7 @@ namespace Weesals.Editor {
         public CanvasText TitleText = new();
         public CanvasImage PanelBG = new();
 
-        public string Title { get => TitleText.Text; set => TitleText.Text = value; }
+        public string Title { get => TitleText.Text; set { TitleText.Text = value; MarkLayoutDirty(); MarkComposeDirty(); } }
         public bool EnableBackground { get; set; } = true;
 
         public TabbedWindow(Editor editor, string title) {
@@ -112,8 +112,6 @@ namespace Weesals.Editor {
         public Canvas Canvas;
         public AssetDatabase AssetDatabase;
 
-        public bool RequireRepaint;
-
         public EditorWindow() {
             Editor = new() {
                 DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf"),
@@ -178,7 +176,8 @@ namespace Weesals.Editor {
             Canvas.Update(dt);
             Canvas.RequireComposed();
         }
-        public void Render(CSGraphics graphics) {
+        public void Render(float renDT, CSGraphics graphics) {
+            GameView.Update(renDT);
             using var marker = ProfileMarker_Render.Auto();
             Canvas.Render(graphics);
         }

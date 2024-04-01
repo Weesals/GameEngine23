@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
+using Weesals.Editor;
 using Weesals.Engine;
 using Weesals.UI;
 
@@ -13,17 +14,31 @@ namespace Weesals.Landscape.Editor {
 
         public const float InvalidHeight = -999f;
 
-        public struct CliffTypeData {
+        public class CliffTypeData {
             public string SurfaceType;
             public string EdgeType;
+            public override string ToString() { return $"{SurfaceType}+{EdgeType}"; }
         }
 
         private float surfaceHeight = InvalidHeight;
+        [EditorField]
         public float HeightDelta = 2f;
 
-        public CliffTypeData Type = new CliffTypeData() { SurfaceType = "TL_Moss", EdgeType = "TL_Cliff", };
+        public CliffTypeData[] CliffTypes = new[] {
+            new CliffTypeData() { SurfaceType = "TL_Moss", EdgeType = "TL_Cliff", },
+            new CliffTypeData() { SurfaceType = "TL_Grass", EdgeType = "TL_Dirt", },
+        };
+
+        [EditorSelector(nameof(CliffTypes))]
+        public CliffTypeData Type;
+        [EditorField]
         public FloatCurve HeightCurve = new FloatCurve(new(0f, 0f), new(0.5f, 1f));
+        [EditorField]
         public FloatCurve SmoothHeightCurve = FloatCurve.MakeSmoothStep();
+
+        public UXLandscapeCliffTool() {
+            Type = CliffTypes[0];
+        }
 
         public ActivationScore GetActivation(PointerEvent events) {
             bool isBtnDown = events.HasButton(0) || events.HasButton(1);
@@ -118,8 +133,8 @@ namespace Weesals.Landscape.Editor {
                     if (cell.Height == newHeight) continue;
                     cell.Height = newHeight;
                     heightMapRaw[terrainIndex] = cell;
-                    min = Int2.Min(min, new Int2(x, y));
-                    max = Int2.Max(max, new Int2(x, y));
+                    min = Int2.Min(min, terrainPos);
+                    max = Int2.Max(max, terrainPos);
                 }
             }
             changed.CombineWith(new LandscapeChangeEvent(min, max, heightMap: true));
@@ -153,8 +168,8 @@ namespace Weesals.Landscape.Editor {
                     if (cell.Height == newHeight) continue;
                     cell.Height = newHeight;
                     heightMapRaw[terrainIndex] = cell;
-                    min = Int2.Min(min, new Int2(x, y));
-                    max = Int2.Max(max, new Int2(x, y));
+                    min = Int2.Min(min, terrainPos);
+                    max = Int2.Max(max, terrainPos);
                 }
             }
             changed.CombineWith(new LandscapeChangeEvent(min, max, heightMap: true));
@@ -186,8 +201,8 @@ namespace Weesals.Landscape.Editor {
                     if (cell.TypeId == typeId) continue;
                     cell.TypeId = typeId;
                     controlMapRaw[terrainIndex] = cell;
-                    min = Int2.Min(min, new Int2(x, y));
-                    max = Int2.Max(max, new Int2(x, y));
+                    min = Int2.Min(min, terrainPos);
+                    max = Int2.Max(max, terrainPos);
                 }
             }
             changed.CombineWith(new LandscapeChangeEvent(min, max, controlMap: true));

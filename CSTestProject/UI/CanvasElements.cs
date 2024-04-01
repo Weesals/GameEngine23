@@ -669,6 +669,51 @@ namespace Weesals.UI {
         }
     }
 
+    public struct CanvasCurve : ICanvasElement, ICanvasTransient {
+        CanvasElement element = CanvasElement.Invalid;
+        public bool IsInitialized => element.IsValid;
+        public CanvasCurve() {
+        }
+        public void Initialize(Canvas canvas) {
+            Debug.Assert(!element.IsValid);
+        }
+        public void Dispose(Canvas canvas) {
+            if (element.IsValid) element.Dispose(canvas);
+        }
+        public void Update(Canvas canvas, Span<Vector3> points) {
+            var elementId = element.ElementId;
+            var vertices = element.IsValid ? canvas.Builder.MapVertices(elementId) : default;
+            if (!element.IsValid || vertices.GetVertexCount() != points.Length * 2) {
+                element.Dispose(canvas);
+                canvas.Builder.Require(ref elementId, points.Length * 2, (points.Length - 1) * 6);
+                element.SetElementId(elementId);
+                vertices = canvas.Builder.MapVertices(elementId);
+                var indices = vertices.GetIndices();
+                for (int p = 0; p < points.Length - 1; p++) {
+                    var i = p * 6;
+                    indices[i + 0] = (ushort)(vertices.VertexOffset + p * 2 + 0);
+                    indices[i + 1] = (ushort)(vertices.VertexOffset + p * 2 + 1);
+                    indices[i + 2] = (ushort)(vertices.VertexOffset + p * 2 + 2);
+                    indices[i + 3] = (ushort)(vertices.VertexOffset + p * 2 + 1);
+                    indices[i + 4] = (ushort)(vertices.VertexOffset + p * 2 + 3);
+                    indices[i + 5] = (ushort)(vertices.VertexOffset + p * 2 + 2);
+                }
+                vertices.MarkIndicesChanged();
+                vertices.GetColors().Set(Color.Red);
+            }
+            var vertPos = vertices.GetPositions();
+            for (int i = 0; i < points.Length; i++) {
+                vertPos[i * 2 + 0] = points[i] + new Vector3(0f, -2f, 0f);
+                vertPos[i * 2 + 1] = points[i] + new Vector3(0f, +2f, 0f);
+            }
+            vertices.MarkVerticesChanged();
+        }
+        public void UpdateLayout(Canvas canvas, in CanvasLayout layout) { }
+        public void Append(ref CanvasCompositor.Context compositor) {
+            compositor.Append(element);
+        }
+    }
+
     public class CanvasCompositor : IDisposable {
         public class TransientElementCache {
             public interface IElementList { void Reset(Canvas canvas); }

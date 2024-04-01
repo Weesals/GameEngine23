@@ -108,7 +108,7 @@ namespace Weesals.Landscape.Editor {
         private TimedEvent active;
         private float reticleAngle;
 
-        public void InitializeTool(ToolContext context) {
+        public virtual void InitializeTool(ToolContext context) {
             Context = context;
         }
 

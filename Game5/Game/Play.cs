@@ -121,7 +121,7 @@ namespace Game5.Game {
                     new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/T_DirtyMoss_BaseColor.png", NormalMap = "./Assets/T_DirtyMoss_Normal.jpg", },
                     new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/T_Moss_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
-                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.jpg", NormalMap = "./Assets/T_Tiles_Normal.jpg", },
+                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.jpg", NormalMap = "./Assets/T_Tiles_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.Random90, Scale = 0.25f, },
                     new LandscapeLayer("TL_WaterFloor") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
@@ -144,7 +144,7 @@ namespace Game5.Game {
                 Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
                     * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),
                 NearPlane = 5.0f,
-                FarPlane = 50000.0f,
+                FarPlane = 5000.0f,
             };
 
 
@@ -199,7 +199,7 @@ namespace Game5.Game {
             NavDebug?.OnDrawGizmosSelected();
 
             if (Input.GetKeyDown(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.LeftAlt) && Input.GetKeyPressed(KeyCode.F11)) {
-                Resources.ReloadShaders();
+                Resources.ReloadAssets();
             }
 
             var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));

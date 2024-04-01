@@ -62,7 +62,7 @@ static const float kSamples = 2.0;
 #define SKY_GROUND_THRESHOLD 0.02 
 
 cbuffer ConstantBuffer : register(b1) {
-    matrix InvVP;
+    matrix InvViewProjection;
     float3 _WorldSpaceLightDir0;
 };
 
@@ -172,14 +172,12 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float2 vpos = input.uv * 2 - 1;
     vpos.y = -vpos.y;
         
-    float4 clipSpacePosition = float4(vpos, 1.0f, 1.0f);
-    float4 viewSpacePosition = mul(InvVP, clipSpacePosition);
-    viewSpacePosition.xyz /= viewSpacePosition.w;
-    float3 directionVector = normalize(viewSpacePosition.xyz);
-    //return float4(frac(directionVector * 5), 1.0f);
-    //return float4(pow(-dot(_WorldSpaceLightDir0,directionVector), 1.0).rrr, 1.0);
+    float4 clipZ = mul(InvViewProjection, float4(vpos, 0.0, 1.0));
+    float4 projZ = transpose(InvViewProjection)[2];
+    float3 directionVector = normalize(projZ.xyz * InvViewProjection._44 - clipZ.xyz * projZ.w);
     
     float3 ro = float3(0., 0., 0.);
     float3 rd = directionVector.xyz;
+    
     return ProceduralSkybox(ro, rd);
 }

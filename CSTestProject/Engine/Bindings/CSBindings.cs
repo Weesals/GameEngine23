@@ -519,7 +519,7 @@ namespace Weesals.Engine {
             public int mBindPoint => Data.mBindPoint;
         }
         unsafe static CSCompiledShader() {
-            Trace.Assert(sizeof(CSUniformValue) == 4 * 3);
+            Trace.Assert(sizeof(CSUniformValue) == 4 * 4);
             Trace.Assert(sizeof(CSConstantBuffer) == 24);
         }
         unsafe static public CSCompiledShader Create(string name, int byteSize, int cbcount, int rbcount) {
@@ -530,6 +530,7 @@ namespace Weesals.Engine {
         unsafe public Span<CSConstantBuffer> GetConstantBuffers() { return GetConstantBuffers(mShader).AsSpan<CSConstantBuffer>(); }
         unsafe public Span<CSResourceBinding> GetResources() { return GetResources(mShader).AsSpan<CSResourceBinding>(); }
         unsafe public Span<byte> GetBinaryData() { return GetBinaryData(mShader).AsSpan<byte>(); }
+        unsafe public ShaderStats GetStatistics() { return *GetStatistics(mShader); }
     }
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }

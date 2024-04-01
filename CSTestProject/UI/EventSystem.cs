@@ -687,10 +687,10 @@ namespace Weesals.UI {
         }
         internal void SetStates(PointerEvent events, PointerEvent.States state) {
             PointerEvent.EventTargets targets = events.Targets;
-            TryInvoke(events, state, targets, eDragHandler);
-            TryInvoke(events, state, targets, pUpHandler);
-            TryInvoke(events, state, targets, pExitHandler);
-            TryInvoke(events, state, targets, pEndIntHandler);
+            TryInvoke(events, state, targets, eDragHandler, false);
+            TryInvoke(events, state, targets, pUpHandler, false);
+            TryInvoke(events, state, targets, pExitHandler, false);
+            TryInvoke(events, state, targets, pEndIntHandler, false);
             TryInvoke(events, state, targets, pBeginIntHandler);
             TryInvoke(events, state, targets, pEnterHandler);
             if (pDownHandler.ShouldInvoke(events, state)) {
@@ -740,7 +740,7 @@ namespace Weesals.UI {
         private PressPointerEvent<IEndDragHandler> eDragHandler = new((item, events) => item.OnEndDrag(events), PointerEvent.States.Drag, false);
         private ActivePointerEvent<IBeginInteractionHandler> pBeginIntHandler = new((item, events) => item.OnBeginInteraction(events), PointerEvent.States.Active, true);
         private ActivePointerEvent<IEndInteractionHandler> pEndIntHandler = new((item, events) => item.OnEndInteraction(events), PointerEvent.States.Active, false);
-        private bool TryInvoke<T>(PointerEvent events, PointerEvent.States states, object? target, PointerHandler<T> handler) where T : IEventSystemHandler {
+        private bool TryInvoke<T>(PointerEvent events, PointerEvent.States states, object? target, PointerHandler<T> handler, bool allowPropagate = true) where T : IEventSystemHandler {
             if (!handler.ShouldInvoke(events, states)) return true;
             events.State = handler.AssignState(events.State);
             ref var active = ref handler.GetTarget(ref events.Targets);
@@ -755,9 +755,11 @@ namespace Weesals.UI {
                     //target = hitIterator.Current;
                 }
                 for (; target != null; target = HierarchyExt.TryGetParent(target)) {
-                    if (target is not T tvalue) continue;
-                    handler.InvokeEvent(tvalue, events);
-                    if (!ConsumeYield()) break;
+                    if (target is T tvalue) {
+                        handler.InvokeEvent(tvalue, events);
+                        if (!ConsumeYield()) break;
+                    }
+                    if (!allowPropagate) { target = null; break; }
                 }
                 if (target != null) break;
             }

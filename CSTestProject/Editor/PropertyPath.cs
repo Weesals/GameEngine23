@@ -12,16 +12,17 @@ namespace Weesals.Editor {
 
         public int ArrayIndex = -1;
         public FieldInfo[] Fields = Array.Empty<FieldInfo>();
-        public PropertyInfo Property;
+        public PropertyInfo? Property;
+
+        public MemberInfo? Member => Property != null ? Property : Fields.Length > 0 ? Fields[^1] : null;
 
         public PropertyPath(object owner) {
             Owner = owner;
         }
-        public PropertyPath(object owner, FieldInfo field) : this(owner) {
-            Fields = new[] { field, };
-        }
-        public PropertyPath(object owner, PropertyInfo property) : this(owner) {
-            Property = property;
+        public PropertyPath(object owner, MemberInfo member) : this(owner) {
+            if (member is FieldInfo field) Fields = new[] { field, };
+            else if (member is PropertyInfo prop) Property = prop;
+            else Debug.Assert(member == null);
         }
         public void DefrenceArray(int index) {
             ArrayIndex = index;

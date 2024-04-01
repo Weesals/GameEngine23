@@ -240,7 +240,7 @@ PSInput VSMain(VSInput input)
     result.position.xy += (float2(input.vertexId % 2, input.vertexId / 2) - 0.5) *
         float2(Projection._11, Projection._22) * SpriteSize;
     result.uv = UV;
-    result.attributes = float4(Age, 0, 0, 0);
+    result.attributes = float4(Age, Seed, 0, 0);
     //result.position.y += input.id * 0.02;
     //result.position.y += age * 0.05;
     
@@ -263,6 +263,7 @@ void PSMain(PSInput input
     float4 Color = float4(1.0, 1.0, 1.0, 1.0);
     float Age = input.attributes.x;
     float NormalizedAge = Age / Lifetime;
+    float Seed = input.attributes.y;
     
 %ParticlePixel%
     

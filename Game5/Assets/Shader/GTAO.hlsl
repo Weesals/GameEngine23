@@ -71,7 +71,7 @@ half4 PSMain(PSInput input) : SV_Target {
         NumRadMin = NumRad - 1;
     const float Radius = 3.0;
     
-    half3 positionCS = GetPosition(input.uv);
+    float3 positionCS = GetPosition(input.uv);
     half3 viewNormal = GetNormal(input.uv);
     half3 viewDir = -normalize(positionCS);
     viewNormal.x *= -1; // Dont know why this is here.
@@ -84,7 +84,7 @@ half4 PSMain(PSInput input) : SV_Target {
     half Occlusion = 0.0;
     
     float arcAng = IGN(input.position.xy) * (3.1415 / NumArc);
-    float radBias = PermuteV2(input.position.xy, TemporalFrame * 0.3178);
+    half radBias = (half)((float)PermuteV2(input.position.xy, TemporalFrame * 0.3178));
     half2 arcStep = float2(cos(arcAng), sin(arcAng)) * texelStep;
     
     [unroll]
@@ -94,8 +94,8 @@ half4 PSMain(PSInput input) : SV_Target {
         [unroll]
         for (int j = min(NumRad - 1 - i, NumRadMin); j >= 0; --j) {
             half2 radOff = arcStep * (j + radBias);
-            half3 posL = GetPosition(input.uv - radOff) - positionCS;
-            half3 posR = GetPosition(input.uv + radOff) - positionCS;
+            float3 posL = GetPosition(input.uv - radOff) - positionCS;
+            float3 posR = GetPosition(input.uv + radOff) - positionCS;
             
             half2 dst2LR = half2(dot(posL, posL), dot(posR, posR));
             half2 sliceLR = half2(dot(posL, viewDir), dot(posR, viewDir)) * rsqrt(dst2LR);
@@ -121,7 +121,7 @@ half4 PSMain(PSInput input) : SV_Target {
         half2 innterIntegral = (-cos(horizons2 - gamma) + cosineGamma + horizons2 * sin(gamma));
         Occlusion += dot(innterIntegral, 1.0);
         
-        float2x2 DirRot = {
+        half2x2 DirRot = {
             +cos(PI / NumArc), -sin(PI / NumArc),
             +sin(PI / NumArc), +cos(PI / NumArc),
         };

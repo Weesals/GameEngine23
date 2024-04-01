@@ -92,6 +92,7 @@ namespace Weesals.UI {
             }
         }
         public new void MarkComposeDirty() { base.MarkComposeDirty(); }
+        public bool GetIsComposeDirty() { return base.HasDirtyFlag(DirtyFlags.Compose); }
         public void RequireComposed() {
             if (HasDirtyFlag(DirtyFlags.Children)) {
                 RequireLayout();

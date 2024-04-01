@@ -1,3 +1,5 @@
+#ifndef __LANDSCAPE_COMMON__
+#define __LANDSCAPE_COMMON__
 
 Texture2D<float4> HeightMap : register(t0);
 Texture2D<uint> ControlMap : register(t1);
@@ -10,8 +12,8 @@ cbuffer LandscapeBuffer : register(b2)
 };
 
 struct LayerData {
-    half Scale, UVScrollY, HeightBlend, Roughness;
-    half Metallic, Pad1, Pad2, Pad3;
+    float Scale, UVScrollY, HeightBlend, Roughness;
+    float Metallic, Pad1, Pad2, Pad3;
 };
 StructuredBuffer<LayerData> _LandscapeLayerData : register(t2);
 
@@ -57,3 +59,14 @@ void TransformLandscapeVertex(inout float3 position, inout float3 normal, float2
 #endif
     position.xz = min(position.xz, _LandscapeSizing.xy);
 }
+
+void CalculateTerrainTBN(half3 n, out half3 tangent, out half3 bitangent) {
+    half4 bc = n.xzxz;
+    bc.xy *= n.z * rcp(n.y + 1.0);
+    tangent.x = n.y + bc.y;
+    tangent.yz = -bc.zx;
+    bitangent = bc.xwy;
+    bitangent.z -= 1;
+}
+
+#endif

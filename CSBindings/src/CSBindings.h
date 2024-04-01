@@ -243,8 +243,11 @@ public:
 
 struct DLLCLASS CSUniformValue {
 	CSIdentifier mName;
+	CSIdentifier mType;
 	int mOffset;
 	int mSize;
+	uint8_t mRows, mColumns;
+	uint16_t mFlags;
 };
 struct CSConstantBufferData {
 	CSIdentifier mName;
@@ -292,6 +295,16 @@ public:
 	CSCompiledShader(NativeCompiledShader* shader)
 		: mShader(shader) { }
 	NativeCompiledShader* GetNativeShader() const { return mShader; }
+
+	struct ShaderStats {
+		int mInstructionCount;
+		int mTempRegCount;
+		int mArrayIC;
+		int mTexIC;
+		int mFloatIC;
+		int mIntIC;
+		int mFlowIC;
+	};
 private:
 	static NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount);
 	static void InitializeValues(NativeCompiledShader* shader, int cb, int vcount);
@@ -299,6 +312,7 @@ private:
 	static CSSpan GetConstantBuffers(const NativeCompiledShader* shader);
 	static CSSpan GetResources(const NativeCompiledShader* shader);
 	static CSSpan GetBinaryData(const NativeCompiledShader* shader);
+	static const ShaderStats& GetStatistics(const NativeCompiledShader* shader);
 };
 class DLLCLASS CSGraphics {
 	NativeGraphics* mGraphics = nullptr;

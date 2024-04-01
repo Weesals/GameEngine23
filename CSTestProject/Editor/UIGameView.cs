@@ -104,6 +104,9 @@ namespace Weesals.Editor {
         private ToggleButton realtimeToggle;
         public bool EnableRealtime => realtimeToggle.State;
 
+        private float timeSinceFPSUpdate = 0f;
+        private int ticksSinceFPSUpdate = 0;
+
         public UIGameView(Editor editor) : base(editor, "Game") {
             EnableBackground = false;
             realtimeToggle = new ToggleButton();
@@ -129,6 +132,17 @@ namespace Weesals.Editor {
             Console.WriteLine("Received " + item);
             if (item is UIProjectView.FileGrid.FileView file) {
                 OnReceiveDrag?.Invoke(events, file.GetAsset());
+            }
+        }
+
+        public void Update(float dt) {
+            timeSinceFPSUpdate += dt;
+            ++ticksSinceFPSUpdate;
+            if (Canvas.GetIsComposeDirty() || timeSinceFPSUpdate > 0.125f) {
+                float fps = ticksSinceFPSUpdate / Math.Max(timeSinceFPSUpdate, 0.0001f);
+                Title = $"Game ({(fps):0} fps)";
+                timeSinceFPSUpdate = 0f;
+                ticksSinceFPSUpdate = 0;
             }
         }
 

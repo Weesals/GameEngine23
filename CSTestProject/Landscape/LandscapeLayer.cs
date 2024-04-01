@@ -39,7 +39,7 @@ namespace Weesals.Landscape {
                 UvYScroll, Alignment, Flags
             );
         }
-
+        public override string ToString() { return Name; }
     }
 
     public class LandscapeLayerCollection {
@@ -58,6 +58,12 @@ namespace Weesals.Landscape {
         public int FindLayerId(string name) {
             for (int i = 0; i < TerrainLayers.Length; i++) {
                 if (TerrainLayers[i].Name == name) return i;
+            }
+            return -1;
+        }
+        public int FindLayerId(LandscapeLayer layer) {
+            for (int i = 0; i < TerrainLayers.Length; i++) {
+                if (TerrainLayers[i] == layer) return i;
             }
             return -1;
         }

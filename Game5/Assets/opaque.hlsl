@@ -80,6 +80,7 @@ void PSMain(PSInput input, out BasePassOutput result) {
 struct ShadowCast_VSInput {
     uint primitiveId : INSTANCE;
     float4 position : POSITION;
+    float3 normal : NORMAL;
 };
 struct ShadowCast_PSInput {
     float4 position : SV_POSITION;
@@ -88,6 +89,7 @@ struct ShadowCast_PSInput {
 void ShadowCast_VSMain(ShadowCast_VSInput input, out float4 positionCS : SV_POSITION) {
     ShadowCast_PSInput result;
     InstanceData instance = instanceData[input.primitiveId];
+    input.position.xyz += input.normal * -0.03;
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
     positionCS = mul(ViewProjection, float4(worldPos, 1.0));
 }

@@ -107,7 +107,7 @@ class Program {
 
                     // Render the editor chrome
                     graphics.SetViewport(new RectI(0, primaryWindow.Size));
-                    editorWindow?.Render(graphics);
+                    editorWindow?.Render(renDT, graphics);
 
                     // Flush render command buffer
                     graphics.Execute();

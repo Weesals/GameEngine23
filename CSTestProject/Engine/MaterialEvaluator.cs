@@ -38,6 +38,7 @@ namespace Weesals.Engine {
             public ushort ValueOffset;  // Offset within the material
             public ushort DataSize;       // How big the data type is
             public sbyte SourceId;      // Which material it comes from
+            public byte ItemId;      // Which material it comes from
         }
         internal Material[] sources;
         internal Value[] values;
@@ -77,14 +78,24 @@ namespace Weesals.Engine {
 				tmpData.Slice(0, data.Length).CopyTo(data);
 			}
 		}
-		static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
+		unsafe static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
             using var collector = Material.BeginGetUniforms(materialStack);
             foreach (var val in cb.GetValues()) {
 				var data = collector.GetUniformValue(val.mName);
-                if (data.Length > val.mSize)
-                    data = data.Slice(0, val.mSize);
-                data.CopyTo(buffer.Slice(val.mOffset));
-			}
+                if (val.mType == "half") {
+                    fixed (void* dataPtr = data) {
+                        var view = new TypedBufferView<Half>(dataPtr, 4, data.Length / 4, BufferFormat.FORMAT_R32_FLOAT);
+                        for (int r = 0; r < val.mRows; r++) {
+                            var halfArr = MemoryMarshal.Cast<byte, Half>(buffer.Slice(val.mOffset + 16 * r));
+                            for (int i = 0; i < val.mColumns; ++i) halfArr[i] = view[i + r * val.mColumns];
+                        }
+                    }
+                } else {
+                    if (data.Length > val.mSize)
+                        data = data.Slice(0, val.mSize);
+                    data.CopyTo(buffer.Slice(val.mOffset));
+                }
+            }
 		}
         public static MemoryBlock<nint> ResolveResources(CSGraphics graphics, CSPipeline pipeline, List<Material> materialStack) {
             return ResolveResources(graphics, pipeline, CollectionsMarshal.AsSpan(materialStack));
@@ -182,11 +193,11 @@ namespace Weesals.Engine {
             int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, 32), materials);
             var macros = new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, count);
             var materialState = ResolvePipelineState(materials);
-            var vertShader = Resources.RequireShader(graphics, materialState.VertexShader!, "vs_6_0", macros, materialState.RenderPass);
-            var pixShader = Resources.RequireShader(graphics, materialState.PixelShader!, "ps_6_0", macros, materialState.RenderPass);
+            var vertShader = Resources.RequireShader(graphics, materialState.VertexShader!, "vs_6_2", macros, materialState.RenderPass);
+            var pixShader = Resources.RequireShader(graphics, materialState.PixelShader!, "ps_6_2", macros, materialState.RenderPass);
             var pipeline = graphics.RequirePipeline(pbuffLayout,
-                vertShader.CompiledShader,
-                pixShader.CompiledShader,
+                vertShader.NativeShader,
+                pixShader.NativeShader,
                 &materialState.BlendMode
             );
             return pipeline;
@@ -288,9 +299,11 @@ namespace Weesals.Engine {
         }
         public Span<byte> GetUniformSourceNull(CSIdentifier name, MaterialCollectorContext context) {
             var material = Material.NullInstance;
-            var valueData = material.GetParametersRaw().GetValueData("NullMat");
-            ObserveValue(material, name, valueData);
-            return valueData;
+            var parameters = material.GetParametersRaw();
+            var itemIndex = parameters.GetItemIndex("NullMat");
+            var valueIndex = ObserveValue(material, itemIndex);
+            var value = values[valueIndex].EvalValue;
+            return parameters.GetDataRaw().Slice(value.ValueOffset, value.DataSize);
         }
         public void SetItemOutputOffset(CSIdentifier name, int offset, int byteSize = -1) {
             for (int v = 0; v < values.Count; ++v) {
@@ -368,20 +381,22 @@ namespace Weesals.Engine {
 			    EndComputed(material, computedI, outData);
 			    return outData;
 		    }
-		    // Check if the value has been set explicitly
-		    var data = material.GetParametersRaw().GetValueData(name);
-		    if (!data.IsEmpty) {
-			    ObserveValue(material, name);
-			    return data;
-		    }
+            // Check if the value has been set explicitly
+            var parameters = material.GetParametersRaw();
+            var dataIndex = parameters.GetItemIndex(name);
+		    if (dataIndex != -1) {
+			    var valueIndex = ObserveValue(material, dataIndex);
+                var value = values[valueIndex].EvalValue;
+                return parameters.GetDataRaw().Slice(value.ValueOffset, value.DataSize);
+            }
             // Check if it exists in inherited material properties
             if (material.InheritParameters != null) {
                 foreach (var mat in material.InheritParameters) {
-                    data = GetUniformSourceIntl(mat, name, ref context);
+                    var data = GetUniformSourceIntl(mat, name, ref context);
                     if (!data.IsEmpty) return data;
                 }
             }
-		    return data;
+		    return default;
 	    }
 	    int RequireSource(Material material) {
 		    for (int i = 0; i < sources.Count; ++i) if (sources[i] == material) return i;
@@ -390,30 +405,25 @@ namespace Weesals.Engine {
             sources.Add(material);
 		    return id;
 	    }
-	    void ObserveValue(Material material, CSIdentifier name) {
-		    //if (mValues.capacity() < 8) mValues.reserve(8);
-		    var valueData = material.GetParametersRaw().GetValueData(name);
-		    ObserveValue(material, name, valueData);
-	    }
-	    void ObserveValue(Material material, CSIdentifier name, Span<byte> valueData) {
-            int dataOffset = (int)Unsafe.ByteOffset(
-                ref MemoryMarshal.GetReference(material.GetParametersRaw().GetDataRaw()),
-                ref MemoryMarshal.GetReference(valueData)
-            );
+	    int ObserveValue(Material material, int itemId) {
+            ref var item = ref material.GetParametersRaw().GetItemsRaw()[itemId];
             var v = new Value() {
                 EvalValue = new MaterialEvaluator.Value() {
 		            OutputOffset = InvalidOffset,
-                    ValueOffset = (ushort)dataOffset,
-		            DataSize = (ushort)(valueData.Length),
+                    ValueOffset = (ushort)item.ByteOffset,
+		            DataSize = (ushort)(item.Count * Marshal.SizeOf(item.Type)),
 		            SourceId = (sbyte)RequireSource(material),
+                    ItemId = (byte)itemId,
                 },
-                Name = name,
+                Name = item.Identifier,
 		        ParamOffset = -1,
 		        ParamCount = -1,
             };
 		    values.Add(v);
 		    if (parameterStack.Count != 0) parameterIds.Add((byte)(values.Count - 1));
-	    }
+            return values.Count - 1;
+
+        }
 	    Span<byte> ConsumeTempData(int dataSize) {
             return outputData.Consume(dataSize);
 	    }
