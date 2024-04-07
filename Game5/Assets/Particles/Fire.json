@@ -54,14 +54,14 @@
   "ParticlePixel": [
     {
       "name": "Opacity",
-      "Opacity": "0.1"
+      "Opacity": "0.5"
     },
     {
       "name": "TextureSample"
     },
     {
       "name": "Custom",
-      "Code": "Color *= float4(1.0,0.6, 0.3, sqrt(saturate(Age * 5.0)));"
+      "Code": "Color *= float4(1.0, 0.6, 0.3, sqrt(saturate(Age * 5.0)));"
     }
   ]
 }

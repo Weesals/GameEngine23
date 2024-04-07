@@ -509,6 +509,13 @@ namespace Weesals.Engine {
         unsafe public void Present() { Present(mSurface); }
         unsafe public void Dispose() { Dispose(mSurface); }
     }
+    public partial struct CSPreprocessedShader {
+        unsafe public CSString8 GetSourceRaw() { return GetSource(mShader); }
+        unsafe public string GetSource() { return GetSource(mShader).ToString(); }
+        unsafe public int GetIncludeCount() { return GetIncludeFileCount(mShader); }
+        unsafe public string GetInclude(int id) { return GetIncludeFile(mShader, id).ToString(); }
+        unsafe public void Dispose() { Dispose(mShader); }
+    }
     public partial struct CSCompiledShader {
         public unsafe struct CSConstantBuffer {
             public CSConstantBufferData Data;
@@ -525,6 +532,7 @@ namespace Weesals.Engine {
         unsafe static public CSCompiledShader Create(string name, int byteSize, int cbcount, int rbcount) {
             return new(_Create(new(name), byteSize, cbcount, rbcount));
         }
+        unsafe public bool IsValid => mShader != null;
         unsafe public void InitializeValues(int cb, int vcount) { InitializeValues(mShader, cb, vcount); }
         unsafe public Span<CSUniformValue> GetValues(int cb) { return GetValues(mShader, cb).AsSpan<CSUniformValue>(); }
         unsafe public Span<CSConstantBuffer> GetConstantBuffers() { return GetConstantBuffers(mShader).AsSpan<CSConstantBuffer>(); }
@@ -550,22 +558,26 @@ namespace Weesals.Engine {
         }
         unsafe public bool IsTombstoned() { return IsTombstoned(mGraphics) != 0; }
         unsafe public void Reset() { Reset(mGraphics); }
-        unsafe public void Clear() { Clear(mGraphics); }
+        unsafe public void Clear() { Clear(new(CSClearConfig.GetInvalidColor(), 1f)); }
+        unsafe public void Clear(CSClearConfig clear) { Clear(mGraphics, clear); }
         unsafe public void SetViewport(RectI viewport) { SetViewport(mGraphics, viewport); }
         unsafe public void Execute() { Execute(mGraphics); }
         unsafe public nint RequireConstantBuffer(MemoryBlock<byte> data, ulong hash = 0) {
             return (nint)RequireConstantBuffer(mGraphics, CSSpan.Create(data), (nuint)hash);
         }
-        unsafe public CSCompiledShader CompileShader(string path, string entry, CSIdentifier profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
+        unsafe static public CSPreprocessedShader PreprocessShader(string path, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
             fixed (char* pathPtr = path)
-            fixed (char* entryPtr = entry)
             fixed (KeyValuePair<CSIdentifier, CSIdentifier>* usmacros = macros) {
-                return new CSCompiledShader(CompileShader(mGraphics,
+                return new CSPreprocessedShader(PreprocessShader(
                     new CSString(pathPtr, path.Length),
-                    new CSString(entryPtr, entry.Length),
-                    profile,
                     new CSSpan(usmacros, macros.Length)
                 ));
+            }
+        }
+        unsafe public CSCompiledShader CompileShader(CSString8 source, string entry, CSIdentifier profile) {
+            fixed (char* entryPtr = entry) {
+                return new CSCompiledShader(CompileShader(mGraphics, source,
+                    new CSString(entryPtr, entry.Length), profile));
             }
         }
         unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings,

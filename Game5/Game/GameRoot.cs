@@ -40,6 +40,7 @@ namespace Game5.Game {
         TransparentPass transPass;
         GTAOPass gtaoPass;
         DeferredPass deferredPass;
+        VolumetricGatherPass volGatherPass;
         VolumetricFogPass fogPass;
         HiZPass highZPass;
         BloomPass bloomPass;
@@ -75,6 +76,7 @@ namespace Game5.Game {
         }
 
         private void SetupPasses() {
+            Play = new Play(this);
             using (var passesMarker = new ProfilerMarker("Create Passes").Auto()) {
                 Action updateShadowParameters = () => {
                     basePass.UpdateShadowParameters(shadowPass);
@@ -108,6 +110,9 @@ namespace Game5.Game {
                 gtaoPass = new(scenePasses);
                 gtaoPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
                 gtaoPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
+                volGatherPass = new(scenePasses, Play.ParticleManager);
+                volGatherPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                volGatherPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 fogPass = new(scenePasses);
                 fogPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
                 fogPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
@@ -141,7 +146,6 @@ namespace Game5.Game {
                 scenePasses.AddPass(basePass);
                 scenePasses.AddPass(transPass);
             }
-            Play = new Play(this);
         }
 
         public void SetViewport(RectI gameViewport) {
@@ -212,7 +216,10 @@ namespace Game5.Game {
             renderGraph.BeginPass(deferredPass);
             renderGraph.BeginPass(skyboxPass);
             renderGraph.BeginPass(transPass);
-            if (Play.EnableFog && fogPass != null) renderGraph.BeginPass(fogPass);
+            if (Play.EnableFog && fogPass != null) {
+                //renderGraph.BeginPass(volGatherPass);
+                renderGraph.BeginPass(fogPass);
+            }
 
             // Intercept render to set up jitter offset
             renderGraph.BeginPass(temporalJitter);
@@ -263,7 +270,7 @@ namespace Game5.Game {
                 var pos = mray.ProjectTo(new Plane(Vector3.UnitY, 0f));
 
                 if (item.FilePath.EndsWith(".json")) {
-                    var particleSystem = Play.ParticleManager.RequireSystemFromJSON(item.FilePath);
+                    var particleSystem = Play.ParticleManager.RequireSystemFromJSON(Scene, item.FilePath);
                     if (particleSystem != null) {
                         var emitter = particleSystem.CreateEmitter(pos);
                         var entity = Play.World.CreateEntity(name);

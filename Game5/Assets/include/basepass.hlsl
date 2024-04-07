@@ -54,7 +54,7 @@ BasePassOutput PBROutput(PBRInput input, float3 viewDir = float3(0, 0, 1)) {
     //o.rgb = pow(o.rgb, 4) * 5.0;
 
     output = (BasePassOutput)0;
-    output.BaseColor = float4(input.Albedo, input.Alpha);
+    output.BaseColor = float4(input.Albedo * LuminanceFactor, input.Alpha);
     output.Attributes = float4(OctahedralEncode(input.Normal) * 0.5 + 0.5, input.Roughness, input.Occlusion);
     return output;
 }

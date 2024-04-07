@@ -330,6 +330,33 @@ int D3DResourceCache::GetTextureSRV(ID3D12Resource* buffer,
         }, [&](auto& item) {});
     return result.mData.mRTVOffset;
 }
+int D3DResourceCache::GetBufferSRV(ID3D12Resource* buffer, int offset, int count, int stride, int lockBits) {
+    size_t hash = (size_t)buffer;
+    hash += offset * 123412343 + count * 12341237 + stride * 12345;
+    const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
+        [&](auto& item) {
+            item.mData.mRTVOffset = mCBOffset;
+            mCBOffset += mD3D12.GetDescriptorHandleSizeSRV();
+        },
+        [&](auto& item) {
+            auto device = mD3D12.GetD3DDevice();
+
+            // Create a shader resource view (SRV) for the texture
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            srvDesc.Buffer.FirstElement = offset;
+            srvDesc.Buffer.NumElements = count;
+            srvDesc.Buffer.StructureByteStride = stride;
+            srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+            // Get the CPU handle to the descriptor in the heap
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
+            device->CreateShaderResourceView(buffer, &srvDesc, srvHandle);
+        }, [&](auto& item) {});
+    return result.mData.mRTVOffset;
+}
 void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits) {
     auto device = mD3D12.GetD3DDevice();
     auto size = tex.GetSize();
@@ -690,6 +717,9 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         // Collect constant buffers required by the shaders
         // TODO: Throw an error if different constant buffers
         // are required in the same bind point
+        Identifier cbBinds[32] = { 0 };
+        Identifier rbBinds[32] = { 0 };
+        std::string errors;
         for (auto l : { &vertexShader, &pixelShader }) {
             uint64_t cbMask = 0;
             uint64_t rbMask = 0;
@@ -699,16 +729,25 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
                 uint64_t mask = 1ull << cb.mBindPoint;
                 if (cbMask & mask) throw "Two CBs occupy the same bind point";
                 cbMask |= mask;
+                if (cbBinds[cb.mBindPoint].IsValid() && cbBinds[cb.mBindPoint] != cb.mName)
+                    errors += "CB Col " + cbBinds[cb.mBindPoint].GetName() + " and " + cb.mName.GetName() + "\n";
+                cbBinds[cb.mBindPoint] = cb.mName;
                 pipelineState->mConstantBuffers.push_back(&cb);
             }
             for (auto& rb : l->GetReflection().mResourceBindings) {
                 if (std::any_of(pipelineState->mResourceBindings.begin(), pipelineState->mResourceBindings.end(),
                     [&](auto* o) { return *o == rb; })) continue;
                 uint64_t mask = 1ull << rb.mBindPoint;
-                if (rbMask & mask) throw "Two CBs occupy the same bind point";
+                if (rbMask & mask) throw "Two Res occupy the same bind point";
                 rbMask |= mask;
+                if (rbBinds[rb.mBindPoint].IsValid() && rbBinds[rb.mBindPoint] != rb.mName)
+                    errors += "RB Col " + rbBinds[rb.mBindPoint].GetName() + " and " + rb.mName.GetName() + "\n";
+                rbBinds[rb.mBindPoint] = rb.mName;
                 pipelineState->mResourceBindings.push_back(&rb);
             }
+        }
+        if (!errors.empty()) {
+            MessageBoxA(0, errors.c_str(), "Binding collision", 0);
         }
         break;
     }

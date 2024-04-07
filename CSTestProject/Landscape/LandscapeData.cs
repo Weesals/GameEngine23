@@ -136,12 +136,12 @@ namespace Weesals.Landscape {
             public bool IsInvalid => Data == 0;
             public bool IsValid => Data != 0;
             public short Height {
-                get => (short)((Data - 127) << 6);
-                set => Data = (byte)Math.Clamp((value >> 6) + 127, 0, 255);
+                get => DataToHeight(Data);
+                set => Data = HeightToData(value);
             }
             public override string ToString() { return Data.ToString(); }
-            public static int DataToHeight(int data) { return ((data - 127) << 6); }
-            public static int HeightToData(int height) { return Math.Clamp((height >> 6) + 127, 0, 255); }
+            public static short DataToHeight(int data) { return (short)((data - 127) << 6); }
+            public static byte HeightToData(int height) { return (byte)Math.Clamp((height >> 6) + 127, 0, 255); }
             public static WaterCell Default = new();
         }
 

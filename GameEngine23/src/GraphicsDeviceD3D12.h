@@ -46,6 +46,8 @@ public:
 
     virtual CompiledShader CompileShader(const std::wstring_view& path, const std::string_view& entry,
         const std::string_view& profile, std::span<const MacroValue> macros) override;
+    virtual CompiledShader CompileShader(const std::string_view& source, const std::string_view& entry,
+        const std::string_view& profile) override;
 
     /*const PipelineLayout* RequirePipeline(
         const Shader& vertexShader, const Shader& pixelShader,

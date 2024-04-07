@@ -1,6 +1,8 @@
 #ifndef __LANDSCAPE_COMMON__
 #define __LANDSCAPE_COMMON__
 
+static const float HeightScale = 512.0;
+
 Texture2D<float4> HeightMap : register(t0);
 Texture2D<uint> ControlMap : register(t1);
 

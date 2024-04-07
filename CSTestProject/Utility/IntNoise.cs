@@ -50,7 +50,7 @@ namespace Weesals.Utility {
                     var dst2 = (int)Int2.Dot(delta, delta);
                     if (dst2 >= nearest.Z) continue;
                     nearest.Z = dst2;
-                    nearest.XY = pnt;
+                    nearest.XY = ocell;// pnt;
                 }
             }
             return nearest;

@@ -2,45 +2,11 @@
 
 #define PI 3.14159265359
 
-
-#if 0
-    if (false) {
-        float2 p = input.localPos.xz; // / 12.0;
-        float2 i = floor(p + dot(p, 1.0) * SF2);
-        float2 L = i - dot(i, 1.0) * SG2;
-    
-        float2 d = p - L;
-        float2 o = (d.x > d.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
-        float2 p0 = L;
-        float2 p1 = L + o - SG2;
-        float2 p2 = L + 1.0 - 2.0 * SG2;
-        float2 points[] = { p0, p1, p2 };
-
-        float2 RndVec = float2(10.15, 23.78);
-        float3 rnd = float3(dot(i, RndVec), dot(i + o, RndVec), dot(i + 1, RndVec));
-        rnd = frac(sin(rnd) * 100);
-        Albedo = 0;
-        float3 w = float3(dot(p - p0, p - p0), dot(p - p1, p - p1), dot(p - p2, p - p2));
-        w = max(0.5 - w, 0.0);
-        w = pow(w, 4.0);
-        w /= dot(w, 1);
-        [unroll]
-        for (int j = 0; j < 3; ++j)
-        {
-            float4 control = ControlMap.Load(int3(points[j], 0));
-            float4 tex = GrassTexture.Sample(BilinearSampler, float3(PermuteUV(input.localPos.xz * 0.05, rnd[j]), 0));
-            tex.rgb = lerp(tex.rgb, tex.grb, control.r * 255);
-            Albedo += w[j] * tex.rgb;
-        }
-    }
-#endif
-    
-
-#include "include/common.hlsl"
-#include "include/temporal.hlsl"
-#include "include/lighting.hlsl"
-#include "include/noise.hlsl"
-#include "include/landscapecommon.hlsl"
+#include <common.hlsl>
+#include <temporal.hlsl>
+#include <lighting.hlsl>
+#include <noise.hlsl>
+#include <landscapecommon.hlsl>
 
 cbuffer ConstantBuffer : register(b1) {
     matrix Model;
@@ -48,6 +14,7 @@ cbuffer ConstantBuffer : register(b1) {
     matrix ModelViewProjection;
     matrix InvModelViewProjection;
     matrix Projection;
+    float4 _ZBufferParams;
 }
 
 SamplerState BilinearSampler : register(s1);
@@ -76,6 +43,7 @@ struct PSInput {
 };
 
 PSInput VSMain(VSInput input) {
+    const float WaterHeightScale = 1.0 / HeightScale * (1 << 6);;
     const float Scale = 15;
     PSInput result;
 
@@ -86,7 +54,7 @@ PSInput VSMain(VSInput input) {
     // Sample from the heightmap and offset the vertex
     float4 hcell = HeightMap.Load(int3(worldPos.xz, 0), 0);
     float terrainHeight = _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
-    float waterHeight = (hcell.a * 255 - 127) * 8 / 128;
+    float waterHeight = (hcell.a * 255.0 - 127.0) * WaterHeightScale;
     worldPos.y += waterHeight;
     if (hcell.a == 0) worldPos.y = 0.0f / 0.0f;
     
@@ -135,8 +103,11 @@ void CalculateTerrainTBN(float3 normal, out float3 tangent, out float3 bitangent
 }
 
 float4 PSMain(PSInput input) : SV_TARGET {
+#if defined(NOTHING)
+    return 0.0;
+#endif
     TemporalAdjust(input.worldPos.xz);
-    
+        
     float2 normalizedScreenSpaceUV = input.position.xy / 1024;
     float3 viewDirectionWS = normalize(input.viewPos);
     float3 positionWS = input.worldPos.xyz;
@@ -163,84 +134,98 @@ float4 PSMain(PSInput input) : SV_TARGET {
     const float3 CloudColor = float3(0.8, 0.8, 0.8);
     const float3 GroundColor = float3(0.25, 0.3, 0.1);
     const float3 HorizonColor = float3(.5, .35, .2);
-    const half3 ExtinctCoefs = half3(0.35, 0.09, 0.03) * -15;
-    //const half3 ScatterCoefs = half3(0.007, 0.021, 0.025) * -20;
-    const half3 ScatterCoefs = half3(0.0007, 0.0021, 0.0025) * -15;
+    const half3 ExtinctCoefs = -half3(1.0, 0.5, 0.2) * 3.0;
+    const half3 ScatterCoefs = -half3(0.01, 0.04, 0.04) * 4.0;
     const float3 FoamColor = float3(0.9, 0.9, 0.9);
         
-    const float3 mainLightColor = 0.8;
+    const float3 mainLightColor = _LightColor0;
     
     half3 transmittance = 1;
     half3 inscatter = 0;
 
-    half4 color = 1;
+    half4 color = 0.0;
     
-    float near = Projection._34 / Projection._33;
+    /*float near = Projection._34 / Projection._33;
     float far = Projection._34 / (Projection._33 - 1);
     float4 _ZBufferParams = float2(1 - far / near, far / near).xyxy;
     _ZBufferParams.zw /= far;
+    _ZBufferParams.xy = _ZBufferParams.wz;*/
+    float pixelDepth = input.position.z;
+    float deviceDepth = SceneDepth[input.position.xy].r;
     float opticalDepth = max(0,
-        -1.0 / (_ZBufferParams.z * SceneDepth[input.position.xy].r + _ZBufferParams.w) -
-        -1.0 / (_ZBufferParams.z * input.position.z + _ZBufferParams.w)
+        1.0 / (_ZBufferParams.x + pixelDepth * _ZBufferParams.y) -
+        1.0 / (_ZBufferParams.x + deviceDepth * _ZBufferParams.y)
     );
+    //return float4(frac(opticalDepth) * 0.5, 0, 0, 1);
     transmittance = exp2(opticalDepth * ExtinctCoefs);
 
     half3 scatterLum = (ScatterCoefs / ExtinctCoefs) * mainLightColor;
     inscatter = (scatterLum - scatterLum * transmittance);
+    inscatter = saturate(inscatter);
 
     half3 normal = normalWS;
         //normal.xz *= saturate(opticalDepth / 2);
     normal = normalize(normal);
 
-    half3 viewRefl = reflect(viewDir, normal);
-    half3 ambientRefl = SkyColor;
+    {
+        half3 viewRefl = reflect(viewDir, normal);
+        half3 ambientRefl = SkyColor;
 
-    float2 cloudUV = (positionWS + viewRefl / viewRefl.y * 10).xz / 40;
-    cloudUV.x -= 0.01 * Time;
-    float cloud = NoiseTex.SampleLevel(BilinearSampler, cloudUV, 0).r;
-    cloud = sqrt(saturate(cloud * 5 - 2.5));
-    ambientRefl = lerp(ambientRefl, CloudColor, cloud);
-    ambientRefl = lerp(ambientRefl, HorizonColor, pow(saturate(1 - viewRefl.y), 1));
-    ambientRefl = lerp(ambientRefl, GroundColor, saturate(-viewRefl.y));
+        float2 cloudUV = (positionWS + viewRefl / viewRefl.y * 10).xz / 40;
+        cloudUV.x -= 0.01 * Time;
+        float cloud = NoiseTex.SampleLevel(BilinearSampler, cloudUV, 0).r;
+        cloud = sqrt(saturate(cloud * 5 - 2.5));
+        ambientRefl = lerp(ambientRefl, CloudColor, cloud);
+        ambientRefl = lerp(ambientRefl, HorizonColor, pow(saturate(1 - viewRefl.y), 1));
+        ambientRefl = lerp(ambientRefl, GroundColor, saturate(-viewRefl.y));
     
-    //return float4(cloud.xxx, 1.0);
+        //return float4(cloud.xxx, 1.0);
     
 #if defined(_ISEDGE)
-    ambientRefl = 0;
+        ambientRefl = 0;
 #endif
+        
+        float fresnel = lerp(0.04, 1.0, pow(1.0 - max(0.0, dot(-viewDir, normal)), 4.0));
+        inscatter += ambientRefl * (fresnel * saturate(opticalDepth * 5));
+        refrUV += (refract(viewDir, normal, 1 / 1.3) - viewDir).xz * (opticalDepth * 0.03);
+        //return float4(inscatter, 1);
+    }
 
-    float fresnel = lerp(0.04, 1.0, pow(1.0 - max(0.0, dot(-viewDir, normal)), 4.0));
-    inscatter += ambientRefl * (fresnel * saturate(opticalDepth * 5));
+    {
+        float2 foamUv = positionWS.xz / 10;
+        float foamI = saturate(1 - waterDepth * 3) * 1.2;
+        // Swish foam in deep waters
+        foamUv += sin(foamUv.yx * 20 + Time * 0.5) * 0.05 * waterDepth;
 
-    refrUV += (refract(viewDir, normal, 1 / 1.3) - viewDir).xz * (opticalDepth * 0.03);
-
-    float2 foamUv = positionWS.xz / 10;
-    float foamI = saturate(1 - waterDepth * 3) * 1.2;
-    // Swish foam in deep waters
-    foamUv += sin(foamUv.yx * 20 + Time * 0.5) * 0.05 * waterDepth;
-
-    float foam = foamI;
-    // Animate by flipping 3 frames toward shore
-    half3 fweights = saturate(1 - abs(
-        frac(Time * 0.3 - foam * 1 - float3(0, 0.333, 0.666)) - 0.5
-    ) * 3);
-    // Reduce animation near shoreline
-    fweights = lerp(fweights, 0.333, saturate(1 - waterDepth * 5) * 0.5);
-    // Apply frames to foam intensity
-    half3 foamMask = FoamTex.Sample(BilinearSampler, foamUv);
-    foam += dot(foamMask, fweights) - 1;
-    // Fade out foam at shore
-    foam -= saturate(0.75 - opticalDepth * 15);
-    foam = saturate(foam);
-    //foam += (1.0 - normal.y) * 5;
-    inscatter += foam * FoamColor;
-    transmittance *= 1 - foam;
+        float foam = foamI;
+        // Animate by flipping 3 frames toward shore
+        half3 fweights = saturate(1 - abs(
+            frac(Time * 0.3 - foam * 1 - float3(0, 0.333, 0.666)) - 0.5
+        ) * 3);
+        // Reduce animation near shoreline
+        fweights = lerp(fweights, 0.333, saturate(1 - waterDepth * 5) * 0.5);
+        // Apply frames to foam intensity
+        half3 foamMask = FoamTex.Sample(BilinearSampler, foamUv).rgb;
+        foam += dot(foamMask, fweights) - 1;
+        // Fade out foam at shore
+        foam -= saturate(0.75 - opticalDepth * 15);
+        foam = saturate(foam);
+        //foam += (1.0 - normal.y) * 5;
+        inscatter += foam * FoamColor;
+        transmittance *= 1 - foam;
+    }
     //inscatter *= SampleMainLightCookie(positionWS);
     
     //color.rgb = SampleSceneColor(refrUV);
 
     color.rgb *= transmittance;
-    color.rgb += inscatter;
+    color.rgb += inscatter * LuminanceFactor;
+    
+#if defined(TRANSMITTANCE)
+    return float4(transmittance.rgb, 1.0);
+#elif defined(SCATTER)
+    return float4(color.rgb, 1.0);
+#endif
     
     return float4(color.rgb, 1 - transmittance.g);
 }

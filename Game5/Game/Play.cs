@@ -121,7 +121,7 @@ namespace Game5.Game {
                     new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/T_DirtyMoss_BaseColor.png", NormalMap = "./Assets/T_DirtyMoss_Normal.jpg", },
                     new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/T_Moss_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
-                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.jpg", NormalMap = "./Assets/T_Tiles_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.Random90, Scale = 0.25f, },
+                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.png", NormalMap = "./Assets/T_Tiles_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.Random90, Scale = 0.25f, },
                     new LandscapeLayer("TL_WaterFloor") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
@@ -173,10 +173,10 @@ namespace Game5.Game {
             }
 
 
-            if (false) {
+            /*if (false) {
                 var stParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/StressTest.json");
                 stParticles.CreateEmitter(new Vector3(0f, 0f, -5f));
-            }
+            }*/
 
             GameRoot.RegisterEditable(this, true);
         }

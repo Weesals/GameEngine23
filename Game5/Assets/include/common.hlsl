@@ -3,6 +3,8 @@
 
 #define PI 3.14159265359
 
+static const float LuminanceFactor = 0.25;
+
 // Gather Orders (BL, BR, TL, TR)
 #define GatherOrderIntel uint4(1, 0, 2, 3)
 #define GatherOrderNvidia uint4(3, 2, 0, 1)

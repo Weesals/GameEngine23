@@ -64,7 +64,7 @@ float4 PSMain(PSInput input) : SV_Target {
     }
 
     
-    float3 Albedo = SceneColor.Sample(BilinearSampler, input.uv).rgb;
+    float3 Albedo = SceneColor.Sample(BilinearSampler, input.uv).rgb * (1.0 / LuminanceFactor);
     float4 Attributes = SceneAttri.Sample(BilinearSampler, input.uv);
     float3 normal = OctahedralDecode(Attributes.xy * 2.0 - 1.0);
     //return float4(Albedo, 1);
@@ -93,7 +93,7 @@ float4 PSMain(PSInput input) : SV_Target {
     float3 bentNormal = OctahedralDecode(AmbientOcclusion.xy * 2.0 - 1.0);
     
     //if(input.uv.x < 0.5) return float4(bentNormal * 0.5 + 0.5, 1.0);
-    //return float4(normal * 0.5 + 0.5, 1.0);
+    //return float4((normal * 0.5 + 0.5) * LuminanceFactor, 1.0);
     bentNormal = normal;
     
     // The light
@@ -111,6 +111,8 @@ float4 PSMain(PSInput input) : SV_Target {
     // Indirect
     o += ComputeIndiret(Albedo, specular,
         bentNormal, roughness, metallic, -viewDir) * occlusion;
+    
+    o *= LuminanceFactor;
         
     //o.rgb *= 1.0f - input.Emissive.a;
     //o.rgb += input.Emissive.rgb;

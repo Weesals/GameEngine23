@@ -318,6 +318,8 @@ public:
 
     virtual CompiledShader CompileShader(const std::wstring_view& path, const std::string_view& entry,
         const std::string_view& profile, std::span<const MacroValue> macros) { return { }; }
+    virtual CompiledShader CompileShader(const std::string_view& source, const std::string_view& entry,
+        const std::string_view& profile) { return { }; }
 
     // Calculate which PSO this draw call would land in
     //const PipelineLayout* RequirePipeline(std::span<const BufferLayout*> bindings, std::span<const Material*> materials);

@@ -1,6 +1,8 @@
 {
   "RenderState": {
-    "Texture": "./Assets/ParticleAtlas.png"
+    "Texture": "./Assets/ParticleAtlas.png",
+    //"RenderTag": "Volumetric",
+    //"ShaderTemplate": "./Assets/templates/ParticleTemplateVolumetric.hlsl"
   },
   "Metadata": {
     "SpawnRate": 10,
@@ -48,7 +50,7 @@
   "ParticlePixel": [
     {
       "name": "Opacity",
-      "Opacity": "0.25 * (1.0 - pow(NormalizedAge, 2.0))"
+      "Opacity": "0.2 * (1.0 - pow(NormalizedAge, 2.0))"
     },
     {
       "name": "UVAtlas",

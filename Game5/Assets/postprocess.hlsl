@@ -1,3 +1,4 @@
+#include <common.hlsl>
 
 SamplerState BilinearSampler : register(s1);
 SamplerState BilinearClampedSampler : register(s6);
@@ -68,11 +69,22 @@ float4 PSMain(PSInput input) : SV_TARGET {
         //blur *= 1.2;
         blur += float4(BloomChain.SampleBias(BilinearClampedSampler, input.uv, i * 2.0 + 0.5).rgb, 1.0);
     }
+    blur = float4(BloomChain.SampleBias(BilinearClampedSampler, input.uv, 0.0).rgb, 1.0);
     //blur /= blur.a;
     blur /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
+    
+    sceneColor *= 1.0 / LuminanceFactor;
+    //blur *= 1.0 / LuminanceFactor;
+    
     const float Intensity = 0.0;
     //return float4(blur.rgb * 1.0, Intensity);
     sceneColor.rgb += blur.rgb;
     sceneColor.rgb = Tonemap_Uchimura(sceneColor.rgb * 1.2);
+    input.uv -= 0.5;
+    input.uv *= 2.0;
+    //sceneColor.rgb = abs((1 - abs(input.uv.x)) * (1 - abs(input.uv.y)));
+    //float d = saturate(1 - dot(input.uv, input.uv));
+    //sceneColor.rgb = d * d;
+    //sceneColor.rgb = exp(-dot(input.uv, input.uv));
     return float4(sceneColor.rgb, 1.0);
 }

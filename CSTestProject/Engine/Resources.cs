@@ -92,10 +92,6 @@ namespace Weesals.Engine {
     }
 
     public class Resources {
-        public struct LoadedShader {
-            public string FilePath;
-            public CompiledShader Shader;
-        }
         public struct LoadedResource {
             public IAssetImporter Importer;
             public ulong ResourceId;
@@ -104,6 +100,8 @@ namespace Weesals.Engine {
         static Dictionary<string, Sprite> loadedSprites = new();
 
         static Dictionary<ulong, Model> loadedModels = new();
+        static Dictionary<ulong, PreprocessedShader> preprocessedShader = new();
+        static Dictionary<ulong, Material> loadedMaterials = new();
         static Dictionary<ulong, CompiledShader> loadedShaders = new();
         static Dictionary<ulong, CompiledShader> uniqueShaders = new();
         static Dictionary<ulong, Font> loadedFonts = new();
@@ -180,7 +178,9 @@ namespace Weesals.Engine {
         public static Model LoadModel(string path, out JobHandle handle) {
             handle = default;
             var pathHash = ResourceKey.GeneratePathHash(path);
-            if (!loadedModels.TryGetValue(pathHash, out var model)) {
+            if (loadedModels.TryGetValue(pathHash, out var model)) return model;
+            lock (loadedModels) {
+                if (loadedModels.TryGetValue(pathHash, out model)) return model;
                 model = FBXImporter.Import(path, out handle);
                 loadedModels.Add(pathHash, model);
             }
@@ -197,11 +197,27 @@ namespace Weesals.Engine {
         unsafe public static Font LoadFont(string path) {
             var pathHash = ResourceKey.GeneratePathHash(path);
             if (loadedFonts.TryGetValue(pathHash, out var font)) return font;
-            var key = ResourceKey.CreateFileKey(path, "font");
-            font = fontImporter.LoadAsset(key);
-            loadedFonts.Add(pathHash, font);
-            RegisterLoadedAsset(key, fontImporter, 0);
+            lock (loadedFonts) {
+                if (loadedFonts.TryGetValue(pathHash, out font)) return font;
+                var key = ResourceKey.CreateFileKey(path, "font");
+                font = fontImporter.LoadAsset(key);
+                loadedFonts.Add(pathHash, font);
+                RegisterLoadedAsset(key, fontImporter, 0);
+            }
             return font;
+        }
+
+        public static CSTexture LoadTexture(string path, BufferFormat format = BufferFormat.FORMAT_BC1_UNORM) {
+            var pathHash = ResourceKey.GeneratePathHash(path);
+            if (loadedTextures.TryGetValue(pathHash, out var texture)) return texture;
+            lock (loadedTextures) {
+                if (loadedTextures.TryGetValue(pathHash, out texture)) return texture;
+                var key = ResourceKey.CreateFileKey(path, "tex");
+                texture = textureImporter.LoadAsset(key, format);
+                loadedTextures.Add(pathHash, texture);
+                RegisterLoadedAsset(key, textureImporter, 0);
+            }
+            return texture;
         }
 
         public static CSTexture TryLoadTexture(string name) {
@@ -231,19 +247,36 @@ namespace Weesals.Engine {
             return true;
         }
 
-        public static CSTexture LoadTexture(string path, BufferFormat format = BufferFormat.FORMAT_BC1_UNORM) {
-            var pathHash = ResourceKey.GeneratePathHash(path);
-            if (loadedTextures.TryGetValue(pathHash, out var texture)) return texture;
-            lock (loadedTextures) {
-                if (loadedTextures.TryGetValue(pathHash, out texture)) return texture;
-                var key = ResourceKey.CreateFileKey(path, "tex");
-                texture = textureImporter.LoadAsset(key, format);
-                loadedTextures.Add(pathHash, texture);
-                RegisterLoadedAsset(key, textureImporter, 0);
+        public static Material LoadMaterial(string shaderPath) {
+            ulong hash = shaderPath.ComputeStringHash();
+            if (loadedMaterials.TryGetValue(hash, out var material)) return material;
+            lock (loadedMaterials) {
+                if (loadedMaterials.TryGetValue(hash, out material)) return material;
+                var source = RequirePreprocessedShader(shaderPath, default);
+                material = new Material();
+                material.SetVertexShader(LoadShader(shaderPath, "VSMain"));
+                material.SetPixelShader(LoadShader(shaderPath, "PSMain"));
+                loadedMaterials.Add(hash, material);
+                return material;
             }
-            return texture;
         }
-
+        unsafe public static PreprocessedShader RequirePreprocessedShader(string shaderPath, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
+            // TODO: Cache in 'shader'
+            ulong hash = shaderPath.ComputeStringHash();
+            foreach (var macro in macros) {
+                var macroHash = (((ulong)macro.Key.GetStableHash() * 1254739) ^ ((ulong)macro.Value.GetStableHash() * 37139213));
+                macroHash ^= macroHash >> 13;
+                hash += macroHash;
+            }
+            if (preprocessedShader.TryGetValue(hash, out var preprocessed)) return preprocessed;
+            lock (preprocessedShader) {
+                if (preprocessedShader.TryGetValue(hash, out preprocessed)) return preprocessed;
+                var key = ResourceKey.CreateFileKey(shaderPath, "preprocess", hash);
+                preprocessed = shaderImporter.PreprocessShader(shaderPath, macros);
+                preprocessedShader.Add(hash, preprocessed);
+            }
+            return preprocessed;
+        }
         unsafe public static CompiledShader RequireShader(CSGraphics graphics, Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass) {
             if (shader == null) return null;
 
@@ -264,7 +297,7 @@ namespace Weesals.Engine {
 
                 // Deduplicate
                 var compiledHash = (ulong)compiledshader.GetHashCode();
-                if (uniqueShaders.TryAdd(compiledHash, compiledshader)) {
+                if (!uniqueShaders.TryAdd(compiledHash, compiledshader)) {
                     compiledshader = uniqueShaders[compiledHash];
                 }
                 compiledshader.ReferenceCount++;
@@ -276,13 +309,13 @@ namespace Weesals.Engine {
             return compiledshader;
         }
 
+
         private static void RegisterLoadedAsset(ResourceKey key, IAssetImporter importer, ulong hash) {
             Trace.Assert(loadedResources.TryAdd(key, new LoadedResource() {
                 Importer = importer,
                 ResourceId = hash,
             }), "Failed to add resource, might be hash collision");
         }
-
         public static void ReloadAssets() {
             var invalidated = new PooledList<ResourceKey>();
             foreach (var kv in loadedResources) {
@@ -312,6 +345,5 @@ namespace Weesals.Engine {
             }
             invalidated.Dispose();
         }
-
     }
 }

@@ -251,8 +251,7 @@ public:
         }
     }
     // Clear the screen
-    void ClearRenderTarget(const ClearConfig& clear) override
-    {
+    void ClearRenderTarget(const ClearConfig& clear) override {
         auto& cache = mDevice->GetResourceCache();
         CD3DX12_RECT clearRect((LONG)mViewportRect.x, (LONG)mViewportRect.y,
             (LONG)(mViewportRect.x + mViewportRect.width), (LONG)(mViewportRect.y + mViewportRect.height));
@@ -367,8 +366,16 @@ public:
             if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
                 assert(resource->mType == BufferReference::BufferTypes::Buffer);
                 auto* rbinding = cache.GetBinding((uint64_t)resource->mBuffer);
-                assert(rbinding != nullptr); // "Did you call CopyBufferData on this resource?");
-                srvOffset = rbinding->mSRVOffset;
+                assert(rbinding != nullptr); // Did you call CopyBufferData on this resource?
+                if (resource->mSubresourceCount != 0) {
+                    int count = rbinding->mCount - resource->mSubresourceId;
+                    if (resource->mSubresourceCount != -1) count = resource->mSubresourceCount;
+                    srvOffset = cache.GetBufferSRV(rbinding->mBuffer.Get(),
+                        resource->mSubresourceId, count, rbinding->mStride, mFrameHandle);
+                }
+                else {
+                    srvOffset = rbinding->mSRVOffset;
+                }
             }
             else {
                 if (resource->mType == BufferReference::BufferTypes::RenderTarget) {
@@ -381,7 +388,8 @@ public:
                         surface->RequireState(mDelayedBarriers, mDevice->GetResourceCache().mBarrierStateManager,
                             barrierState, -1);
                         //srvOffset = surface->mSRVOffset;
-                        auto viewFmt = surface->mFormat;
+                        auto viewFmt = (DXGI_FORMAT)resource->mFormat;
+                        if (viewFmt == DXGI_FORMAT_UNKNOWN) viewFmt = surface->mFormat;
                         if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
                         if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
                         if (viewFmt == DXGI_FORMAT_D16_UNORM) viewFmt = DXGI_FORMAT_R16_UNORM;
@@ -503,19 +511,9 @@ CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
 
 CompiledShader GraphicsDeviceD3D12::CompileShader(const std::wstring_view& path, const std::string_view& entry,
     const std::string_view& profile, std::span<const MacroValue> macros) {
-    CompiledShader compiled;
-    bool wasCreated = false;
-    DxcDefine d3dMacros[128];
-    auto count = std::min(macros.size(), _countof(d3dMacros) - 1);
-    for (int m = 0; m < count; ++m) {
-        d3dMacros[m] = DxcDefine{
-            .Name = macros[m].mName.GetWName().c_str(),
-            .Value = macros[m].mValue.GetWName().c_str(),
-        };
-    }
-    d3dMacros[count] = { };
     D3DShader d3dshader;
-    d3dshader.CompileFromFile(path.data(), entry.data(), profile.data(), d3dMacros);
+    d3dshader.CompileFromFile(path.data(), entry.data(), profile.data(), macros);
+    CompiledShader compiled;
     int size = (int)d3dshader.mShader->GetBufferSize();
     auto blob = compiled.AllocateBuffer(size);
     std::memcpy(blob.data(), d3dshader.mShader->GetBufferPointer(), size);
@@ -523,35 +521,15 @@ CompiledShader GraphicsDeviceD3D12::CompileShader(const std::wstring_view& path,
     compiled.GetReflection() = d3dshader.mReflection;
     return compiled;
 }
-
-/*const PipelineLayout* GraphicsDeviceD3D12::RequirePipeline(
-    const Shader& vertexShader, const Shader& pixelShader,
-    const MaterialState& materialState, std::span<const BufferLayout*> bindings,
-    std::span<const MacroValue> macros, const IdentifierWithName& renderPass
-)
-{
-    CheckDeviceState();
-
-    InplaceVector<DXGI_FORMAT> fbFormats;
-    //fbFormats.push_back(mPrimarySurface.GetFrameBuffer().mFormat);
-    auto pipelineState = mCache.RequirePipelineState(vertexShader, pixelShader, materialState, bindings, macros, renderPass,
-        fbFormats, DXGI_FORMAT_D24_UNORM_S8_UINT);
-    if (pipelineState->mLayout == nullptr)
-    {
-        pipelineState->mLayout = std::make_unique<PipelineLayout>();
-        pipelineState->mLayout->mRenderPass = renderPass;
-        pipelineState->mLayout->mRootHash = (size_t)pipelineState->mRootSignature;
-        pipelineState->mLayout->mPipelineHash = pipelineState->mPipelineState != nullptr ? (size_t)pipelineState : 0;
-        pipelineState->mLayout->mConstantBuffers = pipelineState->mConstantBuffers;
-        pipelineState->mLayout->mResources = pipelineState->mResourceBindings;
-        for (auto& b : bindings) pipelineState->mLayout->mBindings.push_back(b);
-    }
-    return pipelineState->mLayout.get();
-}*/
-
-// Flip the backbuffer and wait until a frame is available to be rendered
-/*void GraphicsDeviceD3D12::Present() {
-    int disposedFrame = mPrimarySurface.Present();
-    mCache.UnlockFrame((size_t)&mPrimarySurface + disposedFrame);
+CompiledShader GraphicsDeviceD3D12::CompileShader(const std::string_view& source, const std::string_view& entry,
+    const std::string_view& profile) {
+    D3DShader d3dshader;
+    d3dshader.CompileFromSource(source, entry.data(), profile.data());
+    if (d3dshader.mShader == nullptr) return { };
+    CompiledShader compiled;
+    int size = (int)d3dshader.mShader->GetBufferSize();
+    auto blob = compiled.AllocateBuffer(size);
+    std::memcpy(blob.data(), d3dshader.mShader->GetBufferPointer(), size);
+    compiled.GetReflection() = d3dshader.mReflection;
+    return compiled;
 }
-*/

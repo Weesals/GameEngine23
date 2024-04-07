@@ -8,6 +8,7 @@
 
 cbuffer ConstantBuffer : register(b1) {
     matrix ModelView;
+    matrix InvModelView;
     matrix ModelViewProjection;
 }
 
@@ -66,13 +67,10 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
 void PSMain(PSInput input, out BasePassOutput result) {    
     PBRInput pbrInput = PBRDefault();
         
-#if EDGE
-    TemporalAdjust(input.uv.xy);
-    pbrInput.Albedo = EdgeTex.Sample(AnisotropicSampler, input.uv.xy).rgb;
-    pbrInput.Albedo = lerp(pbrInput.Albedo, 1, pow(1 - saturate(input.uv.z - input.positionOS.y), 4) * 0.25);
-#else
+    [loop] for(int i = 0; i < 50; ++i)
+    {
     TemporalAdjust(input.positionOS.xz);
-    SampleContext context = { BaseMaps, BumpMaps, input.positionOS };
+    SampleContext context = { BaseMaps, BumpMaps, input.positionOS, float2(0, 0), float3(0, 1, 0), };
     Triangle tri = ComputeTriangle(context.WorldPos.xz);
     
     // Dont know why this requires /(size+1)
@@ -97,7 +95,7 @@ void PSMain(PSInput input, out BasePassOutput result) {
         t2 = SampleTerrain(context, DecodeControlMap(cp.z));
         ++complexity;
     }
-        
+
     half3 bc = tri.BC;
     bc = ApplyHeightBlend(bc, half3(t0.Height, t1.Height, t2.Height));
     pbrInput.Albedo = (t0.Albedo * bc.x + t1.Albedo * bc.y + t2.Albedo * bc.z);
@@ -105,17 +103,16 @@ void PSMain(PSInput input, out BasePassOutput result) {
     pbrInput.Metallic = (t0.Metallic * bc.x + t1.Metallic * bc.y + t2.Metallic * bc.z);
     pbrInput.Roughness = (t0.Roughness * bc.x + t1.Roughness * bc.y + t2.Roughness * bc.z);
     float height = (t0.Height * bc.x + t1.Height * bc.y + t2.Height * bc.z);
-                
+    }
+
     pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
         
     float3x3 tbn = { float3(0, 0, 0), float3(0, 0, 0), normalize(input.normalOS), };
     CalculateTerrainTBN(tbn[2], tbn[0], tbn[1]);
     pbrInput.Normal = mul(pbrInput.Normal, tbn);
-#endif
-    
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);
-        
+    
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
     result = PBROutput(pbrInput, viewDir);

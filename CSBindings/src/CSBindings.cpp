@@ -7,6 +7,8 @@
 #include <Containers.h>
 #include <ui/font/FontRenderer.h>
 #include <WindowBase.h>
+#include <D3DShader.h>
+#undef CreateWindow
 
 #include <algorithm>
 #include <iterator>
@@ -14,6 +16,12 @@
 #include <iostream>
 
 #include "CSBindings.h"
+
+class PreprocessedShader {
+public:
+	std::string mSource;
+	std::vector<std::string> mIncludedFiles;
+};
 
 template<typename T>
 void increment_shared(const std::shared_ptr<T>& ptr) {
@@ -326,6 +334,20 @@ CSSpan CSPipeline::GetBindings(const NativePipeline* pipeline) {
 	return MakeSpan(pipeline->mBindings);
 }
 
+CSString8 CSPreprocessedShader::GetSource(const PreprocessedShader* shader) {
+	return CSString8(shader->mSource.c_str(), (int)shader->mSource.size());
+}
+int CSPreprocessedShader::GetIncludeFileCount(const PreprocessedShader* shader) {
+	return (int)shader->mIncludedFiles.size();
+}
+CSString8 CSPreprocessedShader::GetIncludeFile(const PreprocessedShader* shader, int id) {
+	const std::string& include = shader->mIncludedFiles[id];
+	return CSString8(include.c_str(), (int)include.size());
+}
+void CSPreprocessedShader::Dispose(PreprocessedShader* shader) {
+	if (shader != nullptr) delete shader;
+}
+
 NativeCompiledShader* CSCompiledShader::_Create(CSIdentifier name, int byteSize, int cbcount, int rbcount) {
 	static_assert(sizeof(ShaderBase::UniformValue) == 4 * 4);
 	static_assert(sizeof(ShaderBase::ConstantBuffer) == 24);
@@ -383,10 +405,22 @@ void CSGraphics::SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets,
 	}
 	graphics->mCmdBuffer.SetRenderTargets(nativeTargets, RenderTargetBinding(depthTarget.mTarget, depthTarget.mMip, depthTarget.mSlice));
 }
-const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, CSString path, CSString entry, CSIdentifier identifier, CSSpan macros) {
-	return new NativeCompiledShader(graphics->mCmdBuffer.GetGraphics()->CompileShader(
-		ToWString(path), AllocString(entry), Identifier(identifier.mId).GetName().c_str(),
-		std::span<const MacroValue>((const MacroValue*)macros.mData, macros.mSize)));
+PreprocessedShader* CSGraphics::PreprocessShader(CSString path, CSSpan macros) {
+	size_t data[sizeof(std::string) / sizeof(size_t) + 1];
+	std::string& source = *new(data) std::string;
+	std::vector<std::string> includedFiles;
+	source = D3DShader::PreprocessFile(ToWString(path), std::span<const MacroValue>((const MacroValue*)macros.mData, macros.mSize), &includedFiles);
+	auto shader = new PreprocessedShader();
+	shader->mSource = std::move(source);
+	shader->mIncludedFiles = std::move(includedFiles);
+	return shader;
+}
+const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier profile) {
+	auto compiledShader = graphics->mCmdBuffer.GetGraphics()->CompileShader(
+		std::string_view(source.mBuffer, source.mSize), AllocString(entry),
+		Identifier(profile.mId).GetName().c_str());
+	if (compiledShader.GetBinary().empty()) return nullptr;
+	return new NativeCompiledShader(compiledShader);
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
 	NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
@@ -446,8 +480,9 @@ void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bind
 void CSGraphics::Reset(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Reset();
 }
-void CSGraphics::Clear(NativeGraphics* graphics) {
-	graphics->mCmdBuffer.ClearRenderTarget(ClearConfig(Color(0, 0, 0, 0), 1.0f));
+void CSGraphics::Clear(NativeGraphics* graphics, CSClearConfig clear) {
+	//(Color(0, 0, 0, 0), 1.0f)
+	graphics->mCmdBuffer.ClearRenderTarget((const ClearConfig&)clear);
 }
 void CSGraphics::Execute(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Execute();

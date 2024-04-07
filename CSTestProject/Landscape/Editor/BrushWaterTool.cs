@@ -71,14 +71,14 @@ namespace Weesals.Landscape.Editor {
 
                 //Context.GetService<MapMakerUndoStack>().RecordLandscape(it.RangeRect);
 
-                var floorHeight = !invert ? surfaceHeight - WaterDepth : surfaceHeight - WaterHeightDelta;
+                var floorHeight = surfaceHeight - (!invert ? WaterDepth : WaterHeightDelta);
                 UXLandscapeCliffTool.ExtrudeCliffArea(LandscapeData, itSml, floorHeight, null, ref changed);
 
                 if (!invert) {
                     BrushWaterTool.PaintWater(LandscapeData, it, (int)(surfaceHeight * LandscapeData.HeightScale), ref changed);
                     BrushWaterTool.StyleWater(LandscapeData, it, (int)(PaintFloorHeight * LandscapeData.HeightScale), (int)(PaintFringeHeight * LandscapeData.HeightScale), WaterFloorTypeName, WaterFringeTypeName, ref changed);
                 }
-                BrushWaterTool.RepairWaterArea(LandscapeData, it, ref changed);
+                //BrushWaterTool.RepairWaterArea(LandscapeData, it, ref changed);
 
                 // Update terrain dependencies
                 if (changed.HasChanges) LandscapeData.NotifyLandscapeChanged(changed);
@@ -89,15 +89,18 @@ namespace Weesals.Landscape.Editor {
 
         public static void PaintWater(LandscapeData landscapeData, TileIterator it, int surfaceHeight, ref LandscapeChangeEvent changed) {
             var waterMap = landscapeData.GetRawWaterMap();
+            if (waterMap == null) return;
             var heightMap = landscapeData.GetRawHeightMap();
             Int2 changeMin = int.MaxValue;
             Int2 changeMax = int.MinValue;
+            byte waterHeightData = LandscapeData.WaterCell.HeightToData(surfaceHeight);
             for (int y = it.RangeMin.Y; y <= it.RangeMax.Y; y++) {
                 for (int x = it.RangeMin.X; x <= it.RangeMax.X; x++) {
                     var terrainPos = new Int2(x, y);
+                    if (!it.GetIsInRange(terrainPos)) continue;
                     var terrainIndex = it.Sizing.ToIndex(terrainPos);
-                    var dstL = it.GetNormalizedDistance(terrainPos);
-                    if (dstL >= 0.99f) continue;
+                    ref var waterCell = ref waterMap[terrainIndex];
+                    if (waterCell.Data == waterHeightData) continue;
                     var minHeight = int.MaxValue;
                     for (int dy = -1; dy <= 1; dy++) {
                         for (int dx = -1; dx <= 1; dx++) {
@@ -107,7 +110,7 @@ namespace Weesals.Landscape.Editor {
                         }
                     }
                     if (minHeight >= surfaceHeight) continue;
-                    waterMap[terrainIndex] = new LandscapeData.WaterCell() { Height = (short)surfaceHeight, };
+                    waterCell = new LandscapeData.WaterCell() { Data = waterHeightData, };
                     changeMin = Int2.Min(changeMin, terrainPos);
                     changeMax = Int2.Max(changeMax, terrainPos);
                 }

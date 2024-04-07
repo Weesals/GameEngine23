@@ -48,6 +48,12 @@ namespace Weesals.Engine {
             MemoryMarshal.AsBytes(data).CopyTo(outBytes);
             return outBytes;
         }
+        public void ClearValue(CSIdentifier identifier) {
+            var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
+            if (index >= 0) {
+                ArrayExt.RemoveAt(ref Items, ref itemCount, index);
+            }
+        }
         public int GetItemIndex(CSIdentifier identifier) {
             var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
             if (index < 0) return -1;
@@ -262,11 +268,15 @@ namespace Weesals.Engine {
         public Material(Material parent) : this() {
             if (parent != null) InheritProperties(parent);
         }
-        public Material(Shader vert, Shader pix) : this() {
+        public Material(Shader vert, Shader pix, Material? parent = null) : this() {
             SetVertexShader(vert);
             SetPixelShader(pix);
+            if (parent != null) InheritProperties(parent);
         }
-        public Material(string path, Material parent = null) : this(Resources.LoadShader(path, "VSMain"), Resources.LoadShader(path, "PSMain")) {
+        public Material(string path, Material parent = null) {
+            //: this(Resources.LoadShader(path, "VSMain"), Resources.LoadShader(path, "PSMain")) 
+            var material = Resources.LoadMaterial(path);
+            if (material != null) InheritProperties(material);
             if (parent != null) InheritProperties(parent);
         }
         public ref Parameters GetParametersRaw() { return ref Parameters; }
@@ -299,6 +309,9 @@ namespace Weesals.Engine {
         public void SetMacro(CSIdentifier name, CSIdentifier v) {
             Macros.SetValue(name, new ReadOnlySpan<CSIdentifier>(ref v));
             MarkChanged();
+        }
+        public void ClearMacro(CSIdentifier name) {
+            Macros.ClearValue(name);
         }
 
         public Span<byte> SetArrayValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
@@ -485,6 +498,10 @@ namespace Weesals.Engine {
                 var p = context.GetUniform<Matrix4x4>(iPMat);
                 return Matrix4x4.Invert(p, out var result) ? result : default;
             });
+            SetComputedUniform<Matrix4x4>("InvModelView", (ref ComputedContext context) => {
+                var mv = context.GetUniform<Matrix4x4>(iMVMat);
+                return Matrix4x4.Invert(mv, out var result) ? result : default;
+            });
             SetComputedUniform<Matrix4x4>("InvViewProjection", (ref ComputedContext context) => {
                 var vp = context.GetUniform<Matrix4x4>(iVPMat);
                 return Matrix4x4.Invert(vp, out var result) ? result : default;
@@ -505,6 +522,13 @@ namespace Weesals.Engine {
                 var view = context.GetUniform<Matrix4x4>(iVMat);
                 //Matrix4x4.Invert(view, out view);
                 return Vector3.TransformNormal(Vector3.UnitY, view);
+            });
+            SetComputedUniform<Vector4>("_ZBufferParams", (ref ComputedContext context) => {
+                var proj = context.GetUniform<Matrix4x4>(iPMat);
+                float near = Math.Abs(proj.M43 / proj.M33);
+                float far = Math.Abs(proj.M43 / (proj.M33 - 1));
+                Vector2 ZBufferParams = new(1.0f / far - 1.0f / near, 1.0f / near);
+                return new Vector4(ZBufferParams, ZBufferParams.X / ZBufferParams.Y, 1.0f / ZBufferParams.Y);
             });
         }
 

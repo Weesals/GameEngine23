@@ -28,6 +28,7 @@ Original code was translated and adapted for ShaderToy by P.Z.
 */
 
 #include <common.hlsl>
+#include <noise.hlsl>
 
 static const float _Exposure = 1.0;
 static const float3 _GroundColor = float3(.40, .39, .38);
@@ -179,5 +180,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float3 ro = float3(0., 0., 0.);
     float3 rd = directionVector.xyz;
     
-    return ProceduralSkybox(ro, rd);
+    float4 r = ProceduralSkybox(ro, rd);
+    r.rgb *= LuminanceFactor;
+    r.rgb += PermuteV2(input.position.xy) * 0.005 - 0.5 * 0.005;
+    return r;
 }

@@ -114,9 +114,19 @@ namespace Weesals.Engine {
             }
         }
     }
+    public class PreprocessedShader {
+
+        public CSPreprocessedShader NativePreprocessed;
+
+        public PreprocessedShader(CSPreprocessedShader preprocessed) {
+            NativePreprocessed = preprocessed;
+        }
+
+    }
     public class CompiledShader {
 
         public byte[] CompiledBlob;
+        public string[] IncludeFiles;
         private int dataHash;
 
         public ShaderReflection Reflection;

@@ -95,9 +95,9 @@ namespace Navigation {
 
         public struct VertexMutator {
             public readonly NavMesh2Baker NavBaker;
-            internal SparseArray<Coordinate> corners => NavBaker.corners;
-            internal MultiHashMap<int, int> vertIdByHash => NavBaker.vertIdByHash;
-            internal ref PooledList<ushort> triIdByVert => ref NavBaker.triIdByVert;
+            private SparseArray<Coordinate> corners => NavBaker.corners;
+            private MultiHashMap<int, int> vertIdByHash => NavBaker.vertIdByHash;
+            private ref PooledList<ushort> triIdByVert => ref NavBaker.triIdByVert;
             public VertexMutator(NavMesh2Baker baker) {
                 NavBaker = baker;
             }
@@ -143,27 +143,6 @@ namespace Navigation {
                 if (!triangles.ContainsIndex(0)) Debug.LogError("Triangle 0 is invalid");
 #endif
                 return aj.GetTriangleAt(ro, p);
-                /*var origTriI = triangleQTree.FindTriangleAt(((Int2)p) >> TriGridShift, out var isLeafItem);
-                if (origTriI == InvalidTriId) origTriI = 0;
-                var triI = aj.MoveTo(ro, origTriI, p);
-                if (!isLeafItem) {
-                    triangleQTree.InsertTriangle(triI, ((Int2)p) >> TriGridShift);
-                }
-                /*var otriI = ro.GetTriangleAt(p);
-                if (triI != otriI) {
-                    var tri = triangles[triI];
-                    var otri = triangles[otriI];
-                    int sharedCorners = 0;
-                    for (int i = 0; i < 3; i++) {
-                        if (otri.HasCorner(tri.GetCorner(i))) ++sharedCorners;
-                    }
-                    if (sharedCorners == 0) {
-                        int a = 0;
-                        Debug.LogError("Triangles do not share corner");
-                        return InvalidTriId;
-                    }
-                }
-                return triI;*/
             }
             public unsafe void InsertPolygon(Span<CornerId> cornerIds, TriangleType type, bool pinEdges) {
                 if (pinEdges) {

@@ -183,6 +183,7 @@ public:
 
     D3D12_RESOURCE_DESC GetTextureDesc(const Texture& tex);
     int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, int lockBits, int mipB = 0, int mipC = -1);
+    int GetBufferSRV(ID3D12Resource* buffer, int offset, int count, int stride, int lockBits);
     void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DTexture* RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DTexture* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, int lockBits);

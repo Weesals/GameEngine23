@@ -1,4 +1,4 @@
-#define PIX 0
+#define PIX 1
 
 #include "D3DGraphicsDevice.h"
 #include <sstream>

@@ -192,6 +192,9 @@ namespace Weesals.Editor.Assets {
         unsafe public CompiledShader LoadAsset(ResourceKey key) {
             throw new NotImplementedException();
         }
+        unsafe public PreprocessedShader PreprocessShader(string shaderPath, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
+            return new PreprocessedShader(CSGraphics.PreprocessShader(shaderPath, macros));
+        }
         unsafe public CompiledShader LoadAsset(ResourceKey key, CSGraphics graphics, Shader shader,
             string profile, CSIdentifier renderPass, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros
         ) {
@@ -246,7 +249,14 @@ namespace Weesals.Editor.Assets {
                 compiledshader = new();
                 var entryFn = renderPass.IsValid ? renderPass.GetName() + "_" + shader.Entry : shader.Entry;
                 Debug.WriteLine($"Compiling Shader {shader} : {entryFn}");
-                var nativeshader = graphics.CompileShader(shader.Path, entryFn, new CSIdentifier(profile), macros);
+
+                CSCompiledShader nativeshader = default;
+                while (true) {
+                    var source = CSGraphics.PreprocessShader(shader.Path, macros);
+                    nativeshader = graphics.CompileShader(source.GetSourceRaw(), entryFn, new CSIdentifier(profile));
+                    source.Dispose();
+                    if (nativeshader.IsValid) break;
+                }
                 compiledshader.CompiledBlob = nativeshader.GetBinaryData().ToArray();
                 compiledshader.Reflection = new ShaderReflection();
                 var nativeCBs = nativeshader.GetConstantBuffers();

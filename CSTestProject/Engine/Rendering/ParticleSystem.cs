@@ -170,6 +170,8 @@ namespace Weesals.Engine {
             public struct RenderStateData {
                 public BlendMode BlendMode;
                 public Material BaseMaterial;
+                public RenderTags Tag;
+                public string ShaderTemplate;
                 public static readonly RenderStateData Default = new() { BlendMode = BlendMode.MakeAlphaBlend(), };
             }
             public struct MetaData {
@@ -191,7 +193,8 @@ namespace Weesals.Engine {
             }
             public string Generate() {
                 StringBuilder builder = new();
-                builder.Append(File.ReadAllText("./Assets/templates/ParticleTemplate.hlsl"));
+                var templatePath = RenderState.ShaderTemplate ?? "./Assets/templates/ParticleTemplate.hlsl";
+                builder.Append(File.ReadAllText(templatePath));
                 StringBuilder bootstrapBuilder = new();
                 HashSet<Module> bootstrappedModules = new();
                 foreach (var stage in Stages) {
@@ -235,7 +238,7 @@ namespace Weesals.Engine {
                 return default;
             }
 
-            public void LoadJSON(string path) {
+            public void LoadJSON(Scene scene, string path) {
                 Name = Path.GetFileNameWithoutExtension(path);
                 var json = new SJson(File.ReadAllText(path));
                 foreach (var jStage in json.GetFields()) {
@@ -250,6 +253,10 @@ namespace Weesals.Engine {
                                 if (jField.Value == "Premultiplied") RenderState.BlendMode = BlendMode.MakePremultiplied();
                             } else if (jField.Key == "Texture") {
                                 RenderState.BaseMaterial.SetTexture("Texture", Resources.LoadTexture(jField.Value.ToString()));
+                            } else if (jField.Key == "RenderTag") {
+                                RenderState.Tag |= scene.TagManager.RequireTag((string)jField.Value);
+                            } else if (jField.Key == "ShaderTemplate") {
+                                RenderState.ShaderTemplate = (string)jField.Value;
                             }
                         }
                         continue;
@@ -288,6 +295,7 @@ namespace Weesals.Engine {
                 if (RenderState.BaseMaterial != null) {
                     system.CommonMaterial.InheritProperties(RenderState.BaseMaterial);
                 }
+                if (RenderState.Tag.Mask != 0) system.Tag = RenderState.Tag;
                 system.SpawnRate = Meta.SpawnRate;
                 system.MaximumDuration = Meta.MaximumDuration;
                 return system;
@@ -313,6 +321,7 @@ namespace Weesals.Engine {
         private Material expireMaterial;
 
         private BufferLayoutPersistent ActiveBlocks;
+        private bool requireActiveBlocksUpdate;
         private int bufferIndex;
         private float time;
 
@@ -507,6 +516,8 @@ namespace Weesals.Engine {
                 var drawConfig = CSDrawConfig.MakeDefault();
                 graphics.Draw(pso, bindings, resources, drawConfig);
             }
+
+            requireActiveBlocksUpdate = true;
         }
 
         unsafe private void PruneOld(CSGraphics graphics) {
@@ -538,7 +549,10 @@ namespace Weesals.Engine {
             graphics.Draw(pso, bindings, resources, drawConfig);
         }
 
-        unsafe public void Draw(CSGraphics graphics, Material passMat, Material sceneRoot) {
+        public void Draw(CSGraphics graphics, Material passMat, Material sceneRoot) {
+            Draw(graphics, passMat, sceneRoot, RenderTag.Default | RenderTag.Transparent);
+        }
+        unsafe public void Draw(CSGraphics graphics, Material passMat, Material sceneRoot, RenderTags tags) {
             var bindingsPtr = stackalloc CSBufferLayout[2];
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 1);
             bindings[0] = updateMesh.IndexBuffer;
@@ -551,19 +565,28 @@ namespace Weesals.Engine {
             for (int i = 0; i < systems.Count; i++) {
                 idOffsets[i] = systems[i].SetActiveBlocks(ref ActiveBlocks);
             }
-            graphics.CopyBufferData(ActiveBlocks);
+            if (requireActiveBlocksUpdate) {
+                ActiveBlocks.BufferLayout.revision++;
+                graphics.CopyBufferData(ActiveBlocks);
+            }
+            requireActiveBlocksUpdate = false;
             for (int i = 0; i < systems.Count; i++) {
                 var system = systems[i];
+                if (!tags.HasAny(system.Tag)) continue;
                 var from = idOffsets[i];
                 var to = i + 1 >= idOffsets.Length ? ActiveBlocks.Count : idOffsets[i + 1];
                 if (to == from) continue;
                 materials[0] = system.DrawMaterial;
+                rootMaterial.SetValue("ActiveBlocks", new CSBufferReference(ActiveBlocks) {
+                    mSubresourceId = (short)from,
+                    mSubresourceCount = (short)(to - from),
+                });
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
                 var drawConfig = CSDrawConfig.MakeDefault();
-                drawConfig.mInstanceBase = from;
+                drawConfig.mInstanceBase = from * ParticleSystem.AllocGroup.Count;
                 graphics.Draw(pso, bindings, resources, drawConfig,
-                    ParticleSystem.AllocGroup.Count * (to - from));
+                    (to - from) * ParticleSystem.AllocGroup.Count);
             }
         }
 
@@ -588,13 +611,13 @@ namespace Weesals.Engine {
             return systems[blockMeta[blockIndex].SystemId];
         }
 
-        public ParticleSystem RequireSystemFromJSON(string filepath) {
+        public ParticleSystem RequireSystemFromJSON(Scene scene, string filepath) {
             var name = Path.GetFileNameWithoutExtension(filepath);
             var system = FindSystem(name);
             if (system != null) return system;
             var stParticleGenerator = new Particles.ParticleGenerator();
             var outpath = $"./Assets/Generated/{name}.hlsl";
-            stParticleGenerator.LoadJSON(filepath);
+            stParticleGenerator.LoadJSON(scene, filepath);
             if (!File.Exists(outpath) || File.GetLastWriteTimeUtc(outpath) < File.GetLastWriteTimeUtc(filepath)) {
                 stParticleGenerator.WriteHLSL(outpath);
             }
@@ -611,6 +634,7 @@ namespace Weesals.Engine {
         public Material SpawnerMaterial;
         public Material StepperMaterial;
         public Material DrawMaterial;
+        public RenderTags Tag = RenderTag.Transparent;
         private BufferLayoutPersistent emitterData;
         public int SystemId = -1;
         private float maximumLifetime = 5f;
@@ -810,13 +834,13 @@ namespace Weesals.Engine {
 
         unsafe public int SetActiveBlocks(ref BufferLayoutPersistent activeBlocks) {
             int begin = activeBlocks.Count;
-            activeBlocks.BufferLayout.mCount += blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
+            int count = blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
+            activeBlocks.BufferLayout.mCount += count;
             if (activeBlocks.BufferCapacityCount < activeBlocks.Count)
-                activeBlocks.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)blocks.Count + 4));
-            var activeBlockIds = new MemoryBlock<uint>((uint*)activeBlocks.Elements[0].mData + begin, activeBlocks.BufferLayout.mCount);
+                activeBlocks.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)activeBlocks.Count));
+            var activeBlockIds = new MemoryBlock<uint>((uint*)activeBlocks.Elements[0].mData + begin, count);
             for (int i = 0; i < blocks.Count; i++) activeBlockIds[i] = blocks[i].BlockId;
             if (allocated.ConsumeCount > 0) activeBlockIds[blocks.Count] = allocated.BlockId;
-            activeBlocks.BufferLayout.revision++;
             return begin;
         }
         public override string ToString() {

@@ -18,11 +18,14 @@ struct SampleContext {
     Texture2DArray<half4> BaseMaps;
     Texture2DArray<half4> BumpMaps;
     float3 WorldPos;
+    float2 PositionCS;
+    float3 TriPlanarWeights;
 };
 struct ControlPoint {
     uint4 Data;
     uint Layer;
     float Rotation;
+    float2x2 RotationMatrix;
 };
 struct TerrainSample {
     half3 Albedo;
@@ -30,58 +33,60 @@ struct TerrainSample {
     half Height;
     half Metallic;
     half Roughness;
-    //float4 Packed1;
-    //uint4 Packed2;
 };
-void Pack(inout TerrainSample t) {
-    /*t.Packed1 = float4(
-        (float)floor(t.Albedo.r * 256.0) + (float)t.Normal.x * 0.5 + 0.5,
-        (float)floor(t.Albedo.g * 256.0) + (float)t.Normal.y * 0.5 + 0.5,
-        (float)floor(t.Albedo.b * 256.0) + (float)t.Height,
-        (float)floor(t.Metallic * 256.0) + (float)t.Roughness
-    );
-    t.Packed2 = uint4(
-        (f32tof16(t.Albedo.r) << 16) | f32tof16(t.Albedo.g),
-        (f32tof16(t.Albedo.g) << 16) | f32tof16(t.Height),
-        (f32tof16(t.Normal.x) << 16) | f32tof16(t.Normal.y),
-        (f32tof16(t.Metallic) << 16) | f32tof16(t.Roughness)
-    );*/
-}
-void Unpack(inout TerrainSample t) {
-    /*t.Albedo = (half3)floor(t.Packed1.xyz) / 256.0;
-    t.Normal.xy = (half2)frac(t.Packed1.xy) * 2.0 - 1.0;
-    t.Normal.z = 0.0;
-    t.Height = (half)frac(t.Packed1.z);
-    t.Metallic = (half)floor(t.Packed1.w) / 256.0;
-    t.Roughness = (half)frac(t.Packed1.w);
-    t.Albedo = float3(f16tof32(t.Packed2.x >> 16), f16tof32(t.Packed2.x), f16tof32(t.Packed2.y >> 16));
-    t.Normal = float3(f16tof32(t.Packed2.z >> 16), f16tof32(t.Packed2.z), 0);
-    t.Height = f16tof32(t.Packed2.y);
-    t.Metallic = f16tof32(t.Packed2.w >> 16);
-    t.Roughness = f16tof32(t.Packed2.w);*/
-}
+
 ControlPoint DecodeControlMap(uint cp) {
     ControlPoint o;
     o.Data = ((cp >> uint4(0, 8, 16, 24)) & 0xff);
     o.Layer = o.Data.r;
     o.Rotation = o.Data.g * (3.1415 * 2.0 / 256.0);
+    float2 sc; sincos(o.Rotation, sc.x, sc.y);
+    o.RotationMatrix = float2x2(sc.y, -sc.x, sc.x, sc.y);
     return o;
 }
-TerrainSample SampleTerrain(SampleContext context, ControlPoint cp) {
+TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableTriPlanar = false) {
     TerrainSample o;
     LayerData data = _LandscapeLayerData[cp.Layer];
     
-    float2 uv = context.WorldPos.xz;
-    float2 sc; sincos(cp.Rotation, sc.x, sc.y);
-    float2x2 rot = float2x2(sc.y, -sc.x, sc.x, sc.y);
-    uv = mul(rot, uv);
-    uv *= data.Scale;
-    uv.y += data.UVScrollY * Time;
+    float3 worldPos = context.WorldPos * data.Scale;
+    float2 uv = mul(cp.RotationMatrix, worldPos.xz);
+    float2 duvdx = ddx(uv);
+    float2 duvdy = ddy(uv);
     
+    if (enableTriPlanar) {
+        float triWeight = saturate(3.0 - context.TriPlanarWeights.y * 5.0);
+        if (QuadReadLaneAt(triWeight, 0) > 0.0) {
+            float2 xuv = worldPos.zy;
+            float2 xduvdx = ddx(xuv);
+            float2 xduvdy = ddy(xuv);
+            float2 zuv = worldPos.xy;
+            float2 zduvdx = ddx(zuv);
+            float2 zduvdy = ddy(zuv);
+            float rnd1 = IGN(context.PositionCS);
+            if (triWeight > rnd1) {
+                float rnd2 = frac(rnd1 * 10.0);
+                context.TriPlanarWeights.xz = abs(context.TriPlanarWeights.xz);
+                float xzWeight = context.TriPlanarWeights.x / (context.TriPlanarWeights.x + context.TriPlanarWeights.z);
+                xzWeight = saturate(xzWeight * 51.0 - 25);
+                if (xzWeight > rnd2) {
+                    uv = xuv;
+                    duvdx = xduvdx;
+                    duvdy = xduvdy;
+                } else {
+                    uv = zuv;
+                    duvdx = zduvdx;
+                    duvdy = zduvdy;
+                }
+            }
+        }
+    }
+    
+    uv.y += data.UVScrollY * Time;
+
     half4 bumpSample = context.BumpMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
     o.Normal = bumpSample.rgb * 2.0 - 1.0;
     o.Normal.y *= -1;
-    o.Normal.xy = mul((half2x2)rot, o.Normal.xy);
+    o.Normal.xy = mul((half2x2)cp.RotationMatrix, o.Normal.xy);
     o.Metallic = (half)data.Metallic;
     o.Roughness = (half)data.Roughness * bumpSample.a;
     

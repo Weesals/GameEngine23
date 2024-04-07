@@ -19,6 +19,7 @@ class FontInstance;
 class GraphicsSurface;
 class WindowBase;
 class Input;
+class PreprocessedShader;
 class CompiledShader;
 
 typedef Mesh NativeMesh;
@@ -289,6 +290,16 @@ struct CSDrawConfig {
 	CSDrawConfig(int indexStart, int indexCount)
 		: mIndexBase(indexStart), mIndexCount(indexCount) { }
 };
+class DLLCLASS CSPreprocessedShader {
+	PreprocessedShader* mShader;
+public:
+	CSPreprocessedShader(PreprocessedShader* shader)
+		: mShader(shader) { }
+	static CSString8 GetSource(const PreprocessedShader* shader);
+	static int GetIncludeFileCount(const PreprocessedShader* shader);
+	static CSString8 GetIncludeFile(const PreprocessedShader* shader, int id);
+	static void Dispose(PreprocessedShader* shader);
+};
 class DLLCLASS CSCompiledShader {
 	NativeCompiledShader* mShader = nullptr;
 public:
@@ -314,6 +325,16 @@ private:
 	static CSSpan GetBinaryData(const NativeCompiledShader* shader);
 	static const ShaderStats& GetStatistics(const NativeCompiledShader* shader);
 };
+struct CSClearConfig {
+	Vector4 ClearColor;
+	float ClearDepth;
+	__int32 ClearStencil;
+	CSClearConfig(Vector4 color, float depth = -1) : ClearColor(color), ClearDepth(depth), ClearStencil(0) { }
+	bool HasClearColor() const { return !(ClearColor == GetInvalidColor()); }
+	bool HasClearDepth() const { return ClearDepth != -1; }
+	bool HasClearScencil() const { return ClearStencil != 0; }
+	static const Vector4 GetInvalidColor() { return Vector4(-1, -1, -1, -1); }
+};
 class DLLCLASS CSGraphics {
 	NativeGraphics* mGraphics = nullptr;
 public:
@@ -326,7 +347,8 @@ private:
 	static void SetSurface(NativeGraphics* graphics, NativeSurface* surface);
 	static NativeSurface* GetSurface(NativeGraphics* graphics);
 	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
-	static const NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString path, CSString entry, CSIdentifier identifier, CSSpan macros);
+	static PreprocessedShader* PreprocessShader(CSString path, CSSpan macros);
+	static const NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
 		NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
 		void* materialState);
@@ -335,7 +357,7 @@ private:
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
 	static void Reset(NativeGraphics* graphics);
-	static void Clear(NativeGraphics* graphics);
+	static void Clear(NativeGraphics* graphics, CSClearConfig clear);
 	static void Execute(NativeGraphics* graphics);
 	static void SetViewport(NativeGraphics* graphics, RectInt viewport);
 	static bool IsTombstoned(NativeGraphics* graphics);

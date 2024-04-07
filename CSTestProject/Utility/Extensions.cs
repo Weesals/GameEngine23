@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine;
 
 namespace Weesals {
     public static class ListExt {
@@ -21,6 +22,13 @@ namespace Weesals {
             Array.Copy(array, index, array, index + 1, count - index);
             ++count;
             array[index] = value;
+        }
+
+        public static void RemoveAt<T>(ref T[] array, ref int count, int index) {
+            for (int i = index; i < count; i++) {
+                array[i] = array[i + 1];
+            }
+            --count;
         }
     }
     public static class StringExt {

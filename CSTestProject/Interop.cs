@@ -47,6 +47,10 @@ namespace Weesals.Engine
     {
     }
 
+    public partial struct NativePreprocessedShader
+    {
+    }
+
     public partial struct NativeCompiledShader
     {
     }
@@ -656,6 +660,29 @@ namespace Weesals.Engine
         }
     }
 
+    public unsafe partial struct CSPreprocessedShader
+    {
+        [NativeTypeName("PreprocessedShader *")]
+        private NativePreprocessedShader* mShader;
+
+        public CSPreprocessedShader([NativeTypeName("PreprocessedShader *")] NativePreprocessedShader* shader)
+        {
+            mShader = shader;
+        }
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetSource@CSPreprocessedShader@@SA?AUCSString8@@PEBVPreprocessedShader@@@Z", ExactSpelling = true)]
+        public static extern CSString8 GetSource([NativeTypeName("const PreprocessedShader *")] NativePreprocessedShader* shader);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIncludeFileCount@CSPreprocessedShader@@SAHPEBVPreprocessedShader@@@Z", ExactSpelling = true)]
+        public static extern int GetIncludeFileCount([NativeTypeName("const PreprocessedShader *")] NativePreprocessedShader* shader);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIncludeFile@CSPreprocessedShader@@SA?AUCSString8@@PEBVPreprocessedShader@@H@Z", ExactSpelling = true)]
+        public static extern CSString8 GetIncludeFile([NativeTypeName("const PreprocessedShader *")] NativePreprocessedShader* shader, int id);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSPreprocessedShader@@SAXPEAVPreprocessedShader@@@Z", ExactSpelling = true)]
+        public static extern void Dispose([NativeTypeName("PreprocessedShader *")] NativePreprocessedShader* shader);
+    }
+
     public unsafe partial struct CSCompiledShader
     {
         private NativeCompiledShader* mShader;
@@ -710,6 +737,44 @@ namespace Weesals.Engine
         }
     }
 
+    public partial struct CSClearConfig
+    {
+        [NativeTypeName("Vector4")]
+        public System.Numerics.Vector4 ClearColor;
+
+        public float ClearDepth;
+
+        public int ClearStencil;
+
+        public CSClearConfig([NativeTypeName("Vector4")] System.Numerics.Vector4 color, float depth = -1)
+        {
+            ClearColor = color;
+            ClearDepth = depth;
+            ClearStencil = 0;
+        }
+
+        public bool HasClearColor()
+        {
+            return !(ClearColor.Equals(GetInvalidColor()));
+        }
+
+        public bool HasClearDepth()
+        {
+            return ClearDepth != -1;
+        }
+
+        public bool HasClearScencil()
+        {
+            return ClearStencil != 0;
+        }
+
+        [return: NativeTypeName("const Vector4")]
+        public static System.Numerics.Vector4 GetInvalidColor()
+        {
+            return new System.Numerics.Vector4(-1, -1, -1, -1);
+        }
+    }
+
     public unsafe partial struct CSGraphics
     {
         private NativeGraphics* mGraphics;
@@ -741,9 +806,13 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetRenderTargets@CSGraphics@@CAXPEAVNativeGraphics@@UCSSpan@@UCSRenderTargetBinding@@@Z", ExactSpelling = true)]
         private static extern void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CompileShader@CSGraphics@@CAPEBVCompiledShader@@PEAVNativeGraphics@@UCSString@@1UCSIdentifier@@UCSSpan@@@Z", ExactSpelling = true)]
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?PreprocessShader@CSGraphics@@CAPEAVPreprocessedShader@@UCSString@@UCSSpan@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("PreprocessedShader *")]
+        private static extern NativePreprocessedShader* PreprocessShader(CSString path, CSSpan macros);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CompileShader@CSGraphics@@CAPEBVCompiledShader@@PEAVNativeGraphics@@UCSString8@@UCSString@@UCSIdentifier@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativeCompiledShader *")]
-        private static extern NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString path, CSString entry, CSIdentifier identifier, CSSpan macros);
+        private static extern NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVCompiledShader@@2PEAX@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativePipeline *")]
@@ -764,8 +833,8 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Reset@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Reset(NativeGraphics* graphics);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Clear@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
-        private static extern void Clear(NativeGraphics* graphics);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Clear@CSGraphics@@CAXPEAVNativeGraphics@@UCSClearConfig@@@Z", ExactSpelling = true)]
+        private static extern void Clear(NativeGraphics* graphics, CSClearConfig clear);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Execute@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Execute(NativeGraphics* graphics);

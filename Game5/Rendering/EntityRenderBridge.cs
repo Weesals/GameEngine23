@@ -113,7 +113,7 @@ namespace Weesals.Rendering {
                     }
                 }
                 foreach (var xParticle in xVisual.Elements("Particle")) {
-                    var particle = new VisualPrefab.ParticleInstance(Play.ParticleManager.RequireSystemFromJSON((string)xParticle.Attribute("Path")));
+                    var particle = new VisualPrefab.ParticleInstance(Play.ParticleManager.RequireSystemFromJSON(Play.Scene, (string)xParticle.Attribute("Path")));
                     var xLocalPosition = xParticle.Attribute("LocalPosition");
                     if (xLocalPosition != null) {
                         var floatEn = new FloatEnumerator(xLocalPosition.Value);

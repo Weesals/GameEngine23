@@ -70,6 +70,7 @@ class StandardInclude : public ID3DInclude {
     std::string mLocalPath;
     std::string mAbsolutePath;
 public:
+    std::vector<std::string>* mIncludedFiles = nullptr;
     void SetLocalPath(std::string&& path) {
         mLocalPath = path;
     }
@@ -85,6 +86,7 @@ public:
         else
             return E_FAIL;
 
+        if (mIncludedFiles != nullptr) mIncludedFiles->push_back(filePath);
         HANDLE fileHandle = CreateFileA(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
         if (fileHandle == INVALID_HANDLE_VALUE) return E_FAIL;
 
@@ -118,57 +120,29 @@ std::string ToAscii(const std::wstring_view& str) {
     return out;
 }
 
-// Compile shader and reflect uniform values / buffers
-void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string_view& entry, const std::string_view& profile, const DxcDefine* macros) {
-    ComPtr<IDxcCompiler3> compiler;
-    DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
-
+std::string D3DShader::PreprocessFile(const std::wstring_view& path, std::span<const MacroValue> macros, std::vector<std::string>* includedFiles) {
     ComPtr<IDxcUtils> dxcUtils;
     DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
         
-    ComPtr<IDxcIncludeHandler> includeHandler;
-    dxcUtils->CreateDefaultIncludeHandler(&includeHandler);
-    DXCInclude inc(dxcUtils, includeHandler);
-    inc.SetLocalPath(std::filesystem::path(path).parent_path().wstring() + L"/");
-    inc.SetAbsolutePath(L"Assets/include/");
-
-    // Create DXC Compiler arguments
-    std::vector<LPCWSTR> arguments;
-    std::wstring wEntry = ToWide(entry);
-    std::wstring wProfile = ToWide(profile);
-    arguments.push_back(L"-E");
-    arguments.push_back(wEntry.c_str());
-    arguments.push_back(L"-T");
-    arguments.push_back(wProfile.c_str());
-    arguments.push_back(L"-HV 2021");
-    //arguments.push_back(L"-enable-16bit-types");
-    for (const DxcDefine* macro = macros; macro->Name != nullptr; ++macro) {
-        arguments.push_back(L"-D");
-        arguments.push_back(macro->Name);
-        arguments.push_back(macro->Value);
-    }
-    //arguments.push_back(L"/Od"); // Example: Disable optimization
-
-    ComPtr<IDxcResult> pResult;
-    ComPtr<IDxcBlob> dxcOutput;
-    ComPtr<IDxcBlob> dxcReflection;
     while (true) {
         ComPtr<IDxcBlobEncoding> sourceBlob;
         auto hr = dxcUtils->LoadFile(path.data(), nullptr, &sourceBlob);
+        if (FAILED(hr)) {
+            std::string errorMsg = "Failed to open file" + ToAscii(path);
+            OutputDebugStringA(errorMsg.c_str());
+            MessageBoxA(0, errorMsg.c_str(), "Shader Compile Fail", 0);
+            continue;
+        }
 
-        if (SUCCEEDED(hr)) {
+        if (SUCCEEDED(hr) && sourceBlob != nullptr) {
             StandardInclude stdInclude;
+            stdInclude.mIncludedFiles = includedFiles;
             stdInclude.SetLocalPath(std::filesystem::path(path).parent_path().string() + "/");
             stdInclude.SetAbsolutePath("Assets/include/");
             auto aPath = ToAscii(path);
             std::vector<D3D_SHADER_MACRO> d3dMacros;
-            std::vector<std::string> d3dMacroStore;
-            for (const DxcDefine* macro = macros; macro->Name != nullptr; ++macro) {
-                d3dMacroStore.push_back(ToAscii(macro->Name));
-                d3dMacroStore.push_back(ToAscii(macro->Value));
-            }
-            for (int m = 0; m < d3dMacroStore.size(); m += 2) {
-                d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = d3dMacroStore[m].c_str(), .Definition = d3dMacroStore[m + 1].c_str(), });
+            for (int m = 0; m < macros.size(); m += 2) {
+                d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = macros[m].mName.GetName().c_str(), .Definition = macros[m].mValue.GetName().c_str(),});
             }
             d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = nullptr, .Definition = nullptr, });
             auto srcDat = sourceBlob->GetBufferPointer();
@@ -183,28 +157,50 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
                     "Preprocessor failed";
                 OutputDebugStringA(errorMsg);
                 MessageBoxA(0, errorMsg, "Shader Compile Fail", 0);
-                continue;
+                return {};
             }
-            dxcUtils->CreateBlob(preprocessed->GetBufferPointer(), (UINT32)preprocessed->GetBufferSize(), 0, &sourceBlob);
+            return std::string((const char*)preprocessed->GetBufferPointer(), (UINT32)preprocessed->GetBufferSize());
         }
+    }
+    return {};
+}
+ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, const std::string_view& entry, const std::string_view& profile) {
+    ComPtr<IDxcUtils> dxcUtils;
+    DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
 
-        if (SUCCEEDED(hr)) {
-            std::vector<DxcDefine> defines;
-            int macroCount = 0;
-            if (macros != nullptr)
-                for (; macros[macroCount].Name != nullptr; ++macroCount);
-        }
+    HRESULT hr = S_OK;
 
-        if (SUCCEEDED(hr)) {
+    ComPtr<IDxcBlob> dxcOutput;
+    ComPtr<IDxcBlob> dxcReflection;
+    while (true) {
+        ComPtr<IDxcBlobEncoding> sourceBlob;
+        dxcUtils->CreateBlob(source.data(), (UINT32)source.size(), 0, &sourceBlob);
+
+        ComPtr<IDxcCompiler3> compiler;
+        DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
+
+        ComPtr<IDxcResult> pResult;
+        if (SUCCEEDED(hr) && sourceBlob != nullptr) {
+            // Create DXC Compiler arguments
+            std::vector<LPCWSTR> arguments;
+            std::wstring wEntry = ToWide(entry);
+            std::wstring wProfile = ToWide(profile);
+            arguments.push_back(L"-E");
+            arguments.push_back(wEntry.c_str());
+            arguments.push_back(L"-T");
+            arguments.push_back(wProfile.c_str());
+            arguments.push_back(L"-HV 2021");
+            arguments.push_back(L"-Qstrip_debug");
+            arguments.push_back(L"-Qstrip_reflect");
+            //arguments.push_back(L"-enable-16bit-types");
+            //arguments.push_back(L"/Od"); // Example: Disable optimization
+
             // Compile shader
             DxcBuffer sourceBuffer = { sourceBlob->GetBufferPointer(), sourceBlob->GetBufferSize(), 0, };
             hr = compiler->Compile(&sourceBuffer,
                 arguments.data(), (UINT32)arguments.size(),
-                &inc, IID_PPV_ARGS(pResult.GetAddressOf()));
+                nullptr, IID_PPV_ARGS(pResult.GetAddressOf()));
         }
-        /*auto hr = compiler->Compile(sourceBlob.Get(), path.c_str(), wEntry.c_str(),
-            wProfile.c_str(), arguments.data(), (UINT32)arguments.size(),
-            macros, macroCount, includeHandler.Get(), &pResult);*/
 
         ComPtr<IDxcBlobUtf16> pDebugDataPath;
         if (pResult != nullptr) {
@@ -227,136 +223,157 @@ void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string
                 OutputDebugStringA(errorMsg);
                 if (dxcOutput == nullptr || dxcOutput->GetBufferSize() == 0) {
                     MessageBoxA(0, errorMsg, "Shader Compile Fail", 0);
-                    //throw std::exception(errorMsg);
-                    continue;
+                    return nullptr;
                 }
             }
         }
-        pResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&dxcReflection), nullptr);
-        break;
+        ComPtr<ID3D12ShaderReflection> pShaderReflection = nullptr;
+
+        if (pResult != nullptr) {
+            ComPtr<IDxcUtils> dxcUtils;
+            DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
+
+            ComPtr<IDxcBlob> dxcOutput;
+            ComPtr<IDxcBlob> dxcReflection;
+            ComPtr<IDxcBlobUtf16> pDebugDataPath;
+            pResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxcOutput), &pDebugDataPath);
+            pResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&dxcReflection), nullptr);
+
+            auto dataSize = (UINT32)dxcOutput->GetBufferSize();
+            D3DCreateBlob(dataSize, &mShader);
+            std::memcpy(mShader->GetBufferPointer(), dxcOutput->GetBufferPointer(), dataSize);
+            if (dxcReflection != nullptr) {
+                //D3DReflect(mShader->GetBufferPointer(), mShader->GetBufferSize(), IID_PPV_ARGS(&pShaderReflection));
+                DxcBuffer reflectionBuffer;
+                reflectionBuffer.Ptr = dxcReflection->GetBufferPointer();
+                reflectionBuffer.Size = dxcReflection->GetBufferSize();
+                reflectionBuffer.Encoding = 0;
+                dxcUtils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&pShaderReflection));
+
+                ReadReflection(pShaderReflection);
+            }
+        }
+
+        return pResult;
+    }
+}
+void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderReflection) {
+    ComPtr<ID3D12LibraryReflection> library;
+    pShaderReflection->QueryInterface(IID_PPV_ARGS(&library));
+    for (int f = 0; f < 100; ++f) {
+        auto* fn = library->GetFunctionByIndex(f);
+        if (fn == nullptr) break;
+        D3D12_FUNCTION_DESC funcDesc;
+        HRESULT hr = fn->GetDesc(&funcDesc);
+        if (SUCCEEDED(hr)) {
+            funcDesc = funcDesc;
+        }
     }
 
-    ComPtr<ID3D12ShaderReflection> pShaderReflection = nullptr;
+    D3D12_SHADER_DESC shaderDesc;
+    pShaderReflection->GetDesc(&shaderDesc);
 
-    auto dataSize = (UINT32)dxcOutput->GetBufferSize();
-    D3DCreateBlob(dataSize, &mShader);
-    std::memcpy(mShader->GetBufferPointer(), dxcOutput->GetBufferPointer(), dataSize);
-    if (dxcReflection != nullptr) {
-        //D3DReflect(mShader->GetBufferPointer(), mShader->GetBufferSize(), IID_PPV_ARGS(&pShaderReflection));
-        DxcBuffer reflectionBuffer;
-        reflectionBuffer.Ptr = dxcReflection->GetBufferPointer();
-        reflectionBuffer.Size = dxcReflection->GetBufferSize();
-        reflectionBuffer.Encoding = 0;
-        dxcUtils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&pShaderReflection));
+    mReflection.mStatistics = {};
+    mReflection.mStatistics.mInstructionCount = shaderDesc.InstructionCount;
+    mReflection.mStatistics.mTempRegCount = shaderDesc.TempRegisterCount;
+    mReflection.mStatistics.mArrayIC = shaderDesc.ArrayInstructionCount;
+    mReflection.mStatistics.mTexIC = shaderDesc.TextureNormalInstructions + shaderDesc.TextureLoadInstructions + shaderDesc.TextureCompInstructions + shaderDesc.TextureBiasInstructions + shaderDesc.TextureGradientInstructions;
+    mReflection.mStatistics.mFloatIC = shaderDesc.FloatInstructionCount;
+    mReflection.mStatistics.mIntIC = shaderDesc.IntInstructionCount + shaderDesc.UintInstructionCount;
+    mReflection.mStatistics.mFlowIC = shaderDesc.DynamicFlowControlCount;
 
-        D3D12_SHADER_DESC shaderDesc;
-        pShaderReflection->GetDesc(&shaderDesc);
+    // Get all constant buffers
+    for (UINT i = 0; i < shaderDesc.ConstantBuffers; ++i) {
+        auto pBufferReflection = pShaderReflection->GetConstantBufferByIndex(i);
 
-        mReflection.mStatistics = {};
-        mReflection.mStatistics.mInstructionCount = shaderDesc.InstructionCount;
-        mReflection.mStatistics.mTempRegCount = shaderDesc.TempRegisterCount;
-        mReflection.mStatistics.mArrayIC = shaderDesc.ArrayInstructionCount;
-        mReflection.mStatistics.mTexIC = shaderDesc.TextureNormalInstructions + shaderDesc.TextureLoadInstructions + shaderDesc.TextureCompInstructions + shaderDesc.TextureBiasInstructions + shaderDesc.TextureGradientInstructions;
-        mReflection.mStatistics.mFloatIC = shaderDesc.FloatInstructionCount;
-        mReflection.mStatistics.mIntIC = shaderDesc.IntInstructionCount + shaderDesc.UintInstructionCount;
-        mReflection.mStatistics.mFlowIC = shaderDesc.DynamicFlowControlCount;
+        D3D12_SHADER_BUFFER_DESC bufferDesc;
+        pBufferReflection->GetDesc(&bufferDesc);
 
-        // Get all constant buffers
-        for (UINT i = 0; i < shaderDesc.ConstantBuffers; ++i)
-        {
-            auto pBufferReflection = pShaderReflection->GetConstantBufferByIndex(i);
+        if (bufferDesc.Type != D3D_CT_CBUFFER) continue;
 
-            D3D12_SHADER_BUFFER_DESC bufferDesc;
-            pBufferReflection->GetDesc(&bufferDesc);
-
-            if (bufferDesc.Type != D3D_CT_CBUFFER) continue;
-
-            D3D12_SHADER_INPUT_BIND_DESC bindDesc;
-            for (UINT b = 0; b < shaderDesc.BoundResources; ++b)
-            {
-                pShaderReflection->GetResourceBindingDesc(b, &bindDesc);
-                if (strcmp(bindDesc.Name, bufferDesc.Name) == 0) break;
-            }
-
-            // The data we have extracted for this constant buffer
-            ConstantBuffer cbuffer;
-            cbuffer.mName = bufferDesc.Name;
-            cbuffer.mSize = bufferDesc.Size;
-            cbuffer.mBindPoint = bindDesc.BindPoint;
-
-            // Iterate variables
-            cbuffer.SetValuesCount(bufferDesc.Variables);
-            for (UINT j = 0; j < bufferDesc.Variables; ++j)
-            {
-                ID3D12ShaderReflectionVariable* pVariableReflection = pBufferReflection->GetVariableByIndex(j);
-
-                D3D12_SHADER_VARIABLE_DESC variableDesc;
-                pVariableReflection->GetDesc(&variableDesc);
-                D3D12_SHADER_TYPE_DESC typeDesc;
-                pVariableReflection->GetType()->GetDesc(&typeDesc);
-
-                // The values for this uniform
-                UniformValue value{
-                    .mName = variableDesc.Name,
-                    .mType = typeDesc.Type == D3D_SVT_BOOL ? "bool"
-                        : typeDesc.Type == D3D_SVT_INT ? "int"
-                        : typeDesc.Type == D3D_SVT_FLOAT ? "float"
-                        : typeDesc.Type == D3D_SVT_FLOAT16 ? "half"
-                        : "unknown",
-                    .mOffset = (int)variableDesc.StartOffset,
-                    .mSize = (int)variableDesc.Size,
-                    .mRows = (uint8_t)typeDesc.Rows,
-                    .mColumns = (uint8_t)typeDesc.Columns,
-                    .mFlags = (uint16_t)((variableDesc.uFlags & D3D_SVF_USED) != 0 ? 1 : 0),
-                };
-                cbuffer.GetValues()[j] = (value);
-            }
-            mReflection.mConstantBuffers.emplace_back(std::move(cbuffer));
+        D3D12_SHADER_INPUT_BIND_DESC bindDesc;
+        for (UINT b = 0; b < shaderDesc.BoundResources; ++b) {
+            pShaderReflection->GetResourceBindingDesc(b, &bindDesc);
+            if (strcmp(bindDesc.Name, bufferDesc.Name) == 0) break;
         }
 
-        // Get all bound resources
-        for (UINT i = 0; i < shaderDesc.BoundResources; ++i)
-        {
-            D3D12_SHADER_INPUT_BIND_DESC resourceDesc;
-            pShaderReflection->GetResourceBindingDesc(i, &resourceDesc);
-            if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE)
-            {
-                ResourceBinding rbinding;
-                rbinding.mName = resourceDesc.Name;
-                rbinding.mBindPoint = resourceDesc.BindPoint;
-                rbinding.mStride = -1;
-                rbinding.mType = ResourceTypes::R_Texture;
-                mReflection.mResourceBindings.push_back(rbinding);
-            }
-            if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED)
-            {
-                ResourceBinding bbinding;
-                bbinding.mName = resourceDesc.Name;
-                bbinding.mBindPoint = resourceDesc.BindPoint;
-                bbinding.mStride = resourceDesc.NumSamples;
-                bbinding.mType = ResourceTypes::R_SBuffer;
-                mReflection.mResourceBindings.push_back(bbinding);
-            }
+        // The data we have extracted for this constant buffer
+        ConstantBuffer cbuffer;
+        cbuffer.mName = bufferDesc.Name;
+        cbuffer.mSize = bufferDesc.Size;
+        cbuffer.mBindPoint = bindDesc.BindPoint;
+
+        // Iterate variables
+        cbuffer.SetValuesCount(bufferDesc.Variables);
+        for (UINT j = 0; j < bufferDesc.Variables; ++j) {
+            ID3D12ShaderReflectionVariable* pVariableReflection = pBufferReflection->GetVariableByIndex(j);
+
+            D3D12_SHADER_VARIABLE_DESC variableDesc;
+            pVariableReflection->GetDesc(&variableDesc);
+            D3D12_SHADER_TYPE_DESC typeDesc;
+            pVariableReflection->GetType()->GetDesc(&typeDesc);
+
+            // The values for this uniform
+            UniformValue value{
+                .mName = variableDesc.Name,
+                .mType = typeDesc.Type == D3D_SVT_BOOL ? "bool"
+                    : typeDesc.Type == D3D_SVT_INT ? "int"
+                    : typeDesc.Type == D3D_SVT_FLOAT ? "float"
+                    : typeDesc.Type == D3D_SVT_FLOAT16 ? "half"
+                    : "unknown",
+                .mOffset = (int)variableDesc.StartOffset,
+                .mSize = (int)variableDesc.Size,
+                .mRows = (uint8_t)typeDesc.Rows,
+                .mColumns = (uint8_t)typeDesc.Columns,
+                .mFlags = (uint16_t)((variableDesc.uFlags & D3D_SVF_USED) != 0 ? 1 : 0),
+            };
+            cbuffer.GetValues()[j] = (value);
         }
-        for (UINT i = 0; i < shaderDesc.InputParameters; ++i)
-        {
-            D3D12_SIGNATURE_PARAMETER_DESC inputDesc;
-            pShaderReflection->GetInputParameterDesc(i, &inputDesc);
-            ShaderBase::InputParameter parameter;
-            parameter.mName = "";
-            parameter.mSemantic = inputDesc.SemanticName;
-            parameter.mSemanticIndex = inputDesc.SemanticIndex;
-            parameter.mRegister = inputDesc.Register;
-            parameter.mMask = inputDesc.Mask;
-            parameter.mType =
-                inputDesc.ComponentType == D3D_REGISTER_COMPONENT_UINT32 ? ParameterTypes::P_UInt :
-                inputDesc.ComponentType == D3D_REGISTER_COMPONENT_SINT32 ? ParameterTypes::P_SInt :
-                inputDesc.ComponentType == D3D_REGISTER_COMPONENT_FLOAT32 ? ParameterTypes::P_Float :
-                ParameterTypes::P_Unknown;
-            mReflection.mInputParameters.push_back(parameter);
+        mReflection.mConstantBuffers.emplace_back(std::move(cbuffer));
+    }
+
+    // Get all bound resources
+    for (UINT i = 0; i < shaderDesc.BoundResources; ++i) {
+        D3D12_SHADER_INPUT_BIND_DESC resourceDesc;
+        pShaderReflection->GetResourceBindingDesc(i, &resourceDesc);
+        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE) {
+            ResourceBinding rbinding;
+            rbinding.mName = resourceDesc.Name;
+            rbinding.mBindPoint = resourceDesc.BindPoint;
+            rbinding.mStride = -1;
+            rbinding.mType = ResourceTypes::R_Texture;
+            mReflection.mResourceBindings.push_back(rbinding);
+        }
+        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED) {
+            ResourceBinding bbinding;
+            bbinding.mName = resourceDesc.Name;
+            bbinding.mBindPoint = resourceDesc.BindPoint;
+            bbinding.mStride = resourceDesc.NumSamples;
+            bbinding.mType = ResourceTypes::R_SBuffer;
+            mReflection.mResourceBindings.push_back(bbinding);
         }
     }
-    int end = 0;
+    for (UINT i = 0; i < shaderDesc.InputParameters; ++i) {
+        D3D12_SIGNATURE_PARAMETER_DESC inputDesc;
+        pShaderReflection->GetInputParameterDesc(i, &inputDesc);
+        ShaderBase::InputParameter parameter;
+        parameter.mName = "";
+        parameter.mSemantic = inputDesc.SemanticName;
+        parameter.mSemanticIndex = inputDesc.SemanticIndex;
+        parameter.mRegister = inputDesc.Register;
+        parameter.mMask = inputDesc.Mask;
+        parameter.mType =
+            inputDesc.ComponentType == D3D_REGISTER_COMPONENT_UINT32 ? ParameterTypes::P_UInt :
+            inputDesc.ComponentType == D3D_REGISTER_COMPONENT_SINT32 ? ParameterTypes::P_SInt :
+            inputDesc.ComponentType == D3D_REGISTER_COMPONENT_FLOAT32 ? ParameterTypes::P_Float :
+            ParameterTypes::P_Unknown;
+        mReflection.mInputParameters.push_back(parameter);
+    }
+}
+// Compile shader and reflect uniform values / buffers
+void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string_view& entry, const std::string_view& profile, std::span<const MacroValue> macros) {
+    auto source = PreprocessFile(path, macros);
+    CompileFromSource(source, entry, profile);
 }
 #else
 // Represents the D3D12 instance of a shader

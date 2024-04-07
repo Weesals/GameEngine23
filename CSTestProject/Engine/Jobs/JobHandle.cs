@@ -45,6 +45,7 @@ namespace Weesals.Engine.Jobs {
             bool j1Complete = dependencies.GetIsComplete(job1);
             bool j2Complete = dependencies.GetIsComplete(job2);
             if (j1Complete && j2Complete) return JobHandle.None;
+            if (j1Complete) return job2; else if (j2Complete) return job1;
             return dependencies.JoinHandles(job1, job2);
         }
         public static JobHandle CombineDependencies(JobHandle job1, JobHandle job2, JobHandle job3) {
