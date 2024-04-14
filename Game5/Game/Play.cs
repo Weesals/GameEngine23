@@ -94,6 +94,7 @@ namespace Game5.Game {
 
         LandscapeData landscape;
         LandscapeRenderer landscapeRenderer;
+        LandscapeFoliageRenderer foliageRenderer;
 
         ParticleSystemManager particleManager;
         ParticleSystem fireParticles;
@@ -109,6 +110,8 @@ namespace Game5.Game {
         [EditorField] public int LoadedTextureCount => Resources.LoadedTextureCount;
 
         float time = 0;
+
+        public event Action<CSGraphics, float> OnRender;
 
         public Play(GameRoot root) {
             GameRoot = root;
@@ -131,6 +134,8 @@ namespace Game5.Game {
                 landscapeRenderer = new LandscapeRenderer();
                 landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
                 landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
+
+                foliageRenderer = new(landscapeRenderer);
             }
 
             using (var marker = new ProfilerMarker("Particles").Auto()) {
@@ -239,13 +244,20 @@ namespace Game5.Game {
             renderBindings.UpdateChanged();
         }
 
-        public void UpdateParticles(CSGraphics graphics, float dt) {
+        public void RenderUpdate(CSGraphics graphics, float dt) {
+            OnRender?.Invoke(graphics, dt);
             particleManager.Update(graphics, dt);
+        }
+        public void PrepareBasePass(CSGraphics graphics, ScenePass pass) {
+            foliageRenderer.UpdateInstances(graphics, pass);
         }
         public void RenderBasePass(CSGraphics graphics, ScenePass pass) {
             var materialStack = new MaterialStack(Scene.RootMaterial);
             using var passMat = materialStack.Push(pass.OverrideMaterial);
             landscapeRenderer.Render(graphics, ref materialStack, pass);
+            if (pass.TagsToInclude.Has(RenderTag.Default)) {
+                foliageRenderer.RenderInstances(graphics, ref materialStack, pass);
+            }
             if (pass.TagsToInclude.Has(RenderTag.Transparent)) {
                 particleManager.Draw(graphics, pass.GetPassMaterial(), Scene.RootMaterial);
             }

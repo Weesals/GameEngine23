@@ -164,6 +164,8 @@ namespace Weesals.Engine {
             graphics.SetRenderTargets(colorTargets, context.ResolvedDepth.Texture);
             if (context.Viewport.Width > 0) graphics.SetViewport(context.Viewport);
         }
+        public virtual void PrepareRender(CSGraphics graphics) {
+        }
         public virtual void Render(CSGraphics graphics, ref Context context) {
             BindRenderTargets(graphics, ref context);
             OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
@@ -203,12 +205,13 @@ namespace Weesals.Engine {
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
             var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, new Span<Material>(ref material));
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, new Span<Material>(ref material));
-            graphics.Draw(pso, bindings, resources, CSDrawConfig.MakeDefault());
+            graphics.Draw(pso, bindings, resources, CSDrawConfig.Default);
         }
         public override string ToString() { return Name; }
     }
     public class ScenePass : RenderPass {
-        private static ProfilerMarker ProfileMarker_PreRender = new("PreRender");
+        private static ProfilerMarker ProfileMarker_Prepare = new("Prepare");
+        private static ProfilerMarker ProfileMarker_Render = new("Render");
 
         public readonly RenderQueue RenderQueue;
         public readonly RetainedRenderer RetainedRenderer;
@@ -220,7 +223,8 @@ namespace Weesals.Engine {
         public RenderTags TagsToInclude = RenderTags.Default;
         public RenderTags TagsToExclude = RenderTags.None;
 
-        public Action<CSGraphics> OnPreRender;
+        public Action<CSGraphics> OnPrepare;
+        public Action<CSGraphics> OnRender;
 
         public ScenePass(Scene scene, string name) : base(name) {
             RenderQueue = new();
@@ -250,15 +254,21 @@ namespace Weesals.Engine {
             RetainedRenderer.RemoveInstance(instance.GetInstanceId());
         }
 
+        public override void PrepareRender(CSGraphics graphics) {
+            base.PrepareRender(graphics);
+            using (var marker = ProfileMarker_Prepare.Auto()) {
+                OnPrepare?.Invoke(graphics);
+            }
+        }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
             RenderQueue.Clear();
+            using (var marker = ProfileMarker_Render.Auto()) {
+                OnRender?.Invoke(graphics);
+            }
             RenderScene(graphics, ref context);
         }
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
-            using (var marker = ProfileMarker_PreRender.Auto()) {
-                OnPreRender?.Invoke(graphics);
-            }
             RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
             Scene.SubmitToGPU(graphics);
             RenderQueue.Render(graphics);

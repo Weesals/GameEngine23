@@ -117,6 +117,12 @@ void CSTexture::SetArrayCount(NativeTexture* tex, int count) {
 int CSTexture::GetArrayCount(NativeTexture* tex) {
 	return tex->GetArrayCount();
 }
+void CSTexture::SetAllowUnorderedAccess(NativeTexture* tex, Bool enable) {
+	tex->SetAllowUnorderedAccess(enable);
+}
+Bool CSTexture::GetAllowUnorderedAccess(NativeTexture* tex) {
+	return tex->GetAllowUnorderedAccess();
+}
 CSSpan CSTexture::GetTextureData(NativeTexture* tex, int mip, int slice) {
 	auto data = tex->GetRawData(mip, slice);
 	return MakeSpan(data);
@@ -384,6 +390,8 @@ void CSGraphics::Dispose(NativeGraphics* graphics) {
 		graphics = nullptr;
 	}
 }
+CSGraphicsCapabilities CSGraphics::GetCapabilities(const NativeGraphics* graphics) { return (CSGraphicsCapabilities&)graphics->mCmdBuffer.GetGraphics()->mCapabilities; }
+CSRenderStatistics CSGraphics::GetRenderStatistics(const NativeGraphics* graphics) { return (CSRenderStatistics&)graphics->mCmdBuffer.GetGraphics()->mStatistics; }
 NativeSurface* CSGraphics::CreateSurface(NativeGraphics* graphics, NativeWindow* window) {
 	auto surface = graphics->mCmdBuffer.CreateSurface(window);
 	increment_shared(surface);
@@ -422,9 +430,8 @@ const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, 
 	if (compiledShader.GetBinary().empty()) return nullptr;
 	return new NativeCompiledShader(compiledShader);
 }
-const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
-	NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
-	void* materialState
+const NativePipeline* RequirePipelineFromStages(NativeGraphics* graphics, CSSpan bindings,
+	const ShaderStages& stages, void* materialState
 ) {
 	InplaceVector<BufferLayout, 10> bindingsData;
 	InplaceVector<const BufferLayout*, 10> pobindings;
@@ -439,11 +446,32 @@ const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSp
 		pobindings.push_back(&bindingsData.back());
 	}
 	auto pipeline = graphics->mCmdBuffer.RequirePipeline(
-		*vertexShader, *pixelShader, *(MaterialState*)materialState,
+		stages, *(MaterialState*)materialState,
 		pobindings
 	);
 	return pipeline;
 }
+const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
+	NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
+	void* materialState
+) {
+	ShaderStages stages = { nullptr };
+	stages.mVertexShader = vertexShader;
+	stages.mPixelShader = pixelShader;
+	return RequirePipelineFromStages(graphics, bindings, stages, materialState);
+}
+const NativePipeline* CSGraphics::RequireMeshPipeline(NativeGraphics* graphics, CSSpan bindings,
+	NativeCompiledShader* meshShader, NativeCompiledShader* pixelShader, void* materialState
+) {
+	ShaderStages stages = { nullptr };
+	stages.mMeshShader = meshShader;
+	stages.mPixelShader = pixelShader;
+	return RequirePipelineFromStages(graphics, bindings, stages, materialState);
+}
+const NativePipeline* CSGraphics::RequireComputePSO(NativeGraphics* graphics, NativeCompiledShader* computeShader) {
+	return graphics->mCmdBuffer.RequireComputePSO(*computeShader);
+}
+
 void* CSGraphics::RequireFrameData(NativeGraphics* graphics, int byteSize) {
 	// TODO: Alignment?
 	return graphics->mCmdBuffer.RequireFrameData<uint8_t>(byteSize).data();
@@ -453,6 +481,9 @@ void* CSGraphics::RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, s
 }
 void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* buffer, CSSpan ranges) {
 	graphics->mCmdBuffer.CopyBufferData(*(const BufferLayout*)buffer, std::span<const RangeInt>((const RangeInt*)ranges.mData, ranges.mSize));
+}
+void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* source, const CSBufferLayout* dest, int sourceOffset, int destOffset, int length) {
+	graphics->mCmdBuffer.CopyBufferData(*(const BufferLayout*)source, *(const BufferLayout*)dest, sourceOffset, destOffset, length);
 }
 void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bindings, CSSpan resources, CSDrawConfig config, int instanceCount) {
 	InplaceVector<BufferLayout, 8> bindingsData;
@@ -475,6 +506,13 @@ void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bind
 		std::span<const void*>((const void**)resources.mData, resources.mSize),
 		*(DrawConfig*)&config,
 		instanceCount
+	);
+}
+void CSGraphics::Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 groupCount) {
+	graphics->mCmdBuffer.DispatchCompute(
+		(const PipelineLayout*)pipeline.GetNativePipeline(),
+		std::span<const void*>((const void**)resources.mData, resources.mSize),
+		groupCount
 	);
 }
 void CSGraphics::Reset(NativeGraphics* graphics) {

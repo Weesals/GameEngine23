@@ -62,10 +62,10 @@ float4 PSMain(PSInput input) : SV_TARGET {
     
     float VdotL = dot(viewDir, _WorldSpaceLightDir0);
     
-    float3 Scattering = _LightColor0
-        * lerp(HenyeyGreenstein(VdotL, .6), HenyeyGreenstein(VdotL, -.2), 0.5)
-        / 3.14;
-    float3 SkyColor = (float3(149., 167., 200.)*(1.0/255.0)) * 0.5;
+    float scatterIntensity = lerp(HenyeyGreenstein(VdotL, .6), HenyeyGreenstein(VdotL, -.2), 0.5) / 3.14;
+    
+    float3 Scattering = _LightColor0 * scatterIntensity;
+    float3 SkyColor = (float3(149., 167., 200.)*(1.0/255.0));
     float3 HorizonColor = (float3(200., 167., 149.)*(1.0/255.0)) * 0.5;
     //float3 AmbientTop = (float3(149., 167., 200.)*(1.0/255.0)) * 0.1;
     //float3 AmbientBot = (float3(39., 67., 87.)*(1.0/255.0)) * 0.1;
@@ -178,7 +178,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
         //depth = min(depth, (0 - rayStart.y) / viewDir.y);
     }
     depth /= dot(viewDir, cameraVector);
-    float2x3 fogAABB = float2x3(float3(0, -5, 0), float3(127, HeightFogLimit, 127));
+    float2x3 fogAABB = float2x3(float3(0, -0, 0), float3(127, HeightFogLimit, 127));
     float3 heightBeginDepth3 = (select(viewDir >= 0, fogAABB[0], fogAABB[1]) - rayStart) / viewDir;
     float3 heightEndDepth3 = (select(viewDir < 0, fogAABB[0], fogAABB[1]) - rayStart) / viewDir;
     float heightBeginDepth = max(heightBeginDepth3.x, max(heightBeginDepth3.y, heightBeginDepth3.z));

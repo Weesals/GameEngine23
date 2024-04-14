@@ -1,6 +1,3 @@
-#if 0
-#include "landscape.hlsl"
-#else
 #define PI 3.14159265359
 
 #include <common.hlsl>
@@ -10,7 +7,9 @@
 #include <basepass.hlsl>
 
 static const half HeightBlend = 6.0;
-static const half WeightBlend = 1.0;
+static const half WeightBlend = 2.0;
+static const bool EnableTriplanar = false;
+static const bool EnableParallax = false;
 #define ControlCount 9
 #define SampleCount 5
 
@@ -40,17 +39,70 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     TransformLandscapeVertex(worldPos, worldNrm, input.offset);
     
     // Sample from the heightmap and offset the vertex
-    float4 hcell = HeightMap.Load(int3(worldPos.xz, 0), 0);
-    float terrainHeight = _LandscapeScaling.z + (hcell.x) * _LandscapeScaling.w;
-    worldPos.y += terrainHeight;
-    worldNrm.xz = hcell.yz * 2.0 - 1.0;
-    worldNrm.y = sqrt(1.0 - dot(worldNrm.xz, worldNrm.xz));
+    HeightPoint h = DecodeHeightMap(HeightMap.Load(int3(worldPos.xz, 0), 0));
+    worldPos.y += h.HeightOS;
+    worldNrm = h.NormalOS;
 
     result.positionOS = worldPos;
     result.normalOS = (half3)worldNrm;
     positionCS = mul(ModelViewProjection, float4(worldPos, 1.0));
         
     return result;
+}
+
+
+struct MSVertex {
+    float4 position : POSITION;
+    float3 normal : NORMAL;
+};
+struct MSInstance {
+    int2 offset : INSTANCE;
+};
+struct VertexOut {
+    PSInput input;
+    float4 positionCS : SV_POSITION;
+};
+StructuredBuffer<MSVertex> Vertices : register(t5);
+StructuredBuffer<MSInstance> Instances : register(t6);
+MSVertex GetVertex(uint id) {
+    return Vertices[id];
+}
+
+[NumThreads(128, 1, 1)]
+[OutputTopology("triangle")]
+void MSMain(
+    uint gtid : SV_GroupIndex,
+    uint gid : SV_GroupID,
+    out vertices VertexOut verts[64],
+    out indices uint3 tris[128]
+) {
+    uint vertCount = 64;
+    uint primCount = 128;
+    SetMeshOutputCounts(vertCount, primCount);
+    
+    uint instanceId = gid;
+    uint vertexId = gtid % vertCount;
+    uint primId = (gtid % primCount);
+
+    if (vertexId < vertCount) {
+        //MSVertex vert = GetVertex(gtid);
+        VSInput input = (VSInput)0;
+        input.instanceId = instanceId;
+        input.position = float4(vertexId % 9, 0, vertexId / 9, 1);//vert.position;
+        input.normal = float3(0, 1, 0);//vert.normal;
+        input.offset = int2(instanceId, 0);//Instances[instanceId].offset;
+        verts[gtid].input = VSMain(input, verts[gtid].positionCS);
+    }
+    
+    uint quadId = primId / 2;
+    uint column = quadId % 8;
+    uint row = quadId / 8;
+    uint3 tri = uint3(
+        (column + 0) + (row + 0) * 9,
+        (primId % 2) == 0 ? (column + 1) + (row + 0) * 9 : (column + 0) + (row + 1) * 9,
+        (column + 1) + (row + 1) * 9
+    );
+    tris[primId] = min(tri, vertCount);
 }
 
 struct ControlPoints3x3 {
@@ -61,15 +113,14 @@ struct ControlPoints3x3 {
         uv += 0.5;
         float2 quadUv = floor(QuadReadLaneAt(uv, 0));
         l = (half2)(float2)(uv - quadUv);
-        uv = quadUv - 0.5;
         uint quadIndex = WaveGetLaneIndex();
         bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
-        float2 gatherUv = uv + select(quadOdd, 1.0, 0.0);
+        float2 gatherUv = quadUv + select(quadOdd, 0.5, -0.5);
     
         uint4 cpD = ControlMap.Gather(AnisotropicSampler, gatherUv * _LandscapeSizing1.xy + _LandscapeSizing1.zw);
-        cpD = Sort(cpD);
-        if (frac(uv.x * 0.5) > 0.5) cpD = cpD.yxwz;
-        if (frac(uv.y * 0.5) > 0.5) cpD = cpD.zwxy;
+        cpD = cpD.wzxy;
+        if (quadOdd.x) cpD = cpD.yxwz;
+        if (quadOdd.y) cpD = cpD.zwxy;
         
         QuadData = cpD & 0x00ffffff;
         PrimaryId = QuadData.w;
@@ -94,12 +145,30 @@ struct ControlPoints3x3 {
 struct ControlReducer {
     uint2 OrigItems;
     uint2 Items;
-    void Initialise(uint4 cpD) {
-        uint quadIndex = WaveGetLaneIndex();
+    float2 Weights;
+    void Initialise(uint4 cpD, float2 l, ControlPoints3x3 cp3x3) {
+        uint quadIndex = WaveGetLaneIndex() & 0x03;
         bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
         OrigItems = quadOdd.x != quadOdd.y ? cpD.xy : cpD.xz;
-        Items = select(OrigItems == cpD.w, 0xffffffff, OrigItems);
-        Items.x |= 0x80000000;
+        Items = select(OrigItems == cpD.w, 0x80ffffff, OrigItems);
+        Items.x |= 0x08000000;
+        //Items.x = 0xffffffff;
+        //if (!quadOdd.x) Items = 0xffffffff;
+        //if (quadOdd.y) Items = 0xffffffff;
+        /*float2 lr = l * 2.0 - 1.0;
+        float2 quadDir = 0;//float2(1 - abs(1 - quadIndex), 1 - abs(2 - quadIndex));
+        if (quadIndex == 1) quadDir = float2(0, -1);
+        if (quadIndex == 3) quadDir = float2(+1, 0);
+        if (quadIndex == 0) quadDir = float2(-1, 0);
+        if (quadIndex == 2) quadDir = float2(0, +1);
+        int score = (uint)(4.5 - 4.0 * dot(lr, quadDir));*/
+        //int cardPri = abs(lr.x) > abs(lr.y) ? lr.x > 0 ? 3 : 0 : lr.y > 0 ? 1 : 2;
+        //int antiPri = abs(lr.x) > abs(lr.y) ? lr.x > 0 ? 2 : 1 : lr.y > 0 ? 3 : 0;
+        //if (quadIndex != cardPri) Items.y += 0x02000000;
+        //Items.y += score * 0x01000000;
+        //if (quadIndex == antiPri) Items.y += 0x03000000;
+        //if (quadOdd.x != (l.x > 0.5)) Items += 0x01000000;
+        //if (quadOdd.y != (l.y > 0.5)) Items += 0x01000000;
     }
     uint TakeItem() {
         uint next = min(Items.x, Items.y);
@@ -109,6 +178,9 @@ struct ControlReducer {
         if (OrigItems.x == next) Items.x = 0xffffffff;
         if (OrigItems.y == next) Items.y = 0xffffffff;
         return next;
+    }
+    bool HasAnyLeft() {
+        return QuadAny(((Items.x & Items.y) & 0x00ffffff) != 0x00ffffff);
     }
 };
 void BlendTerrain(inout TerrainSample result, TerrainSample ter, half amount) {
@@ -141,11 +213,9 @@ struct LayerBlend {
 };
 
 void PSMain(PSInput input, out BasePassOutput result, float4 positionCS : SV_POSITION) {
-    const bool EnableTriplanar = false;
-    const bool EnableParallax = false;
     TerrainSample terResult = (TerrainSample)0;
     
-    [loop] for(int i = 0; i < 1; ++i)
+    //[loop] for(int i = 0; i < 1; ++i)
     {
     TemporalAdjust(input.positionOS.xz);
         
@@ -163,8 +233,10 @@ void PSMain(PSInput input, out BasePassOutput result, float4 positionCS : SV_POS
         terResult = SampleTerrain(context, DecodeControlMap(cp3x3.PrimaryId), EnableTriplanar);
     }
     
+    //cp3x3.BuildMap();
+        
     ControlReducer reducer;
-    reducer.Initialise(cp3x3.QuadData);
+    reducer.Initialise(cp3x3.QuadData, l, cp3x3);
     uint secondaryId = reducer.TakeItem();
 
     [branch]
@@ -218,6 +290,14 @@ void PSMain(PSInput input, out BasePassOutput result, float4 positionCS : SV_POS
 void ShadowCast_VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     VSMain(input, positionCS);
 }
+[NumThreads(128, 1, 1)]
+[OutputTopology("triangle")]
+void ShadowCast_MSMain(
+    uint gtid : SV_GroupIndex,
+    uint gid : SV_GroupID,
+    out vertices VertexOut verts[64],
+    out indices uint3 tris[128]
+) {
+    MSMain(gtid, gid, verts, tris);
+}
 void ShadowCast_PSMain() { }
-
-#endif

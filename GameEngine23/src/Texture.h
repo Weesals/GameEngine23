@@ -9,19 +9,24 @@
 
 class TextureBase : public std::enable_shared_from_this<TextureBase>
 {
+	enum Flags : uint32_t { None = 0x00, AllowUnorderedAccess = 0x01, };
 	std::wstring mName;
 	int mRevision;
+	Flags mFlags = Flags::None;
 public:
 	TextureBase() : TextureBase(L"Texture") {}
 	TextureBase(const std::wstring_view& name);
 	virtual ~TextureBase() { }
+
+	void SetAllowUnorderedAccess(bool value);
+	bool GetAllowUnorderedAccess() const;
+
 	const std::wstring& GetName() const { return mName; }
 	void MarkChanged() { mRevision++; }
 	int GetRevision() const { return mRevision; }
 };
 
-class Texture : public TextureBase
-{
+class Texture : public TextureBase {
 	struct Sizing {
 		Int3 mSize;
 		int mMipCount = 1;

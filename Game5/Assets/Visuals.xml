@@ -13,6 +13,9 @@
 		<Model Path="./Assets/SM_TownCentre.fbx" />
 		<Particle Path="./Assets/Particles/Fire.json" LocalPosition="-2, 0.5, 2" />
 	</Visual>
+	<Visual Name="Tree">
+		<Model Path="./Assets/SM_Tree.fbx" />
+	</Visual>
 	<Visual Name="Archer">
 		<Model Path="./Assets/Characters/Character_Archer.fbx" />
 	</Visual>

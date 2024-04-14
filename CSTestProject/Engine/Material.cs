@@ -162,7 +162,7 @@ namespace Weesals.Engine {
         public struct StateData : IEquatable<StateData> {
             public enum Flags : byte {
                 RenderPass = 0x01, Blend = 0x02, Raster = 0x04, Depth = 0x08,
-                VertexShader = 0x10, PixelShader = 0x20,
+                MeshShader = 0x10, VertexShader = 0x20, PixelShader = 0x40,
             };
 
             // How to blend/raster/clip
@@ -173,6 +173,7 @@ namespace Weesals.Engine {
             public Flags Valid;
 
             // Shaders bound
+            public Shader? MeshShader;
             public Shader? VertexShader;
             public Shader? PixelShader;
 
@@ -189,6 +190,7 @@ namespace Weesals.Engine {
                 if ((newFlags & Flags.Blend) != 0) BlendMode = other.BlendMode;
                 if ((newFlags & Flags.Raster) != 0) RasterMode = other.RasterMode;
                 if ((newFlags & Flags.Depth) != 0) DepthMode = other.DepthMode;
+                if ((newFlags & Flags.MeshShader) != 0) MeshShader = other.MeshShader;
                 if ((newFlags & Flags.VertexShader) != 0) VertexShader = other.VertexShader;
                 if ((newFlags & Flags.PixelShader) != 0) PixelShader = other.PixelShader;
                 Valid |= newFlags;
@@ -197,10 +199,11 @@ namespace Weesals.Engine {
             public bool Equals(StateData other) {
                 return RenderPass == other.RenderPass && BlendMode == other.BlendMode &&
                     RasterMode == other.RasterMode && DepthMode == other.DepthMode &&
+                    MeshShader == other.MeshShader &&
                     VertexShader == other.VertexShader && PixelShader == other.PixelShader;
             }
             public override int GetHashCode() {
-                return HashCode.Combine(RenderPass, BlendMode, RasterMode, DepthMode, VertexShader, PixelShader);
+                return HashCode.Combine(RenderPass, BlendMode, RasterMode, DepthMode, MeshShader, VertexShader, PixelShader);
             }
 
             public static readonly StateData Default = new StateData() {
@@ -286,10 +289,12 @@ namespace Weesals.Engine {
         public CSIdentifier GetRenderPassOverride() { return State.RenderPass; }
 
         // Set shaders bound to this material
+        public void SetMeshShader(Shader? shader) { State.MeshShader = shader; State.SetFlag(StateData.Flags.MeshShader, State.MeshShader != null); }
         public void SetVertexShader(Shader? shader) { State.VertexShader = shader; State.SetFlag(StateData.Flags.VertexShader, State.VertexShader != null); }
         public void SetPixelShader(Shader? shader) { State.PixelShader = shader; State.SetFlag(StateData.Flags.PixelShader, State.PixelShader != null); }
 
         // Get shaders bound to this material
+        public Shader? GetMeshShader() { return State.MeshShader; }
         public Shader? GetVertexShader() { return State.VertexShader; }
         public Shader? GetPixelShader() { return State.PixelShader; }
 

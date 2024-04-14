@@ -96,8 +96,8 @@ namespace Weesals.Landscape {
         private RuntimeData runtimeData;
         public PropertiesData Properties => runtimeData.Properties;
         public BoundingBox Bounds => runtimeData.Bounds;
-        public CSTexture? HeightMap => runtimeData.HeightMap;
-        public CSTexture? ControlMap => runtimeData.ControlMap;
+        public CSTexture HeightMap => runtimeData.HeightMap;
+        public CSTexture ControlMap => runtimeData.ControlMap;
         public Int2 ChunkCount => runtimeData.ChunkCount;
 
         private List<ILandscapeDataListener> listeners = new();
@@ -127,11 +127,15 @@ namespace Weesals.Landscape {
         }
 
         public LandscapeRenderer() {
+            tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
             LandMaterial = new Material("./Assets/landscape3x3.hlsl");
+            LandMaterial.SetMeshShader(Resources.LoadShader("./Assets/landscape3x3.hlsl", "MSMain"));
+            LandMaterial.SetBuffer("Vertices", tileMesh.VertexBuffer);
+            LandMaterial.SetBuffer("Indices", tileMesh.IndexBuffer);
             WaterMaterial = new("./Assets/water.hlsl", LandMaterial);
             //WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
             //WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
-            EdgeRenderer = new LandscapeEdgeRenderer(this);
+            //EdgeRenderer = new LandscapeEdgeRenderer(this);
         }
 
         unsafe public void Initialise(LandscapeData landscapeData, Material rootMaterial) {
@@ -185,7 +189,6 @@ namespace Weesals.Landscape {
                 runtimeData.BumpTextures.CompressTexture();
                 Resources.TryPutTexture(BumpMapsKey, runtimeData.BumpTextures);
             }
-            if (tileMesh == null) tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
 
             layerDataBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
             layerDataBuffer.AppendElement(new CSBufferElement("DATA1", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
@@ -213,7 +216,7 @@ namespace Weesals.Landscape {
         }
 
         // Check if anything has changed, and apply changes
-        private void ApplyDataChanges() {
+        public void ApplyDataChanges() {
             bool requireMaterialUpdates = false;
             if (Layers != null) {
                 var layerHash = 0;
@@ -658,28 +661,23 @@ namespace Weesals.Landscape {
 
             if (pass.TagsToInclude.HasAny(RenderTag.Default | RenderTag.ShadowCast)) {
                 UpdateChunkInstances(cache.landscapeDraw, localFrustum, runtimeData.LandscapeChunkMeta, visMinI, visMaxI);
-                cache.landscapeDraw.Draw(graphics, ref materials, pass, CSDrawConfig.MakeDefault());
+                LandMaterial.SetBuffer("Instances", cache.landscapeDraw.InstanceBuffer);
+                cache.landscapeDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
             }
             if (pass.TagsToInclude.Has(RenderTag.Transparent) && LandscapeData.WaterEnabled) {
                 UpdateChunkInstances(cache.waterDraw, localFrustum, runtimeData.WaterChunkMeta, visMinI, visMaxI);
                 var macros = new Material();
-                macros.SetMacro("TRANSMITTANCE", "1");
+                using var push = materials.Push(macros);
                 macros.SetDepthMode(DepthMode.MakeReadOnly());
                 macros.SetBlendMode(new BlendMode(
                     BlendMode.BlendArg.Zero, BlendMode.BlendArg.One,
-                    BlendMode.BlendArg.Zero, BlendMode.BlendArg.SrcColor,
+                    BlendMode.BlendArg.One, BlendMode.BlendArg.Src1Color,
                     BlendMode.BlendOp.Add, BlendMode.BlendOp.Add));
-                using var push = materials.Push(macros);
-                cache.waterDraw.Draw(graphics, ref materials, pass, CSDrawConfig.MakeDefault());
-                macros.ClearMacro("TRANSMITTANCE");
-                macros.SetMacro("SCATTER", "1");
-                macros.SetBlendMode(BlendMode.MakeAdditive());
-                cache.waterDraw.Draw(graphics, ref materials, pass, CSDrawConfig.MakeDefault());
-                macros.ClearMacro("SCATTER");
+                cache.waterDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
                 macros.SetMacro("NOTHING", "1");
                 macros.SetBlendMode(BlendMode.MakeNone());
                 macros.SetDepthMode(DepthMode.MakeDefault());
-                cache.waterDraw.Draw(graphics, ref materials, pass, CSDrawConfig.MakeDefault());
+                cache.waterDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
             }
         }
 

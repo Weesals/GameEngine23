@@ -163,5 +163,16 @@ namespace Weesals.ECS {
         public TComponent GetComponent<TComponent>(EntityPrefab prefab) {
             return World.GetComponent<TComponent>(prefab.Index)!;
         }
+
+        public Entity Instantiate(EntityCommandBuffer command, EntityPrefab prefab) {
+            var entity = command.CreateDeferredEntity();
+            var prefabData = World.GetComponent<Prefab>(prefab.Index);
+            foreach (var typeId in prefabData.TypeBitField) {
+                var array = World.GetRawComponent(new TypeId(typeId), prefab.Index, out var row);
+                var cmpRef = command.AddComponent(entity, new TypeId(typeId));
+                cmpRef.CopyFrom(array, row);
+            }
+            return entity;
+        }
     }
 }

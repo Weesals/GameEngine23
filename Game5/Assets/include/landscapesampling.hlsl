@@ -8,7 +8,7 @@
 
 SamplerState AnisotropicSampler : register(s2);
 #if EDGE
-    Texture2D<float4> EdgeTex : register(t3);
+    Texture2D<float4> EdgeTex : register(t4);
 #else
     Texture2DArray<half4> BaseMaps : register(t3);
     Texture2DArray<half4> BumpMaps : register(t4);
@@ -21,12 +21,6 @@ struct SampleContext {
     float2 PositionCS;
     float3 TriPlanarWeights;
 };
-struct ControlPoint {
-    uint4 Data;
-    uint Layer;
-    float Rotation;
-    float2x2 RotationMatrix;
-};
 struct TerrainSample {
     half3 Albedo;
     half3 Normal;
@@ -35,14 +29,12 @@ struct TerrainSample {
     half Roughness;
 };
 
-ControlPoint DecodeControlMap(uint cp) {
-    ControlPoint o;
-    o.Data = ((cp >> uint4(0, 8, 16, 24)) & 0xff);
-    o.Layer = o.Data.r;
-    o.Rotation = o.Data.g * (3.1415 * 2.0 / 256.0);
-    float2 sc; sincos(o.Rotation, sc.x, sc.y);
-    o.RotationMatrix = float2x2(sc.y, -sc.x, sc.x, sc.y);
-    return o;
+half4 SampleGradOptional(Texture2DArray<half4> tex, float3 uv, float2 duvdx, float2 duvdy, bool enableGrad = false) {
+    if (enableGrad) {
+        return tex.SampleGrad(AnisotropicSampler, uv, duvdx, duvdy);
+    } else{
+        return tex.Sample(AnisotropicSampler, uv);
+    }
 }
 TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableTriPlanar = false) {
     TerrainSample o;
@@ -83,16 +75,18 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableT
     
     uv.y += data.UVScrollY * Time;
 
-    half4 bumpSample = context.BumpMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
+    half4 bumpSample = SampleGradOptional(context.BumpMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar);
     o.Normal = bumpSample.rgb * 2.0 - 1.0;
     o.Normal.y *= -1;
     o.Normal.xy = mul((half2x2)cp.RotationMatrix, o.Normal.xy);
     o.Metallic = (half)data.Metallic;
     o.Roughness = (half)data.Roughness * bumpSample.a;
     
-    half4 baseSample = context.BaseMaps.Sample(AnisotropicSampler, float3(uv, cp.Layer));
+    half4 baseSample = SampleGradOptional(context.BaseMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar);
     o.Albedo = baseSample.rgb;
     o.Height = baseSample.a;
+    
+    //o.Albedo = 0.5 + 0.5 * sin(cp.Layer + float3(1, 2, 3));
     
     return o;
 }

@@ -70,7 +70,7 @@ public:
             return true;
         }
     };
-    enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, };
+    enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, R_UAVBuffer, R_UAVAppend, R_UAVConsume, };
     struct ResourceBinding {
         Identifier mName;
         int mBindPoint;
@@ -204,6 +204,12 @@ public:
     virtual void WaitForGPU() { }
     std::shared_ptr<GraphicsSurface> This() { return shared_from_this(); }
 };
+struct ShaderStages {
+    const CompiledShader* mAmplificationShader;
+    const CompiledShader* mMeshShader;
+    const CompiledShader* mVertexShader;
+    const CompiledShader* mPixelShader;
+};
 
 // Draw commands are forwarded to a subclass of this class
 class CommandBufferInteropBase
@@ -221,12 +227,19 @@ public:
     virtual uint64_t GetGlobalPSOHash() const { return (uint64_t)this; }
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash) { return 0; }
     virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
+    virtual void CopyBufferData(const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length) { }
     virtual const PipelineLayout* RequirePipeline(
-        const CompiledShader& vertexShader, const CompiledShader& pixelShader,
+        const ShaderStages& shaders,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings) {
         return nullptr;
     }
+    virtual const PipelineLayout* RequireComputePSO(const CompiledShader& shaders) {
+        return nullptr;
+    }
     virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
+    virtual void DispatchMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
+    virtual void DrawIndirect(const BufferLayout& argsBuffer, std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
+    virtual void DispatchCompute(const PipelineLayout* pso, std::span<const void*> resources, Int3 groupCount) { }
     virtual void Execute() = 0;
 };
 
@@ -253,9 +266,12 @@ public:
     uint64_t GetGlobalPSOHash() const { return mInterop->GetGlobalPSOHash(); }
     int GetFrameDataConsumed() const { return mArena.SumConsumedMemory(); }
     const PipelineLayout* RequirePipeline(
-        const CompiledShader& vertexShader, const CompiledShader& pixelShader,
+        const ShaderStages& shaders,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings) {
-        return mInterop->RequirePipeline(vertexShader, pixelShader, materialState, bindings);
+        return mInterop->RequirePipeline(shaders, materialState, bindings);
+    }
+    const PipelineLayout* RequireComputePSO(const CompiledShader& computeShader) {
+        return mInterop->RequireComputePSO(computeShader);
     }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
     template<class T> std::span<T> RequireFrameData(std::span<T> data) {
@@ -274,21 +290,43 @@ public:
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) {
         mInterop->CopyBufferData(buffer, ranges);
     }
-    void DrawMesh(
-        std::span<const BufferLayout*> bindings,
+    void CopyBufferData(const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length) {
+        mInterop->CopyBufferData(source, dest, srcOffset, dstOffset, length);
+    }
+    void DrawMesh(std::span<const BufferLayout*> bindings,
         const PipelineLayout* pso, std::span<const void*> resources,
-        const DrawConfig& config, int instanceCount = 1, const char* name = nullptr)
-    {
+        const DrawConfig& config, int instanceCount = 1, const char* name = nullptr
+    ) {
         mInterop->DrawMesh(bindings, pso, resources, config, instanceCount, name);
+    }
+    void DispatchMesh(std::span<const BufferLayout*> bindings,
+        const PipelineLayout* pso, std::span<const void*> resources,
+        const DrawConfig& config, int instanceCount = 1, const char* name = nullptr
+    ) {
+        mInterop->DispatchMesh(bindings, pso, resources, config, instanceCount, name);
+    }
+    void DrawIndirect(const BufferLayout& argsBuffer, std::span<const BufferLayout*> bindings,
+        const PipelineLayout* pso, std::span<const void*> resources,
+        const DrawConfig& config, int instanceCount = 1, const char* name = nullptr
+    ) {
+        mInterop->DrawIndirect(argsBuffer, bindings, pso, resources, config, instanceCount, name);
     }
     void DrawMesh(const Mesh* mesh, const Material* material, const DrawConfig& config, const char* name = nullptr);
     void DrawMesh(const Mesh* mesh, const Material* material, const char* name = nullptr) {
         if (mesh->GetVertexCount() == 0) return;
         DrawMesh(mesh, material, DrawConfig::MakeDefault(), name);
     }
+    void DispatchCompute(const PipelineLayout* pso, std::span<const void*> resources, Int3 groupCount) {
+        mInterop->DispatchCompute(pso, resources, groupCount);
+    }
     void Execute() { mInterop->Execute(); }
 };
 
+struct GraphicsCapabilities {
+    bool mComputeShaders;
+    bool mMeshShaders;
+    bool mMinPrecision;
+};
 struct RenderStatistics {
     int mBufferCreates;
     int mBufferWrites;
@@ -299,12 +337,17 @@ struct RenderStatistics {
         mBufferWrites++;
         mBufferBandwidth += size;
     }
+    void DrawInstanced(size_t instanceCount = 1) {
+        mDrawCount++;
+        mInstanceCount += (int)instanceCount;
+    }
 };
 
 // Base class for a graphics device
 class GraphicsDeviceBase {
 public:
     RenderStatistics mStatistics;
+    GraphicsCapabilities mCapabilities;
 
     virtual ~GraphicsDeviceBase() { }
 

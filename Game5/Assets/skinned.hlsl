@@ -3,62 +3,69 @@
 #include <shadowreceive.hlsl>
 #include <basepass.hlsl>
 
-#include <module_common.hlsl>
-#include <module_skinned.hlsl>
-#include <module_retained.hlsl>
-#include <module_temporal.hlsl>
 // Force Change
 SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);
 
-using ShaderModule =
-    Module<ModuleCommon>
-    ::Then<ModuleObject>
-    ::Then<ModuleVertexNormals>
-    ::Then<ModuleSkinned>
-    ::Then<ModuleRetained>
-    ::Then<ModuleClipSpace>
-    ::Then<ModuleVelocity>
-    ;
-        
-struct VSInput : ShaderModule::VSInput {
+cbuffer SkinCB {
+    matrix BoneTransforms[64];
+}
+
+struct VSInput {
+    uint primitiveId : INSTANCE;
+    float3 positionOS : POSITION;
+    float3 normalOS : NORMAL;
     float2 uv : TEXCOORD0;
+    uint4 boneIds : BLENDINDICES;
+    float4 boneWeights : BLENDWEIGHT;
 };
-struct PSInput : ShaderModule::PSInput {
+struct PSInput {
     uint primitiveId : SV_InstanceID;
-    float4 position : SV_POSITION;
-    float2 uv : TEXCOORD0;
+    float4 positionCS : SV_POSITION;
+    float3 normalVS : NORMAL;
     float3 viewPos : TEXCOORD1;
-    float3 normal : NORMAL;
-    //float2 velocity : VELOCITY;
+    float2 uv : TEXCOORD0;
+    float2 velocity : VELOCITY;
 };
-struct PSOutput : ShaderModule::PSOutput {
+struct PSOutput {
     float4 color : SV_Target0;
+    float4 velocity : SV_Target1;
 };
+
+matrix GetSkinTransform(uint4 boneIds, float4 boneWeights) {
+    matrix boneTransform = 0;
+    for (int i = 0; i < 4; ++i) {
+        boneTransform += BoneTransforms[boneIds[i]] * boneWeights[i];
+    }
+    return boneTransform;
+}
 
 PSInput VSMain(VSInput input) {
-    ShaderModule module = (ShaderModule)0;
-    module.SetupVertexIntermediates(input);
     PSInput result = (PSInput)0;
-    InstanceData instance = module.GetInstanceData();
+
+    InstanceData instance = instanceData[input.primitiveId];
     result.primitiveId = input.primitiveId;
-    
-    float3 worldPos = module.GetWorldPosition();
-    float3 worldNrm = module.GetWorldNormal();
-    result.position = module.GetClipPosition();
-    result.viewPos = module.GetViewPosition();
-    result.normal = mul(View, float4(worldNrm, 0.0)).xyz;
+
+    float3 worldPos = input.positionOS.xyz;
+    float3 worldNrm = input.normalOS.xyz;
+    worldPos = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldPos, 1.0)).xyz;
+    worldNrm = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldNrm, 0.0)).xyz;
+    worldPos = mul(instance.Model, float4(worldPos, 1.0)).xyz;
+    worldNrm = mul(instance.Model, float4(worldNrm, 0.0)).xyz;
+    result.positionCS = mul(ViewProjection, float4(worldPos, 1.0));
+    result.viewPos = mul(View, float4(worldPos, 1.0));
+    result.normalVS = mul((float3x3)View, worldNrm);
     result.uv = input.uv;
 
-    result.velocity = module.GetClipVelocity();
+    float4 prevPositionCS = mul(PreviousViewProjection, float4(worldPos, 1.0));
+    result.velocity = result.positionCS.xy / result.positionCS.w - prevPositionCS.xy / prevPositionCS.w;
+    // Add a slight amount to avoid velocity being 0 (special case)
+    result.velocity.x += 0.0000001;
 
     return result;
 }
 
 void PSMain(PSInput input, out BasePassOutput result) {
-    ShaderModule module = (ShaderModule)0;
-    module.SetupPixelIntermediates(input);
-
     InstanceData instance = instanceData[input.primitiveId];
     
     TemporalAdjust(input.uv);
@@ -70,7 +77,7 @@ void PSMain(PSInput input, out BasePassOutput result) {
     pbrInput.Specular = 0.06;
     pbrInput.Roughness = 0.7;
     pbrInput.Emissive = instance.Highlight;
-    pbrInput.Normal = normalize(input.normal);
+    pbrInput.Normal = normalize(input.normalVS);
 
     float3 shadowPos = ViewToShadow(input.viewPos);
     float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;
@@ -81,40 +88,29 @@ void PSMain(PSInput input, out BasePassOutput result) {
     OutputSelected(result, instance.Selected);
 }
 
-//#include "include/shadowcast.hlsl"
-
+struct ShadowCast_VSInput {
+    uint primitiveId : INSTANCE;
+    float3 positionOS : POSITION;
+    float3 normalOS : NORMAL;
+    uint4 boneIds : BLENDINDICES;
+    float4 boneWeights : BLENDWEIGHT;
+};
 struct ShadowCast_PSInput {
-    float4 position : SV_POSITION;
-    float3 normal : NORMAL;
+    float4 positionCS : SV_POSITION;
 };
 
-template<class ModuleBase> struct ModuleNormalBias : ModuleBase {
-    using VSInput = typename ModuleBase::VSInput;
-    void SetupVertexIntermediates(VSInput input) {
-        ModuleBase::SetupVertexIntermediates(input);
-        ModuleBase::vertexPosition.xyz += input.normal * -0.03;
-    }
-};
-
-
-using ShadowModule =
-    Module<ModuleCommon>
-    ::Then<ModuleObject>
-    ::Then<ModuleVertexNormals>
-    ::Then<ModuleNormalBias>
-    ::Then<ModuleSkinned>
-    ::Then<ModuleRetained>
-    ::Then<ModuleClipSpace>
-    ;
-
-ShadowCast_PSInput ShadowCast_VSMain(ShadowModule::VSInput input) {
-    ShadowModule module = (ShadowModule)0;
-    module.SetupVertexIntermediates(input);
+ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input) {
     ShadowCast_PSInput result = (ShadowCast_PSInput)0;
-    result.position = module.GetClipPosition();
+    InstanceData instance = instanceData[input.primitiveId];
+    float3 worldPos = input.positionOS.xyz;
+    float3 worldNrm = input.normalOS.xyz;
+    worldPos = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldPos, 1.0)).xyz;
+    worldNrm = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldNrm, 0.0)).xyz;
+    worldPos = mul(instance.Model, float4(worldPos, 1.0)).xyz;
+    worldNrm = mul(instance.Model, float4(worldNrm, 0.0)).xyz;
+    worldPos.xyz += worldNrm * -0.03;
+    result.positionCS = mul(ViewProjection, float4(worldPos, 1.0));
     return result;
 }
 
-void ShadowCast_PSMain(ShadowCast_PSInput input) {
-    //return 1.0;
-}
+void ShadowCast_PSMain(ShadowCast_PSInput input) { }

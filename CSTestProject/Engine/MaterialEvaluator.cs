@@ -193,14 +193,28 @@ namespace Weesals.Engine {
             int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, 32), materials);
             var macros = new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, count);
             var materialState = ResolvePipelineState(materials);
-            var vertShader = Resources.RequireShader(graphics, materialState.VertexShader!, "vs_6_2", macros, materialState.RenderPass);
-            var pixShader = Resources.RequireShader(graphics, materialState.PixelShader!, "ps_6_2", macros, materialState.RenderPass);
-            var pipeline = graphics.RequirePipeline(pbuffLayout,
-                vertShader.NativeShader,
-                pixShader.NativeShader,
-                &materialState.BlendMode
-            );
-            return pipeline;
+
+            var meshShader = materialState.MeshShader == null || !graphics.GetCapabiltiies().mMeshShaders || true ? null :
+                Resources.RequireShader(graphics, materialState.MeshShader, "ms_6_5", macros, materialState.RenderPass);
+            if (meshShader != null) {
+                var pixShader = materialState.PixelShader == null ? null :
+                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_5", macros, materialState.RenderPass);
+                return graphics.RequireMeshPipeline(pbuffLayout,
+                    meshShader.NativeShader,
+                    pixShader.NativeShader,
+                    &materialState.BlendMode
+                );
+            } else {
+                var pixShader = materialState.PixelShader == null ? null :
+                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_2", macros, materialState.RenderPass);
+                var vertShader = materialState.VertexShader == null ? null :
+                    Resources.RequireShader(graphics, materialState.VertexShader, "vs_6_2", macros, materialState.RenderPass);
+                return graphics.RequirePipeline(pbuffLayout,
+                    vertShader.NativeShader,
+                    pixShader.NativeShader,
+                    &materialState.BlendMode
+                );
+            }
         }
     }
     public ref struct MaterialCollectorContext {

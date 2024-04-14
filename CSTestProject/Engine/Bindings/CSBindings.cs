@@ -15,6 +15,7 @@ using Weesals.Utility;
 
 namespace Weesals.Engine {
     public partial struct Bool {
+        public static implicit operator Bool(bool b) { return new Bool(b); }
         public static implicit operator bool(Bool b) { return b.mValue != 0; }
     }
     public partial struct CSString {
@@ -171,6 +172,8 @@ namespace Weesals.Engine {
         unsafe public int GetMipCount() { return GetMipCount(mTexture); }
         unsafe public CSTexture SetArrayCount(int count) { SetArrayCount(mTexture, count); return this; }
         unsafe public int GetArrayCount() { return GetArrayCount(mTexture); }
+        unsafe public CSTexture SetAllowUnorderedAccess(bool enable) { SetAllowUnorderedAccess(mTexture, enable); return this; }
+        unsafe public bool GetAllowUnorderedAccess() { return GetAllowUnorderedAccess(mTexture); }
         unsafe public MemoryBlock<byte> GetTextureData(int mip = 0, int slice = 0) { var data = GetTextureData(mTexture, mip, slice); return new MemoryBlock<byte>((byte*)data.mData, data.mSize); }
         unsafe public void MarkChanged() { MarkChanged(mTexture); }
         unsafe public void Swap(CSTexture other) { Swap(mTexture, other.mTexture); }
@@ -214,7 +217,7 @@ namespace Weesals.Engine {
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }
         unsafe public override int GetHashCode() { return HashCode.Combine((ulong)mRenderTarget); }
-        unsafe public override string ToString() { return $"RT{(nint)mRenderTarget}"; }
+        unsafe public override string ToString() { return $"RT{(nint)mRenderTarget:x}"; }
         unsafe public static bool operator ==(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget == right.mRenderTarget; }
         unsafe public static bool operator !=(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget != right.mRenderTarget; }
 
@@ -241,7 +244,7 @@ namespace Weesals.Engine {
         unsafe public static bool operator !=(CSFont left, CSFont right) { return left.mFont != right.mFont; }
     }
     unsafe public partial struct CSBufferReference : IEquatable<CSBufferReference> {
-        public enum BufferTypes : byte { Texture, RenderTarget, Buffer, };
+        public enum BufferTypes : byte { None, Texture, RenderTarget, Buffer, };
         public void* mBuffer;
         public short mSubresourceId;
         public short mSubresourceCount;
@@ -392,6 +395,8 @@ namespace Weesals.Engine {
         public Span<CSBufferElement> GetElements() {
             return new Span<CSBufferElement>(mElements, mElementCount);
         }
+        unsafe public void SetAllowUnorderedAccess(bool enable) { identifier &= ~(1ul << 63); if (enable) identifier |= (1ul << 63); }
+        unsafe public bool GetAllowUnorderedAccess() { return (identifier & (1ul << 63)) != 0; }
     }
     public partial struct CSMeshData {
         unsafe public Span<Vector3> GetPositions() {
@@ -542,6 +547,8 @@ namespace Weesals.Engine {
     }
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
+        unsafe public CSGraphicsCapabilities GetCapabiltiies() { return GetCapabilities(mGraphics); }
+        unsafe public CSRenderStatistics GetRenderStatistics() { return GetRenderStatistics(mGraphics); }
         unsafe public CSGraphicsSurface CreateSurface(CSWindow window) { return new CSGraphicsSurface(CreateSurface(mGraphics, window.GetNativeWindow())); }
         unsafe public void SetSurface(CSGraphicsSurface surface) { SetSurface(mGraphics, surface.GetNativeSurface()); }
         unsafe public CSGraphicsSurface GetSurface() { return new CSGraphicsSurface(GetSurface(mGraphics)); }
@@ -581,10 +588,7 @@ namespace Weesals.Engine {
             }
         }
         unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings,
-            CSCompiledShader vertexShader, CSCompiledShader pixelShader,
-            void* materialState) {
-            //var usbindings = stackalloc CSBufferLayout[bindings.Length];
-            //for (int b = 0; b < bindings.Length; ++b) usbindings[b] = bindings[b];
+            CSCompiledShader vertexShader, CSCompiledShader pixelShader, void* materialState) {
             fixed (CSBufferLayout* usbindings = bindings) {
                 return new CSPipeline(RequirePipeline(
                     mGraphics,
@@ -594,6 +598,24 @@ namespace Weesals.Engine {
                     materialState
                 ));
             }
+        }
+        unsafe public CSPipeline RequireMeshPipeline(Span<CSBufferLayout> bindings,
+            CSCompiledShader meshShader, CSCompiledShader pixelShader, void* materialState) {
+            fixed (CSBufferLayout* usbindings = bindings) {
+                return new CSPipeline(RequireMeshPipeline(
+                    mGraphics,
+                    new CSSpan(usbindings, bindings.Length),
+                    meshShader.GetNativeShader(),
+                    pixelShader.GetNativeShader(),
+                    materialState
+                ));
+            }
+        }
+        unsafe public CSPipeline RequireComputePSO(CSCompiledShader computeShader) {
+            return new CSPipeline(RequireComputePSO(
+                mGraphics,
+                computeShader.GetNativeShader()
+            ));
         }
         unsafe public void CopyBufferData(CSBufferLayout buffer) {
             Span<RangeInt> ranges = stackalloc RangeInt[] { new(-1, buffer.size) };
@@ -611,6 +633,10 @@ namespace Weesals.Engine {
                 CopyBufferData(mGraphics, &buffer, new CSSpan(rangesPtr, ranges.Length));
             }
         }
+        unsafe public void CopyBufferData(CSBufferLayout source, CSBufferLayout dest, RangeInt srcRange, int destOffset) {
+            CopyBufferData(mGraphics, &source, &dest, srcRange.Start, destOffset, srcRange.Length);
+        }
+
         private static ProfilerMarker ProfileMarker_Draw = new("Draw");
         unsafe public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
             var usbindings = stackalloc CSBufferLayout[bindings.Count];
@@ -621,6 +647,9 @@ namespace Weesals.Engine {
             using (var marker = ProfileMarker_Draw.Auto()) {
                 Draw(mGraphics, pso, bindings, resources, drawConfig, instanceCount);
             }
+        }
+        unsafe public void DispatchCompute(CSPipeline pso, CSSpan resources, Int3 groupCount) {
+            Dispatch(mGraphics, pso, resources, groupCount);
         }
         unsafe public MemoryBlock<T> RequireFrameData<T>(List<T> inData) where T : unmanaged {
             return RequireFrameData(CollectionsMarshal.AsSpan(inData));
@@ -666,7 +695,12 @@ namespace Weesals.Engine {
 
 
     public struct BlendMode : IEquatable<BlendMode> {
-        public enum BlendArg : byte { Zero, One, SrcColor, SrcInvColor, SrcAlpha, SrcInvAlpha, DestColor, DestInvColor, DestAlpha, DestInvAlpha, };
+        public enum BlendArg : byte {
+            Zero, One,
+            SrcColor, SrcInvColor, SrcAlpha, SrcInvAlpha,
+            DestColor, DestInvColor, DestAlpha, DestInvAlpha,
+            Src1Color, Src1InvColor, Src1Alpha, Src1InvAlpha,
+        };
         public enum BlendOp : byte { Add, Sub, RevSub, Min, Max, };
         public BlendArg mSrcAlphaBlend;
         public BlendArg mDestAlphaBlend;
@@ -783,7 +817,7 @@ namespace Weesals.Engine {
         public static bool operator !=(DepthMode left, DepthMode right) { return !(left == right); }
     }
     public partial struct CSDrawConfig {
-        public static CSDrawConfig MakeDefault() { return new CSDrawConfig(0, -1); }
+        public static CSDrawConfig Default = new CSDrawConfig(0, -1);
     }
 
 

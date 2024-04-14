@@ -263,6 +263,12 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetArrayCount@CSTexture@@SAHPEAVTexture@@@Z", ExactSpelling = true)]
         public static extern int GetArrayCount(NativeTexture* tex);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetAllowUnorderedAccess@CSTexture@@SAXPEAVTexture@@UBool@@@Z", ExactSpelling = true)]
+        public static extern void SetAllowUnorderedAccess(NativeTexture* tex, Bool enable);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetAllowUnorderedAccess@CSTexture@@SA?AUBool@@PEAVTexture@@@Z", ExactSpelling = true)]
+        public static extern Bool GetAllowUnorderedAccess(NativeTexture* tex);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetTextureData@CSTexture@@SA?AUCSSpan@@PEAVTexture@@HH@Z", ExactSpelling = true)]
         public static extern CSSpan GetTextureData(NativeTexture* tex, int mip, int slice);
 
@@ -775,6 +781,35 @@ namespace Weesals.Engine
         }
     }
 
+    public partial struct CSGraphicsCapabilities
+    {
+        public Bool mComputeShaders;
+
+        public Bool mMeshShaders;
+
+        public Bool mMinPrecision;
+    }
+
+    public partial struct CSRenderStatistics
+    {
+        public int mBufferCreates;
+
+        public int mBufferWrites;
+
+        [NativeTypeName("size_t")]
+        public nuint mBufferBandwidth;
+
+        public int mDrawCount;
+
+        public int mInstanceCount;
+
+        public void BufferWrite([NativeTypeName("size_t")] nuint size)
+        {
+            mBufferWrites++;
+            mBufferBandwidth += size;
+        }
+    }
+
     public unsafe partial struct CSGraphics
     {
         private NativeGraphics* mGraphics;
@@ -791,6 +826,12 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Dispose(NativeGraphics* graphics);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetCapabilities@CSGraphics@@CA?AUCSGraphicsCapabilities@@PEBVNativeGraphics@@@Z", ExactSpelling = true)]
+        private static extern CSGraphicsCapabilities GetCapabilities([NativeTypeName("const NativeGraphics *")] NativeGraphics* graphics);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetRenderStatistics@CSGraphics@@CA?AUCSRenderStatistics@@PEBVNativeGraphics@@@Z", ExactSpelling = true)]
+        private static extern CSRenderStatistics GetRenderStatistics([NativeTypeName("const NativeGraphics *")] NativeGraphics* graphics);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateSurface@CSGraphics@@CAPEAVGraphicsSurface@@PEAVNativeGraphics@@PEAVWindowBase@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("NativeSurface *")]
@@ -818,6 +859,14 @@ namespace Weesals.Engine
         [return: NativeTypeName("const NativePipeline *")]
         private static extern NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings, NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader, void* materialState);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireMeshPipeline@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVCompiledShader@@2PEAX@Z", ExactSpelling = true)]
+        [return: NativeTypeName("const NativePipeline *")]
+        private static extern NativePipeline* RequireMeshPipeline(NativeGraphics* graphics, CSSpan bindings, NativeCompiledShader* meshShader, NativeCompiledShader* pixelShader, void* materialState);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireComputePSO@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@PEAVCompiledShader@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("const NativePipeline *")]
+        private static extern NativePipeline* RequireComputePSO(NativeGraphics* graphics, NativeCompiledShader* computeShader);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireFrameData@CSGraphics@@CAPEAXPEAVNativeGraphics@@H@Z", ExactSpelling = true)]
         private static extern void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 
@@ -827,8 +876,14 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyBufferData@CSGraphics@@CAXPEAVNativeGraphics@@PEBUCSBufferLayout@@UCSSpan@@@Z", ExactSpelling = true)]
         private static extern void CopyBufferData(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* layout, CSSpan ranges);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyBufferData@CSGraphics@@CAXPEAVNativeGraphics@@PEBUCSBufferLayout@@1HHH@Z", ExactSpelling = true)]
+        private static extern void CopyBufferData(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* source, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* dest, int sourceOffset, int destOffset, int length);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Draw@CSGraphics@@CAXPEAVNativeGraphics@@VCSPipeline@@UCSSpan@@2UCSDrawConfig@@H@Z", ExactSpelling = true)]
         private static extern void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispatch@CSGraphics@@CAXPEAVNativeGraphics@@VCSPipeline@@UCSSpan@@UInt3@@@Z", ExactSpelling = true)]
+        private static extern void Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, [NativeTypeName("Int3")] Weesals.Engine.Int3 groupCount);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Reset@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Reset(NativeGraphics* graphics);

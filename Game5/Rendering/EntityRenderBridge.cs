@@ -12,6 +12,7 @@ using System.Xml.Linq;
 using Weesals.Utility;
 using System.Collections;
 using Weesals.Engine.Jobs;
+using System.Diagnostics;
 
 namespace Weesals.Rendering {
     [SparseComponent, NoCloneComponent]
@@ -429,6 +430,7 @@ namespace Weesals.Rendering {
             if (sceneProxy.Instance.AnimMaterial == null) return;
             var model = sceneProxy.Instance.Prefab.Models[0];
             var skinnedMesh = model.Meshes[0] as SkinnedMesh;
+            Debug.Assert(skinnedMesh != null, "Attempting to skin a non-skinnable mesh. Probaby remove CAnimation");
             Span<Matrix4x4> bones = stackalloc Matrix4x4[32];
             var animation = eanim.Animation;
             var time = UnityEngine.Time.time % (float)animation.Duration.TotalSeconds;

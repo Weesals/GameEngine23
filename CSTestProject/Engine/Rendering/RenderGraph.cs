@@ -545,6 +545,15 @@ namespace Weesals.Engine {
                 buffer.Target.Texture = rtPool.RequireTarget(desc);
                 tempTargets.Add(i);
             }
+            public void PreparePasses() {
+                // Invoke render passes
+                for (int r = executeList.Count - 1; r >= 0; --r) {
+                    var selfExec = executeList[r];
+                    var selfPassData = passes[selfExec.PassId];
+                    var selfPass = selfPassData.RenderPass;
+                    selfPass.PrepareRender(Graphics);
+                }
+            }
             public void RenderPasses() {
                 using var tempTargets = new PooledList<int>(16);
                 for (var it = buffers.GetEnumerator(); it.MoveNext();) {
@@ -607,6 +616,7 @@ namespace Weesals.Engine {
             evaluator.ReconcileSizing();
             evaluator.OptimizeOrder();
             //evaluator.DebugLogState();
+            evaluator.PreparePasses();
             evaluator.RenderPasses();
         }
 

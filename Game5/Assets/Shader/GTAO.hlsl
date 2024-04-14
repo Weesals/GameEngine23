@@ -71,12 +71,12 @@ half4 PSMain(PSInput input) : SV_Target {
         NumRadMin = NumRad - 1;
     const float Radius = 3.0;
     
-    float3 positionCS = GetPosition(input.uv);
-    half3 viewNormal = GetNormal(input.uv);
-    half3 viewDir = -normalize(positionCS);
-    viewNormal.x *= -1; // Dont know why this is here.
+    float3 viewPos = GetPosition(input.uv);
+    half3 viewNrm = GetNormal(input.uv);
+    half3 viewDir = -normalize(viewPos);
+    viewNrm.x *= -1; // Dont know why this is here.
         
-    float stepRadius = max(Radius * HalfProjScale / positionCS.z, NumRad);
+    float stepRadius = max(Radius * HalfProjScale / viewPos.z, NumRad);
     float2 texelStep = TexelSize * (stepRadius / NumRad);
     float falloffFactor = 1.0 * rcp(Radius * Radius);
     
@@ -94,18 +94,19 @@ half4 PSMain(PSInput input) : SV_Target {
         [unroll]
         for (int j = min(NumRad - 1 - i, NumRadMin); j >= 0; --j) {
             half2 radOff = arcStep * (j + radBias);
-            float3 posL = GetPosition(input.uv - radOff) - positionCS;
-            float3 posR = GetPosition(input.uv + radOff) - positionCS;
+            float3 posL = GetPosition(input.uv - radOff) - viewPos;
+            float3 posR = GetPosition(input.uv + radOff) - viewPos;
             
             half2 dst2LR = half2(dot(posL, posL), dot(posR, posR));
             half2 sliceLR = half2(dot(posL, viewDir), dot(posR, viewDir)) * rsqrt(dst2LR);
             sliceLR -= dst2LR * falloffFactor;
             horizons = max(sliceLR, horizons);
         }
-
+        
         half3 planeNrm = normalize(cross(half3(arcStep, 0), viewDir));
         half3 planeTan = cross(viewDir, planeNrm);
-        half3 projectedNrm = (viewNormal - planeNrm * dot(viewNormal, planeNrm));
+        half3 projectedNrm = viewNrm - planeNrm * dot(viewNrm, planeNrm);
+        float projLength = length(projectedNrm);
         
         half cosineGamma = dot(projectedNrm, viewDir) * rsqrt(dot(projectedNrm, projectedNrm));
         half gamma = (dot(projectedNrm, planeTan) < 0 ? 1 : -1) * FastACos(cosineGamma);
@@ -113,13 +114,13 @@ half4 PSMain(PSInput input) : SV_Target {
         horizons = FastACos(horizons);
         horizons.x = -min(horizons.x, PI / 2.0 - gamma);
         horizons.y = +min(horizons.y, PI / 2.0 + gamma);
-                
+        
         half bentAngle = dot(horizons, 0.5);
         BentNormal += viewDir * cos(bentAngle) - planeTan * sin(bentAngle);
         
         half2 horizons2 = horizons * 2.0;
         half2 innterIntegral = (-cos(horizons2 - gamma) + cosineGamma + horizons2 * sin(gamma));
-        Occlusion += dot(innterIntegral, 1.0);
+        Occlusion += projLength * dot(innterIntegral, 1.0);
         
         half2x2 DirRot = {
             +cos(PI / NumArc), -sin(PI / NumArc),

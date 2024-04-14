@@ -88,7 +88,8 @@ struct DLLCLASS CSBufferElement {
 	void* mData;
 };
 struct DLLCLASS CSBufferLayout {
-	uint64_t identifier; int revision; int size;
+	uint64_t identifier;
+	int revision; int size;
 	CSBufferElement* mElements;
 	uint8_t mElementCount;
 	uint8_t mUsage;
@@ -128,6 +129,8 @@ public:
 	static int GetMipCount(NativeTexture* tex);
 	static void SetArrayCount(NativeTexture* tex, int count);
 	static int GetArrayCount(NativeTexture* tex);
+	static void SetAllowUnorderedAccess(NativeTexture* tex, Bool enable);
+	static Bool GetAllowUnorderedAccess(NativeTexture* tex);
 	static CSSpan GetTextureData(NativeTexture* tex, int mip, int slice);
 	static void MarkChanged(NativeTexture* tex);
 	static NativeTexture* _Create(CSString name);
@@ -335,6 +338,22 @@ struct CSClearConfig {
 	bool HasClearScencil() const { return ClearStencil != 0; }
 	static const Vector4 GetInvalidColor() { return Vector4(-1, -1, -1, -1); }
 };
+struct CSGraphicsCapabilities {
+	Bool mComputeShaders;
+	Bool mMeshShaders;
+	Bool mMinPrecision;
+};
+struct CSRenderStatistics {
+	int mBufferCreates;
+	int mBufferWrites;
+	size_t mBufferBandwidth;
+	int mDrawCount;
+	int mInstanceCount;
+	void BufferWrite(size_t size) {
+		mBufferWrites++;
+		mBufferBandwidth += size;
+	}
+};
 class DLLCLASS CSGraphics {
 	NativeGraphics* mGraphics = nullptr;
 public:
@@ -343,6 +362,8 @@ public:
 	NativeGraphics* GetNativeGraphics() const { return mGraphics; }
 private:
 	static void Dispose(NativeGraphics* graphics);
+	static CSGraphicsCapabilities GetCapabilities(const NativeGraphics* graphics);
+	static CSRenderStatistics GetRenderStatistics(const NativeGraphics* graphics);
 	static NativeSurface* CreateSurface(NativeGraphics* graphics, NativeWindow* window);
 	static void SetSurface(NativeGraphics* graphics, NativeSurface* surface);
 	static NativeSurface* GetSurface(NativeGraphics* graphics);
@@ -350,12 +371,16 @@ private:
 	static PreprocessedShader* PreprocessShader(CSString path, CSSpan macros);
 	static const NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
-		NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader,
-		void* materialState);
+		NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader, void* materialState);
+	static const NativePipeline* RequireMeshPipeline(NativeGraphics* graphics, CSSpan bindings,
+		NativeCompiledShader* meshShader, NativeCompiledShader* pixelShader, void* materialState);
+	static const NativePipeline* RequireComputePSO(NativeGraphics* graphics, NativeCompiledShader* computeShader);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, size_t hash = 0);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
+	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* source, const CSBufferLayout* dest, int sourceOffset, int destOffset, int length);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
+	static void Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 groupCount);
 	static void Reset(NativeGraphics* graphics);
 	static void Clear(NativeGraphics* graphics, CSClearConfig clear);
 	static void Execute(NativeGraphics* graphics);

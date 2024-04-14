@@ -352,6 +352,32 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
             bbinding.mType = ResourceTypes::R_SBuffer;
             mReflection.mResourceBindings.push_back(bbinding);
         }
+        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWTYPED
+            || resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED
+            || resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER) {
+            ResourceBinding bbinding;
+            bbinding.mName = resourceDesc.Name;
+            bbinding.mBindPoint = resourceDesc.BindPoint;
+            bbinding.mStride = resourceDesc.NumSamples;
+            bbinding.mType = ResourceTypes::R_UAVBuffer;
+            mReflection.mResourceBindings.push_back(bbinding);
+        }
+        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_APPEND_STRUCTURED) {
+            ResourceBinding bbinding;
+            bbinding.mName = resourceDesc.Name;
+            bbinding.mBindPoint = resourceDesc.BindPoint;
+            bbinding.mStride = resourceDesc.NumSamples;
+            bbinding.mType = ResourceTypes::R_UAVAppend;
+            mReflection.mResourceBindings.push_back(bbinding);
+        }
+        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_CONSUME_STRUCTURED) {
+            ResourceBinding bbinding;
+            bbinding.mName = resourceDesc.Name;
+            bbinding.mBindPoint = resourceDesc.BindPoint;
+            bbinding.mStride = resourceDesc.NumSamples;
+            bbinding.mType = ResourceTypes::R_UAVConsume;
+            mReflection.mResourceBindings.push_back(bbinding);
+        }
     }
     for (UINT i = 0; i < shaderDesc.InputParameters; ++i) {
         D3D12_SIGNATURE_PARAMETER_DESC inputDesc;

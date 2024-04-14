@@ -43,18 +43,16 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     TransformLandscapeVertex(worldPos, worldNrm, input.offset);
     
     // Sample from the heightmap and offset the vertex
-    float4 hcell = HeightMap.Load(int3(worldPos.xz, 0), 0);
-    float terrainHeight = _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
-    worldPos.y += terrainHeight;
+    HeightPoint h = DecodeHeightMap(HeightMap.Load(int3(worldPos.xz, 0), 0));
+    worldPos.y += h.HeightOS;
 #if EDGE
     if (input.position.y > 0.5) worldPos.y = -5;
     result.uv = float3(
         float2(input.position.x, worldPos.y) * 0.1,
-        terrainHeight
+        h.HeightOS
     );
 #else
-    worldNrm.xz = hcell.yz * 2.0 - 1.0;
-    worldNrm.y = sqrt(1.0 - dot(worldNrm.xz, worldNrm.xz));
+    worldNrm = h.NormalOS;
 #endif
 
     result.positionOS = worldPos;
@@ -67,7 +65,7 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
 void PSMain(PSInput input, out BasePassOutput result) {    
     PBRInput pbrInput = PBRDefault();
         
-    [loop] for(int i = 0; i < 50; ++i)
+    //[loop] for(int i = 0; i < 50; ++i)
     {
     TemporalAdjust(input.positionOS.xz);
     SampleContext context = { BaseMaps, BumpMaps, input.positionOS, float2(0, 0), float3(0, 1, 0), };

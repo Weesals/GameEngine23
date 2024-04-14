@@ -8,6 +8,19 @@ using Weesals.Engine;
 using Weesals.Utility;
 
 namespace Weesals.UI {
+    public struct Tween : ITimedEvent {
+        public float Time0;
+        public float Time1;
+        public float Time => Time1;
+        public float DeltaTime => Time1 - Time0;
+        float ITimedEvent.TimeSinceEvent => Time;
+
+        public static readonly Tween Complete = new Tween() { Time0 = 1000000f, Time1 = float.MaxValue, };
+    }
+    public interface ITweenable {
+        // Return true while the tween is complete
+        bool UpdateTween(Tween tween);
+    }
     public class TweenManager {
         public struct Instance {
             public ITweenable Tweenable;

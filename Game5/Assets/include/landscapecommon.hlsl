@@ -6,8 +6,7 @@ static const float HeightScale = 512.0;
 Texture2D<float4> HeightMap : register(t0);
 Texture2D<uint> ControlMap : register(t1);
 
-cbuffer LandscapeBuffer : register(b2)
-{
+cbuffer LandscapeBuffer : register(b2) {
     float4 _LandscapeSizing;
     float4 _LandscapeSizing1;
     float4 _LandscapeScaling;
@@ -18,6 +17,33 @@ struct LayerData {
     float Metallic, Pad1, Pad2, Pad3;
 };
 StructuredBuffer<LayerData> _LandscapeLayerData : register(t2);
+
+struct ControlPoint {
+    uint4 Data;
+    uint Layer;
+    float Rotation;
+    float2x2 RotationMatrix;
+};
+ControlPoint DecodeControlMap(uint cp) {
+    ControlPoint o;
+    o.Data = ((cp >> uint4(0, 8, 16, 24)) & 0xff);
+    o.Layer = o.Data.r;
+    o.Rotation = o.Data.g * (3.1415 * 2.0 / 256.0);
+    float2 sc; sincos(o.Rotation, sc.x, sc.y);
+    o.RotationMatrix = float2x2(sc.y, -sc.x, sc.x, sc.y);
+    return o;
+}
+struct HeightPoint {
+    float HeightOS;
+    float3 NormalOS;
+};
+HeightPoint DecodeHeightMap(float4 hcell) {
+    HeightPoint o;
+    o.HeightOS = _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
+    o.NormalOS.xz = hcell.yz * 2.0 - 1.0;
+    o.NormalOS.y = sqrt(1.0 - dot(o.NormalOS.xz, o.NormalOS.xz));
+    return o;
+}
 
 
 struct Triangle {

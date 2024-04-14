@@ -50,6 +50,10 @@ namespace Weesals.Engine {
     public static class VectorExt {
         public static Vector2 Round(this Vector2 v) { return new Vector2(MathF.Abs(v.X), MathF.Abs(v.Y)); }
         public static Vector3 Round(this Vector3 v) { return new Vector3(MathF.Abs(v.X), MathF.Abs(v.Y), MathF.Abs(v.Z)); }
+        public static Vector2 Floor(this Vector2 v) { return new Vector2(MathF.Floor(v.X), MathF.Floor(v.Y)); }
+        public static Vector3 Floor(this Vector3 v) { return new Vector3(MathF.Floor(v.X), MathF.Floor(v.Y), MathF.Floor(v.Z)); }
+        public static Vector2 Ceil(this Vector2 v) { return new Vector2(MathF.Ceiling(v.X), MathF.Ceiling(v.Y)); }
+        public static Vector3 Ceil(this Vector3 v) { return new Vector3(MathF.Ceiling(v.X), MathF.Ceiling(v.Y), MathF.Ceiling(v.Z)); }
 
         public static Vector2 Mod(this Vector2 v, float o) { return new Vector2(v.X % o, v.Y % o); }
         public static Vector3 Mod(this Vector3 v, float o) { return new Vector3(v.X % o, v.Y % o, v.Z % o); }

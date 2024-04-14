@@ -15,7 +15,7 @@ void ThrowIfFailed(HRESULT hr);
 class D3DGraphicsDevice
 {
 private:
-    ComPtr<ID3D12Device> mD3DDevice;
+    ComPtr<ID3D12Device2> mD3DDevice;
     ComPtr<IDXGIFactory4> mD3DFactory;
     ComPtr<ID3D12CommandQueue> mCmdQueue;
 
@@ -34,7 +34,7 @@ public:
 
     void CheckDeviceState() const;
 
-    ID3D12Device* GetD3DDevice() const { return mD3DDevice.Get(); }
+    ID3D12Device2* GetD3DDevice() const { return mD3DDevice.Get(); }
     IDXGIFactory4* GetFactory() const { return mD3DFactory.Get(); }
     ID3D12DescriptorHeap* GetRTVHeap() const { return mRTVHeap.Get(); }
     ID3D12DescriptorHeap* GetDSVHeap() const { return mDSVHeap.Get(); }

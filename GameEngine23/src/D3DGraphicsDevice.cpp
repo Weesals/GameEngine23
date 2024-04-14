@@ -1,4 +1,4 @@
-#define PIX 1
+#define PIX 0
 
 #include "D3DGraphicsDevice.h"
 #include <sstream>
@@ -63,7 +63,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     UINT dxgiFactoryFlags = 0;
 
     // Enable debug mode in debug builds
-#if defined(_DEBUG) && false
+#if defined(_DEBUG)
     {
         ComPtr<ID3D12Debug> debugController;
         if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
@@ -82,6 +82,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
         DXGI_ADAPTER_DESC1 adapterDesc;
         if (SUCCEEDED(pAdapter->GetDesc1(&adapterDesc)))
         {
+            OutputDebugString(L"[Graphics] Adapter Found - ");
             OutputDebugString(adapterDesc.Description);
             OutputDebugString(L"\n");
             adapters.push_back(pAdapter);
@@ -89,14 +90,8 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     }
 
     // Create the device
-    ThrowIfFailed(D3D12CreateDevice(adapters[0].Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&mD3DDevice)));
+    ThrowIfFailed(D3D12CreateDevice(adapters[1].Get(), D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice)));
     mD3DDevice->SetName(L"Device");
-
-    D3D12_FEATURE_DATA_D3D12_OPTIONS options = {};
-    ThrowIfFailed(mD3DDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options)));
-    if (!options.MinPrecisionSupport) {
-        OutputDebugString(L"Adapter does NOT support MinPrecision\n");
-    }
 
     // Create the command queue
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};

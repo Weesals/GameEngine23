@@ -12,15 +12,8 @@ namespace Weesals.ECS {
         public readonly Stage Stage;
         public StageContext Context => Stage.Context;
 
-        public class Boxed {
+        public struct ComponentData {
             public Array Items;
-        }
-        public class Boxed<T> : Boxed {
-            public T[] Values {
-                get => (T[])base.Items;
-                set => base.Items = value;
-            }
-            public Boxed() { Items = Array.Empty<T>(); }
         }
 
         public struct EntityMutation {
@@ -33,8 +26,8 @@ namespace Weesals.ECS {
 
         private EntityMutation[] mutations = Array.Empty<EntityMutation>();
         private Dictionary<Entity, int> entityIndexLookup = new();
-        private Boxed[] values = Array.Empty<Boxed>();
-        private Boxed[] sparseValues = Array.Empty<Boxed>();
+        private ComponentData[] values = Array.Empty<ComponentData>();
+        private ComponentData[] sparseValues = Array.Empty<ComponentData>();
 
         public struct ItemMutation {
             public BitField.Generator SetTypes;
@@ -160,6 +153,30 @@ namespace Weesals.ECS {
             mutation.Entity.Index = ~mutation.Entity.Index;
         }
 
+        public struct ArrayReference {
+            public Array Data;
+            public int Row;
+            public ArrayReference(Array data, int row) {
+                Data = data;
+                Row = row;
+            }
+            public void CopyFrom(Array other, int otherRow) {
+                Array.Copy(other, otherRow, Data, Row, 1);
+            }
+        }
+        public ArrayReference AddComponent(Entity entity, TypeId typeId) {
+            SetActiveEntity(entity);
+            (typeId.IsSparse ? active.SetSparseTypes : active.SetTypes).Add(typeId);
+            var typeIndex = typeId.Index;
+            ref var typeValues = ref (typeId.IsSparse ? ref sparseValues : ref values);
+            if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 4);
+            var type = Context.GetComponentType(typeId);
+            ref var items = ref typeValues[typeIndex].Items;
+            if (items == null || active.EntityIndex >= items.Length) {
+                type.Resize(ref items, mutations.Length);
+            }
+            return new(items, active.EntityIndex);
+        }
         public ref T AddComponent<T>(Entity entity) {
             SetActiveEntity(entity);
 
@@ -168,14 +185,12 @@ namespace Weesals.ECS {
             var typeIndex = typeId.Index;
             ref var typeValues = ref (typeId.IsSparse ? ref sparseValues : ref values);
             if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 4);
-            if (typeValues[typeIndex] == null) typeValues[typeIndex] = new Boxed<T>();
-            var boxed = ((Boxed<T>)typeValues[typeIndex]);
-            if (active.EntityIndex >= boxed.Values.Length) {
-                var boxedValues = boxed.Values;
-                Array.Resize<T>(ref boxedValues, mutations.Length);
-                boxed.Values = boxedValues;
+            var items = (T[])typeValues[typeIndex].Items;
+            if (items == null || active.EntityIndex >= items.Length) {
+                Array.Resize(ref items, mutations.Length);
+                typeValues[typeIndex].Items = items;
             }
-            return ref boxed.Values[active.EntityIndex];
+            return ref items[active.EntityIndex];
         }
         public ref T SetComponent<T>(Entity entity, T value) {
             ref var cmp = ref AddComponent<T>(entity);

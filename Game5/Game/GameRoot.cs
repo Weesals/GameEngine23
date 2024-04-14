@@ -86,7 +86,7 @@ namespace Game5.Game {
                     deferredPass?.UpdateShadowParameters(shadowPass);
                 };
                 shadowPass = new ShadowPass(Scene) {
-                    OnPreRender = (graphics) => {
+                    OnRender = (graphics) => {
                         RenderBasePass(graphics, shadowPass);
                     },
                     OnPostRender = () => {
@@ -98,12 +98,15 @@ namespace Game5.Game {
                 skyboxPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
                 skyboxPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 basePass = new BasePass(Scene) {
-                    OnPreRender = (graphics) => {
+                    OnPrepare = (graphics) => {
+                        PrepareBasePass(graphics, basePass);
+                    },
+                    OnRender = (graphics) => {
                         RenderBasePass(graphics, basePass);
                     },
                 };
                 transPass = new TransparentPass(Scene) {
-                    OnPreRender = (graphics) => {
+                    OnRender = (graphics) => {
                         RenderBasePass(graphics, transPass);
                     }
                 };
@@ -197,7 +200,7 @@ namespace Game5.Game {
             using var updateMarker = ProfileMarker_Render.Auto();
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
-            Play.UpdateParticles(graphics, dt);
+            Play.RenderUpdate(graphics, dt);
 
             // TODO: Avoid calling this twice when TAA is enabled
             ScenePasses.SetupRender(GameViewport.Size);
@@ -249,6 +252,9 @@ namespace Game5.Game {
             Handles.Reset();
         }
 
+        private void PrepareBasePass(CSGraphics graphics, ScenePass pass) {
+            Play.PrepareBasePass(graphics, pass);
+        }
         private void RenderBasePass(CSGraphics graphics, ScenePass pass) {
             Play.RenderBasePass(graphics, pass);
             Handles.Render(graphics, pass);

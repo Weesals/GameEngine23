@@ -357,9 +357,13 @@ namespace Weesals.Engine {
             }
         }
 
+        public override string ToString() {
+            return $"H{BufferLayout.identifier:x} E{ElementCount} R{Revision}";
+        }
+
         public static implicit operator CSBufferLayout(BufferLayoutPersistent buffer) { return buffer.BufferLayout; }
 
-        private static ulong gId;
+        private static ulong gId = 1;
         public static ulong MakeId() { return Interlocked.Increment(ref gId); }
     }
     struct Normalized<T> where T : unmanaged {
@@ -537,6 +541,7 @@ namespace Weesals.Engine {
                 "Require a reader for " + typeof(T).Name);
         }
         public static ReadWriterPair FindConverterFor<View>(BufferFormat fmt) where View : unmanaged {
+            if (fmt == BufferFormat.FORMAT_UNKNOWN) return Initialize<View, View>();
             var type = BufferFormatType.GetMeta(fmt);
             if (type.IsFloat()) {
                 if (type.GetSize() == BufferFormatType.Sizes.Size32) {

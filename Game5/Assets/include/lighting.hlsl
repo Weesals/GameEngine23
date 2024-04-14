@@ -91,19 +91,21 @@ float3 ComputeLight(float3 albedoColor, float3 specularColor, float3 normal, flo
 
 // TODO: These should sample from the world
 float3 SampleEnvironment(float3 normal, float roughness) {
-    const float EnvPow = 1.3;
+    const float EnvPow = 1.4;
     const float3 FloorColor = pow(float3(148, 124, 93) / 255, EnvPow);
     const float3 SkyColor = pow(float3(184, 226, 255) / 255, EnvPow);
-    float skyness = 1.0 - pow(saturate(1.0 - dot(normal, _ViewSpaceUpVector)), 1.0);
+    float skyness = dot(normal, _ViewSpaceUpVector);
+    //skyness = 1.0 - pow(saturate(1.0 - skyness), 2.0);
     skyness = lerp(skyness, 0.5, roughness);
     return lerp(FloorColor, SkyColor, skyness) * 0.3;
 }
 float3 SampleAmbientLight(float3 normal) {
-    const float EnvPow = 1.3;
+    const float EnvPow = 1.4;
     const float3 FloorColor = pow(float3(148, 124, 93) / 255, EnvPow);
     const float3 SkyColor = pow(float3(184, 226, 255) / 255, EnvPow);
-    float skyness = 1.0 - pow(saturate(1.0 - dot(normal, _ViewSpaceUpVector)), 1.0);
-    return lerp(FloorColor, SkyColor, skyness) * 1.0;
+    float skyness = dot(normal, _ViewSpaceUpVector);
+    //skyness = 1.0 - pow(saturate(1.0 - skyness), 2.0);
+    return lerp(FloorColor, SkyColor, skyness);
 }
 
 float3 ComputeIndiret(
@@ -123,7 +125,7 @@ float3 ComputeIndiret(
     float3 o = 0;
     // Indirect
     o += Albedo * SampleAmbientLight(normal) * Kd;
-    o += SampleEnvironment(reflect(viewDir, normal), Roughness) * envFresnel;
+    o += SampleEnvironment(reflect(-viewDir, normal), Roughness) * envFresnel;
     return o;
 }
 

@@ -26,6 +26,9 @@ namespace Game5.UI {
         private UXEntityOrder entityOrder;
         private UXPlacement placement;
 
+        private BufferLayoutPersistent buffer;
+        private CSTexture testTexture;
+
         private Int3 cameraMove = Int3.Zero;
 
         public UIPlay(Play play) {
@@ -96,7 +99,45 @@ namespace Game5.UI {
             }
             AppendChild(list);
             Canvas.KeyboardFilter.Insert(0, this);
+
+            /*buffer = new(BufferLayoutPersistent.Usages.Uniform);
+            buffer.AppendElement(new CSBufferElement("DATA", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
+            buffer.AllocResize(256 * 256);
+            buffer.SetCount(256 * 256);
+            buffer.BufferLayout.SetAllowUnorderedAccess(true);
+            buffer.BufferLayout.revision++;
+            var view = new TypedBufferView<Vector4>(buffer.Elements[0], 2048);
+            view.Set(Vector4.Zero);
+
+            testTexture = CSTexture.Create("CSTest", 256, 256);
+            testTexture.SetAllowUnorderedAccess(true);
+            AppendChild(new Image(testTexture) {
+                Transform = CanvasTransform.MakeDefault().WithAnchors(0.3f, 0f, 0.6f, 0.3f).WithOffsets(0f, 0f, 100f, 100f),
+            });
             //AppendChild(new Image(testTexture.Texture));
+            Play.OnRender += Play_OnRender;*/
+        }
+
+        private void Play_OnRender(CSGraphics graphics, float dt) {
+            var material = new Material();
+            graphics.CopyBufferData(buffer);
+            material.SetTexture("Texture", testTexture);
+            material.SetBuffer("Instances", buffer);
+            material.SetBuffer("Instances2", buffer);
+            {
+                var computeShader = Resources.RequireShader(graphics,
+                    Resources.LoadShader("./Assets/Shader/ComputeTest.hlsl", "CSMain"), "cs_6_2", default, default);
+                var computePSO = graphics.RequireComputePSO(computeShader.NativeShader);
+                var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, new Span<Material>(ref material));
+                graphics.DispatchCompute(computePSO, resources, new Int3(1, 1, 1));
+            }
+            {
+                var computeShader = Resources.RequireShader(graphics,
+                    Resources.LoadShader("./Assets/Shader/ComputeTest.hlsl", "CSMain2"), "cs_6_2", default, default);
+                var computePSO = graphics.RequireComputePSO(computeShader.NativeShader);
+                var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, new Span<Material>(ref material));
+                graphics.DispatchCompute(computePSO, resources, new Int3(32, 32, 1));
+            }
         }
 
         public void Update(float dt) {

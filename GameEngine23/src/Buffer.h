@@ -341,7 +341,8 @@ struct BufferLayout {
 		: mIdentifier(identifier), mSize(size), mUsage(usage), mCount(count) { }
 	std::span<Element> GetElements() { return std::span<Element>(mElements, mElementCount); }
 	std::span<const Element> GetElements() const { return std::span<const Element>((const Element*)mElements, mElementCount); }
-	bool IsValid() { return mElementCount != 0; }
+	bool IsValid() const { return mElementCount != 0; }
+	bool GetAllowUnorderedAccess() const { return (mIdentifier & (1ull << 63)) != 0; }
 	int CalculateBufferStride() const {
 		int size = 0;
 		for (auto& el : GetElements()) size += el.GetItemByteSize();
@@ -785,7 +786,7 @@ struct TypedBufferView {
 };
 
 struct BufferReference {
-	enum BufferTypes : uint8_t { Texture, RenderTarget, Buffer, };
+	enum BufferTypes : uint8_t { None, Texture, RenderTarget, Buffer, };
 	void* mBuffer;
 	int16_t mSubresourceId;
 	int16_t mSubresourceCount;

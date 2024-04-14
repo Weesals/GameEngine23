@@ -442,7 +442,7 @@ namespace Weesals.Engine {
                 // Dont need to update buffer, because data is held in Elements (by pointer)
 
                 // Submit
-                CSDrawConfig config = CSDrawConfig.MakeDefault();
+                CSDrawConfig config = CSDrawConfig.Default;
                 var pipeline = draw.PipelineLayout;
                 graphics.Draw(
                     pipeline,

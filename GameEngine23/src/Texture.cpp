@@ -5,6 +5,14 @@
 TextureBase::TextureBase(const std::wstring_view& name)
 	: mName(name), mRevision(0) { }
 
+void TextureBase::SetAllowUnorderedAccess(bool value) {
+	(int&)mFlags &= ~Flags::AllowUnorderedAccess;
+	if (value) (int&)mFlags |= Flags::AllowUnorderedAccess;
+}
+bool TextureBase::GetAllowUnorderedAccess() const {
+	return (mFlags & Flags::AllowUnorderedAccess) != 0;
+}
+
 
 void Texture::ResizeData(Sizing oldSize) {
 	if (mData.empty()) return;

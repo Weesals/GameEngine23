@@ -97,11 +97,11 @@ namespace Weesals.Landscape {
 
             if (pass.TagsToInclude.HasAny(RenderTag.Default)) {
                 UpdateEdgeInstances(edgeDraw, localFrustum, LandscapeRenderer.GetLandscapeChunkMeta(), visMinI, visMaxI);
-                edgeDraw.Draw(graphics, ref materials, pass, CSDrawConfig.MakeDefault());
+                edgeDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
             }
             if (pass.TagsToInclude.Has(RenderTag.Transparent) && LandscapeData.WaterEnabled) {
                 UpdateEdgeInstances(waterEdgeDraw, localFrustum, LandscapeRenderer.GetLandscapeChunkMeta(), visMinI, visMaxI);
-                waterEdgeDraw.Draw(graphics, ref materials, pass, CSDrawConfig.MakeDefault());
+                waterEdgeDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
             }
         }
     }

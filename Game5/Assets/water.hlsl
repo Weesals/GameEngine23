@@ -102,10 +102,15 @@ void CalculateTerrainTBN(float3 normal, out float3 tangent, out float3 bitangent
     bitangent.z -= 1;
 }
 
-float4 PSMain(PSInput input) : SV_TARGET {
-#if defined(NOTHING)
-    return 0.0;
+void PSMain(PSInput input
+#if !defined(NOTHING)
+    , out float3 scatter : SV_Target0
+    , out float3 transmittance : SV_Target1
 #endif
+) {
+#if defined(NOTHING)
+    return;
+#else
     TemporalAdjust(input.worldPos.xz);
         
     float2 normalizedScreenSpaceUV = input.position.xy / 1024;
@@ -140,7 +145,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
         
     const float3 mainLightColor = _LightColor0;
     
-    half3 transmittance = 1;
+    transmittance = 1;
     half3 inscatter = 0;
 
     half4 color = 0.0;
@@ -220,6 +225,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
     color.rgb *= transmittance;
     color.rgb += inscatter * LuminanceFactor;
+    scatter = inscatter * LuminanceFactor;
     
 #if defined(TRANSMITTANCE)
     return float4(transmittance.rgb, 1.0);
@@ -227,7 +233,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
     return float4(color.rgb, 1.0);
 #endif
     
-    return float4(color.rgb, 1 - transmittance.g);
+    //return float4(color.rgb, 1 - transmittance.g);
+#endif
 }
 
 PSInput ShadowCast_VSMain(VSInput input)

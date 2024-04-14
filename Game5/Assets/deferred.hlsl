@@ -11,8 +11,10 @@ Texture2D<float1> SceneDepth : register(t1);
 Texture2D<float4> SceneAttri : register(t2);
 Texture2D<float4> SceneAO : register(t3);
 
-float2 ZBufferParams;
-float4 ViewToProj;
+cbuffer DeferredCB : register(b2) {
+    float2 ZBufferParams;
+    float4 ViewToProj;
+}
 
 struct VSInput {
     float4 position : POSITION;
@@ -95,6 +97,11 @@ float4 PSMain(PSInput input) : SV_Target {
     //if(input.uv.x < 0.5) return float4(bentNormal * 0.5 + 0.5, 1.0);
     //return float4((normal * 0.5 + 0.5) * LuminanceFactor, 1.0);
     bentNormal = normal;
+    float3 normalWS = mul(transpose(View), float4(normal, 0)).xyz;
+    //return float4((normalWS * 0.5 + 0.5) * LuminanceFactor, 1.0);
+    //return float4(frac(normalWS * 2.0) * LuminanceFactor, 1.0);
+    
+    //return float4(frac(dot(_ViewSpaceUpVector, normal) * 4.0).xxx * LuminanceFactor, 1.0);
     
     // The light
     float3 o = ComputeLight(
@@ -111,6 +118,8 @@ float4 PSMain(PSInput input) : SV_Target {
     // Indirect
     o += ComputeIndiret(Albedo, specular,
         bentNormal, roughness, metallic, -viewDir) * occlusion;
+    
+    //o.rgb = AmbientOcclusion.xyz;
     
     o *= LuminanceFactor;
         

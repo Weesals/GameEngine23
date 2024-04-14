@@ -10,7 +10,7 @@ using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
-	unsafe public class MeshDraw {
+    unsafe public class MeshDraw {
 
         protected static ProfilerMarker ProfileMarker_MeshDraw = new("Mesh Draw");
         protected static ProfilerMarker ProfileMarker_GetPass = new("Get Pass");
@@ -23,19 +23,19 @@ namespace Weesals.Engine {
         }
 
         protected Mesh mMesh;
-		protected List<Material> mMaterials = new();
-		protected List<CSBufferLayout> mBufferLayout = new();
-		protected List<RenderPassCache> mPassCache = new();
+        protected List<Material> mMaterials = new();
+        protected List<CSBufferLayout> mBufferLayout = new();
+        protected List<RenderPassCache> mPassCache = new();
         protected int resourceGeneration;
 
         public MeshDraw(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
-		public MeshDraw(Mesh mesh, Span<Material> materials) {
+        public MeshDraw(Mesh mesh, Span<Material> materials) {
             mMesh = mesh;
-			foreach (var mat in materials) mMaterials.Add(mat);
+            foreach (var mat in materials) mMaterials.Add(mat);
         }
 
         public Mesh GetMesh() { return mMesh; }
-		public virtual void InvalidateMesh() {
+        public virtual void InvalidateMesh() {
             mBufferLayout.Clear();
             mBufferLayout.Add(mMesh.IndexBuffer);
             mBufferLayout.Add(mMesh.VertexBuffer);
@@ -67,8 +67,8 @@ namespace Weesals.Engine {
                     CollectionsMarshal.AsSpan(mBufferLayout), materials);
                 mPassCache.Insert(min, new RenderPassCache {
                     mPipelineHash = pipelineHash,
-			        mPipeline = pipeline,
-		        });
+                    mPipeline = pipeline,
+                });
             }
             return mPassCache[min];
         }
@@ -86,28 +86,35 @@ namespace Weesals.Engine {
         }
     }
 
-	public class MeshDrawInstanced : MeshDraw {
+    public class MeshDrawInstanced : MeshDraw {
         protected string name;
-		protected BufferLayoutPersistent mInstanceBuffer;
-		public MeshDrawInstanced(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) {
-		}
-		public MeshDrawInstanced(Mesh mesh, Span<Material> materials) : base(mesh, materials) {
+        protected BufferLayoutPersistent mInstanceBuffer;
+        public CSBufferLayout InstanceBuffer => mInstanceBuffer;
+
+        public MeshDrawInstanced(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
+        public MeshDrawInstanced(Mesh mesh, Span<Material> materials) : base(mesh, materials) {
             name = mesh.Name.ToString();
             mInstanceBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
         }
         unsafe public override void InvalidateMesh() {
             base.InvalidateMesh();
-            mBufferLayout.Add(mInstanceBuffer.BufferLayout);
+            if (mInstanceBuffer.ElementCount > 0)
+                mBufferLayout.Add(mInstanceBuffer.BufferLayout);
         }
         public int GetInstanceCount() {
             return mInstanceBuffer.Count;
         }
-		unsafe public int AddInstanceElement(CSIdentifier name, BufferFormat fmt = BufferFormat.FORMAT_R32_UINT) {
+        public void SetInstanceCount(int count) {
+            if (mInstanceBuffer.ElementCount == 0) mInstanceBuffer.BufferLayout.mCount = count;
+            else mInstanceBuffer.SetCount(count);
+        }
+        unsafe public int AddInstanceElement(CSIdentifier name, BufferFormat fmt = BufferFormat.FORMAT_R32_UINT) {
             int id = mInstanceBuffer.AppendElement(new CSBufferElement(name, fmt));
             mPassCache.Clear();
+            mBufferLayout.Clear();
             return id;
         }
-		unsafe public void SetInstanceData(void* data, int count, int elementId = 0, bool markDirty = true) {
+        unsafe public void SetInstanceData(void* data, int count, int elementId = 0, bool markDirty = true) {
             if (mInstanceBuffer.Count != count) {
                 if (mInstanceBuffer.BufferCapacityCount < count) {
                     mInstanceBuffer.AllocResize(count);
@@ -116,7 +123,7 @@ namespace Weesals.Engine {
                 mInstanceBuffer.CalculateImplicitSize();
                 markDirty = true;
             }
-            if (markDirty) {
+            if (markDirty && data != null) {
                 var el = mInstanceBuffer.Elements[elementId];
                 Unsafe.CopyBlock(el.mData, data, (uint)(count * BufferFormatType.GetMeta(el.mFormat).GetByteSize()));
                 mInstanceBuffer.BufferLayout.revision++;
@@ -154,7 +161,7 @@ namespace Weesals.Engine {
             }
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config, instanceCount);
         }
-		unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
+        unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
@@ -178,6 +185,56 @@ namespace Weesals.Engine {
 
             pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount);
         }
-	};
+    }
+    public class MeshDrawIndirect : MeshDraw {
+        protected string name;
+        protected BufferLayoutPersistent mInstanceArgs;
+        public CSBufferLayout ArgsBuffer => mInstanceArgs;
 
+        public MeshDrawIndirect(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
+        public MeshDrawIndirect(Mesh mesh, Span<Material> materials) : base(mesh, materials) {
+            name = mesh.Name.ToString();
+            mInstanceArgs = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
+            unsafe {
+                mInstanceArgs.AppendElement(new("INDIRECTARGS", BufferFormat.FORMAT_UNKNOWN, 4));
+            }
+            mInstanceArgs.AllocResize(5);
+            var indirectArgsData = new TypedBufferView<uint>(mInstanceArgs.Elements[0], 5);
+            indirectArgsData[0] = (uint)mesh.IndexCount;
+            indirectArgsData[1] = 2048;
+            indirectArgsData[2] = 0;
+            indirectArgsData[3] = 0;
+            indirectArgsData[4] = 0;
+            mInstanceArgs.NotifyChanged();
+        }
+        unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
+            using var marker = ProfileMarker_MeshDraw.Auto();
+            int instanceCount = 16 * 1024;
+            if (instanceCount <= 0) return;
+
+            mBufferLayout.Clear();
+            // Must come first
+            mBufferLayout.Add(mInstanceArgs);
+            mBufferLayout.Add(mMesh.IndexBuffer);
+            mBufferLayout.Add(mMesh.VertexBuffer);
+
+            using var push = materials.Push(CollectionsMarshal.AsSpan(mMaterials));
+
+            //var passCache = GetPassCache(graphics, materials);
+            var pipeline = MaterialEvaluator.ResolvePipeline(graphics,
+                CollectionsMarshal.AsSpan(mBufferLayout), materials);
+            var passCache = new RenderPassCache() { mPipeline = pipeline, };
+
+            if (!passCache.IsValid) return;
+            Debug.Assert(passCache.mPipeline.GetBindingCount() == mBufferLayout.Count);
+
+            MemoryBlock<nint> resources;
+            using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
+                resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, materials);
+            }
+            var buffers = graphics.RequireFrameData(mBufferLayout);
+
+            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount);
+        }
+    }
 }

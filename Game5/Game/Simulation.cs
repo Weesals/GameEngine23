@@ -139,7 +139,7 @@ namespace Game5.Game {
         }
 
         public void GenerateWorld() {
-            var rand = new Random();
+            var rand = new Random(0);
             /*using var tmpEntities = new PooledList<Entity>();
             for (int i = 0; i < 10; i++) {
                 while (tmpEntities.Count > 0 && rand.NextSingle() < 0.6f) {
@@ -173,15 +173,10 @@ namespace Game5.Game {
 
             modelLoadHandle.Complete();
 
+            // Character FBX references incorrect texture
             foreach (var mesh in archerModel.Meshes) {
-                mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/T_CharactersAtlas.png"));
+                mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Characters/T_CharactersAtlas.png"));
             }
-            foreach (var houseModel in houseModels) {
-                foreach (var mesh in houseModel.Meshes) {
-                    mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/T_ToonBuildingsAtlas.png"));
-                }
-            }
-            //var houseModel = (AnimatedModel)FBXImporter.Import("./Assets/Characters/TestAnim.fbx");
 
             var archer = ProtoSystem.CreatePrototype("Archer")
                 .AddComponent<CModel>(new() { PrefabName = "Archer", })
@@ -233,6 +228,17 @@ namespace Game5.Game {
                 .AddComponent<ECObstruction>(new() { })
                 .Build();
 
+            var tree = ProtoSystem.CreatePrototype("Tree",
+                new PrototypeData() {
+                    Footprint = new EntityFootprint() { Size = 3000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
+                })
+                .AddComponent<CModel>(new() { PrefabName = "Tree", })
+                .AddComponent<CHitPoints>(new() { Current = 100, })
+                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
+                .AddComponent<ECTeam>(new() { SlotId = 0 })
+                .AddComponent<ECObstruction>(new() { })
+                .Build();
+
             var tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
             World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
 
@@ -242,101 +248,48 @@ namespace Game5.Game {
             var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
             World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
 
-            var houseProto = new PrototypeData() {
-                Footprint = new EntityFootprint() { Size = 4000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
-            };
-
             var command = new EntityCommandBuffer(World.Stage);
             const int Count = 25;
             var SqrtCount = (int)MathF.Sqrt(Count);
             for (int i = 0; i < Count; i++) {
-                var newEntity = command.CreateDeferredEntity();
                 var pos = 2000 + new Int2(i / SqrtCount, i % SqrtCount) * 6000;
                 if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
-                var houseId = rand.Next(houseModels.Length);
-                var orientation = rand.Next(4) * (short.MinValue / 2);
-                command.AddComponent<CModel>(newEntity) = new() { PrefabName = "House", };
-                command.AddComponent<CHitPoints>(newEntity) = new() { Current = 10, };
-                command.AddComponent<ECTransform>(newEntity) = new() { Position = pos, Orientation = (short)orientation };
-                //command.AddComponent<ECMobile>(newEntity) = new() { MovementSpeed = 10000, TurnSpeed = 500, NavMask = 1, };
-                command.AddComponent<ECTeam>(newEntity) = new() { SlotId = (byte)i };
-                command.AddComponent<ECAbilityAttackMelee>(newEntity) = new() { Damage = 1, Interval = 1000, };
-                command.AddComponent<PrototypeData>(newEntity) = houseProto;
-                //command.AddComponent<ECObstruction>(newEntity);
-                //command.AddComponent<ECActionMove>(newEntity) = new() { Location = 5000, };
+                var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
+                command.AddComponent<ECTransform>(newEntity) = new() {
+                    Position = pos,
+                    Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
+                };
+                //command.RemoveComponent<ECObstruction>(newEntity);
             }
             command.Commit();
 
-            /*testObject = new();
-            var model = Resources.LoadModel("./Assets/SM_Barracks.fbx");
-            foreach (var mesh in model.Meshes) {
-                var instance = Scene.CreateInstance();
-                testObject.Meshes.Add(instance);
-                //scenePasses.AddInstance(instance, mesh);
-            };
-            Scene.SetTransform(testObject, Matrix4x4.CreateRotationY(MathF.PI));*/
-
-            /*World.AddSystem((ref Entity entity, ref Position pos) => {
-                World.AddComponent<TargetPosition>(entity);
-            }, World.BeginQuery().With<Position>().Without<TargetPosition>().Build());//*/
+            for (int i = 0; i < 10; i++) {
+                Int2 groupMin = 4000;
+                Int2 groupMax = Landscape.Sizing.Size * Landscape.Sizing.Scale1024 - 4000;
+                var groupPos = new Int2(
+                    rand.Next(groupMin.X, groupMax.X),
+                    rand.Next(groupMin.Y, groupMax.Y)
+                );
+                int spread = 10000;
+                for (int z = 0; z < 5; z++) {
+                    var pos = groupPos + new Int2(rand.Next(-spread, spread), rand.Next(-spread, spread));
+                    if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
+                    var entity = PrefabRegistry.Instantiate(command, tree.Prefab);
+                    command.SetComponent<ECTransform>(entity, new() {
+                        Position = pos,
+                        Orientation = (short)rand.Next(short.MinValue, short.MaxValue),
+                    });
+                }
+            }
+            command.Commit();
         }
 
         public void Step(long dtMS) {
-
-            var timeSystem = World.GetSystem<TimeSystem>();
-            timeSystem.Step(dtMS);
+            World.GetOrCreateSystem<TimeSystem>().Step(dtMS);
             World.Step();
-
             World.GetOrCreateSystem<LifeSystem>().PurgeDead();
-
-#if false
-            var newEntities = World.BeginQuery().With<Position>().Without<SceneRenderable>().Build();
-            foreach (var entity in World.GetEntities(newEntities)) {
-                var mutator = World.CreateMutator(entity);
-                mutator.AddComponent<SceneRenderable>();
-                mutator.Commit();
-                /*var model = Resources.LoadModel("./Assets/SM_Barracks.fbx");
-                foreach (var mesh in model.Meshes) {
-                    var instance = scene.CreateInstance();
-                    testObject.Meshes.Add(instance);
-                    scenePasses.AddInstance(instance, mesh);
-                };*/
-            }
-#endif
-
-            /*foreach (var entity in World.GetEntities(World.BeginQuery().With<Position, TargetPosition>().Build())) {
-                ref var pos = ref World.GetComponentRef<Position>(entity);
-                var targetPos = World.GetComponent<TargetPosition>(entity);
-                var delta = targetPos.Value - pos.Value;
-                var deltaLen = delta.Length();
-                if (deltaLen != 0f) {
-                    pos.Value = targetPos.Value - delta * Easing.MoveTowards(1f, 0f, 4f * dt / deltaLen);
-                } else {
-                    var rand = new Random(time.GetHashCode());
-                    World.GetComponentRef<TargetPosition>(entity).Value = pos.Value
-                        + new Vector3(rand.NextSingle() - 0.5f, 0f, rand.NextSingle() - 0.5f) * 20f;
-                }
-            }*/
-            /*var rand = new Random(time.GetHashCode());
-            foreach (var accessor in World.QueryAll<CPosition, CTargetPosition>()) {
-                var etargetPos = (CTargetPosition)accessor;
-                if (etargetPos.Value == default) {
-                    etargetPos.Value.Y = rand.NextSingle();
-                    accessor.Set(etargetPos);
-                    continue;
-                }
-                var epos = (CPosition)accessor;
-                var timer = time - etargetPos.Value.Y * 20.0f;
-                timer -= MathF.Floor(timer / 10.0f) * 10.0f;
-                var newPos = epos.Value;
-                newPos.Y = MathF.Abs(MathF.Sin(timer * 10.0f))
-                    * Easing.InverseLerp(1f, 0f, Easing.Clamp01(timer));
-                if (newPos != epos.Value) {
-                    epos.Value = newPos;
-                    accessor.Set(epos);
-                }
-            }*/
         }
+
         public ItemReference HitTest(Ray ray) {
             float nearestDst2 = float.MaxValue;
             ItemReference nearest = ItemReference.None;

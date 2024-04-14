@@ -480,11 +480,11 @@ namespace Weesals.Engine {
                 materials[0] = expireMaterial;
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                graphics.Draw(pso, bindings, resources, CSDrawConfig.MakeDefault());
+                graphics.Draw(pso, bindings, resources, CSDrawConfig.Default);
                 SetTargets(graphics);
                 pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                graphics.Draw(pso, bindings, resources, CSDrawConfig.MakeDefault());
+                graphics.Draw(pso, bindings, resources, CSDrawConfig.Default);
                 emissionMesh.Clear();
             }
             SetTargets(graphics);
@@ -498,7 +498,7 @@ namespace Weesals.Engine {
                 materials[0] = system.SpawnerMaterial;
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                var drawConfig = CSDrawConfig.MakeDefault();
+                var drawConfig = CSDrawConfig.Default;
                 graphics.Draw(pso, bindings, resources, drawConfig);
                 emissionMesh.Clear();
             }
@@ -513,7 +513,7 @@ namespace Weesals.Engine {
                 materials[0] = system.StepperMaterial;
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                var drawConfig = CSDrawConfig.MakeDefault();
+                var drawConfig = CSDrawConfig.Default;
                 graphics.Draw(pso, bindings, resources, drawConfig);
             }
 
@@ -531,7 +531,7 @@ namespace Weesals.Engine {
             materials[0] = rebaseMaterial;
             var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-            var drawConfig = CSDrawConfig.MakeDefault();
+            var drawConfig = CSDrawConfig.Default;
             graphics.Draw(pso, bindings, resources, drawConfig);
         }
         unsafe private void Rebase(CSGraphics graphics) {
@@ -545,7 +545,7 @@ namespace Weesals.Engine {
             materials[0] = rebaseMaterial;
             var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-            var drawConfig = CSDrawConfig.MakeDefault();
+            var drawConfig = CSDrawConfig.Default;
             graphics.Draw(pso, bindings, resources, drawConfig);
         }
 
@@ -583,7 +583,7 @@ namespace Weesals.Engine {
                 });
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                var drawConfig = CSDrawConfig.MakeDefault();
+                var drawConfig = CSDrawConfig.Default;
                 drawConfig.mInstanceBase = from * ParticleSystem.AllocGroup.Count;
                 graphics.Draw(pso, bindings, resources, drawConfig,
                     (to - from) * ParticleSystem.AllocGroup.Count);

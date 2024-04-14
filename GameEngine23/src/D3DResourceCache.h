@@ -27,9 +27,6 @@ struct D3DConstantBuffer {
 
 class D3DResourceCache {
 public:
-    inline static const char* StrVSProfile = "vs_6_0";
-    inline static const char* StrPSProfile = "ps_6_0";
-
     struct D3DBuffer {
         ComPtr<ID3D12Resource> mBuffer;
         int mRevision = -1;
@@ -37,6 +34,7 @@ public:
     };
     struct D3DTexture : public D3DBuffer {
         DXGI_FORMAT mFormat;
+        D3D::BarrierHandle mHandle = D3D::BarrierHandle::Invalid;
     };
     struct D3DRenderSurface : public D3DTexture {
         struct SubresourceData {
@@ -45,7 +43,6 @@ public:
         SubresourceData mMip0;
         std::vector<SubresourceData> mMipN;
         D3D::TextureDescription mDesc;
-        D3D::BarrierHandle mHandle = D3D::BarrierHandle::Invalid;
         SubresourceData& RequireSubResource(int subresource) {
             if (subresource == 0) return mMip0;
             --subresource;
@@ -54,13 +51,6 @@ public:
         }
         const SubresourceData& RequireSubResource(int subresource) const {
             return const_cast<D3DRenderSurface*>(this)->RequireSubResource(subresource);
-        }
-        template<class T>
-        bool RequireState(T& barriers, D3D::BarrierStateManager& manager, D3D12_RESOURCE_STATES state, int subresourceId = -1) const {
-            return manager.SetResourceState(barriers, mBuffer.Get(), mHandle, subresourceId, state, mDesc);
-        }
-        void UnlockState(D3D::BarrierStateManager& manager, D3D12_RESOURCE_STATES state, int subresourceId = -1) const {
-            manager.UnlockResourceState(mHandle, subresourceId, state, mDesc);
         }
     };
     struct D3DRenderSurfaceView {
@@ -97,13 +87,14 @@ public:
 
         size_t mHash = 0;
         std::unique_ptr<PipelineLayout> mLayout;
+        int mType = 0;
     };
     struct D3DBinding : public D3DBuffer {
         D3D12_GPU_VIRTUAL_ADDRESS mGPUMemory;
         int mSize = -1;
         int mStride, mCount;
         BufferLayout::Usage mUsage;
-        D3D::BarrierHandle mHandle = D3D::BarrierHandle::Invalid;
+        D3D12_RESOURCE_STATES mState;
     };
 
     struct CommandAllocator {
@@ -123,19 +114,23 @@ public:
     int mResourceCount = 0;
 
 private:
+    struct ShaderResourceView : public D3DRenderSurface::SubresourceData {
+        ID3D12Resource* mResource;
+    };
     D3DGraphicsDevice& mD3D12;
 
     // Storage for the GPU resources of each application type
     // TODO: Register for destruction of the application type
     // and clean up GPU resources
     D3DRootSignature mRootSignature;
+    D3DRootSignature mComputeRootSignature;
     std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
     std::unordered_map<ShaderKey, std::unique_ptr<D3DShader>> shaderMapping;
     std::unordered_map<const Texture*, std::unique_ptr<D3DTexture>> textureMapping;
     std::unordered_map<const RenderTarget2D*, std::unique_ptr<D3DRenderSurface>> rtMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
-    PerFrameItemStore<D3DRenderSurface::SubresourceData> mResourceViewCache;
+    PerFrameItemStore<ShaderResourceView> mResourceViewCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
     std::vector<uint8_t> mTempData;
@@ -154,11 +149,11 @@ public:
     void UnlockFrame(size_t frameHash);
     void ClearDelayedData();
     ID3D12Resource* AllocateUploadBuffer(size_t size, int lockBits);
-    void CreateBuffer(ComPtr<ID3D12Resource>& buffer, int size, int lockBits);
     bool RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin, int lockBits);
     D3DResourceCache::D3DBinding* GetBinding(uint64_t bindingIdentifier);
     D3DResourceCache::D3DBinding& RequireBinding(const BufferLayout& buffer);
     void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& buffer, std::span<const RangeInt> ranges);
+    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length);
 
     void ComputeElementLayout(std::span<const BufferLayout*> bindings,
         std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
@@ -174,19 +169,25 @@ public:
     D3DTexture* RequireD3DTexture(const Texture& tex);
     D3DPipelineState* GetOrCreatePipelineState(size_t hash);
     D3DPipelineState* RequirePipelineState(
-        const CompiledShader& vertexShader, const CompiledShader& pixelShader,
+        const ShaderStages& shaders,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings,
         std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
+    D3DPipelineState* RequireComputePSO(const CompiledShader& shader);
     D3DConstantBuffer* RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, int lockBits, std::span<const uint8_t> data, size_t hash);
     D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, int lockBits);
 
     D3D12_RESOURCE_DESC GetTextureDesc(const Texture& tex);
     int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, int lockBits, int mipB = 0, int mipC = -1);
     int GetBufferSRV(ID3D12Resource* buffer, int offset, int count, int stride, int lockBits);
+    int GetUAV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, int lockBits, int mipB = 0, int mipC = -1);
+    int GetBufferUAV(ID3D12Resource* buffer, int arrayCount, int stride, D3D12_BUFFER_UAV_FLAGS flags, int lockBits);
     void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DTexture* RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, int lockBits);
     D3DTexture* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
+
+    void RequireState(D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
+    void FlushBarriers(ID3D12GraphicsCommandList* cmdList);
 };
 
 

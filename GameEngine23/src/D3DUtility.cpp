@@ -8,7 +8,7 @@ namespace D3D {
 
     void WriteBufferData(uint8_t* data, const BufferLayout& binding, int itemSize, int byteOffset, int byteSize) {
         // Fast path
-        if (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize) {
+        if (itemSize <= 0 || (binding.GetElements().size() == 1 && binding.GetElements()[0].mBufferStride == itemSize)) {
             memcpy(data, (uint8_t*)binding.GetElements()[0].mData + byteOffset, byteSize);
             return;
         }
@@ -18,7 +18,7 @@ namespace D3D {
             auto elItemSize = element.GetItemByteSize();
             auto* dstData = data + toffset;
             auto* srcData = (uint8_t*)element.mData + byteOffset;
-            for (int s = 0; s < count; ++s) {   //binding.mCount
+            for (int s = 0; s < count; ++s) {
                 memcpy(dstData, srcData, elItemSize);
                 dstData += itemSize;
                 srcData += element.mBufferStride;
@@ -30,7 +30,6 @@ namespace D3D {
     const BarrierHandle BarrierHandle::Invalid(-1);
 
     bool BarrierStateManager::SetResourceState(
-        std::vector<D3D12_RESOURCE_BARRIER>& barriers,
         ID3D12Resource* d3dResource, PrimaryResourceState& resource,
         BarrierHandle handle, int subresource, D3D12_RESOURCE_STATES state,
         BarrierMeta meta) {
@@ -41,7 +40,7 @@ namespace D3D {
             if (resource.mSparseMask == 0xffffffff && resource.mLockCount == 0) {
                 // Special case when this resource has no sparse pages
                 if (resource.mState == state) return false;
-                CreateBarrier(barriers, d3dResource, resource.mState, state, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, meta);
+                CreateBarrier(mDelayedBarriers, d3dResource, resource.mState, state, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES, meta);
                 if (resource.GetIsLocked()) --resource.mLockCount;
                 resource.mState = state;
                 if (resource.GetIsLocked()) ++resource.mLockCount;
@@ -50,7 +49,7 @@ namespace D3D {
             else {
                 // Check if the primary page needs to change
                 if (!resource.GetIsLocked() && resource.mState != state) {
-                    CreateBarriers(barriers, d3dResource, resource.mState, state, 0, resource.mSparseMask, meta);
+                    CreateBarriers(mDelayedBarriers, d3dResource, resource.mState, state, 0, resource.mSparseMask, meta);
                     if (resource.GetIsLocked()) --resource.mLockCount;
                     resource.mState = state;
                     if (resource.GetIsLocked()) ++resource.mLockCount;
@@ -61,7 +60,7 @@ namespace D3D {
                 for (auto& page : std::ranges::subrange(pageRange.first, pageRange.second)) {
                     if (page.second.GetIsLocked()) { ++lockCount; continue; }
                     if (page.second.mState != state)
-                        CreateBarriers(barriers, d3dResource, page.second.mState, state,
+                        CreateBarriers(mDelayedBarriers, d3dResource, page.second.mState, state,
                             page.second.mPageOffset, page.second.mSparseMask, meta);
                     if (page.second.mPageOffset == 0) resource.mSparseMask |= page.second.mSparseMask;
                 }
@@ -114,7 +113,7 @@ namespace D3D {
         // Ignore if no state change is required
         if (fromState == state) return false;
         // Change the state
-        CreateBarrier(barriers, d3dResource, fromState, state, subresource, meta);
+        CreateBarrier(mDelayedBarriers, d3dResource, fromState, state, subresource, meta);
         // Add it to the destination page
         if (destPage != nullptr) {
             destPage->mSparseMask |= 1u << (subresource - destPage->mPageOffset);

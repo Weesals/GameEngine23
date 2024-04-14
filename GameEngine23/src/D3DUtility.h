@@ -75,10 +75,19 @@ namespace D3D {
         std::vector<PrimaryResourceState> mResourceStates;
         ResourceMap mSparseStates;
         int mNextHandle = 0x80000000;
+        std::vector<D3D12_RESOURCE_BARRIER> mDelayedBarriers;
 
         void Clear() {
             mResourceStates.clear();
             mSparseStates.clear();
+        }
+        void InitialiseResourceState(BarrierHandle handle, D3D12_RESOURCE_STATES state) {
+            if (handle >= (int)mResourceStates.size()) {
+                if (state == D3D12_RESOURCE_STATE_COMMON) return;
+                mResourceStates.resize(std::bit_ceil((uint32_t)handle + 16));
+            }
+            auto& resource = mResourceStates[handle];
+            resource.mState = state;
         }
         D3D12_RESOURCE_STATES GetResourceState(BarrierHandle handle, int subresource) {
             if (subresource < 31) {
@@ -96,6 +105,17 @@ namespace D3D {
                     return page.second.mState;
             }
             return D3D12_RESOURCE_STATE_COMMON;
+        }
+        void AssertState(BarrierHandle handle, D3D12_RESOURCE_STATES state, int subresource, int count) {
+            if (count == -1) {
+                if (handle < (int)mResourceStates.size())
+                    assert(mResourceStates[handle].mSparseMask == 0xffffffff);
+                count = 1;
+            }
+            if (subresource == -1) subresource = 0;
+            for (int i = 0; i < count; ++i) {
+                assert(GetResourceState(handle, subresource + i) == state);
+            }
         }
         bool UnlockResourceState(BarrierHandle handle, int subresource,
             D3D12_RESOURCE_STATES state, BarrierMeta meta) {
@@ -123,7 +143,7 @@ namespace D3D {
             }
             return true;
         }
-        bool SetResourceState(std::vector<D3D12_RESOURCE_BARRIER>& barriers,
+        bool SetResourceState(
             ID3D12Resource* d3dResource, BarrierHandle handle, int subresource,
             D3D12_RESOURCE_STATES state, BarrierMeta meta) {
             if (handle >= (int)mResourceStates.size()) {
@@ -131,16 +151,16 @@ namespace D3D {
                 mResourceStates.resize(std::bit_ceil((uint32_t)handle + 16));
             }
             auto& resource = mResourceStates[handle];
-            return SetResourceState(barriers, d3dResource, resource, handle, subresource, state, meta);
+            return SetResourceState(d3dResource, resource, handle, subresource, state, meta);
         }
-        bool SetResourceState(std::vector<D3D12_RESOURCE_BARRIER>& barriers,
+        bool SetResourceState(
             ID3D12Resource* d3dResource, ResourceState& resource, int subresource,
             D3D12_RESOURCE_STATES state, BarrierMeta meta) {
             if (resource.mHandle == -1) resource.mHandle = mNextHandle++;
-            return SetResourceState(barriers, d3dResource, resource, resource.mHandle, subresource, state, meta);
+            return SetResourceState(d3dResource, resource, resource.mHandle, subresource, state, meta);
         }
         // Returns true if a barrier MIGHT have been added
-        bool SetResourceState(std::vector<D3D12_RESOURCE_BARRIER>& barriers,
+        bool SetResourceState(
             ID3D12Resource* d3dResource, PrimaryResourceState& resource,
             BarrierHandle handle, int subresource, D3D12_RESOURCE_STATES state, BarrierMeta meta);
         static void CreateBarriers(std::vector<D3D12_RESOURCE_BARRIER>& barriers,
