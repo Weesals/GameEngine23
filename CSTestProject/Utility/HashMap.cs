@@ -124,6 +124,30 @@ namespace Weesals.Utility {
             map.Insert(hash, key);
             ++count;
         }
+        // Return false if item already exists (and dont add)
+        public bool AddUnique(TKey key) {
+            ResizeIfRequired();
+            var hash = key.GetHashCode() & (map.Capacity - 1);
+            if (map.GetNextIndexOf(map.GetIndexOf(hash), key) >= 0) return false;
+            map.Insert(hash, key);
+            ++count;
+            return true;
+        }
+        // If the item exists, remove it and return false
+        // (used for tracking edges in navmesh adjacency)
+        public bool ToggleUnique(TKey key) {
+            ResizeIfRequired();
+            var hash = key.GetHashCode() & (map.Capacity - 1);
+            var index = map.GetIndexOf(hash);
+            var child = map.GetNextIndexOf(index, key);
+            if (child >= 0) {
+                map.RemoveChild(index, child);
+                return false;
+            }
+            map.Insert(hash, key);
+            ++count;
+            return true;
+        }
         public bool Remove(TKey key) {
             var hash = key.GetHashCode() & (map.Capacity - 1);
             return map.Remove(hash, key);
@@ -131,6 +155,14 @@ namespace Weesals.Utility {
         public bool Contains(TKey key) {
             var hash = key.GetHashCode() & (map.Capacity - 1);
             return map.GetNextIndexOf(map.GetIndexOf(hash), key) >= 0;
+        }
+        public bool TryPop(out TKey key) {
+            key = default;
+            var index = map.GetNextIndex(-1);
+            if (index == -1) return false;
+            key = map.Keys[index];
+            map.RemoveChild(-1, index);
+            return true;
         }
         public void Clear() {
             map.Clear();

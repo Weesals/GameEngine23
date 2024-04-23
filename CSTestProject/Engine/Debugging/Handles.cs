@@ -13,6 +13,7 @@ namespace Weesals.Engine {
         public static Matrix4x4 matrix;
         public static Color color;
         public static int RenderHash;
+        public static readonly Color ColorFactor = new Color(64, 64, 64, 255);
 
         private class MeshBuffer : IDisposable {
             public Material Material;
@@ -135,7 +136,7 @@ namespace Weesals.Engine {
             var indRange = polygonBuffer.Mesh.AppendIndices((points.Length - 2) * 3);
             var positions = vertices.GetPositions();
             var tangents = vertices.GetTangents();
-            vertices.GetColors().Set(color);
+            vertices.GetColors().Set(color * ColorFactor);
             for (int i = 0; i < vertices.Count; i++) {
                 var pos = Vector3.Transform(points[i], matrix);
                 positions[i] = pos;
@@ -175,7 +176,7 @@ namespace Weesals.Engine {
             Span<Vector2> quadUVs = stackalloc[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f), };
             vertices.GetTangents().Set(Vector3.Normalize(to - from) * thickness);
             vertices.GetTexCoords().Set(quadUVs);
-            vertices.GetColors().Set(color * Handles.color);
+            vertices.GetColors().Set(color * Handles.color * ColorFactor);
             Span<Vector3> quadPos = stackalloc[] { from, from, to, to, };
             vertices.GetPositions().Set(quadPos);
             PushBatch(lineBuffer, indices.BaseIndex, indices.Count,
@@ -187,8 +188,9 @@ namespace Weesals.Engine {
             CanvasText text = new();
             text.Text = label;
             text.Font = Font;
-            text.FontSize = 10;
+            text.FontSize = 12;
             text.Alignment = TextAlignment.Left;
+            text.Color = color * ColorFactor;
             CanvasLayout layout = CanvasLayout.MakeBox(new Vector2(200f, 0f));
             //layout.Position += position;
             int vstart = textBuffer.Mesh.VertexCount;

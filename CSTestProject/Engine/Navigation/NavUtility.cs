@@ -94,6 +94,8 @@ namespace Navigation {
         public bool Equals(Edge o) { return Corner1 == o.Corner1 && Corner2 == o.Corner2; }
         public override int GetHashCode() { return (Corner1 * 49157) + Corner2; }
         public override string ToString() { return Corner1 + "-" + Corner2; }
+        public bool HasCorner(int cornerId) { return Corner1 == cornerId || Corner2 == cornerId; }
+
         public static readonly Edge Invalid = new Edge(ushort.MaxValue, ushort.MaxValue);
     }
     public struct TriangleEdge : IEquatable<TriangleEdge> {

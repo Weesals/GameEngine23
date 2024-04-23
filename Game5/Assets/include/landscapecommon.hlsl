@@ -26,7 +26,7 @@ struct ControlPoint {
 };
 ControlPoint DecodeControlMap(uint cp) {
     ControlPoint o;
-    o.Data = ((cp >> uint4(0, 8, 16, 24)) & 0xff);
+    o.Data = ((cp >> uint4(8, 0, 16, 24)) & 0xff);
     o.Layer = o.Data.r;
     o.Rotation = o.Data.g * (3.1415 * 2.0 / 256.0);
     float2 sc; sincos(o.Rotation, sc.x, sc.y);

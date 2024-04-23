@@ -45,7 +45,7 @@ namespace Navigation {
             }
 
             if (ShowCornerLabels) {
-                using (new HandlesColor(Color.Blue)) {
+                using (new HandlesColor(Color.Cyan)) {
                     for (var it = NavBaker.NavMesh.GetCornerEnumerator(); it.MoveNext();) {
                         Handles.Label(it.Current.ToUVector3(0f), "C" + it.Index);
                     }

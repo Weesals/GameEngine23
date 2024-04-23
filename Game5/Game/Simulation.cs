@@ -96,7 +96,6 @@ namespace Game5.Game {
 
         public World World { get; private set; }
         public LandscapeData Landscape { get; private set; }
-        public VisualsCollection EntityVisuals { get; private set; }
 
         public EntityProxy EntityProxy { get; private set; }
         public TimeSystem TimeSystem { get; private set; }
@@ -134,9 +133,6 @@ namespace Game5.Game {
             EntityMapSystem.SetLandscape(landscape);
             navigationSystem.SetLandscape(landscape);
         }
-        public void SetVisuals(VisualsCollection entityVisuals) {
-            EntityVisuals = entityVisuals;
-        }
 
         public void GenerateWorld() {
             var rand = new Random(0);
@@ -159,17 +155,7 @@ namespace Game5.Game {
             var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
             var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
             var animHandles = JobHandle.CombineDependencies(idleAnimHandle, runAnimHandle);
-            var houseModels = new[] {
-                Resources.LoadModel("./Assets/SM_House.fbx", out var house1Handle),
-                Resources.LoadModel("./Assets/B_House2.fbx", out var house2Handle),
-                Resources.LoadModel("./Assets/B_House3.fbx", out var house3Handle),
-                Resources.LoadModel("./Assets/B_Granary1.fbx", out var granary1Handle),
-                Resources.LoadModel("./Assets/B_Granary2.fbx", out var granary2Handle),
-                Resources.LoadModel("./Assets/B_Granary3.fbx", out var granary3Handle),
-            };
-            var houseHandles = JobHandle.CombineDependencies(house1Handle, house2Handle, house3Handle);
-            var granaryHandles = JobHandle.CombineDependencies(granary1Handle, granary2Handle, granary3Handle);
-            var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, chickenHandle, animHandles, houseHandles, granaryHandles);
+            var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, chickenHandle, animHandles);
 
             modelLoadHandle.Complete();
 
@@ -214,7 +200,7 @@ namespace Game5.Game {
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECObstruction>(new() { })
+                //.AddComponent<ECObstruction>(new() { })
                 .Build();
 
             var townCentre = ProtoSystem.CreatePrototype("TownCentre",
@@ -236,7 +222,7 @@ namespace Game5.Game {
                 .AddComponent<CHitPoints>(new() { Current = 100, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECObstruction>(new() { })
+                //.AddComponent<ECObstruction>(new() { })
                 .Build();
 
             var tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
@@ -265,7 +251,7 @@ namespace Game5.Game {
 
             for (int i = 0; i < 10; i++) {
                 Int2 groupMin = 4000;
-                Int2 groupMax = Landscape.Sizing.Size * Landscape.Sizing.Scale1024 - 4000;
+                Int2 groupMax = Landscape.Sizing.SimulationSize - 4000;
                 var groupPos = new Int2(
                     rand.Next(groupMin.X, groupMax.X),
                     rand.Next(groupMin.Y, groupMax.Y)
@@ -282,35 +268,16 @@ namespace Game5.Game {
                 }
             }
             command.Commit();
+
+            navigationSystem.Update();
+            World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(30000, 30000);
+            navigationSystem.Update();
         }
 
         public void Step(long dtMS) {
             World.GetOrCreateSystem<TimeSystem>().Step(dtMS);
             World.Step();
             World.GetOrCreateSystem<LifeSystem>().PurgeDead();
-        }
-
-        public ItemReference HitTest(Ray ray) {
-            float nearestDst2 = float.MaxValue;
-            ItemReference nearest = ItemReference.None;
-            foreach (var accessor in World.QueryAll<ECTransform, CModel>()) {
-                var epos = (ECTransform)accessor;
-                var emodel = (CModel)accessor;
-                var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
-                if (prefab == null) continue;
-                foreach (var model in prefab.Models) {
-                    foreach (var mesh in model.Meshes) {
-                        var lray = ray;
-                        lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
-                        var dst = mesh.BoundingBox.RayCast(lray);
-                        if (dst >= 0f && dst < nearestDst2) {
-                            nearest = EntityProxy.MakeHandle(accessor);
-                            nearestDst2 = dst;
-                        }
-                    }
-                }
-            }
-            return nearest;
         }
 
         public void EnqueueAction(Entity entity, ActionRequest request, bool append = false) {

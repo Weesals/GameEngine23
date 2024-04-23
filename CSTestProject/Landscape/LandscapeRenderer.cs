@@ -115,15 +115,27 @@ namespace Weesals.Landscape {
 
         private bool enableStochastic = true;
         private bool highQualityBlend = true;
+        private bool secondVariant = false;
+        private bool complexity = false;
         [EditorField]
         public bool HighQualityBlend {
             get => highQualityBlend;
             set => LandMaterial.SetPixelShader(Resources.LoadShader((highQualityBlend = value) ? "./Assets/landscape3x3.hlsl" : "./Assets/landscape.hlsl", "PSMain"));
         }
         [EditorField]
+        public bool SecondVariant {
+            get => secondVariant;
+            set => LandMaterial.SetMacro("VARIANT", (secondVariant = value) ? "1" : "0");
+        }
+        [EditorField]
         public bool EnableStochastic {
             get => enableStochastic;
             set { enableStochastic = value; runtimeData.Changed.CombineWith(LandscapeChangeEvent.MakeAll(LandscapeData.Size)); }
+        }
+        [EditorField]
+        public bool Complexity {
+            get => complexity;
+            set { if (complexity = value) LandMaterial.SetMacro("COMPLEXITY", "1"); else LandMaterial.ClearMacro("COMPLEXITY"); }
         }
 
         public LandscapeRenderer() {
@@ -270,7 +282,7 @@ namespace Weesals.Landscape {
             if (!runtimeData.HeightMap.IsValid)
                 runtimeData.HeightMap = CSTexture.Create("HeightMap", size.X, size.Y);
             if (!runtimeData.ControlMap.IsValid)
-                runtimeData.ControlMap = CSTexture.Create("ControlMap", size.X, size.Y, BufferFormat.FORMAT_R32_UINT);
+                runtimeData.ControlMap = CSTexture.Create("ControlMap", size.X, size.Y, BufferFormat.FORMAT_R16_UINT);
 
             JobHandle heightDep = default;
             JobHandle controlDep = default;
@@ -477,24 +489,25 @@ namespace Weesals.Landscape {
                             var sample = VoronoiIntNoise.GetNearest_2x2(pnt * 128);
                             rnd = (uint)(sample.X + (sample.Y << 11));
                         }
-                        var c = new Color(cell.TypeId, 0, 0, 255);
+                        ushort color = 0;
+                        //var c = new Color(cell.TypeId, 0, 0, 255);
                         switch (layer.Alignment) {
                             case LandscapeLayer.AlignmentModes.Clustered: {
                                 rnd *= 0xA3C59AC3;
                                 rnd ^= rnd >> 15;
-                                c.G = (byte)rnd;
+                                color = (byte)rnd;
                             }
                             break;
                             case LandscapeLayer.AlignmentModes.Random90: {
                                 rnd += rnd >> 10;
-                                c.G = (byte)(rnd << 6);
+                                color = (byte)(rnd << 6);
                             }
                             break;
                             case LandscapeLayer.AlignmentModes.Random: {
                                 rnd = (uint)(pnt.X + (pnt.Y << 16));
                                 rnd *= 0xA3C59AC3;
                                 rnd ^= rnd >> 15;
-                                c.G = (byte)rnd;
+                                color = (byte)rnd;
                             }
                             break;
                             case LandscapeLayer.AlignmentModes.WithNormal: {
@@ -502,18 +515,19 @@ namespace Weesals.Landscape {
                                 if (dd.Equals(default)) {
                                     rnd *= 0xA3C59AC3;
                                     rnd ^= rnd >> 15;
-                                    c.G = (byte)rnd;
+                                    color = (byte)rnd;
                                 } else {
                                     var ang = Math.Abs(dd.X) > Math.Abs(dd.Y)
                                         ? (dd.X < 0 ? 128 : 0) + 32 * -dd.Y / dd.X
                                         : (dd.Y < 0 ? 192 : 64) + 32 * dd.X / dd.Y;
-                                    c.G = (byte)((int)(ang + layer.Rotation * 256 / 360 + 8) & 0xf0);
+                                    color = (byte)((int)(ang + layer.Rotation * 256 / 360 + 8) & 0xf0);
                                 }
                             }
                             break;
                         }
-                        c.A = (byte)(((y & 0x01) << 1) | (x & 0x01));
-                        ((uint*)pxControlMap.Data)[yI + x] = c.Packed;
+                        color |= (ushort)(cell.TypeId << 8);
+                        //c.A = (byte)(((y & 0x01) << 1) | (x & 0x01));
+                        ((ushort*)pxControlMap.Data)[yI + x] = color;
                     }
                 }
             }, new RangeInt(range.Min.Y, range.Size.Y), dependency);

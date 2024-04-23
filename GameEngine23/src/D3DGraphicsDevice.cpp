@@ -90,7 +90,10 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     }
 
     // Create the device
-    ThrowIfFailed(D3D12CreateDevice(adapters[1].Get(), D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice)));
+    int DeviceId = 0;
+    if (GetKeyState(VK_CAPITAL) & 0x00ff) DeviceId = 1 - DeviceId;
+    ThrowIfFailed(D3D12CreateDevice(adapters[std::min(DeviceId, (int)adapters.size() - 1)].Get(),
+        D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice)));
     mD3DDevice->SetName(L"Device");
 
     // Create the command queue
@@ -145,13 +148,10 @@ D3DGraphicsDevice::D3DGraphicsDevice()
 D3DGraphicsDevice::~D3DGraphicsDevice() {
     CoUninitialize();
 }
-void D3DGraphicsDevice::CheckDeviceState() const
-{
-    auto remove = mD3DDevice->GetDeviceRemovedReason();
-    if (remove != S_OK)
-    {
+void D3DGraphicsDevice::CheckDeviceState() const {
+    auto reason = mD3DDevice->GetDeviceRemovedReason();
+    if (reason != S_OK) {
         WCHAR* errorString = nullptr;
-        auto reason = mD3DDevice->GetDeviceRemovedReason();
         FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS,
             nullptr, reason, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
             (LPWSTR)&errorString, 0, nullptr);

@@ -64,7 +64,7 @@ float3 Specular(float3 specularColor, float NdV, float NdL, float NdH, float VdH
 }
 
 // Combine all the above functions to compute the effects of a light
-float3 ComputeLight(float3 albedoColor, float3 specularColor, float3 normal, float roughness, float3 lightColor, float3 lightDir, float3 viewDir, float met) {
+float3 ComputeLight(float3 albedoColor, float3 specularColor, float3 normal, float roughness, float3 lightColor, float3 lightDir, float3 viewDir, float met, float shadow = 1.0) {
     ///Calculate everything.
     float NdL = saturate(dot(normal, lightDir));
     float NdV = saturate(dot(normal, viewDir));
@@ -86,7 +86,7 @@ float3 ComputeLight(float3 albedoColor, float3 specularColor, float3 normal, flo
     kD *= 1.0f - met;
 
     ///Now we just multiply the NdL by the lightcolor and by the colorDiffuse and ColorSpecular
-    return lightColor * NdL * (kD * ColorDiffuse + ColorSpecular);
+    return lightColor * (NdL * shadow) * (kD * ColorDiffuse + ColorSpecular);
 }
 
 // TODO: These should sample from the world

@@ -129,7 +129,7 @@ namespace Game5.Game {
                     new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
                     new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
                 };
-                landscape.Initialise(128, layers);
+                landscape.Initialise(new Int2(256, 256), layers);
                 landscape.Load();
                 landscapeRenderer = new LandscapeRenderer();
                 landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
@@ -165,7 +165,6 @@ namespace Game5.Game {
             using (var marker = new ProfilerMarker("Create Simulation").Auto()) {
                 Simulation = new();
                 Simulation.SetLandscape(landscape);
-                Simulation.SetVisuals(EntityVisuals);
             }
 
             using (var marker = new ProfilerMarker("Render Bindings").Auto()) {
@@ -201,6 +200,8 @@ namespace Game5.Game {
             Scene.RootMaterial.SetValue("Time", time);
             Scene.RootMaterial.SetValue("CloudDensity", FogIntensity);
 
+            if (Input.GetKeyPressed(KeyCode.Z)) landscapeRenderer.SecondVariant = !landscapeRenderer.SecondVariant;
+
             NavDebug?.OnDrawGizmosSelected();
 
             if (Input.GetKeyDown(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.LeftAlt) && Input.GetKeyPressed(KeyCode.F11)) {
@@ -233,7 +234,7 @@ namespace Game5.Game {
         [EditorButton]
         public void ToggleNavDebug() {
             if (NavDebug == null) {
-                NavDebug = new() { ShowCornerLabels = false, ShowTriangleLabels = false, };
+                NavDebug = new() { ShowCornerLabels = true, ShowTriangleLabels = true, };
                 NavDebug.Initialise(Simulation.NavBaker);
             } else {
                 NavDebug = null;
@@ -275,12 +276,30 @@ namespace Game5.Game {
         }
 
         public ItemReference HitTest(Ray ray) {
-            var entityHit = Simulation.HitTest(ray);
+            float nearestDst2 = float.MaxValue;
+            ItemReference entityHit = ItemReference.None;
+            foreach (var accessor in World.QueryAll<ECTransform, CModel>()) {
+                var epos = (ECTransform)accessor;
+                var emodel = (CModel)accessor;
+                var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
+                if (prefab == null) continue;
+                foreach (var model in prefab.Models) {
+                    foreach (var mesh in model.Meshes) {
+                        var lray = ray;
+                        lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
+                        var dst = mesh.BoundingBox.RayCast(lray);
+                        if (dst >= 0f && dst < nearestDst2) {
+                            entityHit = Simulation.EntityProxy.MakeHandle(accessor);
+                            nearestDst2 = dst;
+                        }
+                    }
+                }
+            }
             if (entityHit.IsValid) return entityHit;
             if (landscape.Raycast(ray, out var landscapeHit)) {
                 return new ItemReference(landscapeRenderer);
             }
-            return default;
+            return ItemReference.None;
         }
 
     }

@@ -111,7 +111,7 @@ namespace Weesals.Editor {
             EnableBackground = false;
             realtimeToggle = new ToggleButton();
             realtimeToggle.Transform = CanvasTransform.MakeAnchored(new(40f, 40f), new(0f, 0f));
-            realtimeToggle.State = false;
+            realtimeToggle.State = true;
             realtimeToggle.AppendChild(new TextBlock("Realtime") { FontSize = 10, });
             AppendChild(realtimeToggle);
         }

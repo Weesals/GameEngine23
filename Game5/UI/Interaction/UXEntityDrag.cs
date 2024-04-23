@@ -71,7 +71,9 @@ namespace Game5.UI.Interaction {
             instances[events] = instance;
 
             var ray = PlayUI.ScreenToRay(events.CurrentPosition);
-            instance.Target.SetWorldPosition(ray.ProjectTo(instance.DragPlane) + instance.DragOffset);
+            var pos = ray.ProjectTo(instance.DragPlane) + instance.DragOffset;
+            pos = ItemReference.MakeVector3(pos).GetWorldPosition();
+            instance.Target.SetWorldPosition(pos);
         }
         public void OnEndDrag(PointerEvent events) {
             instances.Remove(events);

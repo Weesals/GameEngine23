@@ -19,6 +19,7 @@ namespace Weesals.Landscape {
 
         private MeshDrawIndirect meshDraw;
         private BufferLayoutPersistent instanceBuffer;
+        private BoundingBox visibleBounds;
 
         public LandscapeFoliageRenderer(LandscapeRenderer landscape) {
             LandscapeRenderer = landscape;
@@ -49,11 +50,17 @@ namespace Weesals.Landscape {
             graphics.CopyBufferData(instanceBuffer, new RangeInt(0, 4));
             LandscapeRenderer.ApplyDataChanges();
 
-            var bounds = LandscapeRenderer.GetVisibleBounds(pass.Frustum);
-            bounds.Min = bounds.Min.Floor();
-            bounds.Max = bounds.Max.Ceil();
-            FoliageMaterial.SetValue("BoundsMin", bounds.Min.toxz());
-            FoliageMaterial.SetValue("BoundsMax", bounds.Max.toxz());
+            visibleBounds = LandscapeRenderer.GetVisibleBounds(pass.Frustum);
+            visibleBounds.Min = visibleBounds.Min.Floor();
+            visibleBounds.Max = visibleBounds.Max.Ceil();
+            var dispatchCount = new Int3((int)visibleBounds.Size.X / 8, (int)visibleBounds.Size.Z / 8, 1);
+            if (dispatchCount.X <= 0 || dispatchCount.Y <= 0) {
+                visibleBounds = BoundingBox.Invalid;
+                return;
+            }
+
+            FoliageMaterial.SetValue("BoundsMin", visibleBounds.Min.toxz());
+            FoliageMaterial.SetValue("BoundsMax", visibleBounds.Max.toxz());
             {
                 var computeShader = Resources.RequireShader(graphics,
                     Resources.LoadShader("./Assets/Shader/GenerateFoliageInstances.hlsl", "CSGenerateFoliage"), "cs_6_2", default, default);
@@ -64,13 +71,13 @@ namespace Weesals.Landscape {
                 materials.Add(LandscapeRenderer.LandMaterial);
                 materials.Add(pass.Scene.RootMaterial);
                 var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, materials);
-                var dispatchCount = new Int3((int)bounds.Size.X / 8, (int)bounds.Size.Z / 8, 1);
                 //dispatchCount.X = 1;
                 //dispatchCount.Y = 1;
                 graphics.DispatchCompute(computePSO, resources, dispatchCount);
             }
         }
         unsafe public void RenderInstances(CSGraphics graphics, ref MaterialStack materials, ScenePass pass) {
+            if (!visibleBounds.IsValid) return;
             //using var foliageMat = materials.Push(FoliageMaterial);
             //if (pass.TagsToInclude.Has(RenderTag.ShadowCast)) return;
             graphics.CopyBufferData(meshDraw.ArgsBuffer);

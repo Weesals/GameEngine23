@@ -27,6 +27,35 @@ struct TerrainSample {
     half Height;
     half Metallic;
     half Roughness;
+    
+    float4 Packed;
+    uint4 PackedI;
+    float Pack3(float3 v) {
+        v.xy = round(255.0 * v.xy);
+        return dot(v, float3(256, 1.0, 255.0 / 256.0));
+    }
+    float3 Unpack3(float v) {
+        return float3(v / (256 * 255.0), frac(v / 256.0), frac(v));
+    }
+    void Pack() {
+        Packed.z = Pack3(Albedo);
+        Packed.w = Pack3(float3(Normal.xy * 0.5 + 0.5, Metallic));
+        uint2 packedNrm = f32tof16(Normal.xy);
+        PackedI.x = (packedNrm.x << 16) | packedNrm.y;
+        uint2 packedAttr = f32tof16(float2(Metallic, Roughness));
+        PackedI.y = (packedAttr.x << 16) | packedAttr.y;
+    }
+    void UnpackAlbedo() {
+        Albedo = Unpack3(Packed.z);
+    }
+    void UnpackNrm() {
+        Normal.xy = Unpack3(Packed.w).xy * 2.0 - 1.0;
+        Metallic = Unpack3(Packed.w).z;
+        Normal.xy = f16tof32(uint2(PackedI.x >> 16, PackedI.x));
+        Metallic = f16tof32(PackedI.y >> 16);
+        Roughness = f16tof32(PackedI.y);
+        Normal.z = sqrt(1.0 - dot(Normal.xy, Normal.xy));
+    }
 };
 
 half4 SampleGradOptional(Texture2DArray<half4> tex, float3 uv, float2 duvdx, float2 duvdy, bool enableGrad = false) {
@@ -74,19 +103,20 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableT
     }
     
     uv.y += data.UVScrollY * Time;
-
+    
     half4 bumpSample = SampleGradOptional(context.BumpMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar);
-    o.Normal = bumpSample.rgb * 2.0 - 1.0;
-    o.Normal.y *= -1;
+    //bumpSample = half4(0, 0, 0, 1);
+    o.Normal = bumpSample.rgb * half3(2.0, -2.0, 2.0) - half3(1.0, -1.0, 1.0);
     o.Normal.xy = mul((half2x2)cp.RotationMatrix, o.Normal.xy);
     o.Metallic = (half)data.Metallic;
     o.Roughness = (half)data.Roughness * bumpSample.a;
     
     half4 baseSample = SampleGradOptional(context.BaseMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar);
+    //baseSample = abs(sin(cp.Layer + half4(1, 2, 3, 4)));
     o.Albedo = baseSample.rgb;
     o.Height = baseSample.a;
     
-    //o.Albedo = 0.5 + 0.5 * sin(cp.Layer + float3(1, 2, 3));
+    o.Pack();
     
     return o;
 }

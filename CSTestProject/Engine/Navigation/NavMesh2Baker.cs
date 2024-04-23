@@ -37,7 +37,6 @@ namespace Navigation {
 
         public NavMesh NavMesh;
 
-        internal PooledList<ushort> triIdByVert;
         public MultiHashMap<int, int> vertIdByHash;
         internal HashSet<Edge> pinnedEdges;
 
@@ -53,7 +52,6 @@ namespace Navigation {
         }
 
         public void Allocate() {
-            triIdByVert = new(128);
             vertIdByHash = new(128);
             pinnedEdges = new(128);
         }
@@ -61,12 +59,10 @@ namespace Navigation {
         public void Dispose() {
             //pinnedEdges.Dispose();
             vertIdByHash.Dispose();
-            triIdByVert.Dispose();
         }
 
         public void Clear() {
             NavMesh.Clear();
-            triIdByVert.Clear();
             vertIdByHash.Clear();
             pinnedEdges.Clear();
         }
@@ -97,7 +93,6 @@ namespace Navigation {
             public readonly NavMesh2Baker NavBaker;
             private SparseArray<Coordinate> corners => NavBaker.corners;
             private MultiHashMap<int, int> vertIdByHash => NavBaker.vertIdByHash;
-            private ref PooledList<ushort> triIdByVert => ref NavBaker.triIdByVert;
             public VertexMutator(NavMesh2Baker baker) {
                 NavBaker = baker;
             }
@@ -107,11 +102,33 @@ namespace Navigation {
                     if (corners[index].Equals(vert)) return (CornerId)index;
                 }
                 var vertId = corners.Allocate();
-                if (vertId >= triIdByVert.Count) triIdByVert.Add(InvalidTriId);
                 corners[vertId] = vert;
-                triIdByVert[vertId] = InvalidTriId;
                 vertIdByHash.Add(hash, vertId);
                 return (CornerId)vertId;
+            }
+
+            public void RemoveVertex(CornerId cornerId) {
+                foreach (var edge in NavBaker.pinnedEdges) Debug.Assert(!edge.HasCorner(cornerId));
+                var aj = NavBaker.NavMesh.GetAdjacency();
+                var ro = NavBaker.NavMesh.GetReadOnly();
+                var mutator = new NavMesh2Baker.Mutator(NavBaker);
+                using var corners = new PooledList<CornerId>();
+                TriangleEdge triEdge = default;
+                {
+                    var triId = NavBaker.NavMesh.GetTriangleAt(
+                        NavBaker.NavMesh.GetCorner(cornerId));
+                    var tri = NavBaker.NavMesh.GetTriangle(triId);
+                    triEdge = new TriangleEdge(triId,
+                        (ushort)((tri.FindCorner(cornerId) + 2) % 3));
+                }
+                while (triEdge.TriangleId != InvalidTriId) {
+                    var tri = NavBaker.NavMesh.GetTriangle(triEdge.TriangleId);
+                    corners.Add(tri.GetCorner(triEdge.EdgeId));
+                    var oTriEdge = aj.GetAdjacentEdge(triEdge, ro);
+                    mutator.RemoveTriangle(triEdge.TriangleId);
+                    oTriEdge.EdgeId = (ushort)((oTriEdge.EdgeId + 2) % 3);
+                    triEdge = oTriEdge;
+                }
             }
         }
         public struct Mutator {
@@ -139,9 +156,7 @@ namespace Navigation {
                 using var marker = getTriangleAtMarker.Auto();
                 var ro = CreateReadOnly();
                 var aj = CreateAdjacency();
-#if UNITY_EDITOR
-                if (!triangles.ContainsIndex(0)) Debug.LogError("Triangle 0 is invalid");
-#endif
+                //Debug.Assert(triangles.ContainsIndex(0), "Triangle 0 is invalid");
                 return aj.GetTriangleAt(ro, p);
             }
             public unsafe void InsertPolygon(Span<CornerId> cornerIds, TriangleType type, bool pinEdges) {
@@ -154,6 +169,13 @@ namespace Navigation {
                 }
                 TriangulatePolygon(cornerIds, type);
             }
+            public void RemoveTriangle(TriangleId triId) {
+                var tri = triangles[triId];
+                SetAdjacenctTriangle(tri.C1, tri.C2, InvalidTriId);
+                SetAdjacenctTriangle(tri.C2, tri.C3, InvalidTriId);
+                SetAdjacenctTriangle(tri.C3, tri.C1, InvalidTriId);
+                triangles.Return(triId);
+            }
 
             private int RequireTriPoint(ushort cornerI) {
                 using var marker = requireTriPointMarker.Auto();
@@ -162,11 +184,7 @@ namespace Navigation {
                 if (triI == InvalidTriId) return InvalidTriId;
                 var tri = triangles[triI];
                 if (tri.HasCorner(cornerI)) return triI;
-#if UNITY_EDITOR
-                if (!GetTriangleContains(tri, p)) {
-                    Debug.LogError("Triangle does not contain point!");
-                }
-#endif
+                Debug.Assert(GetTriangleContains(tri, p), "Triangle does not contain point!");
                 for (int i = 0; i < 3; i++) {
                     var edge = tri.GetEdge(i);
                     var c1 = (Int2)corners[edge.Corner1];
@@ -252,6 +270,10 @@ namespace Navigation {
                     return true;
                 }
             }
+            public void UnpinEdge_NoRepair(Edge edge) {
+                using var marker = pinEdgeMarker.Auto();
+                pinnedEdges.Remove(edge);
+            }
 
             private TriangleId GetCornersTriangle(ushort cornerI, Int2 dir) {
                 var corner1 = corners[cornerI];
@@ -334,7 +356,8 @@ namespace Navigation {
                 if (adjacent.Triangle2 == InvalidTriId) return int.MinValue;
                 var tri1 = triangles[adjacent.Triangle1];
                 var tri2 = triangles[adjacent.Triangle2];
-                Debug.Assert(tri1.Type.Equals(tri2.Type), "Non-pinned edge does not share type!");
+                // TODO: Uncomment
+                //Debug.Assert(tri1.Type.Equals(tri2.Type), "Non-pinned edge does not share type!");
                 var c0 = corners[edge.Corner1];
                 var c1 = corners[edge.Corner2];
                 var e0 = corners[tri1.FindNextCorner(edge.Corner1)];

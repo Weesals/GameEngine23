@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -23,7 +24,9 @@ namespace Weesals.Engine {
 
     public struct ItemReference : IEquatable<ItemReference> {
 
-        private const string WorldGridId = "WORLDGRID";
+        private const string IntGridId = "INTGRID";
+        private const string Vec2Id = "VEC2ID";
+        private const string Vec3Id = "VEC3ID";
 
         public object Owner;
         public ulong Data;
@@ -67,7 +70,19 @@ namespace Weesals.Engine {
         public Vector3? TryGetWorldPosition(int index = -1) {
             if (Owner is IItemPosition eposition) {
                 return eposition.GetPosition(Data);
-            } else if (Owner is string label && label == WorldGridId) {
+            } else if (ReferenceEquals(Owner, Vec2Id)) {
+                return new Vector3(
+                    Unsafe.BitCast<uint, float>((uint)(Data >> 32)),
+                    0f,
+                    Unsafe.BitCast<uint, float>((uint)(Data >> 0))
+                );
+            } else if (ReferenceEquals(Owner, Vec3Id)) {
+                return new Vector3(
+                    Unsafe.BitCast<uint, float>((uint)((Data) >> 42) << (32 - 22)),
+                    Unsafe.BitCast<uint, float>((uint)((Data) >> 21) << (32 - 21)),
+                    Unsafe.BitCast<uint, float>((uint)((Data) >> 00) << (32 - 21))
+                );
+            } else if (ReferenceEquals(Owner, IntGridId)) {
                 var wpnt = DataAsInt2;
                 return new Vector3(wpnt.X + 0.5f, 0f, wpnt.Y + 0.5f);
             }
@@ -80,6 +95,21 @@ namespace Weesals.Engine {
             return Quaternion.Identity;
         }
 
+        public static ItemReference MakeGridPoint(Int2 pnt) {
+            return new ItemReference(IntGridId) { DataAsInt2 = pnt };
+        }
+        public static ItemReference MakeVector2(Vector2 pnt) {
+            return new ItemReference(Vec2Id,
+                (ulong)(Unsafe.BitCast<float, uint>(pnt.X) << 32) | Unsafe.BitCast<float, uint>(pnt.Y)
+            );
+        }
+        public static ItemReference MakeVector3(Vector3 pnt) {
+            ulong data = 0;
+            data |= (ulong)((Unsafe.BitCast<float, uint>(pnt.X) + (1u << (31 - 22))) >> (32 - 22)) << 42;
+            data |= (ulong)((Unsafe.BitCast<float, uint>(pnt.Y) + (1u << (31 - 21))) >> (32 - 21)) << 21;
+            data |= (ulong)((Unsafe.BitCast<float, uint>(pnt.Z) + (1u << (31 - 21))) >> (32 - 21)) << 00;
+            return new ItemReference(Vec3Id, data);
+        }
         public static readonly ItemReference None = new ItemReference();
     }
 }

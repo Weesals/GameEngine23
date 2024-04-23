@@ -25,6 +25,9 @@ class Program {
         if (editorWindow != null) windows.Add(editorWindow);
         if (previewWindow != null) windows.Add(previewWindow);
 
+        ApplicationWindow primaryWindow = editorWindow ?? throw new NotImplementedException();
+        Input.Initialise(primaryWindow.Input);
+
         var root = new GameRoot();
 
         if (editorWindow != null) {
@@ -33,9 +36,6 @@ class Program {
             //root.EventSystem.SetInput(gameWindow.Input);
             throw new NotImplementedException("No editor is not supported (yet)");
         }
-
-        ApplicationWindow primaryWindow = editorWindow ?? throw new NotImplementedException();
-        Input.Initialise(primaryWindow.Input);
 
         var timer = new FrameTimer(4);
         var throttler = new FrameThrottler();

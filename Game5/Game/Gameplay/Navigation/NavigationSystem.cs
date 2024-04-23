@@ -54,7 +54,6 @@ namespace Game5.Game {
         private NavQuery navQuery;
 
         private bool disableMovements;
-        private bool isNavMeshDirty = false;
 
         private ComponentMutateListener mutations;
 
@@ -68,7 +67,6 @@ namespace Game5.Game {
             pathCachePoints = new(512);
             moveContract = EntityMapSystem.AllocateContract();
             NavGrid = new NavGrid();
-            NavGrid.Allocate(new Int2(256, 256));
             NavMesh = new Navigation.NavMesh();
             NavMeshBaker = new NavMesh2Baker(NavMesh);
             NavMesh.Allocate();
@@ -120,6 +118,7 @@ namespace Game5.Game {
         public unsafe void SetLandscape(LandscapeData landscapeData) {
             if (Landscape != null) Landscape.OnLandscapeChanged -= Landscape_OnLandscapeChanged;
             Landscape = landscapeData;
+            NavGrid.Allocate(NavGrid.SimulationToGrid(Landscape.Sizing.SimulationSize));
             if (Landscape != null) Landscape.OnLandscapeChanged += Landscape_OnLandscapeChanged;
             UpdateGridRepresentation();
         }
@@ -155,7 +154,6 @@ namespace Game5.Game {
                     accessor.SetLandscapePassable(pnt, mode);
                 }
             }
-            isNavMeshDirty = true;
         }
 
         protected override void OnUpdate() {
@@ -164,8 +162,7 @@ namespace Game5.Game {
                 RegisterEntity(mutation.EntityAddress, true);
             }
             mutations.Clear();
-            if (isNavMeshDirty) {
-                isNavMeshDirty = false;
+            if (NavGrid.HasChanges) {
                 NavGrid.PushToNavMesh(NavMeshBaker);
             }
             if (Input.GetKeyDown(KeyCode.Z)) this.disableMovements = !this.disableMovements;
@@ -417,7 +414,6 @@ namespace Game5.Game {
             Span<Int2> corners = stackalloc Int2[4];
             ComputeObstruction(corners, obstruction);
             NavGrid.AppendGeometry(corners, enable ? 1 : -1);
-            isNavMeshDirty = true;
         }
 
         public Int2 FindNearestObstruction(Int2 from) {

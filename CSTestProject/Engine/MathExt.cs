@@ -456,6 +456,10 @@ namespace Weesals.Engine {
         public static bool operator !=(RectI r, RectI o) { return !(r == o); }
         public static implicit operator RectF(RectI r) { return new RectF(r.X, r.Y, r.Width, r.Height); }
 
+        public bool Contains(Int2 pnt) {
+            return (uint)(pnt.X - X) <= Width && (uint)(pnt.Y - Y) <= Height;
+        }
+
         public RectI ExpandToInclude(Int2 pnt) { return FromMinMax(Int2.Min(Min, pnt), Int2.Max(Max, pnt)); }
         public RectI ExpandToInclude(RectI other) { return FromMinMax(Int2.Min(Min, other.Min), Int2.Max(Max, other.Max)); }
         public RectI ClampToBounds(RectI bounds) { return FromMinMax(Int2.Max(Min, bounds.Min), Int2.Min(Max, bounds.Max)); }
@@ -480,6 +484,8 @@ namespace Weesals.Engine {
 
     public struct BoundingBox : IEquatable<BoundingBox> {
         public Vector3 Min, Max;
+        public bool IsValid => Max.X >= Min.X;
+
         public Vector3 Centre => (Min + Max) / 2.0f;
         public Vector3 Extents => (Max - Min) / 2.0f;
         public Vector3 Size => Max - Min;

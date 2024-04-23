@@ -1,4 +1,14 @@
+#if defined(VARIANT) && VARIANT == 0
+# include "landscape3x3_og.hlsl"
+#else
 #define PI 3.14159265359
+
+#if __INTELLISENSE__
+# define VARIANT 1
+#endif
+#if !defined(VARIANT)
+# define VARIANT 1
+#endif
 
 #include <common.hlsl>
 #include <temporal.hlsl>
@@ -6,7 +16,7 @@
 #include <landscapesampling.hlsl>
 #include <basepass.hlsl>
 
-static const half HeightBlend = 6.0;
+static const half HeightBlend = 5.0;
 static const half WeightBlend = 2.0;
 static const bool EnableTriplanar = false;
 static const bool EnableParallax = false;
@@ -28,7 +38,7 @@ struct VSInput {
 
 struct PSInput {
     float3 positionOS : TEXCOORD0;
-    half3 normalOS : NORMAL;
+    half2 dHeightDxz : NORMAL;
 };
 
 PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
@@ -44,7 +54,7 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     worldNrm = h.NormalOS;
 
     result.positionOS = worldPos;
-    result.normalOS = (half3)worldNrm;
+    result.dHeightDxz = (half2)worldNrm.xz / worldNrm.y;
     positionCS = mul(ModelViewProjection, float4(worldPos, 1.0));
         
     return result;
@@ -107,184 +117,265 @@ void MSMain(
 
 struct ControlPoints3x3 {
     uint4 QuadData;
+    bool IsQuadOdd;
     uint3x3 IdMap;
-    uint PrimaryId;
-    void Initialise(float2 uv, out half2 l) {
-        uv += 0.5;
-        float2 quadUv = floor(QuadReadLaneAt(uv, 0));
-        l = (half2)(float2)(uv - quadUv);
+    half2 Interp;
+    void Initialise(float2 uv) {
+        //uv += 0.5;
+        float2 quadUv = QuadReadLaneAt(uv, 0);
+        
+        uint4 cpD = 0;
+#if 1
+        quadUv = round(quadUv);
+        //uv += 0.5;
+        uint2 quadCtr = (uint2)quadUv;
+        cpD.w = ControlMap[quadCtr];
         uint quadIndex = WaveGetLaneIndex();
         bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
+        uint4 quadOff = uint4(0, 0, select(quadOdd, 1, -1));
+        cpD.z = ControlMap[quadCtr + quadOff.zy];
+        cpD.y = ControlMap[quadCtr + quadOff.xw];
+        cpD.x = ControlMap[quadCtr + quadOff.zw];
+#else
+        uint quadIndex = WaveGetLaneIndex();
+        bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
+        quadUv = floor(quadUv);
         float2 gatherUv = quadUv + select(quadOdd, 0.5, -0.5);
-    
-        uint4 cpD = ControlMap.Gather(AnisotropicSampler, gatherUv * _LandscapeSizing1.xy + _LandscapeSizing1.zw);
-        cpD = cpD.wzxy;
+        cpD = ControlMap.Gather(AnisotropicSampler, gatherUv * _LandscapeSizing1.xy + _LandscapeSizing1.zw).wzxy;
         if (quadOdd.x) cpD = cpD.yxwz;
         if (quadOdd.y) cpD = cpD.zwxy;
+#endif
         
-        QuadData = cpD & 0x00ffffff;
-        PrimaryId = QuadData.w;
+        half2 l = (half2)(float2)(uv - quadUv);
+        l = 0.5 + select(quadOdd, -l, l);
+        
+        QuadData = cpD;
+        IsQuadOdd = quadOdd.x != quadOdd.y;
+        Interp = l;
     }
+    uint GetPrimary() { return QuadData.w; }
     void BuildMap() {
         // Build id map
-        IdMap._22 = QuadData.w;
-        IdMap._11_12_21 = QuadReadLaneAt(QuadData.xyz, 0);
-        IdMap._13_23 = QuadReadLaneAt(QuadData.xz, 1);
-        IdMap._31_32 = QuadReadLaneAt(QuadData.xy, 2);
-        IdMap._33 = QuadReadLaneAt(QuadData.x, 3);
+        IdMap._11_12_21_22 = QuadData;
+        IdMap._13_23 = QuadReadAcrossX(QuadData.xz);
+        IdMap._31_32 = QuadReadAcrossY(QuadData.xy);
+        IdMap._33 = QuadReadAcrossDiagonal(QuadData.x);
     }
-    half GetMask(uint id, half2 l) {
-        half3 col = half3(1.0 - l.x, 1.0, l.x);
-        return dot(1.0,
-            select(IdMap[0] == id, col * (1.0 - l.y), 0) +
-            select(IdMap[1] == id, col * (1.0), 0) +
-            select(IdMap[2] == id, col * (l.y), 0)
-        );
+    half GetMask(uint id, bool isPrimary = false) {
+        half3 col = half3(WeightBlend - Interp.x * WeightBlend, WeightBlend, Interp.x * WeightBlend);
+        half bSum = dot(1, select(IdMap[0] == id, col, 0));
+        half ySum = dot(1, select(IdMap[2] == id, col, 0)) - bSum;
+        bSum += dot(1, select(IdMap[1] == id, col, 0).xz);
+        bSum += (isPrimary ? WeightBlend : 0);
+        return ySum * Interp.y + bSum;
+        half sum = 0;
+        sum += dot(1, select(IdMap[2] == id, col * Interp.y, 0));
+        sum += dot(1, select(IdMap[0] == id, col - col * Interp.y, 0));
+        sum += dot(1, select(IdMap[1] == id, col, 0).xz);
+        sum += isPrimary ? WeightBlend : 0;
+        return sum;
     }
 };
 struct ControlReducer {
+    static const uint InvalidId = 0x0000ffff;
     uint2 OrigItems;
     uint2 Items;
-    float2 Weights;
-    void Initialise(uint4 cpD, float2 l, ControlPoints3x3 cp3x3) {
-        uint quadIndex = WaveGetLaneIndex() & 0x03;
-        bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
-        OrigItems = quadOdd.x != quadOdd.y ? cpD.xy : cpD.xz;
-        Items = select(OrigItems == cpD.w, 0x80ffffff, OrigItems);
-        Items.x |= 0x08000000;
-        //Items.x = 0xffffffff;
-        //if (!quadOdd.x) Items = 0xffffffff;
-        //if (quadOdd.y) Items = 0xffffffff;
-        /*float2 lr = l * 2.0 - 1.0;
-        float2 quadDir = 0;//float2(1 - abs(1 - quadIndex), 1 - abs(2 - quadIndex));
-        if (quadIndex == 1) quadDir = float2(0, -1);
-        if (quadIndex == 3) quadDir = float2(+1, 0);
-        if (quadIndex == 0) quadDir = float2(-1, 0);
-        if (quadIndex == 2) quadDir = float2(0, +1);
-        int score = (uint)(4.5 - 4.0 * dot(lr, quadDir));*/
-        //int cardPri = abs(lr.x) > abs(lr.y) ? lr.x > 0 ? 3 : 0 : lr.y > 0 ? 1 : 2;
-        //int antiPri = abs(lr.x) > abs(lr.y) ? lr.x > 0 ? 2 : 1 : lr.y > 0 ? 3 : 0;
-        //if (quadIndex != cardPri) Items.y += 0x02000000;
-        //Items.y += score * 0x01000000;
-        //if (quadIndex == antiPri) Items.y += 0x03000000;
-        //if (quadOdd.x != (l.x > 0.5)) Items += 0x01000000;
-        //if (quadOdd.y != (l.y > 0.5)) Items += 0x01000000;
+    uint TakenCount;
+    void Initialise(ControlPoints3x3 cp3x3) {
+        TakenCount = 0;
+        OrigItems = cp3x3.IsQuadOdd ? cp3x3.QuadData.xy : cp3x3.QuadData.xz;
+        Items = select(OrigItems == cp3x3.GetPrimary(), InvalidId, OrigItems);
     }
     uint TakeItem() {
-        uint next = min(Items.x, Items.y);
+        uint next = min(Items.x | 0x08000000, Items.y);
+        if (TakenCount >= 4) next = Items.x;
         next = min(next, QuadReadAcrossX(next));
-        next = min(QuadReadLaneAt(next, 0), QuadReadLaneAt(next, 2));
-        next &= 0x00ffffff;
-        if (OrigItems.x == next) Items.x = 0xffffffff;
-        if (OrigItems.y == next) Items.y = 0xffffffff;
+        next = min(next, QuadReadAcrossY(next));
+        if (TakenCount < 4) next &= InvalidId;
+        if (Items.x == next) Items.x = InvalidId;
+        if (Items.y == next) Items.y = InvalidId;
+        ++TakenCount;
         return next;
     }
     bool HasAnyLeft() {
-        return QuadAny(((Items.x & Items.y) & 0x00ffffff) != 0x00ffffff);
+        return QuadAny((Items.x & Items.y) != InvalidId);
     }
 };
-void BlendTerrain(inout TerrainSample result, TerrainSample ter, half amount) {
-    result.Albedo += ter.Albedo * amount;
-    result.Normal += ter.Normal * amount;
-    result.Metallic += ter.Metallic * amount;
-    result.Roughness += ter.Roughness * amount;
-    result.Height += ter.Height * amount;
-}
 
 struct LayerBlend {
     TerrainSample samples[SampleCount];
     half masks[SampleCount];
-    half maxWeight;
     half complexity;
-    void SetAt(int i, ControlPoints3x3 cp3x3, TerrainSample sample, float2 l, int id) {
+    void BlendHeight(int i, float heightMask) {
+        masks[i] += heightMask * HeightBlend;
+    }
+    void SetAt(int i, TerrainSample sample) {
         samples[i] = sample;
-        masks[i] = cp3x3.GetMask(id, l) * WeightBlend;
-        masks[i] += samples[i].Height * saturate(masks[i]) * HeightBlend;
-        maxWeight = max(maxWeight, masks[i]);
         ++complexity;
     }
     float FinalizeWeights() {
+        half maxWeight = 1.0;
+        [unroll] for(int i = 0; i < SampleCount; ++i) maxWeight = max(maxWeight, masks[i]);
         maxWeight -= 1.0;
         [unroll] for(int i = 0; i < SampleCount; ++i) masks[i] = saturate(masks[i] - maxWeight);
-        half maskMul = 0.0;
-        [unroll] for(int i = 0; i < SampleCount; ++i) maskMul += masks[i];
-        return rcp(maskMul);
+        half maskFactor = 0.0;
+        [unroll] for(int i = 0; i < SampleCount; ++i) maskFactor += masks[i];
+        maskFactor = rcp(maskFactor);
+        [unroll] for(int i = 0; i < SampleCount; ++i) masks[i] *= maskFactor;
+        return maskFactor;
+    }
+    void BlendAlbedo(inout TerrainSample result, int i) {
+        TerrainSample ter = samples[i];
+        ter.UnpackAlbedo();
+        half amount = masks[i];
+        result.Albedo += ter.Albedo * amount;
+        result.Height += ter.Height * amount;
+    }
+    void BlendNrm(inout TerrainSample result, int i) {
+        TerrainSample ter = samples[i];
+        ter.UnpackNrm();
+        half amount = masks[i];
+        result.Normal += ter.Normal * amount;
+        result.Metallic += ter.Metallic * amount;
+        result.Roughness += ter.Roughness * amount;
     }
 };
+
+float3 RegenerateNormalY(float2 ddxz) {
+    return normalize(float3(ddxz, 1).xzy);
+}
 
 void PSMain(PSInput input, out BasePassOutput result, float4 positionCS : SV_POSITION) {
     TerrainSample terResult = (TerrainSample)0;
     
-    //[loop] for(int i = 0; i < 1; ++i)
+    uint packedDHDXZ = (f32tof16(input.dHeightDxz.x) << 16) | f32tof16(input.dHeightDxz.y);
+    //[loop] for(int i = 0; i < 20; ++i)
     {
     TemporalAdjust(input.positionOS.xz);
         
-    half2 l;
     ControlPoints3x3 cp3x3;
-    cp3x3.Initialise(input.positionOS.xz, l);
+    cp3x3.Initialise(input.positionOS.xz);
 
-    SampleContext context = { BaseMaps, BumpMaps, input.positionOS, positionCS.xy, input.normalOS };
+    SampleContext context = { BaseMaps, BumpMaps, input.positionOS, positionCS.xy, RegenerateNormalY(input.dHeightDxz) };
                 
-    terResult = SampleTerrain(context, DecodeControlMap(cp3x3.PrimaryId), EnableTriplanar);
+    terResult = SampleTerrain(context, DecodeControlMap(cp3x3.GetPrimary()), EnableTriplanar);
+            
+    ControlReducer reducer;
+    reducer.Initialise(cp3x3);
+    cp3x3.BuildMap();
+    float primaryWeight = cp3x3.GetMask(cp3x3.GetPrimary(), true);
+        
     if (EnableParallax) {
         float3 localViewDir = mul(InvModelView, float4(0, 0, 0, 1)).xyz - context.WorldPos;
-        float rateDiv = 0.1 * (1.0 / localViewDir.y);
+        float rateDiv = 0.01 * primaryWeight * (1.0 / localViewDir.y);
         context.WorldPos.xz += localViewDir.xz * ((terResult.Height - 0.5) * rateDiv);
-        terResult = SampleTerrain(context, DecodeControlMap(cp3x3.PrimaryId), EnableTriplanar);
+        terResult = SampleTerrain(context, DecodeControlMap(cp3x3.GetPrimary()), EnableTriplanar);
     }
-    
-    //cp3x3.BuildMap();
         
-    ControlReducer reducer;
-    reducer.Initialise(cp3x3.QuadData, l, cp3x3);
-    uint secondaryId = reducer.TakeItem();
-
-    [branch]
-    if (secondaryId != 0x00ffffff) {
-        cp3x3.BuildMap();
+    [branch] if (QuadAny(primaryWeight < (WeightBlend * 4.0 + HeightBlend * 0.5 + 1.0) / 2.0))
+    {
         LayerBlend blend = (LayerBlend)0;
-        blend.maxWeight = 1.0;
-        blend.SetAt(0, cp3x3, terResult, l, cp3x3.PrimaryId);
-        blend.SetAt(1, cp3x3, SampleTerrain(context, DecodeControlMap(secondaryId), EnableTriplanar), l, secondaryId);
+            
+        uint materialIds[SampleCount];
+        uint packed0;
+        {
+            materialIds[0] = cp3x3.GetPrimary();
+            blend.masks[0] = primaryWeight;
+            blend.BlendHeight(0, terResult.Height);
+
+            uint secondaryId = reducer.TakeItem();
+            materialIds[1] = secondaryId;
+            blend.masks[1] = primaryWeight;
+            packed0 = (materialIds[1] << 16) | materialIds[0];
+            [unroll]
+            for (int i = 2; i < SampleCount; ++i) {
+                uint id = reducer.TakeItem();
+                materialIds[i] = id;
+                if (id == ControlReducer::InvalidId) break;
+                blend.masks[i] = cp3x3.GetMask(id, false);
+                blend.masks[1] += blend.masks[i];
+            }
+            blend.masks[1] = 4 * WeightBlend - blend.masks[1];
+        }
+        //materialIds[1] = packed0 >> 16;
+        //materialIds[0] = packed0 & 0xffff;
+
+        blend.SetAt(0, terResult);
+        terResult = (TerrainSample)0;
+        {
+            TerrainSample samp1 = SampleTerrain(context, DecodeControlMap(materialIds[1]), EnableTriplanar);
+            blend.BlendHeight(1, samp1.Height);
+            blend.SetAt(1, samp1);
+        }
+        blend.complexity = 2;
         [unroll]
         for (int i = 2; i < SampleCount; ++i) {
-            uint id = reducer.TakeItem();
-            if (id == 0x00ffffff) break;
-            blend.SetAt(i, cp3x3, SampleTerrain(context, DecodeControlMap(id), EnableTriplanar), l, id);
+            uint id = materialIds[i];
+            if (id == ControlReducer::InvalidId) break;
+            TerrainSample sampI = SampleTerrain(context, DecodeControlMap(id), EnableTriplanar);
+            blend.BlendHeight(i, sampI.Height);
+            blend.SetAt(i, sampI);
         }
-        
+                    
         half maskMul = blend.FinalizeWeights();
             
-        terResult = (TerrainSample)0;
-        BlendTerrain(terResult, blend.samples[0], blend.masks[0] * maskMul);
-        BlendTerrain(terResult, blend.samples[1], blend.masks[1] * maskMul);
+        blend.BlendAlbedo(terResult, 0);
+        blend.BlendNrm(terResult, 0);
+        blend.BlendAlbedo(terResult, 1);
+        blend.BlendNrm(terResult, 1);
         [branch]
         if (blend.complexity > 2) {
             [unroll]
             for (int i = 2; i < SampleCount; ++i) {
-                BlendTerrain(terResult, blend.samples[i], blend.masks[i] * maskMul);
+                //TerrainSample sampI = SampleTerrain(context, DecodeControlMap(materialIds[i]), EnableTriplanar);
+                //terResult.Normal = sampI.Normal;
+                //terResult.Metallic = sampI.Metallic;
+                //terResult.Roughness = sampI.Roughness;
+                blend.BlendAlbedo(terResult, i);
+                //if (blend.ids[i] == ControlReducer::InvalidId) break;
+            }
+            [unroll]
+            for (int i = 2; i < SampleCount; ++i) {
+                TerrainSample sampI = SampleTerrain(context, DecodeControlMap(materialIds[i]), EnableTriplanar);
+                blend.samples[i].Normal = sampI.Normal;
+                blend.samples[i].Metallic = sampI.Metallic;
+                blend.samples[i].Roughness = sampI.Roughness;
+                blend.BlendNrm(terResult, i);
+                //if (blend.ids[i] == ControlReducer::InvalidId) break;
             }
         }
-        //terResult.Albedo.r = (blend.complexity + 1) / (float)SampleCount;
+#if defined(COMPLEXITY) && COMPLEXITY
+        terResult.Albedo.r += 0.4 * pow(max(0, blend.complexity + 1) / (float)SampleCount, 2);
+#endif
     }
     }
-    
+#if VARIANT == 1
+    terResult.Albedo.g += 0.1;
+#else
+    terResult.Albedo.g -= 0.1;
+#endif
+
     PBRInput pbrInput = PBRDefault();
     pbrInput.Albedo = terResult.Albedo;
     pbrInput.Normal = terResult.Normal;
+    pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
     pbrInput.Metallic = terResult.Metallic;
     pbrInput.Roughness = terResult.Roughness;
-    pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
 
-    half3x3 tbn = { half3(0, 0, 0), half3(0, 0, 0), normalize(input.normalOS), };
-    CalculateTerrainTBN(tbn[2], tbn[0], tbn[1]);
-    pbrInput.Normal = (float3)((half3)mul(pbrInput.Normal, tbn));
+    //float2 dHeightDxz = half2(f16tof32(packedDHDXZ >> 16), f16tof32(packedDHDXZ));
+    float3 normalOS = RegenerateNormalY(input.dHeightDxz);
+    normalOS.y += 1.0;
+    pbrInput.Normal = pbrInput.Normal.xzy * float3(-1, 1, 1);
+    pbrInput.Normal = normalOS * dot(normalOS, pbrInput.Normal) * rcp(normalOS.y) - pbrInput.Normal;
+    
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);
 
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
     result = PBROutput(pbrInput, viewDir);
+    //result.BaseColor.rgb /= LuminanceFactor;
+    //result.BaseColor.rgb = pbrInput.Normal * 0.5 + 0.5;
 }
 
 void ShadowCast_VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
@@ -301,3 +392,4 @@ void ShadowCast_MSMain(
     MSMain(gtid, gid, verts, tris);
 }
 void ShadowCast_PSMain() { }
+#endif

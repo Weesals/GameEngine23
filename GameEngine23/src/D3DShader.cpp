@@ -190,8 +190,16 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
             arguments.push_back(L"-T");
             arguments.push_back(wProfile.c_str());
             arguments.push_back(L"-HV 2021");
-            arguments.push_back(L"-Qstrip_debug");
-            arguments.push_back(L"-Qstrip_reflect");
+            //arguments.push_back(L"-Qstrip_debug");
+            //arguments.push_back(L"-Qstrip_reflect");
+            arguments.push_back(L"-Zi");
+            arguments.push_back(L"-Qembed_debug");
+            //std::wstring shaderPDBArg = L"-Fd C:\\ShaderPDBs\\";
+            //std::hash<std::string_view> hasher;
+            //uint64_t hash = hasher(source);
+            //shaderPDBArg += std::format(L"{:x}", hash);
+            //arguments.push_back(shaderPDBArg.c_str());
+            //arguments.push_back(L"-Zsb");
             //arguments.push_back(L"-enable-16bit-types");
             //arguments.push_back(L"/Od"); // Example: Disable optimization
 
@@ -202,8 +210,8 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
                 nullptr, IID_PPV_ARGS(pResult.GetAddressOf()));
         }
 
-        ComPtr<IDxcBlobUtf16> pDebugDataPath;
         if (pResult != nullptr) {
+            ComPtr<IDxcBlobUtf16> pDebugDataPath;
             pResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxcOutput), &pDebugDataPath);
         }
         //if (dxcOutput->GetBufferSize() == 0)
@@ -243,6 +251,37 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
             D3DCreateBlob(dataSize, &mShader);
             std::memcpy(mShader->GetBufferPointer(), dxcOutput->GetBufferPointer(), dataSize);
             if (dxcReflection != nullptr) {
+                ComPtr<IDxcContainerReflection> pDxcContainerReflection;
+                DxcCreateInstance(CLSID_DxcContainerReflection, IID_PPV_ARGS(&pDxcContainerReflection));
+                HRESULT hr = pDxcContainerReflection->Load(dxcOutput.Get());
+                if (FAILED(hr)) {
+                    OutputDebugString(L"Failed to create debug reflection");
+                }
+                else {
+#define DXIL_FOURCC(ch0, ch1, ch2, ch3) ((uint32_t)(uint8_t)(ch0) | (uint32_t)(uint8_t)(ch1) << 8 | (uint32_t)(uint8_t)(ch2) << 16 | (uint32_t)(uint8_t)(ch3) << 24)
+                    // Find which part index contains the shader name and retrieve it:
+                    UINT32 debugNameIndex;
+                    pDxcContainerReflection->FindFirstPartKind(DXIL_FOURCC('I', 'L', 'D', 'N'), &debugNameIndex);
+                    ComPtr<IDxcBlob> pPDBName;
+                    pDxcContainerReflection->GetPartContent(debugNameIndex, pPDBName.GetAddressOf());
+
+                    // Find which part index contains the debug data and retrieve it:
+                    UINT32 debugPartIndex;
+                    pDxcContainerReflection->FindFirstPartKind(DXIL_FOURCC('I', 'L', 'D', 'B'), &debugPartIndex);
+                    ComPtr<IDxcBlob> pPDB;
+                    pDxcContainerReflection->GetPartContent(debugPartIndex, pPDB.GetAddressOf());
+
+                    struct DxilShaderDebugName {
+                        uint16_t Flags;
+                        uint16_t NameLength;
+                    };
+                    auto pDebugNameData = reinterpret_cast<const DxilShaderDebugName*>(pPDBName->GetBufferPointer());
+                    std::string pdbOut("C:\\ShaderPDBs\\");
+                    pdbOut += (const char*)(pDebugNameData + 1);
+                    std::ofstream pdbFile(pdbOut);
+                    pdbFile.write((const char*)pPDB->GetBufferPointer(), pPDB->GetBufferSize());
+                }
+
                 //D3DReflect(mShader->GetBufferPointer(), mShader->GetBufferSize(), IID_PPV_ARGS(&pShaderReflection));
                 DxcBuffer reflectionBuffer;
                 reflectionBuffer.Ptr = dxcReflection->GetBufferPointer();
@@ -281,6 +320,11 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
     mReflection.mStatistics.mFloatIC = shaderDesc.FloatInstructionCount;
     mReflection.mStatistics.mIntIC = shaderDesc.IntInstructionCount + shaderDesc.UintInstructionCount;
     mReflection.mStatistics.mFlowIC = shaderDesc.DynamicFlowControlCount;
+
+    UINT64 requirements = pShaderReflection->GetRequiresFlags();
+    if (requirements & D3D_SHADER_REQUIRES_DOUBLES) {
+        OutputDebugStringA("Shader requires doubles");
+    }
 
     // Get all constant buffers
     for (UINT i = 0; i < shaderDesc.ConstantBuffers; ++i) {

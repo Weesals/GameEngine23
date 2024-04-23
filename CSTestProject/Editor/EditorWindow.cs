@@ -112,6 +112,24 @@ namespace Weesals.Editor {
         public Canvas Canvas;
         public AssetDatabase AssetDatabase;
 
+        private FlexLayout flex;
+
+        public bool FullScreen {
+            get => flex.Children.Contains(Hierarchy);
+            set {
+                if (FullScreen == value) return;
+                if (FullScreen) {
+                    flex.RemoveChild(ProjectView);
+                    flex.RemoveChild(Hierarchy);
+                    flex.RemoveChild(Inspector);
+                } else {
+                    flex.InsertBelow(GameView, ProjectView, 0.3f);
+                    flex.AppendRight(Hierarchy, 0.15f);
+                    flex.AppendRight(Inspector, 0.25f);
+                }
+            }
+        }
+
         public EditorWindow() {
             Editor = new() {
                 DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf"),
@@ -120,15 +138,13 @@ namespace Weesals.Editor {
 
             Canvas = new();
             EventSystem = new EventSystem(Canvas);
-            var flex = new FlexLayout();
+            flex = new FlexLayout();
             Inspector = new(Editor) { };
             GameView = new(Editor) { };
             Hierarchy = new(Editor) { };
             ProjectView = new UIProjectView(Editor);
             flex.AppendRight(GameView);
-            flex.InsertBelow(GameView, ProjectView, 0.3f);
-            flex.AppendRight(Hierarchy, 0.15f);
-            flex.AppendRight(Inspector, 0.25f);
+            FullScreen = false;
 
             Canvas.AppendChild(flex);
 
@@ -170,6 +186,7 @@ namespace Weesals.Editor {
         }
 
         public void Update(float dt, Int2 size) {
+            if (Input.GetKeyPressed((char)KeyCode.F11) && !Input.GetKeyDown((char)KeyCode.LeftAlt)) FullScreen = !FullScreen;
             using var marker = ProfileMarker_Update.Auto();
             Canvas.SetSize(size);
             EventSystem.Update(dt);

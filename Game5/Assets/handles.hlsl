@@ -1,5 +1,5 @@
-#include "include/common.hlsl"
-#include "include/temporal.hlsl"
+#include <common.hlsl>
+#include <temporal.hlsl>
 
 SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);

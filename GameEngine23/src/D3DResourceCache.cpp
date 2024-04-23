@@ -949,7 +949,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequireComputePSO(const Co
             if (std::any_of(pipelineState->mResourceBindings.begin(), pipelineState->mResourceBindings.end(),
                 [&](auto* o) { return *o == rb; })) continue;
             uint64_t mask = 1ull << rb.mBindPoint;
-            assert((rbMask & mask) == 0);
+            //assert((rbMask & mask) == 0);
             rbMask |= mask;
             pipelineState->mResourceBindings.push_back(&rb);
         }
@@ -1187,7 +1187,7 @@ int D3DGraphicsSurface::Present() {
     params.pScrollOffset = nullptr;
     params.pScrollRect = nullptr;
     //mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE | DXGI_PRESENT_TEST : 
-    auto hr = mSwapChain->Present(1, mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE : 0);
+    auto hr = mSwapChain->Present(0, mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE : 0);
 
     if ((hr == DXGI_STATUS_OCCLUDED) != mIsOccluded) {
         mIsOccluded = hr == DXGI_STATUS_OCCLUDED;
@@ -1233,8 +1233,12 @@ int D3DGraphicsSurface::WaitForFrame() {
     // If the next frame is not ready to be rendered yet, wait until it is ready.
     auto fenceVal = mFence->GetCompletedValue();
     if (fenceVal < mFenceValues[mBackBufferIndex]) {
+        mDevice.CheckDeviceState();
         ThrowIfFailed(mFence->SetEventOnCompletion(mFenceValues[mBackBufferIndex], mFenceEvent));
-        WaitForSingleObjectEx(mFenceEvent, INFINITE, FALSE);
+        DWORD waitResult = WaitForSingleObjectEx(mFenceEvent, 1000, FALSE);
+        if (waitResult == WAIT_TIMEOUT) {
+            throw "Frame did not complete in time";
+        }
     }
 
     // Set the fence value for the next frame.

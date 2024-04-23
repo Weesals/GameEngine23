@@ -206,9 +206,9 @@ namespace Weesals.Engine {
                 );
             } else {
                 var pixShader = materialState.PixelShader == null ? null :
-                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_2", macros, materialState.RenderPass);
+                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_5", macros, materialState.RenderPass);
                 var vertShader = materialState.VertexShader == null ? null :
-                    Resources.RequireShader(graphics, materialState.VertexShader, "vs_6_2", macros, materialState.RenderPass);
+                    Resources.RequireShader(graphics, materialState.VertexShader, "vs_6_5", macros, materialState.RenderPass);
                 return graphics.RequirePipeline(pbuffLayout,
                     vertShader.NativeShader,
                     pixShader.NativeShader,

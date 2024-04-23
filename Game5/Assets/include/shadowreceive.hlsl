@@ -3,7 +3,7 @@
 
 #include <common.hlsl>
 
-Texture2D<float4> ShadowMap : register(t4);
+Texture2D<float> ShadowMap : register(t4);
 SamplerComparisonState ShadowSampler : register(s3);
 
 float3 ViewToShadow(float3 viewPos) {

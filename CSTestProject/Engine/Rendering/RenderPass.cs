@@ -287,7 +287,7 @@ namespace Weesals.Engine {
         public Material ShadowReceiverMaterial;
 
         public ShadowPass(Scene scene) : base(scene, "Shadows") {
-            Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 1024, Format = BufferFormat.FORMAT_D16_UNORM, }) };
+            Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 512, Format = BufferFormat.FORMAT_D16_UNORM, }) };
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
             TagsToInclude.Add(RenderTag.ShadowCast);
             ShadowReceiverMaterial = new();

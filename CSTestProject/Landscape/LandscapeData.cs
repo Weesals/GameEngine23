@@ -88,6 +88,7 @@ namespace Weesals.Landscape {
             public Vector3 Location;
             // How many cells the terrain contains
             public Int2 Size;
+            public Int2 SimulationSize => Size * Scale1024;
             // The size of each cell in world-units/1024 (roughly mm)
             public int Scale1024;
             public SizingData(Int2 size, int scale1024 = 1024) {
@@ -107,6 +108,9 @@ namespace Weesals.Landscape {
             public Int2 WorldToLandscape(Vector3 worldPos) { return Int2.RoundToInt((worldPos - Location).toxz() * (1024f / Scale1024)); }
             public Int2 WorldToLandscape(Vector2 worldPos) { return Int2.RoundToInt((worldPos - Location.toxz()) * (1024f / Scale1024)); }
             public Vector3 LandscapeToWorld(Int2 landscapePos) { return (((Vector2)landscapePos) * (Scale1024 / 1024f)).AppendY(0.0f) + Location; }
+
+            public Int2 LandscapeToSimulation(Int2 pnt) { return pnt * Scale1024; }
+            public Int2 SimulationToLandscape(Int2 pnt) { return pnt / Scale1024; }
 
             public Int2 WorldToLandscape(Vector2 worldPos, out Vector2 outLerp) {
                 worldPos -= Location.toxz();
