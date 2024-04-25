@@ -65,6 +65,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float2 gatherUv = input.uv.zw;
     float4 velId = SceneVelId[input.position.xy];
     float2 velocity = velId.xy;
+    float2 texelSize = abs(input.uv.xy - input.uv.zw) * 2.0;
     
     float4 otherVelId = SceneVelId.Sample(BilinearClampedSampler, gatherUv);
     if (otherVelId.z != velId.z) return float4(1.0, 1.0, 0.0, 1.0);
@@ -79,16 +80,21 @@ float4 PSMain(PSInput input) : SV_TARGET {
         previousUV = prevVPos.xy * float2(0.5, -0.5) + 0.5;
     }
     
-    float3 colorMin = RGBToYCoCg(CurrentFrame.Sample(MinSampler, gatherUv).rgb);
-    float3 colorMax = RGBToYCoCg(CurrentFrame.Sample(MaxSampler, gatherUv).rgb);
-    float3 scenePrev = RGBToYCoCg(PreviousFrame.Sample(PointSampler, previousUV).rgb);
-    scenePrev = clamp(scenePrev, colorMin, colorMax);
-    
     float3 sceneColor = RGBToYCoCg(CurrentFrame[input.position.xy].rgb);
-    float3 sceneDelta = scenePrev - sceneColor;
-    sceneDelta -= clamp(sceneDelta, -0.0005, 0.0005);
-    sceneDelta *= 0.85;
-    sceneColor = sceneColor + sceneDelta;
-
+    
+    if (all(and(previousUV >= 0, previousUV <= 1))) {
+        float3 scenePrev = RGBToYCoCg(PreviousFrame.Sample(BilinearClampedSampler, previousUV).rgb);
+        float3 colorMin = RGBToYCoCg(CurrentFrame.Sample(MinSampler, gatherUv).rgb);
+        float3 colorMax = RGBToYCoCg(CurrentFrame.Sample(MaxSampler, gatherUv).rgb);
+        colorMin = min(colorMin, RGBToYCoCg(CurrentFrame.Sample(MinSampler, gatherUv - texelSize).rgb));
+        colorMax = max(colorMax, RGBToYCoCg(CurrentFrame.Sample(MaxSampler, gatherUv - texelSize).rgb));
+        scenePrev = clamp(scenePrev, colorMin, colorMax);
+        
+        float3 sceneDelta = scenePrev - sceneColor;
+        sceneDelta -= clamp(sceneDelta, -0.0005, 0.0005);
+        sceneDelta *= 0.85;
+        sceneColor = sceneColor + sceneDelta;
+    }
+    
     return float4(YCoCgToRGB(sceneColor), 1);
 }

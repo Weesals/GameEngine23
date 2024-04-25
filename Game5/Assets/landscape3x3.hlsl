@@ -22,7 +22,6 @@ static const bool EnableTriplanar = false;
 static const bool ParallaxTransform = true;
 static const int ParallaxCount = 1;
 static const float ParallaxIntensity = 0.3;
-static const bool Var2 = true;
 #define ControlCount 9
 #define SampleCount 6
 
@@ -122,117 +121,53 @@ struct ControlPoints3x3 {
     uint4 QuadData;
     bool IsQuadOdd;
     uint3x3 IdMap;
-    uint4 Inner;
-    uint4 Outer;
     half2 Interp;
     void Initialise(float2 uv) {
-        //uv += 0.5;
-        float2 quadUv = QuadReadLaneAt(uv, 0);
+        uint quadIndex = WaveGetLaneIndex();
+        bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
+        float2 quadUv = round(QuadReadLaneAt(uv, 0));
         
-        uint4 cpD = 0;
-#if 1
-        quadUv = round(quadUv);
-        //uv += 0.5;
+#if 0
         uint2 quadCtr = (uint2)quadUv;
-        cpD.w = ControlMap[quadCtr];
-        uint quadIndex = WaveGetLaneIndex();
-        bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
+        QuadData.w = ControlMap[quadCtr];
         uint4 quadOff = uint4(0, 0, select(quadOdd, 1, -1));
-        cpD.z = ControlMap[quadCtr + quadOff.zy];
-        cpD.y = ControlMap[quadCtr + quadOff.xw];
-        cpD.x = ControlMap[quadCtr + quadOff.zw];
+        QuadData.z = ControlMap[quadCtr + quadOff.zy];
+        QuadData.y = ControlMap[quadCtr + quadOff.xw];
+        QuadData.x = ControlMap[quadCtr + quadOff.zw];
 #else
-        uint quadIndex = WaveGetLaneIndex();
-        bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
-        quadUv = floor(quadUv);
-        float2 gatherUv = quadUv + select(quadOdd, 0.5, -0.5);
-        cpD = ControlMap.Gather(AnisotropicSampler, gatherUv * _LandscapeSizing1.xy + _LandscapeSizing1.zw).wzxy;
-        if (quadOdd.x) cpD = cpD.yxwz;
-        if (quadOdd.y) cpD = cpD.zwxy;
+        float2 gatherUv = quadUv * _LandscapeSizing1.xy + select(quadOdd, _LandscapeSizing1.xy, 0);
+        QuadData = ControlMap.Gather(AnisotropicSampler, gatherUv).wzxy;
+        if (quadOdd.x) QuadData = QuadData.yxwz;
+        if (quadOdd.y) QuadData = QuadData.zwxy;
 #endif
         
-        half2 l = (half2)(float2)(uv - quadUv);
-        if (Var2) {
-            l += 0.5;
-        } else {
-            l = 0.5 + select(quadOdd, -l, l);
-        }
-        
-        QuadData = cpD;
         IsQuadOdd = quadOdd.x != quadOdd.y;
-        Interp = l;
+        Interp = (half2)(float2)(uv - quadUv) + 0.5;
     }
     uint GetPrimary() { return QuadData.w; }
     void BuildMap() {
         // Build id map
-        if (Var2) {
-            uint quadIndex = WaveGetLaneIndex();
-            bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
-            uint acrossY = QuadReadAcrossY(QuadData.y);
-            uint acrossX = QuadReadAcrossX(QuadData.z);
-            IdMap._22 = QuadData.w;
-            IdMap._12 = select(quadOdd.y, acrossY, QuadData.y);
-            IdMap._32 = select(quadOdd.y, QuadData.y, acrossY);
-            IdMap._21 = select(quadOdd.x, acrossX, QuadData.z);
-            IdMap._23 = select(quadOdd.x, QuadData.z, acrossX);
-            IdMap._11 = QuadReadLaneAt(QuadData.x, 0);
-            IdMap._13 = QuadReadLaneAt(QuadData.x, 1);
-            IdMap._31 = QuadReadLaneAt(QuadData.x, 2);
-            IdMap._33 = QuadReadLaneAt(QuadData.x, 3);
-        } else{
-            IdMap._11_12_21_22 = QuadData;
-            IdMap._13_23 = QuadReadAcrossX(QuadData.xz);
-            IdMap._31_32 = QuadReadAcrossY(QuadData.xy);
-            IdMap._33 = QuadReadAcrossDiagonal(QuadData.x);
-        }
-        Inner = IdMap._12_23_32_21;
-        Outer = IdMap._11_13_33_31;
+        uint quadIndex = WaveGetLaneIndex();
+        bool2 quadOdd = bool2((quadIndex & 0x01) != 0, (quadIndex & 0x02) != 0);
+        uint acrossY = QuadReadAcrossY(QuadData.y);
+        uint acrossX = QuadReadAcrossX(QuadData.z);
+        IdMap._22 = QuadData.w;
+        IdMap._12 = select(quadOdd.y, acrossY, QuadData.y);
+        IdMap._32 = select(quadOdd.y, QuadData.y, acrossY);
+        IdMap._21 = select(quadOdd.x, acrossX, QuadData.z);
+        IdMap._23 = select(quadOdd.x, QuadData.z, acrossX);
+        IdMap._11 = QuadReadLaneAt(QuadData.x, 0);
+        IdMap._13 = QuadReadLaneAt(QuadData.x, 1);
+        IdMap._31 = QuadReadLaneAt(QuadData.x, 2);
+        IdMap._33 = QuadReadLaneAt(QuadData.x, 3);
     }
-    bool3 MaskBool(int3 i, bool3 b, int3 l) {
-        if (Var2) return select(i >= l, false, b);
-        return b;
-    }
-    half GetMask(int i, uint id, bool isPrimary = false) {
-        if (Var2) {
-            /*if (!isPrimary) {
-                half2 scaleBias = 0;
-                if (i < 2) {
-                    scaleBias += select(Inner.x == id, WeightBlend, 0.0) * half2(-1, 1);
-                }
-                if (i < 3) {
-                    scaleBias.x += select(Inner.z == id, WeightBlend, 0.0);
-                }
-                half colV = WeightBlend - Interp.x * WeightBlend;
-                scaleBias += select(Outer.x == id, colV, 0.0) * half2(-1, 1);
-                scaleBias.x += select(Outer.w == id, colV, 0.0);
-            
-                colV = Interp.x * WeightBlend;
-                scaleBias += select(Outer.y == id, colV, 0.0) * half2(-1, 1);
-                scaleBias.x += select(Outer.z == id, colV, 0.0);
-                if (i < 4) {
-                    scaleBias.y += select(Inner.y == id, colV, 0.0);
-                }
-                if (i < 1) {
-                    scaleBias.y += select(Inner.w == id, colV, 0.0);
-                    scaleBias.y += (isPrimary ? WeightBlend : 0);
-                }
-                return scaleBias.x * Interp.y + scaleBias.y;
-            }*/
-            half3 col = half3(WeightBlend - Interp.x * WeightBlend, WeightBlend, Interp.x * WeightBlend);
-            half bSum = dot(1, select(MaskBool(i, IdMap[0] == id, int3(9, 2, 9)), col, 0));
-            half ySum = dot(1, select(MaskBool(i, IdMap[2] == id, int3(9, 3, 9)), col, 0)) - bSum;
-            bSum += dot(1, select(MaskBool(i, IdMap[1] == id, int3(0, 0, 4)), col, 0).xz);
-            bSum += (isPrimary ? WeightBlend : 0);
-            return ySum * Interp.y + bSum;
-        } else {
-            half3 col = half3(WeightBlend - Interp.x * WeightBlend, WeightBlend, Interp.x * WeightBlend);
-            half sum = 0;
-            sum += dot(1, select(IdMap[2] == id, col * Interp.y, 0));
-            sum += dot(1, select(IdMap[0] == id, col - col * Interp.y, 0));
-            sum += dot(1, select(IdMap[1] == id, col, 0).xz);
-            sum += isPrimary ? WeightBlend : 0;
-            return sum;
-        }
+    half GetMask(int i, uint id) {
+        half3 col = half3(WeightBlend - Interp.x * WeightBlend, WeightBlend, Interp.x * WeightBlend);
+        half bSum = dot(1, select(select(i >= int3(9, 2, 9), false, IdMap[0] == id), col, 0));
+        half ySum = dot(1, select(select(i >= int3(9, 3, 9), false, IdMap[2] == id), col, 0)) - bSum;
+        bSum += dot(1, select(select(i >= int3(0, 0, 4), false, IdMap[1] == id), col, 0).xz);
+        bSum += (i == -1 ? WeightBlend : 0);
+        return ySum * Interp.y + bSum;
     }
 };
 struct ControlReducer {
@@ -242,7 +177,8 @@ struct ControlReducer {
         uint2 localItems = cp3x3.IsQuadOdd ? cp3x3.QuadData.xy : cp3x3.QuadData.xz;
         Items = localItems;
         Items.y |= (WaveGetLaneIndex() & 0x03) << 16;
-        Items = select(localItems == cp3x3.GetPrimary(), uint2(InvalidId, Items.x | 0x08000000), Items);
+        Items.x = select(localItems.x == cp3x3.GetPrimary(), InvalidId, Items.x);
+        Items.y = select(localItems.y == cp3x3.GetPrimary(), Items.x | 0x08000000, Items.y);
     }
     uint TakeItem(int TakenCount) {
         uint next = TakenCount < 4 ? Items.y : Items.x;
@@ -317,6 +253,7 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoints3x3 cp3x3, Contr
     , float primaryWeight
     , inout float complexity
 ) {
+    //context.WorldPos.x += Time;
     TerrainSample samp0 = SampleTerrain(context, DecodeControlMap(cp3x3.GetPrimary()), EnableTriplanar);
     [branch]
     if (SampleCount == 1 || QuadAny(primaryWeight >= (WeightBlend * 4.0 + HeightBlend * 0.55 + 1.0) / 2.0)) {
@@ -332,12 +269,12 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoints3x3 cp3x3, Contr
 
         materialIds[1] = reducer.TakeItem(0);
         blend.masks[1] = primaryWeight;
-        //blend.masks[1] = cp3x3.GetMask(1, materialIds[1], false);
+        //blend.masks[1] = cp3x3.GetMask(1, materialIds[1]);
         [unroll]
         for (int i = 2; i < SampleCount; ++i) {
             materialIds[i] = reducer.TakeItem(i - 1);
             //if (id == ControlReducer::InvalidId) break;
-            blend.masks[i] = cp3x3.GetMask(i - 1, materialIds[i], false);
+            blend.masks[i] = cp3x3.GetMask(i - 1, materialIds[i]);
             blend.masks[1] += blend.masks[i];
         }
         blend.masks[1] = 4 * WeightBlend - blend.masks[1];
@@ -397,19 +334,17 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
     ControlReducer reducer;
     reducer.Initialise(cp3x3);
     cp3x3.BuildMap();
-    float primaryWeight = cp3x3.GetMask(-1, cp3x3.GetPrimary(), true);
+    float primaryWeight = cp3x3.GetMask(-1, cp3x3.GetPrimary());
     float complexity = 0.0;
         
     if (ParallaxCount > 0) {
-        float refHeight = 0.5;
         float3 localViewDir = mul(InvModelView, float4(0, 0, 0, 1)).xyz - context.WorldPos;
         if (ParallaxTransform) {
             float3 nrm = float3(input.dHeightDxz.x, 1, input.dHeightDxz.y);
             //nrm = normalize(nrm); // Technically required for TBN, but seems fine without
             half3 t, b; CalculateTerrainTBN(nrm, t, b);
             localViewDir = mul(float3x3(t, nrm, b), localViewDir);
-        } else {
-            // Hack
+        } else { // Hack
             localViewDir.y = max(localViewDir.y, 4);
         }
         float rateDiv = saturate(primaryWeight - (WeightBlend * 4.0 + 1.0) / 2.0);
@@ -427,6 +362,7 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
             float2 dyuv = ddy(worldPos.xz);
             float mipLevel = log2(dot(dyuv, dyuv) * pow(TextureSize, 2)) / 2;
             
+            float refHeight = 0.5;
             float parHeight = SampleTerrainHeightLevel(context, cp, max(mipLevel, 3.0));
             context.WorldPos.xz += localViewDir.xz * ((parHeight - refHeight) * rateDiv);
             refHeight = parHeight;
@@ -435,9 +371,9 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
                 for (int r = ParallaxCount - 2; r >= 0; --r) {
                     float bias = max(r + 1, 0) * (3.0 / max(ParallaxCount, 1.5));
                     float height = SampleTerrainHeightLevel(context, cp, mipLevel + bias);
-                    parHeight = lerp(parHeight, height, (r + 1) / (float)max(ParallaxCount, 1));
-                    context.WorldPos.xz += localViewDir.xz * ((parHeight - refHeight) * rateDiv);
-                    refHeight = parHeight;
+                    height = lerp(refHeight, height, (r + 1) / (float)max(ParallaxCount, 1));
+                    context.WorldPos.xz += localViewDir.xz * ((height - refHeight) * rateDiv);
+                    refHeight = height;
                 }
             }
         }
@@ -446,8 +382,11 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
 
 #if defined(COMPLEXITY) && COMPLEXITY
     float complexityN = max(0, complexity) / (float)(SampleCount + 1);
-    terResult.Albedo.r += 0.5 * complexityN;
-    terResult.Albedo.g += 0.2 * (complexityN * (1 - complexityN) / 0.25);
+    terResult.Albedo.r = 0.6 * saturate(complexityN * 3 - 1);
+    terResult.Albedo.g = 0.4 * saturate(min(complexityN * 3, 3 - complexityN * 3));
+    terResult.Albedo.b *= 0.5;
+    //terResult.Normal.xy *= 0.5;
+    terResult.Roughness = 1.0;
 #endif
 #if VARIANT == 0
     terResult.Albedo.g -= 0.1;
@@ -472,8 +411,6 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
     return PBROutput(pbrInput, viewDir);
-    //result.BaseColor.rgb /= LuminanceFactor;
-    //result.BaseColor.rgb = pbrInput.Normal * 0.5 + 0.5;
 }
 
 void ShadowCast_VSMain(VSInput input, out float4 positionCS : SV_POSITION) {

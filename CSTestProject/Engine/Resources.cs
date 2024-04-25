@@ -89,6 +89,9 @@ namespace Weesals.Engine {
             };
             return cache;
         }
+        public static void DeleteCache(ResourceKey key) {
+            File.Delete(GetPath(key));
+        }
     }
 
     public class Resources {
@@ -304,6 +307,7 @@ namespace Weesals.Engine {
 
                 // Register loaded asset
                 loadedShaders.Add(hash, compiledshader);
+
                 RegisterLoadedAsset(key, shaderImporter, hash);
             }
             return compiledshader;
@@ -322,8 +326,16 @@ namespace Weesals.Engine {
                 var key = kv.Key;
                 var resource = kv.Value;
                 if (string.IsNullOrEmpty(key.SourcePath)) continue;
-                if ((ulong)File.GetLastWriteTimeUtc(key.SourcePath).Ticks == key.SourceHash) continue;
+                bool same = (ulong)File.GetLastWriteTimeUtc(key.SourcePath).Ticks == key.SourceHash;
+                if (same && resource.Importer is ShaderImporter shaderImporter) {
+                    var compiledshader = loadedShaders[resource.ResourceId];
+                    if (shaderImporter.GetIncludeHash(compiledshader) != compiledshader.IncludeHash) {
+                        same = false;
+                    }
+                }
+                if (same) continue;
                 if (resource.Importer is ShaderImporter) {
+                    ResourceCacheManager.DeleteCache(key);
                     var compiledshader = loadedShaders[resource.ResourceId];
                     if (--compiledshader.ReferenceCount == 0)
                         uniqueShaders.Remove((ulong)compiledshader.GetHashCode());

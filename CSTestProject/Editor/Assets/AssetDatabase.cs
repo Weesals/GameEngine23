@@ -254,6 +254,11 @@ namespace Weesals.Editor.Assets {
                 while (true) {
                     var source = CSGraphics.PreprocessShader(shader.Path, macros);
                     nativeshader = graphics.CompileShader(source.GetSourceRaw(), entryFn, new CSIdentifier(profile));
+                    compiledshader.IncludeFiles = new string[source.GetIncludeCount()];
+                    for (int i = 0; i < compiledshader.IncludeFiles.Length; i++) {
+                        compiledshader.IncludeFiles[i] = source.GetInclude(i);
+                    }
+                    compiledshader.IncludeHash = GetIncludeHash(compiledshader);
                     source.Dispose();
                     if (nativeshader.IsValid) break;
                 }
@@ -306,6 +311,14 @@ namespace Weesals.Editor.Assets {
                 Debug.WriteLine($"=> Istr: {stats.mInstructionCount} Tex: {stats.mTexIC}");
             }
             return compiledshader;
+        }
+
+        public ulong GetIncludeHash(CompiledShader compiledshader) {
+            ulong hash = 0;
+            for (int i = 0; i < compiledshader.IncludeFiles.Length; i++) {
+                hash += (ulong)File.GetLastWriteTimeUtc(compiledshader.IncludeFiles[i]).Ticks;
+            }
+            return hash;
         }
     }
 

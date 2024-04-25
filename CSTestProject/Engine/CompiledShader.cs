@@ -125,8 +125,9 @@ namespace Weesals.Engine {
     }
     public class CompiledShader {
 
-        public byte[] CompiledBlob;
-        public string[] IncludeFiles;
+        public byte[] CompiledBlob = Array.Empty<byte>();
+        public string[] IncludeFiles = Array.Empty<string>();
+        public ulong IncludeHash;
         private int dataHash;
 
         public ShaderReflection Reflection;
@@ -138,11 +139,17 @@ namespace Weesals.Engine {
         public void Serialize(BinaryWriter writer) {
             writer.Write(CompiledBlob.Length);
             writer.Write(CompiledBlob);
+            writer.Write(IncludeFiles.Length);
+            for (int i = 0; i < IncludeFiles.Length; i++) writer.Write(IncludeFiles[i]);
+            writer.Write(IncludeHash);
             Reflection.Serialize(writer);
         }
         public void Deserialize(BinaryReader reader) {
             CompiledBlob = new byte[reader.ReadInt32()];
             Trace.Assert(reader.Read(CompiledBlob) == CompiledBlob.Length);
+            IncludeFiles = new string[reader.ReadInt32()];
+            for (int i = 0; i < IncludeFiles.Length; i++) IncludeFiles[i] = reader.ReadString();
+            IncludeHash = reader.ReadUInt64();
             Reflection.Deserialize(reader);
             RecomputeHash();
         }
