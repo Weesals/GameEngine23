@@ -261,6 +261,10 @@ public:
         else {
             mCmdList->OMSetRenderTargets(0, nullptr, FALSE, nullptr);
         }
+        // Dont know if this is required, but NSight showed draw calls failing without it
+        // Probably also need to clear bound resource cache?
+        mGraphicsRoot = { };
+        mComputeRoot = { };
     }
     // Clear the screen
     void ClearRenderTarget(const ClearConfig& clear) override {

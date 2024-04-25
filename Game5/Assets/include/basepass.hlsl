@@ -30,6 +30,14 @@ PBRInput PBRDefault() {
     return params;
 }
 
+BasePassOutput DebugOutput(float4 color) {
+    color.rgb *= LuminanceFactor;
+    BasePassOutput output = (BasePassOutput)0;
+    output.BaseColor = color;
+    output.Attributes = float4(OctahedralEncode(float3(0, 0, -1)) * 0.5 + 0.5, 1.0, 1.0);
+    return output;
+}
+BasePassOutput DebugOutput(float3 color) { return DebugOutput(float4(color, 1)); }
 BasePassOutput PBROutput(PBRInput input, float3 viewDir = float3(0, 0, 1)) {
     BasePassOutput output;
         
@@ -55,7 +63,7 @@ BasePassOutput PBROutput(PBRInput input, float3 viewDir = float3(0, 0, 1)) {
 
     output = (BasePassOutput)0;
     output.BaseColor = float4(input.Albedo * LuminanceFactor, input.Alpha);
-    output.Attributes = float4(OctahedralEncode(input.Normal) * 0.5 + 0.5, input.Roughness, input.Occlusion);
+    output.Attributes = float4(OctahedralEncode(-input.Normal) * 0.5 + 0.5, input.Roughness, input.Occlusion);
     return output;
 }
 

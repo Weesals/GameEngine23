@@ -37,6 +37,10 @@ float DepthToLinear(float d) {
     return 1.0 / (ZBufferParams.x * d + ZBufferParams.y);
 }
 
+float miePhase(float cosine) {
+    return pow(cosine - 0.3, 2) * 0.31 + 0.07;
+}
+
 float4 PSMain(PSInput input) : SV_TARGET {
     float2 viewUV = (input.uv * 2.0 - 1.0) * float2(1.0, -1.0);
     if (false) {
@@ -61,11 +65,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float3 viewDir = normalize(rayDelta);
     
     float VdotL = dot(viewDir, _WorldSpaceLightDir0);
-    
-    float scatterIntensity = lerp(HenyeyGreenstein(VdotL, .6), HenyeyGreenstein(VdotL, -.2), 0.5) / 3.14;
-    
-    float3 Scattering = _LightColor0 * scatterIntensity;
-    float3 SkyColor = (float3(149., 167., 200.)*(1.0/255.0));
+        
+    float3 Scattering = _LightColor0 * lerp(SchlickPhase(VdotL, 0.3) * 2, SchlickPhase(VdotL, -0.6), 0.7);
+    float3 SkyColor = (float3(135., 167., 230.)*(0.6/255.0));
     float3 HorizonColor = (float3(200., 167., 149.)*(1.0/255.0)) * 0.5;
     //float3 AmbientTop = (float3(149., 167., 200.)*(1.0/255.0)) * 0.1;
     //float3 AmbientBot = (float3(39., 67., 87.)*(1.0/255.0)) * 0.1;
@@ -88,15 +90,14 @@ float4 PSMain(PSInput input) : SV_TARGET {
     [branch] if (cloudLimits.y * (viewDir.y >= 0 ? 1 : -1) > 0)
     {
         cloudLimits = max(cloudLimits * (1.0 / viewDir.y), 0);
-        float startDst = cloudLimits.x;
-        float endDst = min(cloudLimits.y, rayLength);
-        float3 cloudStart = rayStart.xyz + viewDir * startDst;
-        float3 cloudEnd = rayStart.xyz + viewDir * endDst;
+        float cloudStartDst = cloudLimits.x;
+        float cloudEndDst = min(cloudLimits.y, rayLength);
+        float3 cloudStart = rayStart.xyz + viewDir * cloudStartDst;
+        float3 cloudEnd = rayStart.xyz + viewDir * cloudEndDst;
 
         PrimeClouds(cloudStart, cloudEnd - cloudStart);
-        GlobalMipBias = log2(startDst / 500.0f);
-        //return float4(GlobalMipBias / 5.0, 0, 0, 1);
-        
+        GlobalMipBias = log2(cloudStartDst / 500.0f);
+    
         float stepLength = min(dot(cloudEnd - cloudStart, viewDir) * (1.0 / cloudSampleCount), 20.0);
         float3 rayStep = viewDir * stepLength;
         {
@@ -128,7 +129,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
             result.xy *= rcp(result.w);
             float rayD = result.x;
             float rayV = 2 * sqrt(abs(result.y - rayD * rayD));
-            rayD = rayD * stepLength + startDst;
+            rayD = rayD * stepLength + cloudStartDst;
             rayV = rayV * stepLength;
             float3 rayPos = rayStart + viewDir * (rayD + (jitter2 - 0.5) * rayV);
             float directLight = result.z;
@@ -154,7 +155,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
             directSky = GetCloudRaycast(rayPos, float3(0, 1, 0), jitter3 * cloudShadowJitterBias, finalCloudSkySampleCount);
             scattering =
                 + Scattering * directLight
-                + lerp(HorizonColor, SkyColor, directSky) * result.w;
+                + lerp(HorizonColor, SkyColor, directSky * 0.7) * result.w;
         }
         //result += ddx_fine(result) * 0.5 * ((input.position.x % 2) > 0.5 ? -1 : 1);
         //result += ddy_fine(result) * 0.5 * ((input.position.y % 2) > 0.5 ? -1 : 1);
@@ -185,11 +186,12 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float heightEndDepth = min(heightEndDepth3.x, min(heightEndDepth3.y, heightEndDepth3.z));
     heightBeginDepth = max(heightBeginDepth, 0);
     heightEndDepth = min(heightEndDepth, depth);
+    //return float4(frac(rayEnd / 100) * 0.1, 1);
     //return saturate(float4((depth - heightBeginDepth) / 10.0, 0, 0, 1));
     [branch]
     if (heightEndDepth > heightBeginDepth) {
         const float Something = 1.0;
-        const float Density = 0.2;
+        const float Density = 0.3;
         const float DensityFalloff = 0.5;
         //if (viewDir.y < 0) heightMidDepth = clamp((HeightFogMidLimit - rayStart.y) / viewDir.y, heightBeginDepth, heightEndDepth);
         float fogBeginY = rayStart.y + viewDir.y * heightBeginDepth;
@@ -203,7 +205,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
         float heightMidDepth = heightBeginDepth;//(heightBeginDepth + heightEndDepth) * 0.5;
         float fogMidDistance = (heightEndDepth - heightMidDepth);
+        //return float4(fogMidDistance / 1000.0, 0, 0, 1);
 
+        PrimeClouds(rayStart + viewDir * heightEndDepth, 0);
+        GlobalMipBias = 2.0;
+        
         float2 shadow = 0.0;
         const int HeightFogShadowCount = 2;
         if (HeightFogShadowCount == 0) shadow = 1.0;
@@ -219,7 +225,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
             float3 worldPos = rayStart.xyz + viewDir * (heightMidDepth + sampleDepth);
             float density = exp2(-worldPos.y * DensityFalloff) * exp2(-sampleDepth * Density);
             float3 shadowPos = ViewToShadow(worldPos);
-            shadow += float2(ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r, 1) * density;
+            float localShadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;
+            localShadow *= GetGroundShadow(worldPos, 0.5, 1);
+            shadow += float2(localShadow, 1) * density;
         }
         shadow.x *= 1.0 / shadow.y;
         shadow = shadow * fogMidDistance + (heightMidDepth - heightBeginDepth);
@@ -248,12 +256,20 @@ float4 PSMain(PSInput input) : SV_TARGET {
         }
                 
         float fogDensity = 1.0 - exp2(-opticalDensity);
+        float fogScatter = fogDensity;
+        if (viewDir.y < 0) fogScatter *= transmittance;
         
-        scattering += Scattering * (fogDensity * shadow.x);
+        scattering += (
+            _LightColor0 * (SchlickPhase(VdotL, -0.1) + SchlickPhase(viewDir.y, 0.5))
+            + SkyColor * 0.2
+            + HorizonColor * 0.2
+        ) * (fogScatter * shadow.x);
         transmittance *= 1.0 - fogDensity;
     }
     
     float4 r = float4(scattering, 1.0 - transmittance);
+    //r.rgb = SkyColor;
+    //r.a = 1.0;
     r.rgb *= LuminanceFactor;
     //r += ddx_fine(r) * 0.25 * ((input.position.x % 2) > 0.5 ? -1 : 1);
     //r += ddy_fine(r) * 0.25 * ((input.position.y % 2) > 0.5 ? -1 : 1);

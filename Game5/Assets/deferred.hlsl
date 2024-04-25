@@ -93,22 +93,8 @@ float4 PSMain(PSInput input) : SV_Target {
     float3 Albedo = SceneColor.Sample(BilinearSampler, input.uv).rgb * (1.0 / LuminanceFactor);
     //return float4(Albedo * LuminanceFactor, 1);
     float4 Attributes = SceneAttri.Sample(BilinearSampler, input.uv);
-    float3 normal = OctahedralDecode(Attributes.xy * 2.0 - 1.0);
-    //return float4(Albedo, 1);
-    //normal = pow(normal, 0.45);
-    //normal = normal * 2.0 - 1.0;
-    //normal = normalize(normal);
-    //return float4(Albedo, 1);
-    //normal = OctahedralDecode(OctahedralEncode(normal));
-    //normal = OctahedralDecode(OctahedralEncode(normal));
-    //normal = OctahedralDecode(OctahedralEncode(normal));
-    //normal = OctahedralDecode(OctahedralEncode(normal));
-    //normal = OctahedralDecode(OctahedralEncode(normal));
-    //return float4(normal * 0.5 + 0.5, 1);
-    //return float4(abs(Albedo - frac(viewDir)) * 10.0, 1.0);
-    //return float4(frac(viewDir), 1.0);
-    //viewDir = Albedo * 2.0 - 1.0;
-    //Albedo = 1.0;
+    float3 normal = -OctahedralDecode(Attributes.xy * 2.0 - 1.0);
+    //return float4(normal, 1) * LuminanceFactor;
         
     float specular = 0.06;
     float metallic = 0.0;
@@ -139,9 +125,8 @@ float4 PSMain(PSInput input) : SV_Target {
             float3 groundPos = farCS.xyz;
             //return float4(frac(groundPos), 1);
         
-            float3 midCloud = groundPos + _WorldSpaceLightDir0 *
-                ((cloudMinY + cloudMaxY) / 2.0 - groundPos.y) / _WorldSpaceLightDir0.y;
-            PrimeClouds(midCloud, _WorldSpaceLightDir0);
+            GlobalMipBias = 2.0;
+            PrimeClouds(groundPos, _WorldSpaceLightDir0);
         
             float jitter = IGN(input.position.xy);
             shadow *= GetGroundShadow(groundPos, jitter, groundCloudShadowSampleCount);

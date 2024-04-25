@@ -18,7 +18,7 @@ static const float cloudMaxY = 45;
 static const float cloudMinY = 36;
 static const float cloudTextureDensity = 45.0;
 static const float3 cloudWindDir = normalize(float3(1, 0, -1));
-static const float cloudWindSpeed = 0.5;
+static const float cloudWindSpeed = 5.5;
 
 static float GlobalDensityBias = 2.5;
 static float GlobalMipBias = 0.0;
@@ -66,7 +66,6 @@ float SampleCloudsRaw(float3 uv
 }
 
 void PrimeClouds(float3 worldPos, float3 rayDir) {
-    float midLayerHeight = (cloudMinY + cloudMaxY) / 2.0;
     float3 p = worldPos / 1000.0;
     float3 time3 = Time * 0.002 + p.x - float3(1.0, 2.0, 0.0) / 3.0;
     p.x -= Time * 0.002;
@@ -107,8 +106,17 @@ float SampleClouds(float3 p) {
 }
 float HenyeyGreenstein(float LdotV, float g) {
 	float gg = g * g;
-	return (1.0 - gg) / pow(1.0 + gg - 2.0 * g * LdotV, 1.5);
+	return (1.0 - gg) / ((4.0 * PI) * pow(1.0 + gg + 2.0 * g * LdotV, 1.5));
 }
+float RayleighPhase(float LdotV) {
+	float Factor = 3.0f / (16.0f * PI);
+	return Factor * (1.0f + LdotV * LdotV);
+}
+float SchlickPhase(float LdotV, float g) {
+	const float k = 1.55 * g - 0.55 * g * g * g;
+	return (1.0 - k * k) / (4.0 * PI * pow(1.0 + k * LdotV, 2.0));
+}
+
 float GetCloudRaycast(float3 worldPos, float3 rayDir, float bias = 0.5, const int stepCount = 2) {
     // Determine steps to get through the layer
     float distance = clamp((cloudMaxY - worldPos.y) / rayDir.y, 1.0, 10.0);
@@ -128,7 +136,7 @@ float GetGroundShadow(float3 worldPos, float bias = 0.5, int stepCount = 2) {
     // Step to the bottom of the clouds
     float3 lightDir = _WorldSpaceLightDir0;
     worldPos += lightDir * max((cloudMinY - worldPos.y) / lightDir.y, 0);
-    return GetCloudRaycast(worldPos, _WorldSpaceLightDir0, bias, stepCount);
+    return GetCloudRaycast(worldPos, lightDir, bias, stepCount);
 }
 float GetVolumeShadow(float3 p, float bias = 0.5, int stepCount = 1, bool enableShadowReceive = true) {
     float shadow = GetCloudRaycast(p, _WorldSpaceLightDir0, bias, stepCount);

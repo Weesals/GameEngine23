@@ -4,6 +4,7 @@ matrix CurToPrevVP;
 float2 TemporalJitter;
 float2 Resolution;
 
+SamplerState PointSampler : register(s0);
 SamplerState BilinearClampedSampler : register(s6);
 SamplerState MinSampler : register(s4);
 SamplerState MaxSampler : register(s5);
@@ -68,7 +69,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float4 otherVelId = SceneVelId.Sample(BilinearClampedSampler, gatherUv);
     if (otherVelId.z != velId.z) return float4(1.0, 1.0, 0.0, 1.0);
     
-    float2 previousUV = input.uv.xy - velocity * (0.5 / 16.0);
+    float2 previousUV = input.uv.xy - velocity * (float2(1, -1) * (0.5 / 16.0));
     
     if (all(velocity.xy == 0)) {
         float depth = SceneDepth[input.position.xy].x;
@@ -80,7 +81,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     
     float3 colorMin = RGBToYCoCg(CurrentFrame.Sample(MinSampler, gatherUv).rgb);
     float3 colorMax = RGBToYCoCg(CurrentFrame.Sample(MaxSampler, gatherUv).rgb);
-    float3 scenePrev = RGBToYCoCg(PreviousFrame.Sample(BilinearClampedSampler, previousUV).rgb);
+    float3 scenePrev = RGBToYCoCg(PreviousFrame.Sample(PointSampler, previousUV).rgb);
     scenePrev = clamp(scenePrev, colorMin, colorMax);
     
     float3 sceneColor = RGBToYCoCg(CurrentFrame[input.position.xy].rgb);

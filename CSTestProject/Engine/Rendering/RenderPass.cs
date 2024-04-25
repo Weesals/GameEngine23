@@ -341,14 +341,14 @@ namespace Weesals.Engine {
         public void DrawVolume() {
             activeArea.DrawGizmos();
         }
-        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 4.0f) {
+        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 6.0f) {
             var shadowPassViewProj = this.View * this.Projection;
             Matrix4x4.Invert(this.View, out var shadowPassInvView);
             Matrix4x4.Invert(view, out var basePassInvView);
             basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);
             basePassMat.SetValue("ShadowIVViewProjection", basePassInvView * shadowPassViewProj);
             basePassMat.SetValue("_WorldSpaceLightDir0", Vector3.Normalize(Vector3.TransformNormal(Vector3.UnitZ, shadowPassInvView)));
-            basePassMat.SetValue("_LightColor0", new Vector3(1.0f, 0.85f, 0.7f) * sunIntensity);
+            basePassMat.SetValue("_LightColor0", new Vector3(1.0f, 0.8f, 0.6f) * sunIntensity);
         }
     }
     public class MainPass : ScenePass {

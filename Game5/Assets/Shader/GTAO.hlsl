@@ -54,7 +54,7 @@ float3 GetPosition(float2 uv) {
 }
 inline half3 GetNormal(float2 uv) {
 	//return normalize(cross(ddy(pos), ddx(pos)));
-    return OctahedralDecode(SceneAttri.Sample(BilinearClampedSampler, uv).xy * 2.0 - 1.0);
+    return -OctahedralDecode(SceneAttri.Sample(BilinearClampedSampler, uv).xy * 2.0 - 1.0);
 }
 
 float FastACos(float c) {
@@ -67,9 +67,9 @@ float2 FastACos(float2 c) {
 }
 
 half4 PSMain(PSInput input) : SV_Target {    
-    const int NumArc = 3, NumRad = 4,
+    const int NumArc = 2, NumRad = 3,
         NumRadMin = NumRad - 1;
-    const float Radius = 3.0;
+    const float Radius = 2.5;
     
     float3 viewPos = GetPosition(input.uv);
     half3 viewNrm = GetNormal(input.uv);
@@ -84,8 +84,9 @@ half4 PSMain(PSInput input) : SV_Target {
     half Occlusion = 0.0;
     
     float arcAng = IGN(input.position.xy) * (3.1415 / NumArc);
-    half radBias = (half)((float)PermuteV2(input.position.xy, TemporalFrame * 0.3178));
+    half radBias = frac(arcAng * 125);//(half)((float)PermuteV2(input.position.xy, TemporalFrame * 0.3178));
     half2 arcStep = float2(cos(arcAng), sin(arcAng)) * texelStep;
+    //return float4(0, 0, 0, radBias);
     
     [unroll]
     for (int i = 0; i < NumArc; ++i) {
@@ -141,6 +142,7 @@ half4 PSMain(PSInput input) : SV_Target {
     //return float4(Occlusion.rrr, 1.0);
     float4 r = float4(OctahedralEncode(BentNormal) * 0.5 + 0.5, 0, Occlusion);
     r.rgb = 0.0;
+    //r.a = 1.0;
     return r;
     //return float4(BentNormal * 0.5 + 0.5, Occlusion);
 }

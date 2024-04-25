@@ -37,7 +37,7 @@ struct PSInput {
 
 PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     PSInput result;
-
+    
     float3 worldPos = input.position.xyz;
     float3 worldNrm = input.normal.xyz;
     TransformLandscapeVertex(worldPos, worldNrm, input.offset);
@@ -65,16 +65,16 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
 void PSMain(PSInput input, out BasePassOutput result) {    
     PBRInput pbrInput = PBRDefault();
         
-    //[loop] for(int i = 0; i < 50; ++i)
-    {
     TemporalAdjust(input.positionOS.xz);
     SampleContext context = { BaseMaps, BumpMaps, input.positionOS, float2(0, 0), float3(0, 1, 0), };
     Triangle tri = ComputeTriangle(context.WorldPos.xz);
     
     // Dont know why this requires /(size+1)
     uint4 cp = ControlMap.Gather(AnisotropicSampler, context.WorldPos.xz * _LandscapeSizing1.xy + _LandscapeSizing1.zw);
-    cp = Sort(cp);
-    cp.xyz = uint3(cp[0], cp[tri.TriSign ? 2 : 1], cp[3]) & 0x3fffffff;
+    cp = cp.wzxy;
+    if(frac(context.WorldPos.z / 2) > 0.5) cp = cp.zwxy;
+    if(frac(context.WorldPos.x / 2) > 0.5) cp = cp.yxwz;
+    cp.xyz = uint3(cp[0], cp[tri.TriSign ? 2 : 1], cp[3]);
         
     TerrainSample t0 = (TerrainSample)0, t1 = (TerrainSample)0, t2 = (TerrainSample)0;
     float complexity = 0.0;
@@ -101,7 +101,6 @@ void PSMain(PSInput input, out BasePassOutput result) {
     pbrInput.Metallic = (t0.Metallic * bc.x + t1.Metallic * bc.y + t2.Metallic * bc.z);
     pbrInput.Roughness = (t0.Roughness * bc.x + t1.Roughness * bc.y + t2.Roughness * bc.z);
     float height = (t0.Height * bc.x + t1.Height * bc.y + t2.Height * bc.z);
-    }
 
     pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
         

@@ -120,7 +120,10 @@ namespace Weesals.Landscape {
         [EditorField]
         public bool HighQualityBlend {
             get => highQualityBlend;
-            set => LandMaterial.SetPixelShader(Resources.LoadShader((highQualityBlend = value) ? "./Assets/landscape3x3.hlsl" : "./Assets/landscape.hlsl", "PSMain"));
+            set {
+                LandMaterial.SetPixelShader(Resources.LoadShader((highQualityBlend = value) ? "./Assets/landscape3x3.hlsl" : "./Assets/landscape.hlsl", "PSMain"));
+                LandMaterial.SetVertexShader(Resources.LoadShader((highQualityBlend = value) ? "./Assets/landscape3x3.hlsl" : "./Assets/landscape.hlsl", "VSMain"));
+            }
         }
         [EditorField]
         public bool SecondVariant {
@@ -171,14 +174,6 @@ namespace Weesals.Landscape {
                         .GetTextureData()
                         .CopyTo(runtimeData.BaseTextures.GetTextureData(0, i));
                 }
-                for (int s = 0; s < runtimeData.BaseTextures.ArrayCount; ++s) {
-                    var data = runtimeData.BaseTextures.GetTextureData(0, s).Reinterpret<Color>();
-                    int totalAlpha = 0;
-                    for (int i = 0; i < data.Length; i++) totalAlpha += data[i].A;
-                    if (totalAlpha == 255 * data.Length) {
-                        for (int i = 0; i < data.Length; i++) data[i].A = 127;
-                    }
-                }
                 runtimeData.BaseTextures.MarkChanged();
                 runtimeData.BaseTextures.GenerateMips();
                 runtimeData.BaseTextures.CompressTexture(BufferFormat.FORMAT_BC3_UNORM);
@@ -195,6 +190,14 @@ namespace Weesals.Landscape {
                     Resources.LoadTexture(Layers[i].NormalMap)
                         .GetTextureData()
                         .CopyTo(runtimeData.BumpTextures.GetTextureData(0, i));
+                }
+                for (int s = 0; s < runtimeData.BaseTextures.ArrayCount; ++s) {
+                    var data = runtimeData.BaseTextures.GetTextureData(0, s).Reinterpret<Color>();
+                    int totalB = 0;
+                    for (int i = 0; i < data.Length; i++) totalB += data[i].B;
+                    if (totalB == 255 * data.Length) {
+                        for (int i = 0; i < data.Length; i++) data[i].B = 127;
+                    }
                 }
                 runtimeData.BumpTextures.MarkChanged();
                 runtimeData.BumpTextures.GenerateMips();
@@ -443,7 +446,8 @@ namespace Weesals.Landscape {
             range = metadata.HeightRangeChanged(oldMetadata) ? allRange
                 : range.Expand(1).ClampToBounds(allRange);
             dependency = JobHandle.ScheduleBatch((yrange) => {
-                float normalScale = 1024.0f / LandscapeData.HeightScale;
+                float normalScale = 1.0f / LandscapeData.HeightScale * 1024.0f / (2.0f * sizing.Scale1024);
+                normalScale *= 16.0f;
                 foreach (var y in yrange) {
                     for (int x = range.Min.X; x < range.Max.X; ++x) {
                         var px = sizing.ToIndex(new Int2(x, y));
@@ -456,13 +460,15 @@ namespace Weesals.Landscape {
                         var h12 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x, y + 1), 0, sizing.Size - 1))];
                         var nrm = new Vector3(
                             (float)(h01.Height - h21.Height) * normalScale,
-                            (float)sizing.Scale1024,
+                            (float)(2),
                             (float)(h10.Height - h12.Height) * normalScale
                         );
-                        nrm = Vector3.Normalize(nrm);
+                        //nrm = Vector3.Normalize(nrm);
                         // Pack normal into 2nd and 3rd
-                        ((byte*)c)[1] = (byte)(127 + (nrm.X * 127));
-                        ((byte*)c)[2] = (byte)(127 + (nrm.Z * 127));
+                        //((byte*)c)[1] = (byte)Math.Clamp(127 + (nrm.X * 127), 0, 255);
+                        //((byte*)c)[2] = (byte)Math.Clamp(127 + (nrm.Z * 127), 0, 255);
+                        ((byte*)c)[1] = (byte)Math.Clamp(127 + (h01.Height - h21.Height) * normalScale, 0, 255);
+                        ((byte*)c)[2] = (byte)Math.Clamp(127 + (h10.Height - h12.Height) * normalScale, 0, 255);
                     }
                 }
             }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
@@ -520,7 +526,7 @@ namespace Weesals.Landscape {
                                     var ang = Math.Abs(dd.X) > Math.Abs(dd.Y)
                                         ? (dd.X < 0 ? 128 : 0) + 32 * -dd.Y / dd.X
                                         : (dd.Y < 0 ? 192 : 64) + 32 * dd.X / dd.Y;
-                                    color = (byte)((int)(ang + layer.Rotation * 256 / 360 + 8) & 0xf0);
+                                    color = (byte)((int)(ang + layer.Rotation * 256 / 360 + 8) & 0xf8);
                                 }
                             }
                             break;

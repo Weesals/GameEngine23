@@ -35,13 +35,17 @@ ControlPoint DecodeControlMap(uint cp) {
 }
 struct HeightPoint {
     float HeightOS;
+    float2 DerivativeOS;
     float3 NormalOS;
 };
 HeightPoint DecodeHeightMap(float4 hcell) {
     HeightPoint o;
     o.HeightOS = _LandscapeScaling.z + (hcell.r) * _LandscapeScaling.w;
-    o.NormalOS.xz = hcell.yz * 2.0 - 1.0;
-    o.NormalOS.y = sqrt(1.0 - dot(o.NormalOS.xz, o.NormalOS.xz));
+    float DerivativeScale = (256.0 / 16.0);
+    o.DerivativeOS = hcell.yz * DerivativeScale - 0.5 * DerivativeScale;
+    //o.NormalOS.xz = hcell.yz * 2.0 - 1.0;
+    //o.NormalOS.y = sqrt(1.0 - dot(o.NormalOS.xz, o.NormalOS.xz));
+    o.NormalOS = normalize(float3(o.DerivativeOS, 1).xzy);
     return o;
 }
 
@@ -89,12 +93,9 @@ void TransformLandscapeVertex(inout float3 position, inout float3 normal, float2
 }
 
 void CalculateTerrainTBN(half3 n, out half3 tangent, out half3 bitangent) {
-    half4 bc = n.xzxz;
-    bc.xy *= n.z * rcp(n.y + 1.0);
-    tangent.x = n.y + bc.y;
-    tangent.yz = -bc.zx;
-    bitangent = bc.xwy;
-    bitangent.z -= 1;
+    half4 bc = half4(n.xz, n.xz * (n.z * rcp(n.y + 1.0)));
+    tangent = half3(n.y + bc.w, -bc.xz);
+    bitangent = -half3(bc.zy, bc.w - 1.0);
 }
 
 #endif

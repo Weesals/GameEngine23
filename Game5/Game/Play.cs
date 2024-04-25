@@ -120,14 +120,14 @@ namespace Game5.Game {
                 landscape = new LandscapeData();
                 var layers = new LandscapeLayerCollection();
                 layers.TerrainLayers = new[] {
-                    new LandscapeLayer("TL_Grass") { BaseColor = "./Assets/T_Grass_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
-                    new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
-                    new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/T_DirtyMoss_BaseColor.png", NormalMap = "./Assets/T_DirtyMoss_Normal.jpg", },
-                    new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/T_Moss_BaseColor.png", NormalMap = "./Assets/T_Moss_Normal.jpg", },
-                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/T_Tiles_BaseColor.png", NormalMap = "./Assets/T_Tiles_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.Random90, Scale = 0.25f, },
-                    new LandscapeLayer("TL_WaterFloor") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
-                    new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/T_Dirt_BaseColor.jpg", NormalMap = "./Assets/T_Dirt_Normal.jpg", },
-                    new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/T_GorgeCliff_Normal.jpg", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
+                    new LandscapeLayer("TL_Grass") { BaseColor = "./Assets/Terrain/T_Grass_BaseColor.png", NormalMap = "./Assets/Terrain/T_Grass_Normal.png", },
+                    new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/Terrain/T_Dirt_BaseColor.png", NormalMap = "./Assets/Terrain/T_Dirt_Normal.png", },
+                    new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/Terrain/T_DirtyMoss_BaseColor.png", NormalMap = "./Assets/Terrain/T_DirtyMoss_Normal.png", },
+                    new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/Terrain/T_Moss_BaseColor.png", NormalMap = "./Assets/Terrain/T_Moss_Normal.png", },
+                    new LandscapeLayer("TL_Tiles") { BaseColor = "./Assets/Terrain/T_Tiles_BaseColor.png", NormalMap = "./Assets/Terrain/T_Tiles_Normal.png", Alignment = LandscapeLayer.AlignmentModes.Random90, Scale = 0.25f, },
+                    new LandscapeLayer("TL_WaterFloor") { BaseColor = "./Assets/Terrain/T_Dirt_BaseColor.png", NormalMap = "./Assets/Terrain/T_Dirt_Normal.png", },
+                    new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/Terrain/T_Dirt_BaseColor.png", NormalMap = "./Assets/Terrain/T_Dirt_Normal.png", },
+                    new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/Terrain/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/Terrain/T_GorgeCliff_Normal.png", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
                 };
                 landscape.Initialise(new Int2(256, 256), layers);
                 landscape.Load();

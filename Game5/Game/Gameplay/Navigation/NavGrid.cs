@@ -221,11 +221,12 @@ public class NavGrid : IDisposable {
                 for (int d = 0; d < 2; d++) {
                     var swizDir = Directions[d];
                     var swizSize = Range.Size;
-                    if (d == 1) swizSize = swizSize.YX;
+                    var swizMin = Range.Min;
+                    if (d == 1) { swizSize = swizSize.YX; swizMin = swizMin.YX; }
                     for (int iy = 1; iy < swizSize.Y; iy++) {
                         for (int ix = 0; ix < swizSize.X; ix++) {
-                            var pnt0 = Range.Min + new Int2(ix, iy - 1);
-                            var pnt1 = Range.Min + new Int2(ix, iy);
+                            var pnt0 = swizMin + new Int2(ix, iy - 1);
+                            var pnt1 = swizMin + new Int2(ix, iy);
                             if (d == 1) { pnt0 = pnt0.YX; pnt1 = pnt1.YX; }
                             var pntT0 = ConvertTypeId(map[pnt0.X + pnt0.Y * Size.X]);
                             var pntT1 = ConvertTypeId(map[pnt1.X + pnt1.Y * Size.X]);
