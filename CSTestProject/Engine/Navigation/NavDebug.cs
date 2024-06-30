@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Numerics;
+using Weesals.Editor;
 using Weesals.Engine;
 using Weesals.Utility;
 
@@ -11,13 +12,23 @@ namespace Navigation {
 
         public NavMesh2Baker NavBaker;
 
-        public bool ShowTriangleLabels = true;
-        public bool ShowCornerLabels = true;
-        public bool ShowAdjacency = true;
+        [EditorField]
+        public bool ShowTriangleLabels = false;
+        [EditorField]
+        public bool ShowCornerLabels = false;
+        [EditorField]
+        public bool ShowAdjacency = false;
 
         public void Initialise(NavMesh2Baker baker) {
             NavBaker = baker;
         }
+
+        [EditorButton]
+        public void Repair() {
+            var mutator = new NavMesh2Baker.Mutator(NavBaker);
+            mutator.RepairSwap();
+        }
+
 #if UNITY_EDITOR || true
         public struct HandlesColor : IDisposable {
             Color oldCol;
@@ -29,7 +40,8 @@ namespace Navigation {
         }
         public void OnDrawGizmosSelected() {
             if (NavBaker == null || !NavBaker.IsCreated) return;
-            var mesh = NavBaker.NavMesh.GetReadOnly();
+            var ro = NavBaker.NavMesh.GetReadOnly();
+            var aj = NavBaker.NavMesh.GetAdjacency();
 
             /*foreach (var edge in NavBaker.pinnedEdges) {
                 Gizmos.DrawLine(
@@ -39,8 +51,12 @@ namespace Navigation {
             }
 
             return;*/
+            var adjacency = new PooledHashSet<Edge>(ro.NavMesh.adjacency.Count);
+            foreach (var adj in ro.NavMesh.adjacency) adjacency.Add(adj.Key);
+            var adjacency2 = new PooledHashMap<Edge, Int2>(ro.NavMesh.adjacency.Count);
+
             var validTriangles = new PooledHashSet<ushort>(32);
-            for (var it = mesh.GetTriangleEnumerator(); it.MoveNext();) {
+            for (var it = ro.GetTriangleEnumerator(); it.MoveNext();) {
                 validTriangles.Add((ushort)it.Index);
             }
 
@@ -52,40 +68,64 @@ namespace Navigation {
                 }
             }
             //var frustum = new Frustum4(Camera.current);
-            for (var it = mesh.GetTriangleEnumerator(); it.MoveNext();) {
+            for (var it = ro.GetTriangleEnumerator(); it.MoveNext();) {
                 var tri = it.Current;
-                var c1 = mesh.GetCorner(tri.C1).ToUVector3(0f);
-                var c2 = mesh.GetCorner(tri.C2).ToUVector3(0f);
-                var c3 = mesh.GetCorner(tri.C3).ToUVector3(0f);
+                var c1 = ro.GetCorner(tri.C1).ToUVector3(0f);
+                var c2 = ro.GetCorner(tri.C2).ToUVector3(0f);
+                var c3 = ro.GetCorner(tri.C3).ToUVector3(0f);
+                adjacency.Remove(tri.GetEdge(0));
+                adjacency.Remove(tri.GetEdge(1));
+                adjacency.Remove(tri.GetEdge(2));
                 using (new HandlesColor(GetColor(tri.Type).WithAlpha(32))) {
                     Handles.DrawAAConvexPolygon(c1, c2, c3);
                 }
+                for (int i = 0; i < 3; i++) {
+                    var edge = tri.GetEdge(i);
+                    var sign = edge.GetSign(tri.GetCorner(i));
+                    if (!adjacency2.TryGetValue(edge, out var item)) item = -1;
+                    item[sign ? 0 : 1] = it.Index;
+                }
             }
             if (ShowTriangleLabels) {
-                for (var it = mesh.GetTriangleEnumerator(); it.MoveNext();) {
+                for (var it = ro.GetTriangleEnumerator(); it.MoveNext();) {
                     var tri = it.Current;
-                    var c1 = mesh.GetCorner(tri.C1).ToUVector3(0f);
-                    var c2 = mesh.GetCorner(tri.C2).ToUVector3(0f);
-                    var c3 = mesh.GetCorner(tri.C3).ToUVector3(0f);
+                    var c1 = ro.GetCorner(tri.C1).ToUVector3(0f);
+                    var c2 = ro.GetCorner(tri.C2).ToUVector3(0f);
+                    var c3 = ro.GetCorner(tri.C3).ToUVector3(0f);
                     Handles.Label((c1 + c2 + c3) / 3f, ("T" + it.Index)
                     //, validTriangles.Contains((ushort)it.Index) ? EditorStyles.whiteLabel : EditorStyles.boldLabel
                     );
                 }
             }
-            for (var it = mesh.GetTriangleEnumerator(); it.MoveNext();) {
+            for (var it = ro.GetTriangleEnumerator(); it.MoveNext();) {
                 var tri = it.Current;
-                var c1 = mesh.GetCorner(tri.C1).ToUVector3(0f);
-                var c2 = mesh.GetCorner(tri.C2).ToUVector3(0f);
-                var c3 = mesh.GetCorner(tri.C3).ToUVector3(0f);
-                var ccw = !NavUtility.IsCW(mesh.GetCorner(tri.C1), mesh.GetCorner(tri.C2), mesh.GetCorner(tri.C3));
-                using (new HandlesColor((ccw ? Color.Red : Color.White.WithAlpha(100)))) {
-                    Handles.DrawAAPolyLine(c1, c2, c3, c1);
+                var ccw = !NavUtility.IsCW(ro.GetCorner(tri.C1), ro.GetCorner(tri.C2), ro.GetCorner(tri.C3));
+                for (int i = 0; i < 3; i++) {
+                    var c1 = ro.GetCorner(tri.GetCorner(i)).ToUVector3(0f);
+                    var c2 = ro.GetCorner(tri.GetCornerWrapped(i + 1)).ToUVector3(0f);
+                    var color = ccw ? Color.Red : Color.White.WithAlpha(100);
+                    if (NavBaker.pinnedEdges.Contains(tri.GetEdge(i))) {
+                        color = Color.Yellow;
+                    }
+                    using (new HandlesColor(color)) {
+                        Handles.DrawLine(c1, c2);
+                    }
+                    if (ShowAdjacency) {
+                        DrawEdge(new TriangleEdge((ushort)it.Index, (ushort)i), c1, c2, validTriangles);
+                    }
                 }
-                if (ShowAdjacency) {
-                    DrawEdge(new TriangleEdge((ushort)it.Index, 0), c1, c2, validTriangles);
-                    DrawEdge(new TriangleEdge((ushort)it.Index, 1), c2, c3, validTriangles);
-                    DrawEdge(new TriangleEdge((ushort)it.Index, 2), c3, c1, validTriangles);
+            }
+            foreach (var item in aj.adjacency) {
+                var edge = item.Key;
+                adjacency2.TryGetValue(edge, out var triAj);
+                if (triAj.X != item.Value.Triangle1 || triAj.Y != item.Value.Triangle2) {
+                    Handles.DrawLine(ro.GetCorner(edge.Corner1).ToUVector3(0f),
+                        ro.GetCorner(edge.Corner1).ToUVector3(0f), Color.Red, 2.0f);
                 }
+            }
+            foreach (var edge in adjacency) {
+                Handles.DrawLine(ro.GetCorner(edge.Corner1).ToUVector3(0f),
+                    ro.GetCorner(edge.Corner1).ToUVector3(0f), Color.Red, 2.0f);
             }
             Handles.matrix = Matrix4x4.Identity;
             /*var mray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
@@ -127,7 +167,7 @@ namespace Navigation {
                 NavBaker.GetCornerIndex(edge.NextEdge()) != NavBaker.GetCornerIndex(nedge) ? Color.Red :
                 !validTriangles.Contains(nedge.TriangleId) ? Color.Red :
                 !validTriangles.Contains(nedge2.TriangleId) ? Color.Red :
-                (nedge.EdgeId == 0 ? Color.Yellow : Color.Cyan).WithAlpha(20);
+                (nedge.EdgeId == 0 ? Color.Green : Color.Cyan).WithAlpha(64);
             using (new HandlesColor(color)) {
                 //Gizmos.DrawLine(Vector3.Lerp(triP, ePos, 0.5f), ePos);
                 Handles.DrawLine(Vector3.Lerp(othP, ePos, 0.5f), ePos);

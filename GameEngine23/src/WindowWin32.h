@@ -23,6 +23,8 @@ class WindowWin32 :
     // And can send mouse events to this pointer
     std::shared_ptr<Pointer> mMousePointer;
 
+    std::vector<void(*)()> mMovedCallbacks;
+
     std::shared_ptr<Pointer> RequireMousePointer();
 
 public:
@@ -39,6 +41,8 @@ public:
     // Get the size of the inner window area (not including border or title bar)
     Int2 GetClientSize() const override;
     void SetClientSize(Int2 size) override;
+
+    void RegisterMovedCallback(void (*Callback)(), bool enable);
 
     // Process window messages and then return control to the callee
     // Non-zero values mean the window was closed

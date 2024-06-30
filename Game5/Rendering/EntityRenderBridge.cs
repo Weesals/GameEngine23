@@ -13,6 +13,7 @@ using Weesals.Utility;
 using System.Collections;
 using Weesals.Engine.Jobs;
 using System.Diagnostics;
+using Weesals.Engine.Profiling;
 
 namespace Weesals.Rendering {
     [SparseComponent, NoCloneComponent]
@@ -97,40 +98,69 @@ namespace Weesals.Rendering {
                 Particles.Dispose();
             }
         }
-        public void Load(string doc) {
-            JobHandle loadHandle = default;
-            var xml = XDocument.Parse(doc);
-            var xRoot = xml.Root;
-            foreach (var xVisual in xRoot.Elements("Visual")) {
-                using PooledList<VariantBuilder> variants = new();
-                foreach (var xModel in xVisual.Elements("Model")) {
-                    var model = new VisualPrefab.ModelInstance(Resources.LoadModel((string)xModel.Attribute("Path"), out var handle));
-                    loadHandle = JobHandle.CombineDependencies(loadHandle, handle);
-                    var xVariantMask = xModel.Attribute("VariantMask");
-                    foreach (var id in new IntEnumerator(xVariantMask?.Value, 0, true)) {
-                        while (id >= variants.Count) variants.Add(default);
-                        if (!variants[id].IsValid) variants[id] = new();
-                        variants[id].Models.Add(model);
+        struct LoadContext {
+            public PooledList<VariantBuilder> Variants;
+            public JobHandle LoadHandle;
+            public void AppendModel(SJson jModel) {
+                if (jModel.IsArray) {
+                    foreach (var jChild in jModel) AppendModel(jChild);
+                    return;
+                }
+                var path = (string)jModel["Path"];
+                var model = new VisualPrefab.ModelInstance(Resources.LoadModel(path, out var handle));
+                LoadHandle = JobHandle.CombineDependencies(LoadHandle, handle);
+                var jVariantMask = jModel["VariantMask"];
+                foreach (var id in new IntEnumerator(jVariantMask.IsValid ? jVariantMask.ToString() : null, 0, true)) {
+                    RequireVariant(id).Models.Add(model);
+                }
+            }
+            public void AppendParticle(SJson jParticle, Play play) {
+                if (jParticle.IsArray) {
+                    foreach (var jChild in jParticle) AppendParticle(jChild, play);
+                    return;
+                }
+                var path = (string)jParticle["Path"];
+                var particleType = play.ParticleManager.RequireSystemFromJSON(play.Scene, path);
+                var particle = new VisualPrefab.ParticleInstance(particleType);
+                var xLocalPosition = jParticle["LocalPosition"];
+                if (xLocalPosition.IsValid) {
+                    var floatEn = new FloatEnumerator(xLocalPosition.ToString());
+                    for (int i = 0; i < 3; ++i) {
+                        if (!floatEn.MoveNext()) break;
+                        particle.LocalPosition[i] = floatEn.Current;
                     }
                 }
-                foreach (var xParticle in xVisual.Elements("Particle")) {
-                    var particle = new VisualPrefab.ParticleInstance(Play.ParticleManager.RequireSystemFromJSON(Play.Scene, (string)xParticle.Attribute("Path")));
-                    var xLocalPosition = xParticle.Attribute("LocalPosition");
-                    if (xLocalPosition != null) {
-                        var floatEn = new FloatEnumerator(xLocalPosition.Value);
-                        for (int i = 0; i < 3; ++i) {
-                            if (!floatEn.MoveNext()) break;
-                            particle.LocalPosition[i] = floatEn.Current;
-                        }
-                    }
-                    var xVariantMask = xParticle.Attribute("VariantMask");
-                    foreach (var id in new IntEnumerator(xVariantMask?.Value, 0, true)) {
-                        while (id >= variants.Count) variants.Add(default);
-                        if (!variants[id].IsValid) variants[id] = new();
-                        variants[id].Particles.Add(particle);
+                var jVariantMask = jParticle["VariantMask"];
+                foreach (var id in new IntEnumerator(jVariantMask.IsValid ? jVariantMask.ToString() : null, 0, true)) {
+                    RequireVariant(id).Particles.Add(particle);
+                }
+            }
+            private ref VariantBuilder RequireVariant(int id) {
+                while (id >= Variants.Count) Variants.Add(default);
+                if (!Variants[id].IsValid) Variants[id] = new();
+                return ref Variants[id];
+            }
+            public void Dispose() {
+                Variants.Dispose();
+            }
+        }
+        public JobHandle Load(string doc) {
+            var json = new SJson(doc);
+            var jVisuals = json["Visuals"];
+            LoadContext loadContext = new();
+            foreach (var jVisual in jVisuals) {
+                string? name = null;
+                foreach (var jField in jVisual.GetFields()) {
+                    if (jField.Key == "Name") {
+                        name = (string)jField.Value;
+                    } else if (jField.Key == "Model") {
+                        loadContext.AppendModel(jField.Value);
+                    } else if (jField.Key == "Particle") {
+                        loadContext.AppendParticle(jField.Value, Play);
                     }
                 }
-                if (variants[0].IsValid) {
+                ref var variants = ref loadContext.Variants;
+                if (loadContext.Variants[0].IsValid) {
                     for (int i = 1; i < variants.Count; i++) {
                         if (!variants[i].IsValid) continue;
                         variants[i].Models.AddRange(variants[0].Models);
@@ -140,7 +170,7 @@ namespace Weesals.Rendering {
                 // If we have variants, ignore the common variant (0)
                 int var0 = variants.Count > 1 ? 1 : 0;
                 var visual = new VisualCollection(
-                    (string?)xVisual.Attribute("Name") ?? "",
+                    name ?? "",
                     new VisualPrefab[variants.Count - var0]
                 );
                 for (int i = var0; i < variants.Count; i++) {
@@ -153,13 +183,18 @@ namespace Weesals.Rendering {
                 VisualsByName.Add(visual.Name, visual);
                 variants.Clear();
             }
-            loadHandle.Complete();
-            foreach (var context in Visuals) {
-                foreach (var variant in context.Variants) {
-                    if (variant == null) continue;
-                    variant.FinalizeLoad();
+            var loadHandle = loadContext.LoadHandle;
+            loadContext.Dispose();
+            loadHandle = JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Vis Finalize").Auto();
+                foreach (var context in Visuals) {
+                    foreach (var variant in context.Variants) {
+                        if (variant == null) continue;
+                        variant.FinalizeLoad();
+                    }
                 }
-            }
+            }, loadHandle);
+            return loadHandle;
         }
 
         public VisualPrefab GetVisuals(string name) {

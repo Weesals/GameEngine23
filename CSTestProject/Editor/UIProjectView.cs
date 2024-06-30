@@ -114,7 +114,7 @@ namespace Weesals.Editor {
                 public readonly FileType Type;
                 public Image Icon;
                 public TextBlock Text;
-                private FileAnimator animator;
+                private FileAnimator? animator;
                 public FileView(string filename, FileType type) {
                     Filename = filename;
                     Type = type;

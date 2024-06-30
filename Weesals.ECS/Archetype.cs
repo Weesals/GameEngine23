@@ -499,15 +499,17 @@ namespace Weesals.ECS {
         public struct Builder {
             public readonly Stage Stage;
             public readonly StageContext Context => Stage.Context;
+            [ThreadStatic] public BitField.Generator WithTypes;
+            [ThreadStatic] public BitField.Generator WithoutTypes;
+            [ThreadStatic] public BitField.Generator WithSparseTypes;
             public Builder(Stage stage) {
                 Stage = stage;
+                if (WithTypes == null) {
+                    WithTypes = new();
+                    WithoutTypes = new();
+                    WithSparseTypes = new();
+                }
             }
-            [ThreadStatic]
-            public static BitField.Generator WithTypes = new();
-            [ThreadStatic]
-            public static BitField.Generator WithoutTypes = new();
-            [ThreadStatic]
-            public static BitField.Generator WithSparseTypes = new();
             public Builder With(TypeId typeId) {
                 (typeId.IsSparse ? WithSparseTypes : WithTypes).Add(typeId);
                 return this;

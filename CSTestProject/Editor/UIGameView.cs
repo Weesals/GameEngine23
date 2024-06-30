@@ -28,6 +28,7 @@ namespace Weesals.Editor {
                 SetTransform(CanvasTransform.MakeDefault().WithOffsets(5f, 0f, 0f, 0f));
             }
             public override void OnSelected(ISelectionGroup group, bool _selected) {
+                if (IsSelected == _selected) return;
                 base.OnSelected(group, _selected);
                 FindParent<UIHierarchy>()?.NotifyEntitySelected(Entity, IsSelected);
                 Text.TextColor = IsSelected ? Color.Orange : Color.DarkGray;
@@ -82,6 +83,12 @@ namespace Weesals.Editor {
         public void Update(float dt) {
             UpdateValues();
         }
+        public EntityView? GetEntityView(Entity entity) {
+            foreach (var item in list.Children) {
+                if (item is EntityView btn && btn.Entity == entity) return btn;
+            }
+            return default;
+        }
         public void NotifySelected(Entity entity, bool selected) {
             foreach (var item in list.Children) {
                 if (item is not EntityView btn || btn.Entity != entity) continue;
@@ -111,7 +118,7 @@ namespace Weesals.Editor {
             EnableBackground = false;
             realtimeToggle = new ToggleButton();
             realtimeToggle.Transform = CanvasTransform.MakeAnchored(new(40f, 40f), new(0f, 0f));
-            realtimeToggle.State = true;
+            realtimeToggle.State = false;
             realtimeToggle.AppendChild(new TextBlock("Realtime") { FontSize = 10, });
             AppendChild(realtimeToggle);
         }

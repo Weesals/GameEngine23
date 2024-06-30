@@ -18,7 +18,7 @@ static const float cloudMaxY = 45;
 static const float cloudMinY = 36;
 static const float cloudTextureDensity = 45.0;
 static const float3 cloudWindDir = normalize(float3(1, 0, -1));
-static const float cloudWindSpeed = 5.5;
+static const float cloudWindSpeed = 0.5;
 
 static float GlobalDensityBias = 2.5;
 static float GlobalMipBias = 0.0;

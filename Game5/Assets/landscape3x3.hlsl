@@ -9,6 +9,9 @@
 #if !defined(VARIANT)
 # define VARIANT 1
 #endif
+#if !defined(ENABLEPARALLAX)
+# define ENABLEPARALLAX 0
+#endif
 
 #include <common.hlsl>
 #include <temporal.hlsl>
@@ -20,7 +23,7 @@ static const half HeightBlend = 5.0;
 static const half WeightBlend = 2.0;
 static const bool EnableTriplanar = false;
 static const bool ParallaxTransform = true;
-static const int ParallaxCount = 1;
+static const int ParallaxCount = ENABLEPARALLAX ? 1 : 0;
 static const float ParallaxIntensity = 0.3;
 #define ControlCount 9
 #define SampleCount 6
@@ -237,7 +240,7 @@ struct LayerBlend {
     }
     void BlendNrm(inout TerrainSample result, int i) {
         TerrainSample ter = samples[i];
-        ter.UnpackNrm();
+        //ter.UnpackNrm();  // Potentially slower on intel
         half amount = masks[i];
         result.Normal += ter.Normal * amount;
         result.Height += ter.Height * amount;
@@ -323,7 +326,7 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoints3x3 cp3x3, Contr
 }
 
 BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
-    uint packedDHDXZ = (f32tof16(input.dHeightDxz.x) << 16) | f32tof16(input.dHeightDxz.y);
+    //uint packedDHDXZ = (f32tof16(input.dHeightDxz.x) << 16) | f32tof16(input.dHeightDxz.y);
     TemporalAdjust(input.positionOS.xz);
         
     ControlPoints3x3 cp3x3;
@@ -341,9 +344,16 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
         float3 localViewDir = mul(InvModelView, float4(0, 0, 0, 1)).xyz - context.WorldPos;
         if (ParallaxTransform) {
             float3 nrm = float3(input.dHeightDxz.x, 1, input.dHeightDxz.y);
-            //nrm = normalize(nrm); // Technically required for TBN, but seems fine without
-            half3 t, b; CalculateTerrainTBN(nrm, t, b);
-            localViewDir = mul(float3x3(t, nrm, b), localViewDir);
+            if (true) {
+                nrm = normalize(nrm); // Technically required for TBN, but seems fine without
+                half3 t, b; CalculateTerrainTBN(nrm, t, b);
+                localViewDir = mul(float3x3(t, nrm, b), localViewDir);
+            } else {
+                nrm = normalize(nrm) + float3(0, 1, 0);
+                //nrm *= float3(-1, 1, -1);
+                localViewDir = localViewDir * float3(1, 1, 1);
+                localViewDir += nrm * dot(nrm, localViewDir) * rcp(nrm.y);
+            }
         } else { // Hack
             localViewDir.y = max(localViewDir.y, 4);
         }
@@ -352,7 +362,7 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
         if (rateDiv > 0.01)
         {
             complexity++;
-            rateDiv *= ParallaxIntensity * rcp(localViewDir.y);
+            rateDiv *= ParallaxIntensity * (rcp(localViewDir.y));
             
             const float TextureSize = 256;
             
@@ -361,6 +371,7 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
             float3 worldPos = context.WorldPos * data.Scale;
             float2 dyuv = ddy(worldPos.xz);
             float mipLevel = log2(dot(dyuv, dyuv) * pow(TextureSize, 2)) / 2;
+            mipLevel = context.BumpMaps.CalculateLevelOfDetail(BilinearSampler, worldPos.xz);
             
             float refHeight = 0.5;
             float parHeight = SampleTerrainHeightLevel(context, cp, max(mipLevel, 3.0));
@@ -386,7 +397,6 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
     terResult.Albedo.g = 0.4 * saturate(min(complexityN * 3, 3 - complexityN * 3));
     terResult.Albedo.b *= 0.5;
     //terResult.Normal.xy *= 0.5;
-    terResult.Roughness = 1.0;
 #endif
 #if VARIANT == 0
     terResult.Albedo.g -= 0.1;
@@ -395,15 +405,24 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
     PBRInput pbrInput = PBRDefault();
     pbrInput.Albedo = terResult.Albedo;
     pbrInput.Normal = terResult.Normal;
-    pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
     pbrInput.Metallic = terResult.Metallic;
     pbrInput.Roughness = terResult.Roughness;
 
-    float2 dHeightDxz = half2(f16tof32(packedDHDXZ >> 16), f16tof32(packedDHDXZ));
-    float3 normalOS = RegenerateNormalY(dHeightDxz);
-    normalOS.y += 1.0;
-    pbrInput.Normal = pbrInput.Normal.xzy * float3(-1, 1, 1);
-    pbrInput.Normal = normalOS * dot(normalOS, pbrInput.Normal) * rcp(normalOS.y) - pbrInput.Normal;
+    float3 normalOS = half3(input.dHeightDxz, 1).xzy;//half3(f16tof32(packedDHDXZ >> 16), 1, f16tof32(packedDHDXZ));
+    if (false) {
+        //pbrInput.Normal = pbrInput.Normal.xyz;
+        normalOS = normalize(normalOS);
+        half3 t, b; CalculateTerrainTBN(normalOS, t, b);
+        pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
+        pbrInput.Normal = pbrInput.Normal.xzy * float3(1, 1, -1);
+        pbrInput.Normal = mul(pbrInput.Normal, float3x3(t, normalOS, b));
+    } else {
+        normalOS = normalize(normalOS) + float3(0, 1, 0);
+        pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
+        pbrInput.Normal = pbrInput.Normal.xzy * float3(1, -1, 1);
+        pbrInput.Normal -= normalOS * dot(normalOS, pbrInput.Normal) * rcp(normalOS.y);
+        //pbrInput.Normal.y = sqrt(1.0 - dot(pbrInput.Normal.xz, pbrInput.Normal.xz));
+    }
     
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);

@@ -28,6 +28,8 @@ namespace Weesals.Engine {
         protected List<RenderPassCache> mPassCache = new();
         protected int resourceGeneration;
 
+        public int RenderOrder { get; set; }
+
         public MeshDraw(Mesh mesh, Material material) : this(mesh, new Span<Material>(ref material)) { }
         public MeshDraw(Mesh mesh, Span<Material> materials) {
             mMesh = mesh;
@@ -183,7 +185,7 @@ namespace Weesals.Engine {
             }
             var buffers = graphics.RequireFrameData(mBufferLayout);
 
-            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount);
+            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount, RenderOrder);
         }
     }
     public class MeshDrawIndirect : MeshDraw {
@@ -209,8 +211,6 @@ namespace Weesals.Engine {
         }
         unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();
-            int instanceCount = 16 * 1024;
-            if (instanceCount <= 0) return;
 
             mBufferLayout.Clear();
             // Must come first
@@ -234,7 +234,7 @@ namespace Weesals.Engine {
             }
             var buffers = graphics.RequireFrameData(mBufferLayout);
 
-            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount);
+            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, RenderOrder);
         }
     }
 }

@@ -57,8 +57,8 @@
 	Int4=Weesals.Engine.Int4
 	Int4C=Weesals.Engine.Int4
 	ColorB4=Weesals.Engine.Color
-	Rect=Weesals.Engine.RectF
 	RectInt=Weesals.Engine.RectI
+	Rect=Weesals.Engine.RectF
 	BufferFormat=Weesals.Engine.BufferFormat
 	Frustum=Weesals.Engine.Frustum
 	BoundingBox=Weesals.Engine.BoundingBox

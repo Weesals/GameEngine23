@@ -4,6 +4,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine;
 
 namespace Weesals.Landscape {
     // A PBR texture set that can appear on the terrain, with some metadata
@@ -68,5 +69,51 @@ namespace Weesals.Landscape {
             return -1;
         }
 
+        public CSTexture RequireBaseMaps(bool forceRegen = false) {
+            const string BaseMapsKey = "tex$LandscapeBaseMaps";
+            var baseTextures = forceRegen ? default : Resources.TryLoadTexture(BaseMapsKey);
+            if (!baseTextures.IsValid) {
+                baseTextures = CSTexture.Create("BaseMaps")
+                    .SetSize(512)
+                    .SetArrayCount(LayerCount);
+                for (int i = 0; i < LayerCount; ++i) {
+                    Resources.LoadTexture(this[i].BaseColor)
+                        .GetTextureData()
+                        .CopyTo(baseTextures.GetTextureData(0, i));
+                }
+                baseTextures.MarkChanged();
+                baseTextures.GenerateMips();
+                baseTextures.CompressTexture(BufferFormat.FORMAT_BC3_UNORM);
+                Resources.TryPutTexture(BaseMapsKey, baseTextures);
+            }
+            return baseTextures;
+        }
+        public CSTexture RequireBumpMaps(bool forceRegen = false) {
+            const string BumpMapsKey = "tex$LandscapeBumpMaps";
+            var bumpTextures = forceRegen ? default : Resources.TryLoadTexture(BumpMapsKey);
+            if (!bumpTextures.IsValid) {
+                bumpTextures = CSTexture.Create("BumpMaps")
+                    .SetSize(256)
+                    .SetArrayCount(LayerCount);
+                for (int i = 0; i < LayerCount; ++i) {
+                    Resources.LoadTexture(this[i].NormalMap)
+                        .GetTextureData()
+                        .CopyTo(bumpTextures.GetTextureData(0, i));
+                }
+                for (int s = 0; s < bumpTextures.ArrayCount; ++s) {
+                    var data = bumpTextures.GetTextureData(0, s).Reinterpret<Color>();
+                    int totalB = 0;
+                    for (int i = 0; i < data.Length; i++) totalB += data[i].B;
+                    if (totalB == 255 * data.Length) {
+                        for (int i = 0; i < data.Length; i++) data[i].B = 127;
+                    }
+                }
+                bumpTextures.MarkChanged();
+                bumpTextures.GenerateMips();
+                bumpTextures.CompressTexture();
+                Resources.TryPutTexture(BumpMapsKey, bumpTextures);
+            }
+            return bumpTextures;
+        }
     }
 }

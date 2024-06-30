@@ -18,8 +18,11 @@ using Weesals.Landscape.Editor;
 using Weesals.UI;
 using Weesals.Utility;
 
-namespace Weesals.Editor
-{
+namespace Weesals.Editor {
+
+    public interface IInspectorGameOverlay {
+        CanvasRenderable GameViewOverlay { get; }
+    }
 
     public class UIPropertiesList : ListLayout, IUpdatable {
         public class TextBlockBound : TextBlock, IBindableValue {
@@ -399,8 +402,11 @@ namespace Weesals.Editor
         public readonly ListLayout Content;
         public UILandscapeTools LandscapeTools = new();
         public UIEntityInspector EntityInspector = new();
+        public UIEditablesInspector GenericInspector = new();
         public UIEditablesInspector EditablesInspector = new();
         private CanvasRenderable? activeInspector;
+
+        public Action<CanvasRenderable, bool> OnRegisterInspector;
 
         public UIInspector(Editor editor) : base(editor, "Inspector") {
             ScrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
@@ -426,9 +432,15 @@ namespace Weesals.Editor
         }
 
         public void SetInspector(CanvasRenderable? inspector) {
-            if (activeInspector != null) Content.RemoveChild(activeInspector);
+            if (activeInspector != null) {
+                OnRegisterInspector?.Invoke(activeInspector, false);
+                Content.RemoveChild(activeInspector);
+            }
             activeInspector = inspector;
-            if (activeInspector != null) Content.InsertChild(0, activeInspector);
+            if (activeInspector != null) {
+                Content.InsertChild(0, activeInspector);
+                OnRegisterInspector?.Invoke(activeInspector, true);
+            }
         }
     }
 }

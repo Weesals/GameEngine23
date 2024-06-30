@@ -69,7 +69,6 @@ namespace Game5.Game {
             NavGrid = new NavGrid();
             NavMesh = new Navigation.NavMesh();
             NavMeshBaker = new NavMesh2Baker(NavMesh);
-            NavMesh.Allocate();
             NavMeshBaker.Allocate();
             var query = World.BeginQuery().With<ECObstruction>().Build();
             World.Stage.AddListener(query, new ArchetypeListener() {
@@ -119,6 +118,7 @@ namespace Game5.Game {
             if (Landscape != null) Landscape.OnLandscapeChanged -= Landscape_OnLandscapeChanged;
             Landscape = landscapeData;
             NavGrid.Allocate(NavGrid.SimulationToGrid(Landscape.Sizing.SimulationSize));
+            NavMesh.Allocate(NavigationSystem.SimulationToNavMesh(Landscape.Sizing.SimulationSize));
             if (Landscape != null) Landscape.OnLandscapeChanged += Landscape_OnLandscapeChanged;
             UpdateGridRepresentation();
         }
@@ -165,17 +165,17 @@ namespace Game5.Game {
             if (NavGrid.HasChanges) {
                 NavGrid.PushToNavMesh(NavMeshBaker);
             }
-            if (Input.GetKeyDown(KeyCode.Z)) this.disableMovements = !this.disableMovements;
+            if (Input.IsInitialized && Input.GetKeyDown(KeyCode.Z)) this.disableMovements = !this.disableMovements;
             var time = TimeSystem.GetInterval();
             var entityMap = EntityMapSystem.AllEntities;
             var tformLookup = GetComponentLookup<ECTransform>(false);
             var completions = this.completions;
-            var moveContract = this.moveContract;
+            ref var moveContract = ref this.moveContract;
             var navMesh = NavMesh.GetReadOnly();
             ref var navQuery = ref this.navQuery;
             navQuery.Initialise(NavMesh);
             using var portals = new PooledList<TriangleEdge>(4);
-            bool noPath = Input.GetKeyDown(KeyCode.LeftShift);
+            bool noPath = Input.IsInitialized && Input.GetKeyDown(KeyCode.LeftShift);
             var pathCache = this.pathCache;
             var pathCachePoints = this.pathCachePoints;
             var heightMap = EntityMapSystem.LandscapeData.GetHeightMap();
@@ -299,6 +299,7 @@ namespace Game5.Game {
                 RemoveCache(completion.Entity);
             }
             //Dependency.Complete();
+            Debug.Assert(moveContract.IsValid);
             EntityMapSystem.CommitContract(moveContract);
             moveContract.Clear();
             for (int i = 1; i < portals.Count; i++) {
@@ -330,6 +331,7 @@ namespace Game5.Game {
                     );
                 }
             }
+            NavGrid.DrawGizmos();
         }
 
         private static Int2 NavMeshToSimulation(Int2 position) {

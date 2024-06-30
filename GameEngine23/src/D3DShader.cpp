@@ -141,7 +141,7 @@ std::string D3DShader::PreprocessFile(const std::wstring_view& path, std::span<c
             stdInclude.SetAbsolutePath("Assets/include/");
             auto aPath = ToAscii(path);
             std::vector<D3D_SHADER_MACRO> d3dMacros;
-            for (int m = 0; m < macros.size(); m += 2) {
+            for (int m = 0; m < macros.size(); ++m) {
                 d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = macros[m].mName.GetName().c_str(), .Definition = macros[m].mValue.GetName().c_str(),});
             }
             d3dMacros.push_back(D3D_SHADER_MACRO{ .Name = nullptr, .Definition = nullptr, });

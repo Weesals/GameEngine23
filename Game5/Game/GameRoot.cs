@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Weesals.ECS;
 using Weesals.Editor;
 using Weesals.Engine;
+using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
@@ -58,26 +59,41 @@ namespace Game5.Game {
         public Play Play;
 
         public GameRoot() {
-            using (var passesMarker = new ProfilerMarker("Create Scene").Auto()) {
+            using (new ProfilerMarker("Create Scene").Auto()) {
                 Scene = new();
             }
-            using (var passesMarker = new ProfilerMarker("Create SceneManager").Auto()) {
-                scenePasses = new(Scene);
-            }
-            using (var passesMarker = new ProfilerMarker("Create EventSystem").Auto()) {
+            using (new ProfilerMarker("Create EventSystem").Auto()) {
                 EventSystem = new(Canvas);
             }
-
-            SetupPasses();
+        }
+        public JobHandle Initialise() {
+            var playJob = JobResult<Play>.Schedule(() => {
+                using var marker = new ProfilerMarker("Create Play").Auto();
+                return new Play(this);
+            });
+            var passesJob = JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Create Passes").Auto();
+                ScenePassManager passes;
+                using (new ProfilerMarker("Create SceneManager").Auto()) {
+                    passes = new(Scene);
+                }
+                SetupPasses(passes);
+                scenePasses = passes;
+            });
+            return passesJob.Join(playJob.Handle).Then(() => {
+                using var marker = new ProfilerMarker("Play Init").Auto();
+                Play = playJob.Complete();
+                Play.Initialise();
+                volGatherPass.SetParticleSystem(Play.ParticleManager);
+            });
         }
         public void Dispose() {
             Play.Dispose();
             Canvas.Dispose();
         }
 
-        private void SetupPasses() {
-            Play = new Play(this);
-            using (var passesMarker = new ProfilerMarker("Create Passes").Auto()) {
+        private async void SetupPasses(ScenePassManager scenePasses) {
+            using (new ProfilerMarker("Setup Passes").Auto()) {
                 Action updateShadowParameters = () => {
                     basePass.UpdateShadowParameters(shadowPass);
                     transPass.UpdateShadowParameters(shadowPass);
@@ -95,7 +111,7 @@ namespace Game5.Game {
                 };
                 clearPass = new();
                 skyboxPass = new(scenePasses);
-                skyboxPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                skyboxPass.OverrideMaterial.InheritProperties(scenePasses.MainSceneMaterial);
                 skyboxPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 basePass = new BasePass(Scene) {
                     OnPrepare = (graphics) => {
@@ -111,16 +127,16 @@ namespace Game5.Game {
                     }
                 };
                 gtaoPass = new(scenePasses);
-                gtaoPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                gtaoPass.OverrideMaterial.InheritProperties(scenePasses.MainSceneMaterial);
                 gtaoPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
-                volGatherPass = new(scenePasses, Play.ParticleManager);
-                volGatherPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                volGatherPass = new(scenePasses);
+                volGatherPass.OverrideMaterial.InheritProperties(scenePasses.MainSceneMaterial);
                 volGatherPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 fogPass = new(scenePasses);
-                fogPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                fogPass.OverrideMaterial.InheritProperties(scenePasses.MainSceneMaterial);
                 fogPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 deferredPass = new(scenePasses);
-                deferredPass.OverrideMaterial.InheritProperties(ScenePasses.MainSceneMaterial);
+                deferredPass.OverrideMaterial.InheritProperties(scenePasses.MainSceneMaterial);
                 deferredPass.OverrideMaterial.InheritProperties(fogPass.OverrideMaterial);
                 deferredPass.OverrideMaterial.InheritProperties(Scene.RootMaterial);
                 highZPass = new();
@@ -214,8 +230,10 @@ namespace Game5.Game {
             // Render scene color
             renderGraph.BeginPass(clearPass);
             renderGraph.BeginPass(basePass);
-            //renderGraph.BeginPass(highZPass);
+            renderGraph.BeginPass(highZPass);
             if (Play.EnableAO && gtaoPass != null) renderGraph.BeginPass(gtaoPass);
+            deferredPass.SetAOEnabled(Play.EnableAO);
+            deferredPass.SetFogEnabled(Play.EnableFog);
             renderGraph.BeginPass(deferredPass);
             renderGraph.BeginPass(skyboxPass);
             renderGraph.BeginPass(transPass);
@@ -291,17 +309,22 @@ namespace Game5.Game {
                 }
             };
             editorWindow.Hierarchy.World = this.Play.World;
+            // When selecting an entity's UI, select it in Play
             editorWindow.Hierarchy.OnEntitySelected += (entity, selected) => {
                 var item = this.Play.Simulation.EntityProxy.MakeHandle(entity);
                 if (selected) this.Play.SelectionManager.AppendSelected(item);
                 else this.Play.SelectionManager.RemoveSelected(item);
             };
             editorWindow.Inspector.AppendEditables(this.Editables);
-            this.Play.SelectionManager.OnEntitySelected += (entity, selected) => {
-                editorWindow.Hierarchy.NotifySelected(entity.GetEntity(), selected);
-            };
+            // If Play selection changes, force update project selection
             this.Play.SelectionManager.OnSelectionChanged += (selection) => {
-                editorWindow.Editor.ProjectSelection.SetSelectedItems(selection);
+                using var scope = new Weesals.UI.SelectionManager.Scope(editorWindow.Editor.ProjectSelection);
+                foreach (var item in selection) {
+                    var view = editorWindow.Hierarchy.GetEntityView(item.GetEntity());
+                    if (view != null) { scope.Append(new(view)); continue; }
+                    scope.Append(item);
+                }
+                //editorWindow.Editor.ProjectSelection.SetSelectedItems(selection);
             };
             editorWindow.EventSystem.KeyboardFilter.Insert(0, this.EventSystem);
         }

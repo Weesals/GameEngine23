@@ -44,6 +44,7 @@ namespace Weesals.Engine {
     }
     public partial struct CSIdentifier : IEquatable<CSIdentifier>, IComparable<CSIdentifier> {
         unsafe public CSIdentifier(string str) {
+            if (str == null) { mId = Invalid.mId; return; }
             fixed (char* chrs = str) {
                 mId = GetIdentifier(new CSString(chrs, str.Length));
             }
@@ -203,9 +204,9 @@ namespace Weesals.Engine {
     }
     public partial struct CSRenderTarget : IEquatable<CSRenderTarget> {
         unsafe public bool IsValid => mRenderTarget != null;
-        public Int2 Size => GetSize();
-        public BufferFormat Format => GetFormat();
-        public int MipCount => GetMipCount();
+        public Int2 Size => IsValid ? GetSize() : default;
+        public BufferFormat Format => IsValid ? GetFormat(): default;
+        public int MipCount => IsValid ? GetMipCount() : default;
         unsafe public void SetSize(Int2 size) { SetSize(mRenderTarget, size); }
         unsafe public Int2 GetSize() { return GetSize(mRenderTarget); }
         unsafe public void SetFormat(BufferFormat format) { SetFormat(mRenderTarget, format); }
@@ -217,7 +218,7 @@ namespace Weesals.Engine {
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }
         unsafe public override int GetHashCode() { return HashCode.Combine((ulong)mRenderTarget); }
-        unsafe public override string ToString() { return $"RT{(nint)mRenderTarget:x}"; }
+        unsafe public override string ToString() { return $"RT{(nint)mRenderTarget:x} Size<{Size}> Fmt<{Format}>"; }
         unsafe public static bool operator ==(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget == right.mRenderTarget; }
         unsafe public static bool operator !=(CSRenderTarget left, CSRenderTarget right) { return left.mRenderTarget != right.mRenderTarget; }
 
@@ -291,95 +292,6 @@ namespace Weesals.Engine {
             return mBuffer == other.mBuffer && mSubresourceId == other.mSubresourceId && mSubresourceCount == other.mSubresourceCount;
         }
     }
-    public partial struct CSMaterial : IEquatable<CSMaterial>, IDisposable {
-        unsafe public bool IsValid => mMaterial != null;
-        unsafe public void SetRenderPass(CSIdentifier identifier) {
-            SetRenderPass(mMaterial, identifier);
-        }
-        unsafe public void SetValue(CSIdentifier identifier, int value) {
-            CSMaterial.SetValueInt(mMaterial, identifier, &value, 1);
-        }
-        unsafe public void SetValue(CSIdentifier identifier, float value) {
-            CSMaterial.SetValueFloat(mMaterial, identifier, &value, 1);
-        }
-        unsafe public void SetValue(CSIdentifier identifier, Vector2 value) {
-            CSMaterial.SetValueFloat(mMaterial, identifier, &value.X, 2);
-        }
-        unsafe public void SetValue(CSIdentifier identifier, Vector3 value) {
-            CSMaterial.SetValueFloat(mMaterial, identifier, &value.X, 3);
-        }
-        unsafe public void SetValue(CSIdentifier identifier, Vector4 value) {
-            CSMaterial.SetValueFloat(mMaterial, identifier, &value.X, 4);
-        }
-        unsafe public void SetValue(CSIdentifier identifier, Matrix4x4 value) {
-            CSMaterial.SetValueFloat(mMaterial, identifier, &value.M11, 16);
-        }
-        unsafe public void SetTexture(CSIdentifier identifier, CSTexture texture) {
-            CSMaterial.SetValueTexture(mMaterial, identifier, texture);
-        }
-        unsafe public void SetTexture(CSIdentifier identifier, CSRenderTarget texture) {
-            CSMaterial.SetValueTexture(mMaterial, identifier, new CSTexture((NativeTexture*)texture.mRenderTarget));
-        }
-        unsafe private T GetValueData<T>(CSIdentifier identifier) where T : unmanaged {
-            var res = CSMaterial.GetValueData(mMaterial, identifier);
-            if (res.mSize >= sizeof(T)) return *(T*)res.mData;
-            return default;
-        }
-        unsafe public int GetInt(CSIdentifier identifier) {
-            return GetValueData<int>(identifier);
-        }
-        unsafe public float GetFloat(CSIdentifier identifier) {
-            return GetValueData<float>(identifier);
-        }
-        unsafe public Vector2 GetVector2(CSIdentifier identifier) {
-            return GetValueData<Vector2>(identifier);
-        }
-        unsafe public Vector3 GetVector3(CSIdentifier identifier) {
-            return GetValueData<Vector3>(identifier);
-        }
-        unsafe public Vector4 GetVector4(CSIdentifier identifier) {
-            return GetValueData<Vector4>(identifier);
-        }
-        unsafe public Matrix4x4 GetMatrix(CSIdentifier identifier) {
-            return GetValueData<Matrix4x4>(identifier);
-        }
-
-        unsafe public void SetBlendMode(BlendMode mode) { SetBlendMode(mMaterial, &mode); }
-        unsafe public void SetRasterMode(RasterMode mode) { SetRasterMode(mMaterial, &mode); }
-        unsafe public void SetDepthMode(DepthMode mode) { SetDepthMode(mMaterial, &mode); }
-
-        unsafe public void InheritProperties(CSMaterial other) { InheritProperties(mMaterial, other.mMaterial); }
-
-        public unsafe void Dispose() { Dispose(mMaterial); }
-        public unsafe static CSMaterial Create() {
-            return new CSMaterial(_Create(default));
-        }
-        public unsafe static CSMaterial Create(string shaderPath) {
-            fixed (char* shaderPathPtr = shaderPath) {
-                var csstr = new CSString(shaderPathPtr, shaderPath.Length);
-                return new CSMaterial(_Create(csstr));
-            }
-        }
-
-        public override bool Equals(object? obj) { return obj is CSMaterial mat && mat == this; }
-        unsafe public bool Equals(CSMaterial other) { return mMaterial == other.mMaterial; }
-        unsafe public override int GetHashCode() { return ((int)mMaterial ^ (int)((ulong)mMaterial >> 32)); }
-        unsafe public override string ToString() {
-            if (mMaterial == null) return "-none-";
-            var items = stackalloc CSIdentifier[20];
-            int count = GetParameterIdentifiers(mMaterial, items, 20);
-            StringBuilder builder = new();
-            builder.Append("{");
-            for (int i = 0; i < count; ++i) {
-                if (i != 0) builder.Append(", ");
-                builder.Append(items[i].GetId() + ": " + items[i].GetName());
-            }
-            builder.Append("}");
-            return builder.ToString();
-        }
-        unsafe public static bool operator ==(CSMaterial m1, CSMaterial m2) { return m1.mMaterial == m2.mMaterial; }
-        unsafe public static bool operator !=(CSMaterial m1, CSMaterial m2) { return m1.mMaterial != m2.mMaterial; }
-    }
     unsafe public partial struct CSBufferElement {
         public CSBufferElement(CSIdentifier name, BufferFormat format) : this(name, format, 0, null) {
             mBufferStride = (ushort)BufferFormatType.GetMeta(format).GetByteSize();
@@ -397,66 +309,11 @@ namespace Weesals.Engine {
         }
         unsafe public void SetAllowUnorderedAccess(bool enable) { identifier &= ~(1ul << 63); if (enable) identifier |= (1ul << 63); }
         unsafe public bool GetAllowUnorderedAccess() { return (identifier & (1ul << 63)) != 0; }
-    }
-    public partial struct CSMeshData {
-        unsafe public Span<Vector3> GetPositions() {
-            Debug.Assert(mPositions.mBufferStride == sizeof(Vector3));
-            return new Span<Vector3>((Vector3*)mPositions.mData, mVertexCount);
-        }
-    }
-    public partial struct CSMesh : IEquatable<CSMesh>, IComparable<CSMesh> {
-        unsafe public bool IsValid => mMesh != null;
-        unsafe public CSMeshData GetMeshData() {
-            CSMeshData data;
-            GetMeshData(&data);
-            return data;
-        }
-        unsafe public int GetVertexCount() { return GetVertexCount(mMesh); }
-        unsafe public int GetIndexCount() { return GetIndexCount(mMesh); }
-        unsafe public void SetVertexCount(int count) { SetVertexCount(mMesh, count); }
-        unsafe public void SetIndexCount(int count) { SetIndexCount(mMesh, count); }
-        unsafe public CSBufferLayout* GetVertexBuffer() { return GetVertexBuffer(mMesh); }
-        unsafe public CSBufferLayout* GetIndexBuffer() { return GetIndexBuffer(mMesh); }
-        unsafe public void RequireVertexNormals(BufferFormat fmt = BufferFormat.FORMAT_R32G32B32_FLOAT) { RequireVertexNormals(mMesh, (byte)fmt); }
-        unsafe public void RequireVertexTexCoods(BufferFormat fmt = BufferFormat.FORMAT_R32G32_FLOAT) { RequireVertexTexCoords(mMesh, (byte)fmt); }
-        unsafe public void RequireVertexColors(BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) { RequireVertexColors(mMesh, (byte)fmt); }
-        unsafe public void GetMeshData(CSMeshData* meshdata) { GetMeshData(mMesh, meshdata); }
-        unsafe public CSMaterial GetMaterial() { return new CSMaterial(GetMaterial(mMesh)); }
-        unsafe public readonly BoundingBox GetBoundingBox() { return *GetBoundingBox(mMesh); }
-        public unsafe static CSMesh Create(string name) {
-            fixed (char* shaderPathPtr = name) {
-                var csstr = new CSString(shaderPathPtr, name.Length);
-                return new CSMesh(_Create(default));
-            }
-        }
-        unsafe public override string ToString() {
-            if (mMesh == null) return "-none-";
-            var data = GetMeshData();
-            return "Mesh {" + data.mName.ToString() + "}";
-        }
-        public static bool operator ==(CSMesh left, CSMesh right) { return left.Equals(right); }
-        public static bool operator !=(CSMesh left, CSMesh right) { return !(left == right); }
-        unsafe public bool Equals(CSMesh other) { return mMesh == other.mMesh; }
-        unsafe public int CompareTo(CSMesh other) { return (int)(mMesh - other.mMesh); }
-        unsafe public override bool Equals([NotNullWhen(true)] object? obj) { return obj is CSMesh o && o.mMesh == mMesh; }
-        unsafe public override int GetHashCode() { return HashCode.Combine((nint)mMesh); }
-    }
-    public partial struct CSModel {
-        unsafe public int GetMeshCount() { return GetMeshCount(mModel); }
-        unsafe public CSMesh GetMesh(int i) { return GetMesh(mModel, i); }
-        unsafe public CSSpanSPtrWapped<CSMesh> Meshes {
-            get {
-                var meshes = GetMeshes(mModel);
-                return new CSSpanSPtrWapped<CSMesh>(meshes);
-            }
+        public override int GetHashCode() {
+            return (int)identifier + revision * 374761393;
         }
     }
     public partial struct CSResources {
-        unsafe public static CSModel LoadModel(string str) {
-            fixed (char* chrs = str) {
-                return new CSModel(LoadModel(new CSString(chrs, str.Length)));
-            }
-        }
         unsafe public static CSTexture LoadTexture(string str) {
             fixed (char* chrs = str) {
                 return new CSTexture(LoadTexture(new CSString(chrs, str.Length)));
@@ -520,6 +377,10 @@ namespace Weesals.Engine {
         unsafe public int GetIncludeCount() { return GetIncludeFileCount(mShader); }
         unsafe public string GetInclude(int id) { return GetIncludeFile(mShader, id).ToString(); }
         unsafe public void Dispose() { Dispose(mShader); }
+        unsafe public override string ToString() {
+            var src = GetSourceRaw();
+            return Encoding.UTF8.GetString((byte*)src.mBuffer, src.mSize);
+        }
     }
     public partial struct CSCompiledShader {
         public unsafe struct CSConstantBuffer {
@@ -547,6 +408,7 @@ namespace Weesals.Engine {
     }
     public partial struct CSGraphics {
         unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
+        unsafe public CSIdentifier GetDeviceName() { return new CSIdentifier(GetDeviceName(mGraphics)); }
         unsafe public CSGraphicsCapabilities GetCapabiltiies() { return GetCapabilities(mGraphics); }
         unsafe public CSRenderStatistics GetRenderStatistics() { return GetRenderStatistics(mGraphics); }
         unsafe public CSGraphicsSurface CreateSurface(CSWindow window) { return new CSGraphicsSurface(CreateSurface(mGraphics, window.GetNativeWindow())); }
@@ -677,6 +539,11 @@ namespace Weesals.Engine {
         unsafe public Int2 GetSize() { return GetSize(mWindow); }
         unsafe public void SetSize(Int2 size) { SetSize(mWindow, size); }
         unsafe public void SetInput(CSInput input) { SetInput(mWindow, input.GetNativeInput()); }
+        unsafe public CSWindowFrame GetWindowFrame() { return GetWindowFrame(mWindow); }
+        unsafe public void SetWindowFrame(RectI frame, bool maximized) { SetWindowFrame(mWindow, &frame, (byte)(maximized ? 1 : 0)); }
+        unsafe public void RegisterMovedCallback(Action callback, bool enable) {
+            RegisterMovedCallback(mWindow, (delegate* unmanaged[Cdecl]<void>)Marshal.GetFunctionPointerForDelegate(callback), (byte)(enable ? 1 : 0));
+        }
     }
     public partial struct Platform {
         unsafe public void Dispose() { Dispose(mPlatform); mPlatform = null; }

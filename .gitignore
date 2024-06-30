@@ -405,3 +405,4 @@ FodyWeavers.xsd
 /.*
 /**/Generated
 /Game5/DataCache
+**/Config

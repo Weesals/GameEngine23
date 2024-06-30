@@ -174,14 +174,18 @@ namespace Weesals.Engine {
 
     [TypeConverter(typeof(Converters.Int2Converter))]
     public struct Int2 : IEquatable<Int2> {
-	    public int X, Y;
+        public int X, Y;
         public int LengthSquared => (X * X + Y * Y);
         public float Length => MathF.Sqrt(LengthSquared);
         public int LengthI => (int)MathExt.SqrtFastI((uint)LengthSquared);
         public Int2 YX => new Int2(Y, X);
         public Int2(int v) : this(v, v) { }
         public Int2(int _x, int _y) { X = _x; Y = _y; }
-	    public Int2(Vector2 o) { X = ((int)o.X); Y = ((int)o.Y); }
+        public Int2(Vector2 o) { X = ((int)o.X); Y = ((int)o.Y); }
+        public int this[int index] {
+            get => (index <= 0 ? ref X : ref Y);
+            set => (index <= 0 ? ref X : ref Y) = value;
+        }
         public bool Equals(Int2 o) { return X == o.X && Y == o.Y; }
         public static Int2 operator +(Int2 o1, Int2 o2) { return new Int2(o1.X + o2.X, o1.Y + o2.Y); }
 	    public static Int2 operator -(Int2 o1, Int2 o2) { return new Int2(o1.X - o2.X, o1.Y - o2.Y); }
@@ -456,7 +460,7 @@ namespace Weesals.Engine {
         public static bool operator !=(RectI r, RectI o) { return !(r == o); }
         public static implicit operator RectF(RectI r) { return new RectF(r.X, r.Y, r.Width, r.Height); }
 
-        public bool Contains(Int2 pnt) {
+        public bool ContainsInclusive(Int2 pnt) {
             return (uint)(pnt.X - X) <= Width && (uint)(pnt.Y - Y) <= Height;
         }
 

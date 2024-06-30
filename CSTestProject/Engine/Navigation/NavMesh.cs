@@ -15,9 +15,13 @@ namespace Navigation {
         public const int GridCellSize = 512;
         public const int TriGridShift = 7;
 
+        // Tri1 is Left Tri2 is Right, if Edge is going from 0,0, to 0,1 (facing forward)
+        // Sign true = Left, false = Right
+        // Matching Edge.GetSign(C0) == true (C0 = left of edge when tri is forward)
         public struct EdgeAdjacency : IEquatable<EdgeAdjacency> {
             public TriangleId Triangle1, Triangle2;
-            public TriangleId GetTriangle(bool sign) { return sign ? Triangle2 : Triangle1; }
+            public bool IsEmpty => Triangle1 == InvalidTriId && Triangle2 == InvalidTriId;
+            public TriangleId GetTriangle(bool sign) { return sign ? Triangle1 : Triangle2; }
             public TriangleId GetOtherTriangle(TriangleId triId) { return Triangle1 == triId ? Triangle2 : Triangle1; }
             public void SetTriangle(bool side, TriangleId triangle) {
 #if UNITY_EDITOR
@@ -25,7 +29,7 @@ namespace Navigation {
                     Debug.LogError("Triangles should not match!");
                 }
 #endif
-                if (side == false) Triangle1 = triangle; else Triangle2 = triangle;
+                if (side) Triangle1 = triangle; else Triangle2 = triangle;
             }
             public bool Equals(EdgeAdjacency o) { return Triangle1 == o.Triangle1 && Triangle2 == o.Triangle2; }
             public override int GetHashCode() { return Triangle1 * 49157 + Triangle2; }
@@ -40,12 +44,12 @@ namespace Navigation {
 
         public NavMesh() {
         }
-        public void Allocate() {
+        public void Allocate(Int2 size) {
             corners = new(128);
             triangles = new(128);
             adjacency = new(128);
 
-            triangleGrid = new(64);
+            triangleGrid = new((size >> TriGridShift) + 1);
         }
         public void Dispose() {
             triangleGrid.Dispose();
@@ -178,6 +182,12 @@ namespace Navigation {
             public ReadAdjacency(NavMesh mesh) {
                 NavMesh = mesh;
             }
+            public Edge GetEdge(TriangleEdge triEdge, ReadOnly readOnly) {
+                var tri = readOnly.GetTriangle(triEdge.TriangleId);
+                var c0 = tri.GetCorner(triEdge.EdgeId);
+                var c1 = tri.GetCornerWrapped(triEdge.EdgeId + 1);
+                return new Edge(c0, c1);
+            }
             public TriangleEdge GetAdjacentEdge(TriangleEdge triEdge, ReadOnly readOnly) {
                 var tri = readOnly.GetTriangle(triEdge.TriangleId);
                 var c0 = tri.GetCorner(triEdge.EdgeId);
@@ -264,6 +274,7 @@ namespace Navigation {
                 var triI = triangleGrid.FindTriangleAt(((Int2)p) >> TriGridShift);
                 if (triI != InvalidTriId) triI = MoveTo(ro, triI, p);
                 if (triI == InvalidTriId) {
+                    //Debug.Fail("Is this required?");
                     for (var it = ro.triangles.GetEnumerator(); it.MoveNext();) {
                         var tri = ro.triangles[it.Index];
                         var c1 = (Int2)ro.corners[tri.C1];
@@ -454,6 +465,10 @@ namespace Navigation {
             }
 
             private unsafe bool IncrementPathToPortal() {
+                if (triangleId == InvalidTriId) {
+                    PathFail();
+                    return false;
+                }
                 int len = path.Length;
                 var forLen = wrapPath ? len : len - 1;
                 for (; pathId < forLen; ++pathId) {
@@ -509,11 +524,29 @@ namespace Navigation {
                 return true;
             }
 
+            public Coordinate GetIntersectionPoint() {
+                var tri = mesh.GetTriangle((TriangleId)triangleId);
+                var e0 = (Int2)mesh.GetCorner(tri.GetCorner(edge));
+                var e1 = (Int2)mesh.GetCorner(tri.GetCornerWrapped(edge + 1));
+                Int2 p0 = path[pathId];
+                Int2 p1 = path[NextWrap(pathId + 1, path.Length)];
+                var pD = p1 - p0;
+                var eD = e1 - e0;
+                var eN = new Int2(eD.Y, -eD.X);
+                var proj = (int)Int2.Dot(eN, e0 - p0);
+                var nrm = (int)Int2.Dot(pD, eN);
+                var p = p0 + FixedMath.MultiplyRatio(pD, proj, nrm);
+                return Coordinate.FromInt2(p);
+            }
         }
 
         private static int Wrap(int v, int len) { return v < 0 ? v + len : v >= len ? (int)((uint)v % len) : v; }
         private static int NextWrap(int v, int len) { return v >= len ? v - len : v; }
         private static int PreWrap(int v, int l) { return v < 0 ? l + v : v; }
+
+        private static void PathFail() {
+            Debug.WriteLine("Path Fail");
+        }
     }
 
 }

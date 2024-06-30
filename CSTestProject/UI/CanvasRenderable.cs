@@ -123,7 +123,7 @@ namespace Weesals.UI {
                         stateFlags |= StateFlags.HasLayoutParent;
                     }
                 }
-                SetHitTestEnabled(true);
+                if (hitBinding.IsEnabled) UpdateHitBinding();
                 if (mChildren != null) {
                     foreach (var child in mChildren) if (child.Parent == null) child.Initialise(new CanvasBinding(this));
                 }
@@ -138,7 +138,7 @@ namespace Weesals.UI {
                 if (mChildren != null) {
                     foreach (var child in mChildren) if (child.Parent == this) child.Uninitialise(new CanvasBinding(this));
                 }
-                SetHitTestEnabled(false);
+                RemoveHitBinding();
             }
             mBinding = default;
         }
@@ -148,8 +148,7 @@ namespace Weesals.UI {
                 Debug.Assert(!hitBinding.IsValid);
                 hitBinding = default;
             } else {
-                if (Canvas != null)
-                    Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, new RectI(0, 0, -10000, -10000));
+                if (Canvas != null) RemoveHitBinding();
                 hitBinding = HittestGrid.Binding.Disabled;
             }
         }
@@ -255,6 +254,9 @@ namespace Weesals.UI {
                 .ExpandToInclude(new Int2((int)p2.X, (int)p2.Y))
                 .ExpandToInclude(new Int2((int)p3.X, (int)p3.Y));
             Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, bounds);
+        }
+        private void RemoveHitBinding() {
+            Canvas.HitTestGrid.UpdateItem(this, ref hitBinding, new RectI(0, 0, -10000, -10000));
         }
         protected bool HasStateFlag(StateFlags flag) {
             return (stateFlags & flag) != 0;

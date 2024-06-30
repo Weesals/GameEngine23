@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
@@ -194,14 +195,15 @@ namespace Weesals.Utility {
             Data[index1] = Data[index2];
             Data[index2] = t;
         }
-        public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
-    }
 
-    public struct Array8<T> where T : unmanaged {
-        public T Value1, Value2, Value3, Value4;
-        public T Value5, Value6, Value7, Value8;
-        unsafe public ref T this[int index] {
-            get { fixed (T* arr = &Value1) return ref arr[index]; }
+        public void CopyFrom<En>(En items) where En : ICollection<T> {
+            int newCount = items.Count;
+            Count = 0;
+            Reserve(newCount);
+            Count = newCount;
+            items.CopyTo(Data, 0);
         }
+
+        public static implicit operator Span<T>(PooledList<T> pool) { return pool.AsSpan(); }
     }
 }

@@ -11,7 +11,8 @@ using Weesals.UI;
 namespace Weesals.Editor {
     public class UILandscapeTools : CanvasRenderable
         , IToolServiceProvider<BrushConfiguration>
-        , IToolServiceProvider<ScenePassManager> {
+        , IToolServiceProvider<ScenePassManager>
+        , IInspectorGameOverlay {
 
         public TextButton HeightButton = new("Cliff") { Name = "Edit Height Btn" };
         public TextButton PaintButton = new("Paint") { Name = "Terrain Paint Btn" };
@@ -28,6 +29,7 @@ namespace Weesals.Editor {
         ScenePassManager scenePassManager;
         ScenePassManager IToolServiceProvider<ScenePassManager>.Service => scenePassManager;
         BrushConfiguration IToolServiceProvider<BrushConfiguration>.Service => brushConfig;
+        CanvasRenderable IInspectorGameOverlay.GameViewOverlay => InputDispatcher;
 
         private UXBrushTool? activeTool;
 

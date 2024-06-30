@@ -9,6 +9,11 @@ using System.Threading.Tasks;
 namespace Weesals.Engine {
     // Source: https://github.com/cgytrus/PER.Tracy/blob/main/PER.Tracy/src/ProfilerInternal.cs
     public static class Tracy {
+        public enum PlotFormatType : byte {
+            Number,
+            Memory,
+            Percentage
+        };
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static nuint CreateLocation(string method, string file, uint line) =>
@@ -64,8 +69,9 @@ namespace Weesals.Engine {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void TracyPlot(nuint name, long value) => TracyPlotData(name, value);
 
-        //[MethodImpl(MethodImplOptions.AggressiveInlining)]
-        //public static void TracyPlotConfig(nuint name, Profiler.PlotFormatType type) => TracyConfigurePlot(name, type);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void TracyPlotConfig(nuint name, PlotFormatType type = PlotFormatType.Number, bool step = false, bool fill = true, uint color = 0)
+            => TracyConfigurePlot(name, (byte)type, step, fill, color);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static void TracyAppInfo(nuint text) => TracyMessageAppInfo(text);
@@ -122,8 +128,8 @@ namespace Weesals.Engine {
         [DllImport(LibName)]
         private static extern void TracyPlotData(nuint name, long value);
 
-        //[DllImport(LibName)]
-        //private static extern void TracyConfigurePlot(nuint name, Profiler.PlotFormatType type);
+        [DllImport(LibName)]
+        private static extern void TracyConfigurePlot(nuint name, byte type, bool step, bool fill, uint color);
 
         [DllImport(LibName)]
         private static extern void TracyMessageAppInfo(nuint text);

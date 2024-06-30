@@ -84,6 +84,7 @@ namespace Navigation {
         public Edge GetEdge(int i) { return new Edge(GetCorner(i), GetCornerWrapped(i + 1)); }
         public Edge GetEdgeWrapped(int i) { return new Edge(GetCornerWrapped(i), GetCornerWrapped(i + 1)); }
         public override int GetHashCode() { throw new NotImplementedException(); }
+        public override string ToString() { return $"Tri<{C1}, {C2}, {C3}>"; }
     }
     public struct Edge : IEquatable<Edge> {
         public ushort Corner1, Corner2;
@@ -91,10 +92,11 @@ namespace Navigation {
             if (edge1 < edge2) { Corner1 = edge1; Corner2 = edge2; } else { Corner1 = edge2; Corner2 = edge1; }
         }
         public bool GetSign(ushort cornerI) { return Corner1 == cornerI; }
+        public ushort GetCorner(bool sign) { return sign ? Corner1 : Corner2; }
+        public bool HasCorner(int cornerId) { return Corner1 == cornerId || Corner2 == cornerId; }
         public bool Equals(Edge o) { return Corner1 == o.Corner1 && Corner2 == o.Corner2; }
         public override int GetHashCode() { return (Corner1 * 49157) + Corner2; }
         public override string ToString() { return Corner1 + "-" + Corner2; }
-        public bool HasCorner(int cornerId) { return Corner1 == cornerId || Corner2 == cornerId; }
 
         public static readonly Edge Invalid = new Edge(ushort.MaxValue, ushort.MaxValue);
     }
@@ -352,11 +354,11 @@ namespace Navigation {
 
     public struct TriangleGrid : IDisposable {
         public const ushort InvalidTriId = NavMesh2Baker.InvalidTriId;
-        public readonly int Size;
+        public readonly Int2 Size;
         private ushort[] cells;
-        public TriangleGrid(int size) {
+        public TriangleGrid(Int2 size) {
             Size = size;
-            cells = new CornerId[size * size];
+            cells = new CornerId[size.X * size.Y];
             for (int i = 0; i < cells.Length; i++) cells[i] = InvalidTriId;
         }
         public void Dispose() {
@@ -367,14 +369,14 @@ namespace Navigation {
         }
 
         public ushort FindTriangleAt(Int2 pnt) {
-            return cells[pnt.X + pnt.Y * Size];
+            return cells[pnt.X + pnt.Y * Size.X];
         }
         public void InsertTriangle(ushort triI, Int2 pnt) {
-            cells[pnt.X + pnt.Y * Size] = triI;
+            cells[pnt.X + pnt.Y * Size.X] = triI;
         }
         public void RemoveTriangle(ushort triI, Int2 pnt) {
-            if (cells[pnt.X + pnt.Y * Size] == triI)
-                cells[pnt.X + pnt.Y * Size] = InvalidTriId;
+            if (cells[pnt.X + pnt.Y * Size.X] == triI)
+                cells[pnt.X + pnt.Y * Size.X] = InvalidTriId;
         }
 
     }

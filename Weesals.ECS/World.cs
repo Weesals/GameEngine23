@@ -104,30 +104,30 @@ namespace Weesals.ECS {
         private EntityData[] entities = Array.Empty<EntityData>();
         private EntityMeta[] entityMeta = Array.Empty<EntityMeta>();
         private int entityCount = 0;
-        private List<Archetype> archetypes = new();
+        private List<Archetype> archetypes = new(16);
         private LambdaCache lambdaCache = new();
         //private List<SystemLambda.Cache> lambdaCaches = new();
-        private List<Query> queries = new();
-        private List<Query.Cache> queryCaches = new();
-        private List<Listener> listeners = new();
-        private List<ArchetypeListener> archetypeListeners = new();
+        private List<Query> queries = new(16);
+        private List<Query.Cache> queryCaches = new(16);
+        private List<Listener> listeners = new(16);
+        private List<ArchetypeListener> archetypeListeners = new(16);
 
         // Archetypes and queries must be unique, these allow efficient lookup
         // of existing instances
-        private Dictionary<BitField, ArchetypeId> archetypesByTypes = new();
-        private Dictionary<Query.Key, QueryId> queriesByTypes = new();
-        private DynamicBitField2 seenComponents = new();
+        private Dictionary<BitField, ArchetypeId> archetypesByTypes = new(64);
+        private Dictionary<Query.Key, QueryId> queriesByTypes = new(64);
 
-        private Archetype zeroArchetype;
         private int deletedEntity = -1;
 
         public Stage(StageContext context) {
             Context = context;
+            // Entity must be first "type"
             var entityTypeId = Context.RequireComponentTypeId<Entity>();
             Debug.Assert(entityTypeId.Packed == -1, "Entity must be invalid type id");
-            zeroArchetype = new(new ArchetypeId(0), Context, default);
-            archetypes.Add(zeroArchetype);
+            // Add the zero archetype (when entities are newly created)
+            archetypes.Add(new(new ArchetypeId(0), Context, default));
             archetypesByTypes.Add(default, new ArchetypeId(0));
+            // Allocate the zero entity (reserve the index as its the "null" handle)
             var entityId = AllocateEntity();
             entities[entityId] = default;
             entityMeta[entityId] = new EntityMeta() { Name = "None", };
@@ -763,7 +763,7 @@ namespace Weesals.ECS {
         public readonly StageContext Context = new();
         public readonly Stage Stage;
 
-        private List<SystemBase> systems = new();
+        private List<SystemBase> systems = new(8);
 
         public World() {
             Stage = new(Context);
@@ -875,7 +875,12 @@ namespace Weesals.ECS {
         }
         public T GetOrCreateSystem<T>() where T : SystemBase, new() {
             foreach (var tsystem in systems) if (tsystem is T titem) return titem;
-            var system = new T();
+            T system;
+            if (Context.SystemBootstrap != null) {
+                system = Context.SystemBootstrap.CreateSystem<T>(Context);
+            } else {
+                system = new T();
+            }
             AddSystem(system);
             return system;
         }

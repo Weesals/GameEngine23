@@ -5,12 +5,14 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Diagnostics;
 
+// 2024-05 : Added string equality comparison
+
 /// <summary>
 /// An allocation-less and fast streaming JSON parser
 /// Using the provided enumerators, it will only parse
 /// as much as is needed to fulfil the current request
 /// </summary>
-public struct SJson : IEnumerable<SJson> {
+public struct SJson : IEnumerable<SJson>, IEquatable<string> {
 
     // Does this Json element have valid data
     public bool IsValid { get { return Data.Length > 0; } }
@@ -74,6 +76,9 @@ public struct SJson : IEnumerable<SJson> {
     public static implicit operator long(SJson json) { return long.Parse(json.AsSpanRaw(), provider: CultureInfo.InvariantCulture); }
     public static implicit operator bool (SJson json) { return bool.Parse(json.AsSpanRaw()); }
 
+    public static bool operator ==(SJson json, string str) { return json.Equals(str); }
+    public static bool operator !=(SJson json, string str) { return !json.Equals(str); }
+
     // Get the value, or return an error if value could not be parsed
     // (to avoid throwing exceptions)
     public int OrDefault(int defValue) {
@@ -87,7 +92,8 @@ public struct SJson : IEnumerable<SJson> {
     }
 
     // Compare with target after cleaning up string
-    public bool Equals(string other) {
+    public bool Equals(string? other) {
+        if (other == null) return Start == End;
         var it = new StringIterator(Data, Start, End);
         var i = 0;
         for (; it.MoveNext(); ++i) if (i >= other.Length || it.Current != other[i]) return false;
@@ -101,6 +107,7 @@ public struct SJson : IEnumerable<SJson> {
         while (it.MoveNext()) builder.Append(it.Current);
         return builder.ToString();
     }
+    public StringIterator GetStringIterator() { return new(Data, Start, End); }
     public ReadOnlySpan<char> AsSpanRaw() { return Data.AsSpan(Start, End - Start); }
 
     // Helper methods to parse easily
@@ -127,8 +134,7 @@ public struct SJson : IEnumerable<SJson> {
             case '"': return SkipString(i);
             case '{':
             case '[': {
-                ++i;
-                for (; i < End;) {
+                for (++i; i < End;) {
                     switch (Data[i]) {
                         case '"': i = SkipString(i); break;
                         case '{': case '[': i = SkipItem(i); break;

@@ -4,9 +4,11 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Geometry;
 using Weesals.Utility;
 
@@ -127,6 +129,7 @@ namespace Weesals.Landscape {
             public float HeightF => (float)Height / (float)HeightScale;
             public override string ToString() { return Height.ToString(); }
             public static HeightCell Default = new();
+            public static HeightCell Invalid = new() { Height = short.MinValue };
         }
         // Data used by the fragment shader to determine shading (ie. texture)
         public struct ControlCell {
@@ -240,16 +243,19 @@ namespace Weesals.Landscape {
         public void SetLocation(Vector3 location) {
             mSizing.Location = location;
         }
-        public void SetSize(Int2 size) {
+        public void SetSize(Int2 size, bool initValues = true) {
             mSizing.Size = size;
             int cellCount = mSizing.Size.X * mSizing.Size.Y;
-            mHeightMap = new HeightCell[cellCount];
-            mControlMap = new ControlCell[cellCount];
-            Array.Fill(mHeightMap, HeightCell.Default);
-            Array.Fill(mControlMap, ControlCell.Default);
-            if (WaterEnabled) {
+            if (mHeightMap.Length != cellCount)
+                mHeightMap = new HeightCell[cellCount];
+            if (mControlMap.Length != cellCount)
+                mControlMap = new ControlCell[cellCount];
+            if (mWaterMap != null && mWaterMap.Length != cellCount)
                 mWaterMap = new WaterCell[cellCount];
-                Array.Fill(mWaterMap, WaterCell.Default);
+            if (initValues) {
+                Array.Fill(mHeightMap, HeightCell.Default);
+                Array.Fill(mControlMap, ControlCell.Default);
+                if (mWaterMap != null) Array.Fill(mWaterMap, WaterCell.Default);
             }
         }
         public void SetScale(int scale1024) {
@@ -259,6 +265,26 @@ namespace Weesals.Landscape {
             if (WaterEnabled == enable) return;
             // Resize water to either match heightmap or be erased
             mWaterMap = enable ? new WaterCell[mHeightMap.Length] : null;
+        }
+
+        public void Resize(Int2 size) {
+            if (mSizing.Size == size) return;
+            var sizing = mSizing;
+            var heightMap = mHeightMap;
+            var controlMap = mControlMap;
+            var waterMap = mWaterMap;
+            SetSize(size, true);
+            var minSize = Int2.Min(mSizing.Size, sizing.Size);
+            for (int y = 0; y < minSize.Y; y++) {
+                var i0 = y * sizing.Size.X;
+                var i1 = y * mSizing.Size.X;
+                var iL = minSize.X;
+                heightMap.AsSpan(i0, iL).CopyTo(mHeightMap.AsSpan(i1));
+                controlMap.AsSpan(i0, iL).CopyTo(mControlMap.AsSpan(i1));
+                if (waterMap != null)
+                    waterMap.AsSpan(i0, iL).CopyTo(mWaterMap.AsSpan(i1));
+            }
+            NotifyLandscapeChanged(LandscapeChangeEvent.MakeAll(mSizing.Size));
         }
 
         public void NotifyLandscapeChanged() {
@@ -416,19 +442,30 @@ namespace Weesals.Landscape {
         public void Deserialize(BinaryReader reader) {
             var version = reader.ReadInt32();
             Debug.Assert(version <= SerialVersion, "Unsupported version");
-            SetSize(new Int2(reader.ReadInt32(), reader.ReadInt32()));
-            var typeMapping = new PooledArray<byte>(64);
-            for (int i = 0; i < typeMapping.Count; i++) typeMapping[i] = (byte)i;
+            SetSize(new Int2(reader.ReadInt32(), reader.ReadInt32()), false);
+
             // Read type id mapping
             var typeC = reader.ReadByte();
-            for (int i = 0; i < typeC; i++) {
-                typeMapping[i] = (byte)Layers.FindLayerId(reader.ReadString());
+            using var typeMapping = new PooledArray<byte>(typeC);
+            using (new ProfilerMarker("Layers").Auto()) {
+                for (int i = 0; i < typeC; i++) {
+                    typeMapping[i] = (byte)Layers.FindLayerId(reader.ReadString());
+                }
             }
-            // Read maps
-            for (int i = 0; i < mHeightMap.Length; i++) mHeightMap[i] = new HeightCell() { Height = reader.ReadInt16() };
-            for (int i = 0; i < mControlMap.Length; i++) mControlMap[i] = new ControlCell() { TypeId = typeMapping[reader.ReadByte()], };
-            SetWaterEnabled(reader.ReadBoolean());
-            if (WaterEnabled) for (int i = 0; i < mWaterMap.Length; i++) mWaterMap[i] = new WaterCell() { Data = reader.ReadByte() };
+            using (new ProfilerMarker("Maps").Auto()) {
+                // Read maps
+                reader.Read(MemoryMarshal.Cast<HeightCell, byte>(mHeightMap.AsSpan()));
+                //for (int i = 0; i < mHeightMap.Length; i++) mHeightMap[i] = new HeightCell() { Height = reader.ReadInt16() };
+
+                reader.Read(MemoryMarshal.Cast<ControlCell, byte>(mControlMap.AsSpan()));
+                for (int i = 0; i < mControlMap.Length; i++) mControlMap[i].TypeId = typeMapping[mControlMap[i].TypeId];
+                //for (int i = 0; i < mControlMap.Length; i++) mControlMap[i] = new ControlCell() { TypeId = typeMapping[reader.ReadByte()], };
+
+                SetWaterEnabled(reader.ReadBoolean());
+                if (WaterEnabled)
+                    reader.Read(MemoryMarshal.Cast<WaterCell, byte>(mWaterMap.AsSpan()));
+                    //for (int i = 0; i < mWaterMap.Length; i++) mWaterMap[i] = new WaterCell() { Data = reader.ReadByte() };
+            }
             // Update all change listeners
             NotifyLandscapeChanged(LandscapeChangeEvent.MakeAll(Size));
         }

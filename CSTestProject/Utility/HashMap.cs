@@ -5,210 +5,287 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
-using Weesals.ECS;
+using Index = System.UInt32;
 
 namespace Weesals.Utility {
+    public unsafe struct PooledSentinel {
+        public class HeapSentinel { public int Revision; }
+        private int revision;
+        private HeapSentinel heap = new();
+        public bool IsValid => revision == heap.Revision;
+        public PooledSentinel() { }
+        [Conditional("DEBUG")]
+        public void Validate() {
+            Debug.Assert(++heap.Revision == ++revision);
+        }
+    }
+
     public struct PooledHashSet<TKey> : IDisposable, IEnumerable<TKey> where TKey : IEquatable<TKey> {
+        public const Index InvalidIndex = unchecked((Index)(~0));
         public struct HashSet : IDisposable {
             public TKey[] Keys;
-            public int[] Remap;
+            public Index[] Remap;
             public ulong[] UnallocBucketMask;
             public int Capacity;
+#if DEBUG
+            public PooledSentinel Sentinel;
+#endif
+            public EqualityComparer<TKey> Comparer;
             public bool IsAllocated => Capacity > 0;
+#if DEBUG
+            public bool IsValid => Sentinel.IsValid;
+#else
+            public bool IsValid => true;
+#endif
             public HashSet(int capacity = 16) {
+#if DEBUG
+                Sentinel = new();
+#endif
                 Keys = ArrayPool<TKey>.Shared.Rent(capacity);
-                Remap = ArrayPool<int>.Shared.Rent(capacity * 2);
+                Remap = ArrayPool<Index>.Shared.Rent(capacity * 2);
                 UnallocBucketMask = ArrayPool<ulong>.Shared.Rent((capacity + 63) >> 5);
                 Capacity = capacity;
-                Clear();
+                Comparer = EqualityComparer<TKey>.Default;
+                IntlClear();
+            }
+            [Conditional("DEBUG")]
+            private void ValidateSentinel() {
+#if DEBUG
+                Sentinel.Validate();
+#endif
+            }
+            private void IntlClear() {
+                UnallocBucketMask.AsSpan().Fill(~0ul);
+                Remap.AsSpan().Fill(InvalidIndex);
             }
             public void Clear() {
-                UnallocBucketMask.AsSpan().Fill(unchecked((ulong)(-1)));
-                Remap.AsSpan().Fill(-1);
+                ValidateSentinel();
+                IntlClear();
             }
             public void Dispose() {
+                ValidateSentinel();
                 ArrayPool<TKey>.Shared.Return(Keys);
-                ArrayPool<int>.Shared.Return(Remap);
+                ArrayPool<Index>.Shared.Return(Remap);
                 ArrayPool<ulong>.Shared.Return(UnallocBucketMask);
             }
-            public int FindFreeBucket() {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public Index CreateIndex(int hash) {
+                return (Index)((hash & (Capacity - 1)) | Capacity);
+            }
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public Index FindFreeBucket() {
                 for (int i = 0; i < UnallocBucketMask.Length; i++) {
                     if (UnallocBucketMask[i] == 0) continue;
-                    return i * 64 + BitOperations.TrailingZeroCount(UnallocBucketMask[i]);
+                    return (Index)(i * 64 + BitOperations.TrailingZeroCount(UnallocBucketMask[i]));
                 }
-                return -1;
+                return InvalidIndex;
             }
-            public int Insert(int hash, TKey key) {
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public Index Insert(Index parent, TKey key) {
+                ValidateSentinel();
                 var index = FindFreeBucket();
-                Debug.Assert(Remap[hash | Capacity] != index,
+                Debug.Assert(Remap[parent] != index,
                     "New item already referenced");
-                Remap[index] = Remap[hash | Capacity];
-                Remap[hash | Capacity] = index;
+                Remap[index] = Remap[parent];
+                Remap[parent] = index;
                 Keys[index] = key;
-                UnallocBucketMask[index >> 6] &= ~(1ul << (index & 63));
+                UnallocBucketMask[index >> 6] &= ~(1ul << ((int)index & 63));
                 return index;
             }
-            public bool Remove(int hash, TKey key) {
-                int parent = hash | Capacity;
-                int index = Remap[hash | Capacity];
-                while (index >= 0 && !Keys[index].Equals(key)) {
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public bool Remove(Index parent, TKey key) {
+                ValidateSentinel();
+                var index = Remap[parent];
+                while (index != InvalidIndex && !key.Equals(Keys[index])) {
                     parent = index;
                     index = Remap[index];
                 }
-                if (index < 0) return false;
+                if (index == InvalidIndex) return false;
                 RemoveChild(parent, index);
                 return true;
             }
-            public void RemoveChild(int parent, int index) {
-                if (parent >= 0) Remap[parent] = Remap[index];
-                Remap[index] = -1;
-                UnallocBucketMask[index >> 6] |= (1ul << (index & 63));
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public void RemoveChild(Index parent, Index index) {
+                ValidateSentinel();
+                if (parent != InvalidIndex) Remap[parent] = Remap[index];
+                Remap[index] = InvalidIndex;
+#if DEBUG
+                Keys[index] = default;
+#endif
+                UnallocBucketMask[index >> 6] |= (1ul << ((int)index & 63));
             }
-            public int GetIndexOf(int hash) {
-                return hash | Capacity;
+            public Index FindParent(Index parent, Index child) {
+                while (parent != InvalidIndex) {
+                    var next = Remap[parent];
+                    if (next == child) return parent;
+                    parent = next;
+                }
+                return InvalidIndex;
             }
-            public int GetNextIndexOf(int index, TKey key) {
-                if (index < 0) return index;
+            [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+            public unsafe Index GetNextIndexOf(Index index, TKey key) {
                 while (true) {
                     index = Remap[index];
-                    if (index < 0 || Keys[index].Equals(key)) break;
+                    if (index == InvalidIndex || key.Equals(Keys[index])) return index;
                 }
-                return index;
             }
-            public int GetNextIndex(int index) {
-                ++index;
-                for (int page = index >> 6; page < UnallocBucketMask.Length; ++page) {
-                    var mask = ~UnallocBucketMask[page];
-                    mask &= (ulong)-(long)(1ul << (index & 63));
-                    if (mask == 0) continue;
-                    return page * 64 + BitOperations.TrailingZeroCount(mask);
+            [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+            public Index GetIndexFrom(Index index) {
+                var indexInvMask = (1ul << ((int)index & 63)) - 1;
+                for (var page = index >> 6; page < UnallocBucketMask.Length; ++page) {
+                    var mask = UnallocBucketMask[page];
+                    mask |= indexInvMask;
+                    if (mask == ~0ul) { indexInvMask = 0ul; continue; }
+                    return (Index)(page * 64 + BitOperations.TrailingZeroCount(~mask));
                 }
-                return -1;
+                return InvalidIndex;
             }
 
             public void CopyTo(HashSet other) {
                 other.Dispose();
                 other.Capacity = Capacity;
                 other.Keys = ArrayPool<TKey>.Shared.Rent(Capacity);
-                other.Remap = ArrayPool<int>.Shared.Rent(Capacity * 2);
+                other.Remap = ArrayPool<Index>.Shared.Rent(Capacity * 2);
                 other.UnallocBucketMask = ArrayPool<ulong>.Shared.Rent((Capacity + 63) >> 5);
                 Keys.AsSpan(0, Capacity).CopyTo(Keys.AsSpan(0, Capacity));
                 Remap.AsSpan(0, Capacity).CopyTo(Remap.AsSpan(0, Capacity));
                 UnallocBucketMask.AsSpan(0, Capacity).CopyTo(other.UnallocBucketMask.AsSpan(0, Capacity));
             }
         }
-        HashSet map;
+        HashSet set;
         int count;
 
         public int Count => count;
-        public int Capacity => map.Capacity;
+        public int Capacity => set.Capacity;
         public bool IsEmpty => count == 0;
+        public bool IsValid => set.IsValid;
 
-        public PooledHashSet(int capacity = 16) { map = new(capacity); }
-        public void Dispose() { map.Dispose(); }
+        public PooledHashSet(int capacity = 16) { set = new(capacity); }
+        public void Dispose() { set.Dispose(); }
 
         // Resize based on hard-coded loading factor 75%
         private void ResizeIfRequired() {
-            if (1 + count * 4 > Capacity * 3) {
+            if (count * 4 >= Capacity * 3) {
                 Resize((int)BitOperations.RoundUpToPowerOf2((uint)Capacity + 32));
             }
         }
         // Add an item to the map
         public void Add(TKey key) {
             ResizeIfRequired();
-            var hash = key.GetHashCode() & (map.Capacity - 1);
             // Check if it already exists
             Debug.Assert(!Contains(key), "Map already contains item");
-            map.Insert(hash, key);
+            var hash = set.CreateIndex(key.GetHashCode());
+            set.Insert(hash, key);
             ++count;
+            AssertValid();
         }
         // Return false if item already exists (and dont add)
-        public bool AddUnique(TKey key) {
+        unsafe public bool AddUnique(TKey key) {
             ResizeIfRequired();
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            if (map.GetNextIndexOf(map.GetIndexOf(hash), key) >= 0) return false;
-            map.Insert(hash, key);
+            var hash = set.CreateIndex(key.GetHashCode());
+            if (set.GetNextIndexOf(hash, key) != InvalidIndex) return false;
+            set.Insert(hash, key);
             ++count;
             return true;
         }
         // If the item exists, remove it and return false
         // (used for tracking edges in navmesh adjacency)
         public bool ToggleUnique(TKey key) {
-            ResizeIfRequired();
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            var index = map.GetIndexOf(hash);
-            var child = map.GetNextIndexOf(index, key);
-            if (child >= 0) {
-                map.RemoveChild(index, child);
+            var hash = key.GetHashCode();
+            if (set.Remove(set.CreateIndex(hash), key)) {
+                --count;
                 return false;
             }
-            map.Insert(hash, key);
+            ResizeIfRequired();
+            set.Insert(set.CreateIndex(hash), key);
             ++count;
             return true;
         }
+        private void AssertValid() {
+            var index = set.GetIndexFrom(0);
+            if (index == InvalidIndex) { Debug.Assert(count == 0); return; }
+            var key = set.Keys[index];
+            Debug.Assert(Contains(key));
+        }
         public bool Remove(TKey key) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            return map.Remove(hash, key);
+            var hash = set.CreateIndex(key.GetHashCode());
+            if (!set.Remove(hash, key)) return false;
+            --count;
+            return true;
         }
         public bool Contains(TKey key) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            return map.GetNextIndexOf(map.GetIndexOf(hash), key) >= 0;
+            var hash = set.CreateIndex(key.GetHashCode());
+            return set.GetNextIndexOf(hash, key) != InvalidIndex;
         }
         public bool TryPop(out TKey key) {
+            AssertValid();
             key = default;
-            var index = map.GetNextIndex(-1);
-            if (index == -1) return false;
-            key = map.Keys[index];
-            map.RemoveChild(-1, index);
+            var index = set.GetIndexFrom(0);
+            if (index == InvalidIndex) return false;
+            key = set.Keys[index];
+            Debug.Assert(Contains(key));
+            Trace.Assert(Remove(key), "Key does not exist!");
             return true;
         }
         public void Clear() {
-            map.Clear();
+            set.Clear();
             count = 0;
         }
 
         public void Resize(int newCapacity) {
-            var newMap = new HashSet(newCapacity);
-            if (map.IsAllocated) {
-                for (int i = 0; i < map.UnallocBucketMask.Length; i++) {
-                    var mask = ~map.UnallocBucketMask[i];
+            var newSet = new HashSet(newCapacity);
+            if (set.IsAllocated) {
+                for (int i = 0; i < set.UnallocBucketMask.Length; i++) {
+                    var mask = ~set.UnallocBucketMask[i];
                     for (; mask != 0;) {
                         int b = BitOperations.TrailingZeroCount(mask);
-                        mask &= ~(1ul << b);
+                        mask &= ~1ul << b;
                         var index = b + i * 64;
-                        var key = map.Keys[index];
-                        var hash = key.GetHashCode() & (map.Capacity - 1);
-                        newMap.Insert(hash, key);
+                        var key = set.Keys[index];
+                        var hash = newSet.CreateIndex(key.GetHashCode());
+                        newSet.Insert(hash, key);
                     }
                 }
-                map.Dispose();
+                set.Dispose();
             }
-            map = newMap;
+            set = newSet;
         }
+
+        public override string ToString() { return $"HashSet<Count={Count}>"; }
 
         public struct Enumerator : IEnumerator<TKey> {
             private HashSet map;
-            private int index;
+            private Index index;
             public Enumerator(PooledHashSet<TKey> dictionary) {
-                map = dictionary.map;
-                index = -1;
+                map = dictionary.set;
+                index = unchecked((Index)0 - 1);
             }
             public TKey Current => map.Keys[index];
             object IEnumerator.Current => Current;
             public void Dispose() { }
             public void Reset() { }
             public bool MoveNext() {
-                index = map.GetNextIndex(index);
-                return index >= 0;
+                index = map.GetIndexFrom(index + 1);
+                return index != InvalidIndex;
+            }
+            public void RemoveSelf(ref PooledHashSet<TKey> set) {
+                var hash = set.set.CreateIndex(set.set.Keys[index].GetHashCode());
+                var parent = set.set.FindParent(hash, index);
+                set.set.RemoveChild(parent, index);
+                //index = parent;
+                --set.count;
             }
         }
         public Enumerator GetEnumerator() => new(this);
         IEnumerator<TKey> IEnumerable<TKey>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        unsafe public ref PooledHashSet<TKey> AsMutable() { return ref this; }
     }
     public struct PooledHashMap<TKey, TValue> : IDisposable, IEnumerable<KeyValuePair<TKey, TValue>> where TKey : IEquatable<TKey> {
+        public const Index InvalidIndex = PooledHashSet<TKey>.InvalidIndex;
 
         public struct ChainedMap : IDisposable {
             public PooledHashSet<TKey>.HashSet Set;
@@ -219,6 +296,7 @@ namespace Weesals.Utility {
             public bool IsAllocated => Capacity > 0;
 
             public bool IsCreated => Set.IsAllocated;
+            public bool IsValid => Set.IsValid;
 
             public ChainedMap(int capacity = 16) {
                 Set = new(capacity);
@@ -232,19 +310,19 @@ namespace Weesals.Utility {
                 Set.Dispose();
                 ArrayPool<TValue>.Shared.Return(Values);
             }
-            public int Insert(int hash, TKey key, TValue value) {
-                int index = Set.Insert(hash, key);
+            public Index Insert(Index index, TKey key, TValue value) {
+                index = Set.Insert(index, key);
                 Values[index] = value;
                 return index;
             }
-            public bool Remove(int hash, TKey key) {
+            public bool Remove(Index hash, TKey key) {
                 return Set.Remove(hash, key);
             }
-            public int GetIndexOf(int hash) {
-                return Set.GetIndexOf(hash);
+            public Index CreateIndex(int hash) {
+                return Set.CreateIndex(hash);
             }
-            public int GetFirstIndexOf(int hash, TKey key) {
-                return Set.GetNextIndexOf(Set.GetIndexOf(hash), key);
+            public Index GetFirstIndexOf(Index hash, TKey key) {
+                return Set.GetNextIndexOf(hash, key);
             }
 
             public void CopyTo(ChainedMap other) {
@@ -260,6 +338,8 @@ namespace Weesals.Utility {
 
         public int Count => count;
         public int Capacity => map.Capacity;
+        public bool IsValid => map.IsValid;
+        public bool IsCreated => map.IsCreated;
 
         public PooledHashMap(int capacity = 16) {
             map = new(capacity);
@@ -269,10 +349,10 @@ namespace Weesals.Utility {
         }
         public ref TValue this[TKey key] {
             get {
-                var hash = key.GetHashCode() & (map.Capacity - 1);
+                var hash = map.CreateIndex(key.GetHashCode());
                 var index = map.GetFirstIndexOf(hash, key);
                 // If it doesnt exist, create it
-                if (index == -1) {
+                if (index == InvalidIndex) {
                     ResizeIfRequired();
                     index = map.Insert(hash, key, default!);
                 }
@@ -288,35 +368,35 @@ namespace Weesals.Utility {
         // Add an item to the map
         public void Add(TKey key, TValue value) {
             ResizeIfRequired();
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            Debug.Assert(map.GetFirstIndexOf(hash, key) == -1, "Map already contains item");
+            var hash = map.CreateIndex(key.GetHashCode());
+            Debug.Assert(map.GetFirstIndexOf(hash, key) == InvalidIndex, "Map already contains item");
             map.Insert(hash, key, value);
             ++count;
         }
         public void AddDuplicate(TKey key, TValue value) {
             ResizeIfRequired();
-            var hash = key.GetHashCode() & (map.Capacity - 1);
+            var hash = map.CreateIndex(key.GetHashCode());
             map.Insert(hash, key, value);
             ++count;
         }
         public bool Remove(TKey key) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
+            var hash = map.CreateIndex(key.GetHashCode());
             if (!map.Remove(hash, key)) return false;
             --count;
             return true;
         }
         public bool ContainsKey(TKey key) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            return map.GetFirstIndexOf(hash, key) >= 0;
+            var hash = map.CreateIndex(key.GetHashCode());
+            return map.GetFirstIndexOf(hash, key) != InvalidIndex;
         }
         public void Clear() {
             map.Clear();
             count = 0;
         }
         public bool TryGetValue(TKey key, out TValue value) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
+            var hash = map.CreateIndex(key.GetHashCode());
             var index = map.GetFirstIndexOf(hash, key);
-            if (index < 0) { value = default; return false; }
+            if (index == InvalidIndex) { value = default; return false; }
             value = map.Values[index];
             return true;
         }
@@ -326,12 +406,12 @@ namespace Weesals.Utility {
             if (map.IsAllocated) {
                 for (int i = 0; i < map.UnallocBucketMask.Length; i++) {
                     var mask = ~map.UnallocBucketMask[i];
-                    for (; mask != 0; ) {
+                    for (; mask != 0;) {
                         int b = BitOperations.TrailingZeroCount(mask);
-                        mask &= ~(1ul << b);
+                        mask &= ~1ul << b;
                         var index = b + i * 64;
                         var key = map.Keys[index];
-                        var hash = key.GetHashCode() & (newMap.Capacity - 1);
+                        var hash = newMap.CreateIndex(key.GetHashCode());
                         newMap.Insert(hash, key, map.Values[index]);
                     }
                 }
@@ -340,20 +420,30 @@ namespace Weesals.Utility {
             map = newMap;
         }
 
+        public override string ToString() { return $"HashMap<Count={Count}>"; }
+
         public struct Enumerator : IEnumerator<KeyValuePair<TKey, TValue>> {
             private ChainedMap map;
-            private int index;
+            private Index index;
+            public Index Index => index;
             public Enumerator(PooledHashMap<TKey, TValue> dictionary) {
                 map = dictionary.map;
-                index = -1;
+                index = unchecked((Index)0 - 1);
             }
             public KeyValuePair<TKey, TValue> Current => new(map.Keys[index], map.Values[index]);
             object IEnumerator.Current => Current;
+            public void RemoveSelf(ref PooledHashMap<TKey, TValue> map) {
+                var hash = map.map.CreateIndex(map.map.Set.Keys[index].GetHashCode());
+                var parent = map.map.Set.FindParent(hash, index);
+                map.map.Set.RemoveChild(parent, index);
+                //index = parent;
+                --map.count;
+            }
             public void Dispose() { }
             public void Reset() { }
             public bool MoveNext() {
-                index = map.Set.GetNextIndex(index);
-                return index >= 0;
+                index = map.Set.GetIndexFrom(index + 1);
+                return index != InvalidIndex;
             }
         }
         public PooledHashMap<TKey, TValue>.Enumerator GetEnumerator() => new(this);
@@ -401,6 +491,7 @@ namespace Weesals.Utility {
     }
 
     public class MultiHashMap<TKey, TValue> : IDisposable, IEnumerable<KeyValuePair<TKey, TValue>> where TKey : IEquatable<TKey> {
+        public const Index InvalidIndex = PooledHashSet<TKey>.InvalidIndex;
 
         PooledHashMap<TKey, TValue> map;
 
@@ -426,12 +517,11 @@ namespace Weesals.Utility {
             return c > 0;
         }
         public bool Remove(TKey key, TValue value) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            var parent = hash | Capacity;
+            var parent = map.map.CreateIndex(key.GetHashCode());
             var index = map.map.Set.Remap[parent];
             int c = 0;
-            while (index >= 0) {
-                if (map.map.Set.Keys[index].Equals(key)
+            while (index != InvalidIndex) {
+                if (key.Equals(map.map.Set.Keys[index])
                     && EqualityComparer<TValue>.Default.Equals(map.map.Values[index], value)) {
                     map.map.Set.RemoveChild(parent, index);
                     index = parent;
@@ -455,22 +545,24 @@ namespace Weesals.Utility {
         public void Clear() => map.Clear();
 
         public struct KeyIterator {
-            public int Parent;
-            public int Index;
+            public Index Parent;
+            public Index Index;
             public TKey Key;
         }
 
         public bool TryGetFirstValue(TKey key, out TValue value, out KeyIterator it) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
-            it = new() { Key = key, Parent = map.map.GetIndexOf(hash), };
+            var hash = map.map.CreateIndex(key.GetHashCode());
+            it = new() { Key = key, Parent = hash, };
             it.Index = map.map.Set.GetNextIndexOf(it.Parent, key);
-            value = it.Index >= 0 ? map.map.Values[it.Index] : default!;
-            return it.Index >= 0;
+            var hasValue = it.Index != InvalidIndex;
+            value = hasValue ? map.map.Values[it.Index] : default!;
+            return hasValue;
         }
         public bool TryGetNextValue(out TValue value, ref KeyIterator it) {
             it.Index = map.map.Set.GetNextIndexOf(it.Index, it.Key);
-            value = it.Index >= 0 ? map.map.Values[it.Index] : default!;
-            return it.Index >= 0;
+            var hasValue = it.Index != InvalidIndex;
+            value = hasValue ? map.map.Values[it.Index] : default!;
+            return hasValue;
         }
         public void Remove(ref KeyIterator it) {
             map.map.Set.RemoveChild(it.Parent, it.Index);
@@ -481,25 +573,27 @@ namespace Weesals.Utility {
 
         public struct Enumerator : IEnumerator<TValue> {
             MultiHashMap<TKey, TValue> hashMap;
-            int parent;
-            int index;
+            Index parent;
+            Index index;
             TKey key;
             public TValue Current => hashMap.map.map.Values[index];
             object IEnumerator.Current => Current;
-            public Enumerator(MultiHashMap<TKey, TValue> _hashMap, int _index, TKey _key) {
+            public Enumerator(MultiHashMap<TKey, TValue> _hashMap, Index _index, TKey _key) {
                 hashMap = _hashMap;
-                parent = -1;
-                index = _index | hashMap.Capacity;
+                parent = InvalidIndex;
+                index = _index;
                 key = _key;
             }
             public void Dispose() { }
             public void Reset() { throw new NotImplementedException(); }
             public bool MoveNext() {
+                var remap = hashMap.map.map.Set.Remap;
+                var keys = hashMap.map.map.Set.Keys;
                 while (true) {
                     parent = index;
-                    index = hashMap.map.map.Set.Remap[index];
-                    if (index < 0) return false;
-                    if (hashMap.map.map.Set.Keys[index].Equals(key)) return true;
+                    index = remap[index];
+                    if (index == InvalidIndex) return false;
+                    if (keys[index].Equals(key)) return true;
                 }
             }
             public void RemoveSelf() {
@@ -510,27 +604,28 @@ namespace Weesals.Utility {
             public Enumerator GetEnumerator() => this;
         }
         public Enumerator GetValuesForKey(TKey key) {
-            var hash = key.GetHashCode() & (map.Capacity - 1);
+            var hash = map.map.CreateIndex(key.GetHashCode());
             return new(this, hash, key);
         }
 
         public struct UniqueKeyEnumerator : IEnumerator<TKey>, IEnumerable<TKey> {
             MultiHashMap<TKey, TValue> hashMap;
-            int index;
+            Index index;
             public UniqueKeyEnumerator(MultiHashMap<TKey, TValue> _hashMap) {
                 hashMap = _hashMap;
-                index = -1;
+                index = unchecked((Index)0 - 1);
             }
             public TKey Current => hashMap.map.map.Set.Keys[index];
             object IEnumerator.Current => Current;
             public void Dispose() { }
             public void Reset() { throw new NotImplementedException(); }
             public bool MoveNext() {
+                var keys = hashMap.map.map.Keys;
                 while (true) {
-                    index = hashMap.map.map.Set.GetNextIndex(index);
-                    if (index < 0) return false;
-                    var key = hashMap.map.map.Keys[index];
-                    var hash = key.GetHashCode() & (hashMap.Capacity - 1);
+                    index = hashMap.map.map.Set.GetIndexFrom(index + 1);
+                    if (index == InvalidIndex) return false;
+                    var key = keys[index];
+                    var hash = hashMap.map.map.CreateIndex(key.GetHashCode());
                     if (hashMap.map.map.GetFirstIndexOf(hash, key) == index) return true;
                 }
             }

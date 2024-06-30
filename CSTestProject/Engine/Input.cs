@@ -10,6 +10,9 @@ namespace Weesals.Engine {
         Backspace = 0x08,
         Tab = 0x09,
         Return = 0x0D,
+        Shift = 0x10,
+        Control = 0x11,
+        Alt = 0x12,
         Pause = 0x13,
         Escape = 0x1B,
         Space = 0x20,
@@ -135,6 +138,8 @@ namespace Weesals.Engine {
     public static class Input {
 
         private static CSInput primaryInput;
+
+        public static bool IsInitialized => primaryInput.IsValid;
 
         public static void Initialise(CSInput input) {
             primaryInput = input;

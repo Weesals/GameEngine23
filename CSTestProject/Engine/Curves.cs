@@ -204,4 +204,31 @@ namespace Weesals.Engine {
         }
 
     }
+
+    public class DualQuaternionCurve : CurveBase<DualQuaternion> {
+
+        public DualQuaternionCurve() : base() { }
+        public DualQuaternionCurve(int keyframeCount) : base(keyframeCount) { }
+        public DualQuaternionCurve(params Keyframe<DualQuaternion>[] _keyframes) : base(_keyframes) { }
+
+        public DualQuaternion Evaluate(float time) {
+            var keyI = FindNextKeyframe(time);
+            if (keyI == 0) return keyframes[keyI].Value;
+            var k0 = keyframes[keyI - 1];
+            var k1 = keyframes[keyI + 0];
+            var t = (time - k0.Time) / (k1.Time - k0.Time);
+            if (t >= 1f) return k1.Value;
+            switch (k0.Interpolation) {
+                case CurveInterpolation.Step: return k0.Value;
+                case CurveInterpolation.Linear: return DualQuaternion.Slerp(k0.Value, k1.Value, t);
+            }
+
+            var invK01 = DualQuaternion.Inverse(k1.Value) * k0.Value;
+            return DualQuaternion.Slerp(
+                DualQuaternion.Slerp(k0.Value, k1.Value, t),
+                DualQuaternion.Slerp(k0.OutTangent * invK01 * k0.Value, k1.InTangent * invK01 * k1.Value, t),
+                2 * t * (1 - t));
+        }
+
+    }
 }

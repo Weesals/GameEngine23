@@ -103,7 +103,7 @@ namespace Weesals.UI {
         private DirtyFlags dirty = DirtyFlags.None;
         private DrawFlags drawFlags = DrawFlags.None;
 
-        public CSTexture Texture { get; private set; }
+        public CSBufferReference Texture { get; private set; }
         public RectF UVRect { get => uvrect; set { uvrect = value; dirty |= DirtyFlags.UV; } }
         public RectF Border { get => border; set { border = value; dirty |= DirtyFlags.UV; } }
         public Color Color { get => blending.Color; set { blending.Color = value; dirty |= DirtyFlags.Color; } }
@@ -124,10 +124,10 @@ namespace Weesals.UI {
             SetTexture(Texture);
         }
         public void Dispose(Canvas canvas) { element.Dispose(canvas); dirty |= DirtyFlags.Indices; }
-        public void SetTexture(CSTexture texture) {
+        public void SetTexture(CSBufferReference texture) {
             Texture = texture;
             if (Texture.IsValid) {
-                RequireMaterial().SetTexture("Texture", Texture);
+                RequireMaterial().SetValue("Texture", Texture);
                 MarkLayoutDirty();
             }
         }
@@ -201,7 +201,7 @@ namespace Weesals.UI {
                     ? stackalloc Vector2[] { new Vector2(0, 0), Vector2.Zero, Vector2.Zero, layout.GetSize(), }
                     : stackalloc Vector2[] { new Vector2(0, 0), layout.GetSize(), };
                 if (IsNinePatch && Texture.IsValid) {
-                    var spriteSize = (Vector2)Texture.GetSize() * UVRect.Size * spriteScale;
+                    var spriteSize = (Vector2)Texture.GetTextureResolution() * UVRect.Size * spriteScale;
                     p[1] = Border.Min * spriteSize;
                     p[2] = p[3] - (Vector2.One - Border.Max) * spriteSize;
                 }
@@ -229,7 +229,7 @@ namespace Weesals.UI {
         public void PreserveAspect(ref CanvasLayout layout, Vector2 imageAnchor) {
             if (!Texture.IsValid) return;
             var size = layout.GetSize();
-            var imgSize = (Vector2)Texture.GetSize() * UVRect.Size;
+            var imgSize = (Vector2)Texture.GetTextureResolution() * UVRect.Size;
             var ratio = new Vector2(size.X * imgSize.Y, size.Y * imgSize.X);
             if (ratio.X != ratio.Y) {
                 var osize = size;
@@ -953,7 +953,7 @@ namespace Weesals.UI {
                     int reqCount = oldRange.Length + inds.mCount;
                     reqCount += Math.Max(reqCount / 2, 128);
                     // Try to use an existing block
-                    batch.mIndexAlloc = mUnusedIndices.Take(reqCount);
+                    batch.mIndexAlloc = new(mUnusedIndices.Take(reqCount), reqCount);
                     // Otherwise allocate a new block at the end of mIndices
                     if (batch.mIndexAlloc.Start == -1) {
                         batch.mIndexAlloc = new RangeInt(mIndices.Count, reqCount);

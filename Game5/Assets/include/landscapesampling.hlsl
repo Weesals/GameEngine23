@@ -72,7 +72,7 @@ float2 ComputeSampleUV(SampleContext context, ControlPoint cp) {
     float3 worldPos = context.WorldPos * data.Scale;
     return mul(cp.RotationMatrix, worldPos.xz);
 }
-TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableTriPlanar = false, float mipBias = 0.0) {
+TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableTriPlanar = false, float mipBias = 0.0, bool useGrad = false) {
     TerrainSample o;
     LayerData data = _LandscapeLayerData[cp.Layer];
     
@@ -111,11 +111,11 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoint cp, bool enableT
     
     uv.y += data.UVScrollY * Time;
     
-    half4 bumpSample = SampleGradOptional(context.BumpMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar || mipBias != 0.0);
-    half4 baseSample = SampleGradOptional(context.BaseMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar || mipBias != 0.0);
+    half4 bumpSample = SampleGradOptional(context.BumpMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar || mipBias != 0.0 || useGrad);
+    half4 baseSample = SampleGradOptional(context.BaseMaps, float3(uv, cp.Layer), duvdx, duvdy, enableTriPlanar || mipBias != 0.0 || useGrad);
     //bumpSample = half4(0, 0, 0, 1);
-    o.Normal.xy = bumpSample.rg * half2(2.0, -2.0) - half2(1.0, -1.0);
-    o.Normal.xy = mul((half2x2)cp.RotationMatrix, o.Normal.xy);
+    o.Normal.xy = bumpSample.rg * half2(2.0, 2.0) - half2(1.0, 1.0);
+    o.Normal.xy = mul(o.Normal.xy, (half2x2)cp.RotationMatrix);
     o.Normal.z = sqrt(1 - dot(o.Normal.xy, o.Normal.xy));
     o.Height = bumpSample.b;
     

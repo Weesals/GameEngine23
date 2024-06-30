@@ -38,6 +38,8 @@ namespace Weesals.UI {
         public EventTargets Targets;
         public object? Active => Targets.EffectiveActive;
         public States State = States.Active | States.Hover;
+        public Modifiers Modifiers = Modifiers.None;
+
         public bool IsDrag => DragDistance >= 5f && ButtonState != 0;
         public bool WasDrag => PreviousDragDistance >= 5f && PreviousButtonState != 0;
         public bool IsButtonDown => ButtonState != 0;
@@ -52,6 +54,7 @@ namespace Weesals.UI {
             PreviousPosition = other.PreviousPosition;
             DragDistance = other.DragDistance;
             PreviousDragDistance = other.PreviousDragDistance;
+            Modifiers = other.Modifiers;
         }
         public void Dispose() {
             System.SetStates(this, States.None);
@@ -67,6 +70,7 @@ namespace Weesals.UI {
             PreviousDragDistance = DragDistance;
         }
         internal EventSystem.PointerUpdate StepPre(PointerEvent other) {
+            Modifiers = other.Modifiers;
             EventSystem.PointerUpdate update = new(this);
             System.UpdatePointerPre(this, other.CurrentPosition, other.ButtonState, update);
             return update;
@@ -79,6 +83,9 @@ namespace Weesals.UI {
         }
         public bool HasButton(int buttonId) {
             return ((ButtonState | PreviousButtonState) & (1 << buttonId)) != 0;
+        }
+        public bool HasModifier(Modifiers modifier) {
+            return (Modifiers & modifier) != 0;
         }
         public void Yield() {
             System.MarkYielded();
@@ -260,6 +267,50 @@ namespace Weesals.UI {
         public event Action<ItemReference, bool>? OnEntitySelected;
         public event Action<ICollection<ItemReference>>? OnSelectionChanged;
 
+        public struct Scope : IDisposable {
+            public readonly SelectionManager Manager;
+            private PooledList<ItemReference> toDeselect;
+            public Scope(SelectionManager manager) {
+                Manager = manager;
+                toDeselect = new(manager.selected.Count);
+                toDeselect.CopyFrom(manager.selected);
+                manager.selected.Clear();
+            }
+            public void Append(ItemReference item) {
+                Manager.selected.Add(item);
+            }
+            public void Set(ICollection<ItemReference> items) {
+                Debug.Assert(Manager.selected.Count == 0,
+                    "Did you Append() before Set(), items will be lost");
+                foreach (var item in items) Manager.selected.Add(item);
+            }
+            public void Dispose() {
+                // TODO: Consider if something externally adds directly to Manager
+                int keepCount = 0;
+                // Separate into 'keep' and 'deselect' chunks
+                foreach (var item in Manager.selected) {
+                    var index = Array.IndexOf(toDeselect.Data, item, keepCount);
+                    // Item was found, push it to 'keep' range
+                    if (index >= 0) toDeselect.Swap(index, keepCount++);
+                }
+                // Deselect items that were not added within scope
+                foreach (var item in toDeselect.Data.AsSpan(keepCount)) {
+                    Manager.NotifySelected(item, false);
+                }
+                toDeselect.Count = keepCount;
+                // Select items that were newly added (not in 'keep')
+                foreach (var item in Manager.selected) {
+                    var index = Array.IndexOf(toDeselect.Data, item, 0, keepCount);
+                    if (index < 0) toDeselect.Add(item);
+                }
+                // Notify selection
+                foreach (var item in toDeselect.AsSpan(keepCount)) {
+                    Manager.NotifySelected(item, true);
+                }
+                toDeselect.Dispose();
+            }
+        }
+
         public SelectionManager(EventSystem eventSystem) {
             EventSystem = eventSystem;
         }
@@ -306,8 +357,8 @@ namespace Weesals.UI {
         }
 
         private void NotifySelected(ItemReference item, bool selected) {
-            /*if (item.Owner is ISelectable selectable)
-                selectable.NotifySelected(item.Data, selected);*/
+            if (item.Owner is ISelectable selectable)
+                selectable.OnSelected(this, selected);  //item.Data, 
             if (OnEntitySelected != null) OnEntitySelected(item, selected);
             if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
         }
@@ -497,15 +548,16 @@ namespace Weesals.UI {
             currTimerUS += (int)(dt * 1000.0f * 1000.0f + 0.5f);
 
             if (input.IsValid) {
-                var inputPointers = input.GetPointers();
-                using var pointers = new PooledList<CSPointer>(inputPointers.Length);
-                foreach (var ptr in inputPointers) pointers.Add(ptr);
-                ProcessPointers(pointers);
-
                 var modifiers = Modifiers.None;
                 if (input.GetKeyDown((char)KeyCode.LeftShift) || input.GetKeyDown((char)KeyCode.RightShift)) modifiers |= Modifiers.Shift;
                 if (input.GetKeyDown((char)KeyCode.LeftControl) || input.GetKeyDown((char)KeyCode.RightControl)) modifiers |= Modifiers.Control;
                 if (input.GetKeyDown((char)KeyCode.LeftAlt) || input.GetKeyDown((char)KeyCode.RightAlt)) modifiers |= Modifiers.Alt;
+
+                var inputPointers = input.GetPointers();
+                using var pointers = new PooledList<CSPointer>(inputPointers.Length);
+                foreach (var ptr in inputPointers) pointers.Add(ptr);
+                ProcessPointers(pointers, modifiers);
+
                 foreach (var key in input.GetPressKeys()) {
                     var keyEvent = KeyEvent.CreateEvent(key, modifiers);
                     OnKeyPress(ref keyEvent);
@@ -528,7 +580,7 @@ namespace Weesals.UI {
             }
         }
 
-        public void ProcessPointers(Span<CSPointer> pointers) {
+        public void ProcessPointers(Span<CSPointer> pointers, Modifiers modifiers) {
             using var seenPointers = new PooledList<uint>();
             foreach (var deferredPtrs in activeDeferred.Values) {
                 for (int i = deferredPtrs.Count - 1; i >= 0; --i) {
@@ -551,6 +603,7 @@ namespace Weesals.UI {
                     };
                     pointerEvents.Add(pointer.mDeviceId, events);
                 }
+                events.Modifiers = modifiers;
                 PointerUpdate update = new(events);
                 UpdatePointerPre(events, pointer.mPositionCurrent + pointerOffset, pointer.mCurrentButtonState, update);
 
@@ -572,7 +625,7 @@ namespace Weesals.UI {
                 var nested = kv.Key;
                 var es = nested.EventSystem;
                 if (es != null)
-                    es.ProcessPointers(CollectionsMarshal.AsSpan(kv.Value));
+                    es.ProcessPointers(CollectionsMarshal.AsSpan(kv.Value), modifiers);
                 for (int i = 0; i < kv.Value.Count; ++i) {
                     var ptr = kv.Value[i];
                     if (!seenPointers.Contains(ptr.mDeviceId)) kv.Value.RemoveAt(i--);

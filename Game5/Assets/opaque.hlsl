@@ -21,7 +21,7 @@ struct PSInput
     float2 uv : TEXCOORD0;
     float3 viewPos : TEXCOORD1;
     float3 normal : NORMAL;
-    float2 velocity : VELOCITY;
+    float3 velocity : VELOCITY;
 };
 
 
@@ -41,7 +41,7 @@ PSInput VSMain(VSInput input)
 
     float3 prevWorldPos = mul(instance.PreviousModel, float4(input.position.xyz, 1.0)).xyz;
     float4 previousVPos = mul(PreviousViewProjection, float4(prevWorldPos, 1.0));
-    result.velocity = result.position.xy / result.position.w - previousVPos.xy / previousVPos.w;
+    result.velocity = result.position.xyz / result.position.w - previousVPos.xyz / previousVPos.w;
     // Add a slight amount to avoid velocity being 0 (special case)
     result.velocity.x += 0.0000001;
         

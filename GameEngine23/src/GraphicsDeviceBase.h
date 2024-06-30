@@ -356,6 +356,8 @@ public:
     //virtual Int2 GetResolution() const = 0;
     //virtual void SetResolution(Int2 res) = 0;
 
+    virtual std::wstring GetDeviceName() const { return L""; }
+
     // Create a command buffer which allows draw calls to be submitted
     virtual CommandBuffer CreateCommandBuffer() = 0;
 

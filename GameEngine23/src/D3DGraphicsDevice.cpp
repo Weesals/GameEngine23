@@ -3,6 +3,7 @@
 #include "D3DGraphicsDevice.h"
 #include <sstream>
 #include <stdexcept>
+#include <../../CSBindings/src/CSBindings.h>
 
 #include <d3dx12.h>
 
@@ -11,6 +12,8 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
+extern void* SimpleProfilerMarker(const char* name);
+extern void SimpleProfilerMarkerEnd(void* zone);
 
 void ThrowIfFailed(HRESULT hr) {
     if (FAILED(hr)) {
@@ -74,6 +77,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
 #endif
     ThrowIfFailed(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&mD3DFactory)));
 
+    auto adapterZone = SimpleProfilerMarker("Enum Adapters");
     // Find adapters
     std::vector<ComPtr<IDXGIAdapter1>> adapters;
     ComPtr<IDXGIAdapter1> pAdapter = nullptr;
@@ -88,13 +92,25 @@ D3DGraphicsDevice::D3DGraphicsDevice()
             adapters.push_back(pAdapter);
         }
     }
+    SimpleProfilerMarkerEnd(adapterZone);
+
+    auto createDeviceZone = SimpleProfilerMarker("Create Device");
 
     // Create the device
     int DeviceId = 0;
-    if (GetKeyState(VK_CAPITAL) & 0x00ff) DeviceId = 1 - DeviceId;
+    if ((GetKeyState(VK_CAPITAL) & 0x00ff) && DeviceId == 0) DeviceId = 1;
     ThrowIfFailed(D3D12CreateDevice(adapters[std::min(DeviceId, (int)adapters.size() - 1)].Get(),
         D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice)));
     mD3DDevice->SetName(L"Device");
+
+    SimpleProfilerMarkerEnd(createDeviceZone);
+
+#if defined(_DEBUG)
+    // Prevent GPU clocks from changing
+    //mD3DDevice->SetStablePowerState(TRUE);
+#endif
+
+    auto createQueueZone = SimpleProfilerMarker("Create Queue");
 
     // Create the command queue
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
@@ -102,6 +118,8 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     ThrowIfFailed(mD3DDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCmdQueue)));
     mCmdQueue->SetName(L"CmdQueue");
+
+    SimpleProfilerMarkerEnd(createQueueZone);
 
     // Create descriptor heaps.
     {

@@ -108,7 +108,7 @@ namespace Navigation {
             }
 
             public void RemoveVertex(CornerId cornerId) {
-                foreach (var edge in NavBaker.pinnedEdges) Debug.Assert(!edge.HasCorner(cornerId));
+                NavBaker.ValidateNoCornerReferences(cornerId);
                 var aj = NavBaker.NavMesh.GetAdjacency();
                 var ro = NavBaker.NavMesh.GetReadOnly();
                 var mutator = new NavMesh2Baker.Mutator(NavBaker);
@@ -118,8 +118,17 @@ namespace Navigation {
                     var triId = NavBaker.NavMesh.GetTriangleAt(
                         NavBaker.NavMesh.GetCorner(cornerId));
                     var tri = NavBaker.NavMesh.GetTriangle(triId);
+                    var triCornerI = tri.FindCorner(cornerId);
+                    if (triCornerI == -1) {
+                        Debug.Fail("Bad case");
+                        return;
+                    }
                     triEdge = new TriangleEdge(triId,
-                        (ushort)((tri.FindCorner(cornerId) + 2) % 3));
+                        (ushort)((triCornerI + 2) % 3));
+                }
+                int adjCount = 0;
+                foreach (var adj in NavBaker.adjacency) {
+                    if (adj.Key.Corner1 == cornerId || adj.Key.Corner2 == cornerId) ++adjCount;
                 }
                 while (triEdge.TriangleId != InvalidTriId) {
                     var tri = NavBaker.NavMesh.GetTriangle(triEdge.TriangleId);
@@ -128,9 +137,28 @@ namespace Navigation {
                     mutator.RemoveTriangle(triEdge.TriangleId);
                     oTriEdge.EdgeId = (ushort)((oTriEdge.EdgeId + 2) % 3);
                     triEdge = oTriEdge;
+                    //NavBaker.ValidTriangleAdjacency(triEdge.TriangleId);
+                }
+                Debug.Assert(corners.Count == adjCount);
+                foreach (var corner in corners) {
+                    // Adjacency gets removd in RemoveTriangle atm, could switch this back
+                    mutator.adjacency.Remove(new Edge(corner, cornerId));
+                    //Trace.Assert();
+                }
+                foreach (var adj in NavBaker.adjacency) {
+                    Debug.Assert(adj.Key.Corner1 != cornerId && adj.Key.Corner2 != cornerId);
+                }
+                NavBaker.RemoveVertex(cornerId);
+                mutator.InsertPolygon(corners, default, false);
+            }
+            public void FilterPinnedVertices(ref PooledHashSet<ushort> vertices) {
+                foreach (var edge in NavBaker.pinnedEdges) {
+                    vertices.Remove(edge.Corner1);
+                    vertices.Remove(edge.Corner2);
                 }
             }
         }
+
         public struct Mutator {
             public NavMesh2Baker NavBaker;
             internal SparseArray<Coordinate> corners => NavBaker.corners;
@@ -201,6 +229,7 @@ namespace Navigation {
                 return triI;
             }
             public unsafe bool PinEdge(CornerId corner1, CornerId corner2) {
+                Debug.Assert(corner1 != corner2);
                 using var marker = pinEdgeMarker.Auto();
                 var edge = new Edge(corner1, corner2);
                 pinnedEdges.Add(edge);
@@ -226,7 +255,7 @@ namespace Navigation {
 
                 {
                     using var edgeMarker = swapEdgeMarker.Auto();
-                    using var toRemTris = new PooledList<TriangleId>(8);
+                    using var toRemTris = new PooledList<TriangleEdge>(8);
                     using var edges0 = new PooledList<CornerId>(8);
                     using var edges1 = new PooledList<CornerId>(8);
                     edges0.Add(corner1);
@@ -234,18 +263,19 @@ namespace Navigation {
                     TriangleType type = default;
                     //toRemTris.Add(it.TriangleEdge.TriangleId);
                     for (var i = 0; i < 100 && it.MoveNext(); ++i) {
-                        toRemTris.Add(it.TriangleEdge.TriangleId);
+                        toRemTris.Add(it.TriangleEdge);
                         var triEdge = it.TriangleEdge;
                         if (triEdge.EdgeId == InvalidTriId) continue;
                         var tri = triangles[triEdge.TriangleId];
                         type = tri.Type;
                         var c0 = tri.GetCorner(triEdge.EdgeId);
                         var c1 = tri.GetCornerWrapped(triEdge.EdgeId + 1);
-                        Debug.Assert(!pinnedEdges.Contains(new Edge(c0, c1)));
+                        var tedge = new Edge(c0, c1);
+                        Debug.Assert(!pinnedEdges.Contains(tedge));
                         if (edges0[^1] != c0) edges0.Add(c0);
                         if (edges1[^1] != c1) edges1.Add(c1);
                     }
-                    toRemTris.Add(it.TriangleEdge.TriangleId);
+                    toRemTris.Add(it.TriangleEdge);
                     // This will be caught by the above adjacency check
                     Debug.Assert(edges0.Count > 1 && edges1.Count > 1, "The edge is already valid");
                     // Only portals should be added - not the final vert
@@ -253,7 +283,11 @@ namespace Navigation {
                     edges0.Add(corner2);
                     edges1.Add(corner2);
                     for (int i = 0; i < toRemTris.Count; i++) {
-                        triangles.Return(toRemTris[i]);
+                        var triEdge = toRemTris[i];
+                        if (!triEdge.IsValid) continue;
+                        RemoveTriangle(triEdge.TriangleId);
+                        //var tedge = tri.GetEdge(triEdge.EdgeId);
+                        //Trace.Assert(adjacency.Remove(tedge));
                     }
                     for (int i = 0; i < edges1.Count / 2; i++) {
                         var t = edges1[i];
@@ -269,6 +303,9 @@ namespace Navigation {
                     //ValidateAllTriangles();
                     return true;
                 }
+            }
+            public bool GetIsPinnedEdge(Edge edge) {
+                return pinnedEdges.Contains(edge);
             }
             public void UnpinEdge_NoRepair(Edge edge) {
                 using var marker = pinEdgeMarker.Auto();
@@ -360,8 +397,8 @@ namespace Navigation {
                 //Debug.Assert(tri1.Type.Equals(tri2.Type), "Non-pinned edge does not share type!");
                 var c0 = corners[edge.Corner1];
                 var c1 = corners[edge.Corner2];
-                var e0 = corners[tri1.FindNextCorner(edge.Corner1)];
-                var e1 = corners[tri2.FindNextCorner(edge.Corner2)];
+                var e0 = corners[tri2.FindNextCorner(edge.Corner1)];
+                var e1 = corners[tri1.FindNextCorner(edge.Corner2)];
                 var score = NavUtility.InCircle(c0, e0, c1, e1);
                 return -score;
             }
@@ -375,8 +412,8 @@ namespace Navigation {
                 ValidTriangleAdjacency(adjacent.Triangle2);
                 var tri1 = triangles[adjacent.Triangle1];
                 var tri2 = triangles[adjacent.Triangle2];
-                var e1I = tri1.FindCorner(edge.Corner1);
-                var e2I = tri2.FindCorner(edge.Corner2);
+                var e1I = tri1.FindCorner(edge.Corner2);
+                var e2I = tri2.FindCorner(edge.Corner1);
                 var ne1I = tri1.GetCornerWrapped(e1I + 1);
                 var ne2I = tri2.GetCornerWrapped(e2I + 1);
                 if (ne1I == ne2I) {
@@ -502,18 +539,23 @@ namespace Navigation {
                     Debug.Assert(GetAdjacenctTriangle(c0, c1) == triI);
                 }
             }
-            private void SetAdjacency(CornerId c1, CornerId c2, TriangleId triI, TriangleId otriI) {
+            private void SetAdjacency(CornerId c1, CornerId c2, TriangleId ltri, TriangleId rtri) {
                 var edge = new Edge(c1, c2);
-                var adjacenct = new EdgeAdjacency() { Triangle1 = InvalidTriId, Triangle2 = InvalidTriId, };
-                adjacenct.SetTriangle(edge.GetSign(c1), triI);
-                adjacenct.SetTriangle(!edge.GetSign(c1), otriI);
-                adjacency[edge] = adjacenct;
+                var adjacent = EdgeAdjacency.None;
+                adjacent.SetTriangle(edge.GetSign(c1), ltri);
+                adjacent.SetTriangle(!edge.GetSign(c1), rtri);
+                Debug.Assert(!adjacent.IsEmpty);
+                adjacency[edge] = adjacent;
             }
-            private void SetAdjacenctTriangle(ushort c1, ushort c2, TriangleId triI) {
+            private void SetAdjacenctTriangle(ushort c1, ushort c2, TriangleId ltri) {
                 var edge = new Edge(c1, c2);
                 if (!adjacency.TryGetValue(edge, out var adjacent)) adjacent = EdgeAdjacency.None;
-                adjacent.SetTriangle(edge.GetSign(c1), triI);
-                adjacency[edge] = adjacent;
+                adjacent.SetTriangle(edge.GetSign(c1), ltri);
+                if (adjacent.IsEmpty) {
+                    adjacency.Remove(edge);
+                } else {
+                    adjacency[edge] = adjacent;
+                }
             }
             [System.Diagnostics.Conditional("DEBUG")]
             private void ValidateAllTriangles() {
@@ -523,24 +565,41 @@ namespace Navigation {
             }
             [System.Diagnostics.Conditional("DEBUG")]
             private void ValidTriangleAdjacency(TriangleId triI) {
-                //return;
                 if (triI == InvalidTriId) return;
-                var tri = triangles[triI];
-                for (int i = 0; i < 3; i++) {
-                    var c0 = tri.GetCorner(i);
-                    var edge = tri.GetEdge(i);
-                    var adj = adjacency[edge];
-                    if (adj.GetTriangle(edge.GetSign(c0)) != triI) {
-                        Debug.Fail("Invalid adjacency: " + triI);
-                    }
-                    var otriI = adj.GetTriangle(!edge.GetSign(c0));
-                    if (otriI == InvalidTriId) continue;
-                    var otri = triangles[otriI];
-                    var oedge = otri.GetEdgeWrapped(otri.FindCorner(c0) + 2);
-                    if (!oedge.Equals(edge)) {
-                        Debug.Fail("Adjacency mismatch");
-                    }
+                ValidateTriangleWinding(triangles[triI].C1);
+                ValidateTriangleWinding(triangles[triI].C2);
+                ValidateTriangleWinding(triangles[triI].C3);
+                NavBaker.ValidTriangleAdjacency(triI);
+            }
+            [System.Diagnostics.Conditional("DEBUG")]
+            private void ValidateTriangleWinding(CornerId cornerId) {
+                return;
+                var aj = NavBaker.NavMesh.GetAdjacency();
+                var ro = NavBaker.NavMesh.GetReadOnly();
+                using var corners = new PooledList<CornerId>();
+                int adjCount = 0;
+                using var triEdges = new PooledHashSet<Edge>();
+                var it = NavBaker.triangles.GetEnumerator();
+                while (it.MoveNext()) {
+                    var tri = it.Current;
+                    if (!tri.HasCorner(cornerId)) continue;
+                    var edgeI = tri.FindCorner(cornerId);
+                    triEdges.AddUnique(tri.GetEdge(edgeI));
+                    triEdges.AddUnique(tri.GetEdgeWrapped(edgeI + 2));
+                    Debug.Assert(adjacency.ContainsKey(tri.GetEdge(edgeI)));
+                    Debug.Assert(adjacency.ContainsKey(tri.GetEdgeWrapped(edgeI + 2)));
                 }
+                foreach (var adj in NavBaker.adjacency) {
+                    if (adj.Key.HasCorner(cornerId)) ++adjCount;
+                }
+                //Debug.Assert(triEdges.Count == adjCount);
+                /*Debug.Assert(corners.Count == adjCount);
+                foreach (var adj in NavBaker.adjacency) {
+                    var other = adj.Key.Corner1 == cornerId ? adj.Key.Corner2
+                        : adj.Key.Corner2 == cornerId ? adj.Key.Corner1
+                        : -1;
+                    Debug.Assert(corners.Contains((CornerId)other));
+                }*/
             }
             [System.Diagnostics.Conditional("DEBUG")]
             private void ValidTriangleWinding(TriangleId triI) {
@@ -587,14 +646,17 @@ namespace Navigation {
             }
 
             private void PokeEdge(Edge edge, CornerId corner) {
-                var adjacent = adjacency[edge];
+                if (!adjacency.TryGetValue(edge, out var adjacent)) {
+                    PathFail();
+                    return;
+                }
                 ValidTriangleAdjacency(adjacent.Triangle1);
                 ValidTriangleAdjacency(adjacent.Triangle2);
                 if (adjacent.Triangle1 != InvalidTriId) {
-                    SplitTriangle(adjacent.Triangle1, edge.Corner2, corner);
+                    SplitTriangle(adjacent.Triangle1, edge.Corner1, corner);
                 }
                 if (adjacent.Triangle2 != InvalidTriId) {
-                    SplitTriangle(adjacent.Triangle2, edge.Corner1, corner);
+                    SplitTriangle(adjacent.Triangle2, edge.Corner2, corner);
                 }
                 adjacency.Remove(edge);
                 Debug.Assert(!pinnedEdges.Contains(edge));
@@ -602,7 +664,11 @@ namespace Navigation {
                 ValidTriangleAdjacency(adjacent.Triangle2);
                 //ValidateAllTriangles();
             }
-
+            public bool SplitEdge(Edge edge, CornerId cornerId) {
+                if (edge.Corner2 == cornerId || edge.Corner1 == cornerId) return false;
+                PokeEdge(edge, cornerId);
+                return true;
+            }
             private TriangleId SplitTriangle(TriangleId triI, CornerId triCorner, CornerId corner) {
                 var tri = triangles[triI];
                 var edgeI = tri.FindCorner(triCorner);
@@ -738,9 +804,66 @@ namespace Navigation {
                 }
                 return triI;
             }
+
+            public void GarbageCollect() {
+                Span<ulong> cornersMask = stackalloc ulong[(corners.Capacity + 63) / 64];
+                if (cornersMask.Length > 0) cornersMask[0] |= 0b1111;
+                foreach (var range in corners.Unused.Ranges) {
+                    int begin = range.Start / 64;
+                    int end = (range.End - 1) / 64;
+                    for (int i = begin; i <= end; i++) {
+                        var bitBegin = Math.Max(i * 64 - range.Start, 0);
+                        var bitEnd = Math.Min(range.End - i * 64, 64);
+                        var mask = ~((~0ul) << bitBegin);
+                        mask &= ~((~1ul) << (bitEnd - 1));
+                        cornersMask[i] |= mask;
+                    }
+                }
+                foreach (var edge in pinnedEdges) {
+                    cornersMask[edge.Corner1 / 64] |= 1ul << edge.Corner1;
+                    cornersMask[edge.Corner2 / 64] |= 1ul << edge.Corner2;
+                }
+                for (int c = 0; c < cornersMask.Length; c++) {
+                    var mask = ~cornersMask[c];
+                    while (mask != 0) {
+                        int bit = BitOperations.TrailingZeroCount(mask);
+                        mask &= ~(1ul << bit);
+                        int vertId = c * 64 + bit;
+                        var vert = corners[vertId];
+                        var vHash = vert.GetHashCode();
+                        NavBaker.vertIdByHash.Remove(vHash, vertId);
+                        NavBaker.corners.Return(vertId);
+                    }
+                }
+            }
         }
 
+        [System.Diagnostics.Conditional("DEBUG")]
+        public void ValidateNoCornerReferences(ushort cornerId) {
+            foreach (var edge in pinnedEdges) Debug.Assert(!edge.HasCorner(cornerId));
+        }
 
+        [System.Diagnostics.Conditional("DEBUG")]
+        private void ValidTriangleAdjacency(ushort triI) {
+            //return;
+            if (triI == InvalidTriId) return;
+            var tri = triangles[triI];
+            for (int i = 0; i < 3; i++) {
+                var c0 = tri.GetCorner(i);
+                var edge = tri.GetEdge(i);
+                var adj = adjacency[edge];
+                if (adj.GetTriangle(edge.GetSign(c0)) != triI) {
+                    Debug.Fail("Invalid adjacency: " + triI);
+                }
+                var otriI = adj.GetTriangle(!edge.GetSign(c0));
+                if (otriI == InvalidTriId) continue;
+                var otri = triangles[otriI];
+                var oedge = otri.GetEdgeWrapped(otri.FindCorner(c0) + 2);
+                if (!oedge.Equals(edge)) {
+                    Debug.Fail("Adjacency mismatch");
+                }
+            }
+        }
 
         public TriangleId GetTriangleFromCornerPair(CornerId c0, CornerId c1) {
             var edge = new Edge(c0, c1);
@@ -804,6 +927,10 @@ namespace Navigation {
         private static ushort GetCellHashAt(int cX, int cY) {
             uint v = (uint)(cX + (cY << 8));
             return (ushort)(v ^ (v >> 3));
+        }
+
+        private static void PathFail() {
+            Debug.WriteLine("Path Fail");
         }
     }
 }

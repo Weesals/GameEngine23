@@ -112,10 +112,10 @@ namespace Weesals.UI {
             return RequireSlice(ref mIndices, mFreeIndices, icount);
         }
         private RangeInt RequireSlice(ref BufferLayoutPersistent items, SparseIndices unused, int count) {
-            RangeInt range = unused.Take(count);
-            if (range.Start >= 0) return range;
+            var start = unused.Take(count);
+            if (start >= 0) return new RangeInt(start, count);
             items.BufferLayout.mCount -= unused.Compact(items.Count);
-            range = new RangeInt(items.Count, count);
+            var range = new RangeInt(items.Count, count);
             if (range.End >= items.BufferCapacityCount) {
                 int newSize = items.BufferCapacityCount * 3 / 2 + 1024;
                 newSize = Math.Max(newSize, range.End);

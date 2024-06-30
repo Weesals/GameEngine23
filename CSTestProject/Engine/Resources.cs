@@ -14,6 +14,17 @@ using Weesals.UI;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
+    public struct ReadLockScope : IDisposable {
+        public ReaderWriterLockSlim mutex;
+        public ReadLockScope(ReaderWriterLockSlim _mutex) { mutex = _mutex; mutex.EnterReadLock(); }
+        public void Dispose() { mutex.ExitReadLock(); }
+    }
+    public struct WriteLockScope : IDisposable {
+        public ReaderWriterLockSlim mutex;
+        public WriteLockScope(ReaderWriterLockSlim _mutex) { mutex = _mutex; mutex.EnterWriteLock(); }
+        public void Dispose() { mutex.ExitWriteLock(); }
+    }
+
     public struct ResourceKey {
         public string Key;
         public string? SourcePath;
@@ -94,6 +105,62 @@ namespace Weesals.Engine {
         }
     }
 
+    public class ResourceLoader<TResource> {
+        public class Item {
+            public bool Loaded;
+            public TResource Resource;
+            public JobHandle LoadHandle;
+
+            public void SetResource(TResource resource) {
+                Resource = resource;
+                Loaded = true;
+            }
+        }
+
+        private ReaderWriterLockSlim dictionaryLock = new();
+        public Dictionary<ulong, Item> loadedItems = new();
+        public int Count {
+            get {
+                using var read = new ReadLockScope(dictionaryLock);
+                return loadedItems.Count;
+            }
+        }
+        public void Dispose() {
+            dictionaryLock.Dispose();
+        }
+        // Might fail and return null if contested
+        public Item? TryGetItem(ulong id) {
+            if (dictionaryLock.TryEnterReadLock(0)) {
+                loadedItems.TryGetValue(id, out var value);
+                dictionaryLock.ExitReadLock();
+                return value;
+            }
+            return default;
+        }
+        public Item? RequireGetItem(ulong id) {
+            try {
+                dictionaryLock.EnterReadLock();
+                loadedItems.TryGetValue(id, out var value);
+                return value;
+            } finally {
+                dictionaryLock.ExitReadLock();
+            }
+        }
+        public Item RequireItem(ulong id) {
+            var item = TryGetItem(id);
+            if (item != null) return item;
+            try {
+                dictionaryLock.EnterWriteLock();
+                if (!loadedItems.TryGetValue(id, out var value)) {
+                    loadedItems.Add(id, value = new());
+                }
+                return value;
+            } finally {
+                dictionaryLock.ExitWriteLock();
+            }
+        }
+    }
+
     public class Resources {
         public struct LoadedResource {
             public IAssetImporter Importer;
@@ -108,7 +175,7 @@ namespace Weesals.Engine {
         static Dictionary<ulong, CompiledShader> loadedShaders = new();
         static Dictionary<ulong, CompiledShader> uniqueShaders = new();
         static Dictionary<ulong, Font> loadedFonts = new();
-        static Dictionary<ulong, CSTexture> loadedTextures = new();
+        static ResourceLoader<CSTexture> loadedTextures = new();
 
         static Dictionary<ResourceKey, LoadedResource> loadedResources = new();
 
@@ -126,20 +193,26 @@ namespace Weesals.Engine {
         public static void LoadDefaultUIAssets() {
             var spriteRenderer = new SpriteRenderer();
 
-            var atlas = spriteRenderer.Generate(new[] {
-                Resources.LoadTexture("./Assets/ui/T_ButtonBG.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_ButtonFrame.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_TextBox.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_FileIcon.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_FolderIcon.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_FileShader.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_FileTxt.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_FileModel.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_FileImage.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_Tick.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_HeaderBG.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-                Resources.LoadTexture("./Assets/ui/T_PanelBG.png", BufferFormat.FORMAT_R8G8B8A8_UNORM),
-            });
+            var spritePaths = new KeyValuePair<string, string>[] {
+                new("ButtonBG", "./Assets/ui/T_ButtonBG.png"),
+                new("ButtonFrame", "./Assets/ui/T_ButtonFrame.png"),
+                new("TextBox", "./Assets/ui/T_TextBox.png"),
+                new("FileIcon", "./Assets/ui/T_FileIcon.png"),
+                new("FolderIcon", "./Assets/ui/T_FolderIcon.png"),
+                new("FileShader", "./Assets/ui/T_FileShader.png"),
+                new("FileText", "./Assets/ui/T_FileTxt.png"),
+                new("FileModel", "./Assets/ui/T_FileModel.png"),
+                new("FileImage", "./Assets/ui/T_FileImage.png"),
+                new("Tick", "./Assets/ui/T_Tick.png"),
+                new("HeaderBG", "./Assets/ui/T_HeaderBG.png"),
+                new("PanelBG", "./Assets/ui/T_PanelBG.png"),
+            };
+            var originalSprites = new CSTexture[spritePaths.Length];
+            for (int i = 0; i < spritePaths.Length; i++) {
+                originalSprites[i] = Resources.LoadTexture(spritePaths[i].Value, BufferFormat.FORMAT_R8G8B8A8_UNORM);
+            }
+
+            var atlas = spriteRenderer.Generate(originalSprites);
             atlas.Sprites[0].Borders = RectF.Unit01.Inset(0.3f);
             atlas.Sprites[1].Borders = RectF.Unit01.Inset(0.3f);
             atlas.Sprites[2].Borders = RectF.Unit01.Inset(0.3f);
@@ -148,18 +221,9 @@ namespace Weesals.Engine {
             atlas.Sprites[11].Borders = RectF.Unit01.Inset(0.2f);
             atlas.Sprites[10].Scale = 0.5f;
             atlas.Sprites[11].Scale = 0.5f;
-            loadedSprites.Add("ButtonBG", atlas.Sprites[0]);
-            loadedSprites.Add("ButtonFrame", atlas.Sprites[1]);
-            loadedSprites.Add("TextBox", atlas.Sprites[2]);
-            loadedSprites.Add("FileIcon", atlas.Sprites[3]);
-            loadedSprites.Add("FolderIcon", atlas.Sprites[4]);
-            loadedSprites.Add("FileShader", atlas.Sprites[5]);
-            loadedSprites.Add("FileText", atlas.Sprites[6]);
-            loadedSprites.Add("FileModel", atlas.Sprites[7]);
-            loadedSprites.Add("FileImage", atlas.Sprites[8]);
-            loadedSprites.Add("Tick", atlas.Sprites[9]);
-            loadedSprites.Add("HeaderBG", atlas.Sprites[10]);
-            loadedSprites.Add("PanelBG", atlas.Sprites[11]);
+            for (int i = 0; i < atlas.Sprites.Length; i++) {
+                loadedSprites.Add(spritePaths[i].Key, atlas.Sprites[i]);
+            }
         }
 
         public static Shader LoadShader(string path, string entry) {
@@ -212,29 +276,52 @@ namespace Weesals.Engine {
 
         public static CSTexture LoadTexture(string path, BufferFormat format = BufferFormat.FORMAT_BC1_UNORM) {
             var pathHash = ResourceKey.GeneratePathHash(path);
-            if (loadedTextures.TryGetValue(pathHash, out var texture)) return texture;
-            lock (loadedTextures) {
-                if (loadedTextures.TryGetValue(pathHash, out texture)) return texture;
+            var item = loadedTextures.RequireItem(pathHash);
+            if (item.Loaded) return item.Resource;
+            lock (item) {
+                if (item.Loaded) return item.Resource;
                 var key = ResourceKey.CreateFileKey(path, "tex");
-                texture = textureImporter.LoadAsset(key, format);
+                item.SetResource(textureImporter.LoadAsset(key, format));
+                RegisterLoadedAsset(key, textureImporter, 0);
+                return item.Resource;
+            }
+        }
+        /*public static JobResult<CSTexture> LoadTextureAsync(string path, BufferFormat format = BufferFormat.FORMAT_BC1_UNORM) {
+            var pathHash = ResourceKey.GeneratePathHash(path);
+            if (loadedTextures.TryGetValue(pathHash, out var texture)) return texture.Resource;
+            lock (loadedTextures) {
+                if (loadedTextures.TryGetValue(pathHash, out texture)) return texture.Resource;
+                texture = new();
+                var key = ResourceKey.CreateFileKey(path, "tex");
+                texture.LoadHandle = JobHandle.Schedule(() => {
+                    texture.Resource = textureImporter.LoadAsset(key, format);
+                    texture.LoadHandle = default;
+                });
                 loadedTextures.Add(pathHash, texture);
                 RegisterLoadedAsset(key, textureImporter, 0);
             }
-            return texture;
-        }
+            return new JobResult<CSTexture>(texture.LoadHandle, texture.Resource);
+        }*/
 
         public static CSTexture TryLoadTexture(string name) {
             var nameHash = ResourceKey.GeneratePathHash(name);
-            if (loadedTextures.TryGetValue(nameHash, out var texture)) return texture;
+            var item = loadedTextures.RequireItem(nameHash);
+            if (item.Loaded) return item.Resource;
             var key = ResourceKey.CreateResourceKey(name);
-            using var entry = ResourceCacheManager.TryLoad(key);
-            if (!entry.IsValid) return default;
-            texture = CSTexture.Create(name);
-            using (var reader = new BinaryReader(entry.FileStream)) {
-                TextureImporter.Serialize(reader, texture);
+            lock (item) {
+                if (item.Loaded) return item.Resource;
+                using var entry = ResourceCacheManager.TryLoad(key);
+                if (!entry.IsValid) {
+                    item.SetResource(default);
+                    return default;
+                }
+                var texture = CSTexture.Create(name);
+                using (var reader = new BinaryReader(entry.FileStream)) {
+                    TextureImporter.Serialize(reader, texture);
+                }
+                item.SetResource(texture);
+                return item.Resource;
             }
-            loadedTextures.Add(nameHash, texture);
-            return texture;
         }
         public static bool TryPutTexture(string name, CSTexture texture) {
             if (!texture.IsValid) return false;
@@ -245,7 +332,8 @@ namespace Weesals.Engine {
             using (var writer = new BinaryWriter(entry.FileStream)) {
                 TextureImporter.Serialize(writer, texture);
             }
-            loadedTextures.Add(nameHash, texture);
+            var item = loadedTextures.RequireItem(nameHash);
+            item.SetResource(texture);
             RegisterLoadedAsset(key, textureImporter, 0);
             return true;
         }
@@ -287,7 +375,9 @@ namespace Weesals.Engine {
             ulong hash = shader.Path.ComputeStringHash();
             hash += renderPass.IsValid ? (ulong)renderPass.GetStableHash() : shader.Entry.ComputeStringHash();
             foreach (var macro in macros) {
-                var macroHash = (((ulong)macro.Key.GetStableHash() * 1254739) ^ ((ulong)macro.Value.GetStableHash() * 37139213));
+                var macroHash = (((ulong)macro.Key.GetStableHash() * 1128889) ^ ((ulong)macro.Value.GetStableHash()));
+                macroHash ^= macroHash >> 13;
+                macroHash *= 29499439;
                 macroHash ^= macroHash >> 13;
                 hash += macroHash;
             }
@@ -315,10 +405,12 @@ namespace Weesals.Engine {
 
 
         private static void RegisterLoadedAsset(ResourceKey key, IAssetImporter importer, ulong hash) {
-            Trace.Assert(loadedResources.TryAdd(key, new LoadedResource() {
-                Importer = importer,
-                ResourceId = hash,
-            }), "Failed to add resource, might be hash collision");
+            lock (loadedResources) {
+                Trace.Assert(loadedResources.TryAdd(key, new LoadedResource() {
+                    Importer = importer,
+                    ResourceId = hash,
+                }), "Failed to add resource, might be hash collision");
+            }
         }
         public static void ReloadAssets() {
             var invalidated = new PooledList<ResourceKey>();

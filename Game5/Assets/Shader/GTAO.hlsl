@@ -1,3 +1,5 @@
+#define USEHIZ 1
+
 #include <common.hlsl>
 #include <noise.hlsl>
 #include <lighting.hlsl>
@@ -15,8 +17,9 @@ float2 ZBufferParams;
 
 SamplerState PointSampler : register(s0);
 SamplerState BilinearClampedSampler : register(s6);
-Texture2D<float4> SceneDepth : register(t0);
+Texture2D<float> SceneDepth : register(t0);
 Texture2D<float4> SceneAttri : register(t1);
+Texture2D<float2> HighZ : register(t2);
 
 struct VSInput {
     float4 position : POSITION;
@@ -42,15 +45,19 @@ PSInput VSMain(VSInput input) {
 float DepthToLinear(float d) {
     return 1.0 / (ZBufferParams.x * d + ZBufferParams.y);
 }
-float GetDeviceDepth(float2 uv) {
-    return SceneDepth.Sample(BilinearClampedSampler, uv).r;
+float GetDeviceDepth(float2 uv, int range = 0) {
+#if USEHIZ
+    if (range > 0) {
+        float2 depths = HighZ.SampleLevel(BilinearClampedSampler, uv, min(range - 1, 2)).xy;
+        return lerp(depths.x, 1 - depths.y, 1.0);
+    }
+#endif
+    return SceneDepth.Sample(BilinearClampedSampler, uv);
 }
-float3 GetPosition(float2 uv, float deviceDepth) {
+float3 GetPosition(float2 uv, int range = 0) {
+    float deviceDepth = GetDeviceDepth(uv, range);
     return float3((uv * ViewToProj.xy + ViewToProj.zw), 1.0)
         * DepthToLinear(deviceDepth);
-}
-float3 GetPosition(float2 uv) {
-    return GetPosition(uv, SceneDepth.Sample(BilinearClampedSampler, uv).r);
 }
 inline half3 GetNormal(float2 uv) {
 	//return normalize(cross(ddy(pos), ddx(pos)));
@@ -67,11 +74,11 @@ float2 FastACos(float2 c) {
 }
 
 half4 PSMain(PSInput input) : SV_Target {    
-    const int NumArc = 2, NumRad = 3,
+    const int NumArc = 2, NumRad = 4,
         NumRadMin = NumRad - 1;
     const float Radius = 2.5;
     
-    float3 viewPos = GetPosition(input.uv);
+    float3 viewPos = GetPosition(input.uv, 0);
     half3 viewNrm = GetNormal(input.uv);
     half3 viewDir = -normalize(viewPos);
     viewNrm.x *= -1; // Dont know why this is here.
@@ -95,8 +102,8 @@ half4 PSMain(PSInput input) : SV_Target {
         [unroll]
         for (int j = min(NumRad - 1 - i, NumRadMin); j >= 0; --j) {
             half2 radOff = arcStep * (j + radBias);
-            float3 posL = GetPosition(input.uv - radOff) - viewPos;
-            float3 posR = GetPosition(input.uv + radOff) - viewPos;
+            float3 posL = GetPosition(input.uv - radOff, j + 1) - viewPos;
+            float3 posR = GetPosition(input.uv + radOff, j + 1) - viewPos;
             
             half2 dst2LR = half2(dot(posL, posL), dot(posR, posR));
             half2 sliceLR = half2(dot(posL, viewDir), dot(posR, viewDir)) * rsqrt(dst2LR);
@@ -143,6 +150,7 @@ half4 PSMain(PSInput input) : SV_Target {
     float4 r = float4(OctahedralEncode(BentNormal) * 0.5 + 0.5, 0, Occlusion);
     r.rgb = 0.0;
     //r.a = 1.0;
+    //r.a = frac(GetDeviceDepth(input.uv, 5) * 300.0);
     return r;
     //return float4(BentNormal * 0.5 + 0.5, Occlusion);
 }

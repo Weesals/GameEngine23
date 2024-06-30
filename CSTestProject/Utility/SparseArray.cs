@@ -132,7 +132,7 @@ namespace Weesals.Utility {
             }
             return count;
         }
-        public RangeInt Take(int pointCount) {
+        public int Take(int pointCount) {
             for (int i = 0; i < ranges.Count; i++) {
                 var block = ranges[i];
                 if (block.Length >= pointCount) {
@@ -140,10 +140,10 @@ namespace Weesals.Utility {
                     block.Start += pointCount;
                     if (block.Length <= 0) ranges.RemoveAt(i);
                     else ranges[i] = block;
-                    return new RangeInt(block.Start - pointCount, pointCount);
+                    return block.Start - pointCount;
                 }
             }
-            return new RangeInt(-1, -1);
+            return -1;
         }
         public bool TryTakeAt(int from, int count) {
             int min = 0, max = ranges.Count - 1;
@@ -290,9 +290,9 @@ namespace Weesals.Utility {
         public RangeInt Allocate(int itemCount) {
             if (itemCount == 0) return default;
             while (true) {
-                var range = Unused.Take(itemCount);
-                if (range.Start >= 0) return range;
-                int start = Items.Length;
+                var start = Unused.Take(itemCount);
+                if (start >= 0) return new RangeInt(start, itemCount);
+                start = Items.Length;
                 RequireCapacity(start + itemCount);
                 //return new RangeInt(start, itemCount);
             }

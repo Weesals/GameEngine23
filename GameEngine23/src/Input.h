@@ -141,21 +141,16 @@ public:
 	// class to keep the API clean
 	// NOTE: Pointers can currently be mutated directly
 	// TODO: Pointer mutation only via InputMutator
-	struct InputMutator
-	{
+	struct InputMutator {
 		Input* mInput;
 		// Process a key event (press or release)
-		void ReceiveKeyEvent(int keyId, bool down)
-		{
+		void ReceiveKeyEvent(int keyId, bool down) {
 			KeyState key((unsigned char)keyId);
-			if (down)
-			{
+			if (down) {
 				if (mInput->IsKeyDown(keyId)) return;
 				mInput->mPressKeys.push_back(key);
 				mInput->mDownKeys.push_back(key);
-			}
-			else
-			{
+			} else {
 				// Key is no longer 'down'
 				RemoveKey(mInput->mDownKeys, keyId);
 				mInput->mReleaseKeys.push_back(key);
@@ -167,20 +162,17 @@ public:
 			mInput->mCharBuffer.push_back(chr);
 		}
 		// Notify of frame end; clear per-frame buffers
-		void ReceiveTickEvent()
-		{
+		void ReceiveTickEvent() {
 			mInput->mPressKeys.clear();
 			mInput->mReleaseKeys.clear();
 			mInput->mCharBuffer.clear();
-			for (auto pointer : mInput->mPointers)
-			{
+			for (auto pointer : mInput->mPointers) {
 				pointer->ReceiveTickEvent();
 			}
 		}
 
 		// Remove a key from a list
-		static void RemoveKey(std::vector<KeyState>& keys, int keyId)
-		{
+		static void RemoveKey(std::vector<KeyState>& keys, int keyId) {
 			std::erase_if(keys, [=](auto& key) {
 				return key.KeyId == keyId;
 			});
@@ -189,8 +181,7 @@ public:
 
 	// All input mutations should occur through this
 	// (but currently dont)
-	InputMutator GetMutator()
-	{
+	InputMutator GetMutator() {
 		return InputMutator(this);
 	}
 

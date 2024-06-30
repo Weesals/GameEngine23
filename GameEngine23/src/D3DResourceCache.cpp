@@ -50,7 +50,7 @@ D3DResourceCache::D3DBinding& RequireBinding(const BufferLayout& binding, std::m
     auto d3dBinIt = bindingMap.find(binding.mIdentifier);
     if (d3dBinIt == bindingMap.end()) {
         d3dBinIt = bindingMap.emplace(std::make_pair(binding.mIdentifier, std::make_unique<D3DResourceCache::D3DBinding>())).first;
-        d3dBinIt->second->mRevision = -16;
+        d3dBinIt->second->mRevision = -1;
         d3dBinIt->second->mUsage = binding.mUsage;
         d3dBinIt->second->mSRVOffset = -1;
     }
@@ -255,8 +255,8 @@ D3DResourceCache::D3DBinding& D3DResourceCache::RequireBinding(const BufferLayou
 }
 void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& binding, std::span<const RangeInt> ranges) {
     auto& d3dBin = RequireBinding(binding);
-    bool fullRefresh = true;
-    if (RequireBuffer(binding, d3dBin, lockBits)) {
+    bool fullRefresh = false;
+    if (RequireBuffer(binding, d3dBin, lockBits) && binding.mRevision != -1) {
         fullRefresh = true;
     }
     // Special case - update full buffer if revision mismatch
@@ -267,6 +267,10 @@ void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int 
     if (fullRefresh) {
         ProcessBindings(binding, d3dBin,
             [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
+                // Special case - if mData is null dont copy
+                // TODO: Support multiple null elements?
+                if (binding.mElementCount == 1 && binding.mElements->mData == nullptr)
+                    return;
                 CopyBufferData(cmdList, lockBits, binding, d3dBin, itemSize, 0, binding.mSize);
             },
             [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {},

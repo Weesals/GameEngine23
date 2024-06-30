@@ -341,7 +341,7 @@ namespace Weesals.Engine {
         public void DrawVolume() {
             activeArea.DrawGizmos();
         }
-        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 6.0f) {
+        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 5.0f) {
             var shadowPassViewProj = this.View * this.Projection;
             Matrix4x4.Invert(this.View, out var shadowPassInvView);
             Matrix4x4.Invert(view, out var basePassInvView);
@@ -371,7 +371,7 @@ namespace Weesals.Engine {
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
             graphics.SetViewport(context.Viewport);
-            graphics.Clear(new(Vector4.Zero, 1f) {
+            graphics.Clear(new(CSClearConfig.GetInvalidColor(), 1f) {
                 ClearStencil = 0x0
             });
         }
@@ -451,7 +451,12 @@ namespace Weesals.Engine {
             deferredMaterial.SetValue("Projection", proj);
             DrawQuad(graphics, default, deferredMaterial);
         }
-
+        public void SetAOEnabled(bool enable) {
+            deferredMaterial.SetMacro("ENABLEAO", enable ? "1" : null!);
+        }
+        public void SetFogEnabled(bool enable) {
+            deferredMaterial.SetMacro("ENABLEFOG", enable ? "1" : null!);
+        }
         public void UpdateShadowParameters(ShadowPass shadowPass) {
             shadowPass.ApplyParameters(ScenePasses.View, deferredMaterial);
         }
@@ -487,9 +492,8 @@ namespace Weesals.Engine {
         public static CSIdentifier VolumetricPassName = "Volumetric";
         public ScenePassManager ScenePasses;
         public ParticleSystemManager ParticleSystem;
-        public VolumetricGatherPass(ScenePassManager scene, ParticleSystemManager particleSystem) : base("VolumetricGather") {
+        public VolumetricGatherPass(ScenePassManager scene) : base("VolumetricGather") {
             ScenePasses = scene;
-            ParticleSystem = particleSystem;
             Inputs = new[] {
                 new PassInput("SceneDepth", false),
                 new PassInput("ShadowMap"),
@@ -501,6 +505,9 @@ namespace Weesals.Engine {
             };
             OverrideMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
             OverrideMaterial.SetDepthMode(DepthMode.MakeOff());
+        }
+        public void SetParticleSystem(ParticleSystemManager particleSystem) {
+            ParticleSystem = particleSystem;
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
@@ -561,6 +568,7 @@ namespace Weesals.Engine {
             Inputs = new[] {
                 new PassInput("SceneDepth", true),
                 new PassInput("SceneAttri", true),
+                new PassInput("HighZ", true),
             };
             Outputs = new[] {
                 new PassOutput("SceneDepth", 0),
@@ -618,7 +626,7 @@ namespace Weesals.Engine {
                 if (targets[targetId].IsValid) targets[targetId].Dispose();
                 targets[targetId] = CSRenderTarget.Create("Temporal " + targetId);
                 targets[targetId].SetSize(context.Viewport.Size);
-                targets[targetId].SetFormat(BufferFormat.FORMAT_R10G10B10A2_UNORM);
+                targets[targetId].SetFormat(BufferFormat.FORMAT_R16G16B16A16_FLOAT);
             }
             context.OverwriteOutput(context.Outputs[0], targets[targetId]);
             ScenePasses.SetupRender(context.Viewport.Size, TemporalOffset, frame % 12);
@@ -633,7 +641,10 @@ namespace Weesals.Engine {
             //temporalMaterial.SetValue("PreviousVP", previousViewProj);
             //temporalMaterial.SetValue("CurrentVP", invVP);
             temporalMaterial.SetValue("CurToPrevVP", invVP * previousViewProj);
+            Matrix4x4.Invert(invVP * previousViewProj, out var invCTP);
+            temporalMaterial.SetValue("PrevToCurVP", invCTP);
             temporalMaterial.SetValue("TemporalJitter", TemporalOffset * 0.5f);
+            temporalMaterial.SetValue("TemporalFrame", (float)frame);
             OnRender?.Invoke(graphics, ref context);
             var sceneColor = GetPassMaterial().GetUniformRenderTarget("SceneColor");
             var prevTargetId = (frame - 1) % 2;
@@ -655,7 +666,7 @@ namespace Weesals.Engine {
                 new PassInput("SceneDepth"),
             };
             Outputs = new[] {
-                new PassOutput("HighZ").SetTargetDesc(new TextureDesc() { Size = -2, Format = BufferFormat.FORMAT_R8G8_UNORM, MipCount = 0, }),
+                new PassOutput("HighZ").SetTargetDesc(new TextureDesc() { Size = -2, Format = BufferFormat.FORMAT_R16G16_UNORM, MipCount = 0, }),
             };
             firstPassMaterial = new Material("./Assets/highz.hlsl", GetPassMaterial());
             firstPassMaterial.SetPixelShader(Resources.LoadShader("./Assets/highz.hlsl", "FirstPassPS"));
@@ -681,10 +692,13 @@ namespace Weesals.Engine {
                 bool isOdd = ((size.X | size.Y) & 0x01) != 0;
                 var mipSize = Int2.Max(size >> m, Int2.One);
                 graphics.SetRenderTargets(new CSRenderTargetBinding(highZ.Texture.mRenderTarget, m, 0), default(CSRenderTargetBinding));
-                var material = m == 1 ? firstPassMaterial : highZMaterial;
+                var material = m == 0 ? firstPassMaterial : highZMaterial;
                 graphics.SetViewport(new RectI(Int2.Zero, mipSize));
                 //material.SetMacro("ODD", isOdd ? "1" : "0");
-                DrawQuad(graphics, m == 1 ? sceneDepth : highZ.Texture, material);
+                DrawQuad(graphics, m == 0 ? sceneDepth : new CSBufferReference(highZ.Texture) {
+                    mSubresourceId = (short)(m - 1),
+                    mSubresourceCount = 1,
+                }, material);
             }
         }
     }
@@ -744,7 +758,8 @@ namespace Weesals.Engine {
                     mSubresourceCount = 1,
                 }, downsampleMat);
             }
-            for (int m = bloomChain.Texture.GetMipCount() - 2; m >= 0; --m) {
+            // The final sample is handled by postprocessing.hlsl
+            for (int m = bloomChain.Texture.GetMipCount() - 2; m >= 1; --m) {
                 var mipSize = Int2.Max(size >> m, Int2.One);
                 graphics.SetRenderTargets(new CSRenderTargetBinding(bloomChain.Texture.mRenderTarget, m, 0), default);
                 graphics.SetViewport(new RectI(Int2.Zero, mipSize));
@@ -766,14 +781,11 @@ namespace Weesals.Engine {
             Outputs = new[] {
                 new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }),
             };
-            postMaterial = new Material("./Assets/postprocess.hlsl");
+            postMaterial = new Material("./Assets/postprocess.hlsl", OverrideMaterial);
             postMaterial.SetBlendMode(BlendMode.MakePremultiplied());
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
-            //DrawQuad(graphics, GetPassMaterial().GetUniformRenderTarget("SceneColor"));
-            postMaterial.SetTexture("SceneColor", GetPassMaterial().GetUniformRenderTarget("SceneColor"));
-            postMaterial.SetTexture("BloomChain", GetPassMaterial().GetUniformRenderTarget("BloomChain"));
             DrawQuad(graphics, default, postMaterial);
         }
     }

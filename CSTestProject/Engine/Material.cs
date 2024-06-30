@@ -48,11 +48,11 @@ namespace Weesals.Engine {
             MemoryMarshal.AsBytes(data).CopyTo(outBytes);
             return outBytes;
         }
-        public void ClearValue(CSIdentifier identifier) {
+        public bool ClearValue(CSIdentifier identifier) {
             var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
-            if (index >= 0) {
-                ArrayExt.RemoveAt(ref Items, ref itemCount, index);
-            }
+            if (index < 0) return false;
+            ArrayExt.RemoveAt(ref Items, ref itemCount, index);
+            return true;
         }
         public int GetItemIndex(CSIdentifier identifier) {
             var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
@@ -312,11 +312,14 @@ namespace Weesals.Engine {
 
         // Configure shader feature set
         public void SetMacro(CSIdentifier name, CSIdentifier v) {
-            Macros.SetValue(name, new ReadOnlySpan<CSIdentifier>(ref v));
+            // TODO: Should memcmp value and avoid MarkChanged?
+            if (v.IsValid) Macros.SetValue(name, new ReadOnlySpan<CSIdentifier>(ref v));
+            else if (!Macros.ClearValue(name)) return;
             MarkChanged();
         }
         public void ClearMacro(CSIdentifier name) {
-            Macros.ClearValue(name);
+            if (!Macros.ClearValue(name)) return;
+            MarkChanged();
         }
 
         public Span<byte> SetArrayValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
@@ -407,20 +410,6 @@ namespace Weesals.Engine {
             var data = GetUniformBinaryData(name, materialStack);
             if (data.Length < sizeof(CSBufferReference)) return default;
             return MemoryMarshal.Read<CSBufferReference>(data);
-        }
-
-        unsafe public void CopyFrom(CSMaterial otherMat) {
-            if (!otherMat.IsValid) return;
-            var identifiers = stackalloc CSIdentifier[16];
-            int identCount = CSMaterial.GetParameterIdentifiers(otherMat.GetNativeMaterial(), identifiers, 16);
-            for (int i = 0; i < identCount; ++i) {
-                var dataPtr = CSMaterial.GetValueData(otherMat.GetNativeMaterial(), identifiers[i]);
-                var type = CSMaterial.GetValueType(otherMat.GetNativeMaterial(), identifiers[i]);
-                var data = new MemoryBlock<byte>((byte*)dataPtr.mData, dataPtr.mSize);
-                if (type == 0) SetArrayValue(identifiers[i], data.Reinterpret<float>().AsSpan());
-                else if (type == 1) SetArrayValue(identifiers[i], data.Reinterpret<int>().AsSpan());
-                else SetValue(identifiers[i], *((nint*)data.Data));
-            }
         }
 
         public override string ToString() {

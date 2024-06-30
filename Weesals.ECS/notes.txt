@@ -1,0 +1,37 @@
+
+
+class Archetype {
+	BitField Components;
+	int[] ColumnIndices;
+	int[] ColumnOffsets;
+	int[] ColumnCapacity;
+	SparseIndices Unallocated;
+}
+
+class Column {
+	T[] Rows;
+	SparseIndices Unallocated;
+}
+
+struct EntityAddress {
+	int ArchetypeId;
+	int ArchetypeRow;
+}
+
+class Stage {
+	EntityAddress[] Entities;
+	Column[] Columns;
+	Archetype[] Archetypes;
+
+	T GetComponent<T>(Entity entity) {
+		var typeId = GetTypeId<T>();
+
+		var address = Entities[entity];
+		var archetype = Archetypes[address.ArchetypeId];
+		var columnI = archetype.Components.GetIndex(typeId);
+		var rowOffset = archetype.ColumnOffsets[columnI];
+		var value = Columns[typeId]
+			.Rows[rowOffset + address.ArchetypeRow];
+		return value;
+	}
+}

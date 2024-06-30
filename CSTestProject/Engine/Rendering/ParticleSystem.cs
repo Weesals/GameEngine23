@@ -95,7 +95,7 @@ namespace Weesals.Engine {
                     "Turbulence",
                     "",
                     "{" +
-                    " SimplexSample3D noise = SimplexNoise3D(Position + float3(0, LocalTime, 0));" +
+                    " SimplexSample3D noise = CreateSimplex3D(Position + float3(0, LocalTime, 0));" +
                     " Velocity += (noise.Sample3() * 2.0 - 1.0) * (Speed * DeltaTime);" +
                     "}",
                     new Module.Argument[] { new("Velocity", "float3"), new("Position", "float3"), new("Speed", "float"), new("DeltaTime", "float"), },
@@ -403,7 +403,7 @@ namespace Weesals.Engine {
             emissionMesh = new("ParticleSpawns");
             emissionMesh.RequireVertexPositions(BufferFormat.FORMAT_R32G32_FLOAT);
             emissionMesh.RequireVertexTexCoords(0);
-            emissionMesh.RequireVertexColors(BufferFormat.FORMAT_R8G8B8A8_UNORM);
+            emissionMesh.RequireVertexColors(BufferFormat.FORMAT_R32G32_FLOAT);
             emissionMesh.SetIndexFormat(false);
             updateMesh = new("ParticleSteps");
             updateMesh.RequireVertexPositions(BufferFormat.FORMAT_R32G32_FLOAT);
@@ -770,15 +770,18 @@ namespace Weesals.Engine {
         public RangeInt UpdateEmission(CSGraphics graphics, DynamicMesh mesh, float dt) {
             if (emitters.Count == 0) return default;
 
-            Debug.Assert(emitters.Count < 255, "Too many emitters!");
-            emitterData.SetCount(emitters.Count);
+            //Debug.Assert(emitters.Count < 255, "Too many emitters!");
+            int emitterCount = emitters.Count;// Math.Min(emitters.Count, 255);
+            if (emitterCount > emitterData.BufferCapacityCount)
+                emitterData.AllocResize(emitterCount);
+            emitterData.SetCount(emitterCount);
             var emitterPositions = new TypedBufferView<Vector3>(emitterData.Elements[0], emitterData.Count);
-            for (int i = 0; i < emitters.Count; i++) {
+            for (int i = 0; i < emitterCount; i++) {
                 var emitter = emitters[i];
                 emitterPositions[i] = emitter.Position;
             }
             emitterData.NotifyChanged();
-            graphics.CopyBufferData(emitterData, new RangeInt(0, emitterData.BufferStride * emitters.Count));
+            graphics.CopyBufferData(emitterData, new RangeInt(0, emitterData.BufferStride * emitterCount));
 
             var rangeBegin = mesh.IndexCount;
             for (int i = 0; i < emitters.Count; i++) {
@@ -796,7 +799,7 @@ namespace Weesals.Engine {
 
                     int toConsume = Math.Min(allocated.RemainCount, count);
                     var verts = AppendBlockQuad(mesh, allocated.BlockPnt, allocated.ConsumeCount, toConsume);
-                    verts.GetColors().Set(new Color((byte)i, (byte)Math.Clamp(dt * 255, 0, 255), 0, 0));
+                    verts.Mesh.GetColorsV<Vector2>().Slice(verts.Range).Set(new Vector2(i, dt));
                     allocated.RemainCount -= toConsume;
                     allocated.Alloc.ExpireTimeMS = Manager.TimeMS + (int)(MaximumDuration * 1000);
                     count -= toConsume;

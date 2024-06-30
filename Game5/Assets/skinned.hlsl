@@ -25,7 +25,7 @@ struct PSInput {
     float3 normalVS : NORMAL;
     float3 viewPos : TEXCOORD1;
     float2 uv : TEXCOORD0;
-    float2 velocity : VELOCITY;
+    float3 velocity : VELOCITY;
 };
 struct PSOutput {
     float4 color : SV_Target0;
@@ -46,19 +46,20 @@ PSInput VSMain(VSInput input) {
     InstanceData instance = instanceData[input.primitiveId];
     result.primitiveId = input.primitiveId;
 
-    float3 worldPos = input.positionOS.xyz;
-    float3 worldNrm = input.normalOS.xyz;
-    worldPos = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldPos, 1.0)).xyz;
-    worldNrm = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldNrm, 0.0)).xyz;
-    worldPos = mul(instance.Model, float4(worldPos, 1.0)).xyz;
-    worldNrm = mul(instance.Model, float4(worldNrm, 0.0)).xyz;
+    float3 localPos = input.positionOS.xyz;
+    float3 localNrm = input.normalOS.xyz;
+    localPos = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(localPos, 1.0)).xyz;
+    localNrm = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(localNrm, 0.0)).xyz;
+    float3 worldPos = mul(instance.Model, float4(localPos, 1.0)).xyz;
+    float3 worldNrm = mul(instance.Model, float4(localNrm, 0.0)).xyz;
     result.positionCS = mul(ViewProjection, float4(worldPos, 1.0));
     result.viewPos = mul(View, float4(worldPos, 1.0));
     result.normalVS = mul((float3x3)View, worldNrm);
     result.uv = input.uv;
 
-    float4 prevPositionCS = mul(PreviousViewProjection, float4(worldPos, 1.0));
-    result.velocity = result.positionCS.xy / result.positionCS.w - prevPositionCS.xy / prevPositionCS.w;
+    float3 prevPos = mul(instance.PreviousModel, float4(localPos, 1.0)).xyz;
+    float4 prevPositionCS = mul(PreviousViewProjection, float4(prevPos, 1));
+    result.velocity = result.positionCS.xyz / result.positionCS.w - prevPositionCS.xyz / prevPositionCS.w;
     // Add a slight amount to avoid velocity being 0 (special case)
     result.velocity.x += 0.0000001;
 

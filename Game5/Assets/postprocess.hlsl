@@ -1,4 +1,5 @@
 #include <common.hlsl>
+#include <blur.hlsl>
 
 SamplerState BilinearSampler : register(s1);
 SamplerState BilinearClampedSampler : register(s6);
@@ -64,15 +65,13 @@ float3 Tonemap_Uchimura(float3 x) {
 }
 float4 PSMain(PSInput input) : SV_TARGET {
     float4 sceneColor = SceneColor.SampleLevel(BilinearSampler, input.uv, 0);
-    float4 blur = 0.0;
-    for (int i = 0; i < 3; ++i) {
-        //blur *= 1.2;
-        blur += float4(BloomChain.SampleBias(BilinearClampedSampler, input.uv, i * 2.0 + 0.5).rgb, 1.0);
-    }
-    blur = float4(BloomChain.SampleBias(BilinearClampedSampler, input.uv, 0.0).rgb, 1.0);
-    //blur /= blur.a;
-    blur /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
+    //return float4(sceneColor.rgb / LuminanceFactor, 1);
     
+    float4 blur = 0.0;
+    //blur = float4(BloomChain.SampleLevel(BilinearClampedSampler, input.uv, 0.0).rgb, 1.0);
+    blur = GaussianSampleLevel<2>(BloomChain, BilinearClampedSampler, input.uv, 1.0 / Resolution, 1.0, 1.0);
+    //blur /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
+        
     sceneColor *= 1.0 / LuminanceFactor;
     //blur *= 1.0 / LuminanceFactor;
     

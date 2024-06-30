@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "Buffer.h"
 #include "BridgeTypes.h"
+#include <functional>
 //#include "TextureCompression.h"
 
 class Mesh;
@@ -176,66 +177,6 @@ private:
 	static const CSGlyph& GetGlyph(const NativeFont* font, int id);
 };
 static_assert(sizeof(BufferReference) == 16);
-class DLLCLASS CSMaterial {
-	NativeMaterial* mMaterial;
-public:
-	CSMaterial(NativeMaterial* material) : mMaterial(material) { }
-	static int GetParameterIdentifiers(NativeMaterial* material, CSIdentifier* outlist, int capacity);
-	static void SetRenderPass(NativeMaterial* material, CSIdentifier identifier);
-	static CSSpan GetValueData(NativeMaterial* material, CSIdentifier identifier);
-	static int GetValueType(NativeMaterial* material, CSIdentifier identifier);
-	static void SetValueFloat(NativeMaterial* material, CSIdentifier identifier, const float* data, int count);
-	static void SetValueInt(NativeMaterial* material, CSIdentifier identifier, const int* data, int count);
-	static void SetValueTexture(NativeMaterial* material, CSIdentifier identifier, CSTexture texture);
-	static void SetBlendMode(NativeMaterial* material, void* data);
-	static void SetRasterMode(NativeMaterial* material, void* data);
-	static void SetDepthMode(NativeMaterial* material, void* data);
-	static void InheritProperties(NativeMaterial* material, NativeMaterial* other);
-	static void RemoveInheritance(NativeMaterial* material, NativeMaterial* other);
-	static NativeMaterial* _Create(CSString shaderPath);
-	static void Dispose(NativeMaterial* material);
-	NativeMaterial* GetNativeMaterial() { return mMaterial; }
-};
-struct CSMeshData {
-	int mVertexCount;
-	int mIndexCount;
-	CSString8 mName;
-	CSBufferElement mPositions;
-	CSBufferElement mNormals;
-	CSBufferElement mTexCoords;
-	CSBufferElement mColors;
-	CSBufferElement mIndices;
-};
-class DLLCLASS CSMesh {
-	NativeMesh* mMesh;
-public:
-	CSMesh(NativeMesh* mesh)
-		: mMesh(mesh) { }
-	static int GetVertexCount(const NativeMesh* mesh);
-	static int GetIndexCount(const NativeMesh* mesh);
-	static void SetVertexCount(NativeMesh* mesh, int count);
-	static void SetIndexCount(NativeMesh* mesh, int count);
-	static const CSBufferLayout* GetVertexBuffer(NativeMesh* mesh);
-	static const CSBufferLayout* GetIndexBuffer(NativeMesh* mesh);
-	static void RequireVertexNormals(NativeMesh* mesh, uint8_t fmt);
-	static void RequireVertexTexCoords(NativeMesh* mesh, uint8_t fmt);
-	static void RequireVertexColors(NativeMesh* mesh, uint8_t fmt);
-	static void GetMeshData(const NativeMesh* mesh, CSMeshData* outdata);
-	static NativeMaterial* GetMaterial(NativeMesh* mesh);
-	static const BoundingBox& GetBoundingBox(NativeMesh* mesh);
-	NativeMesh* GetNativeMesh() const { return mMesh; }
-	static NativeMesh* _Create(CSString name);
-};
-class DLLCLASS CSModel {
-	NativeModel* mModel;
-public:
-	CSModel(NativeModel* mesh)
-		: mModel(mesh) { }
-	static int GetMeshCount(const NativeModel* model);
-	static CSSpanSPtr GetMeshes(const NativeModel* model);
-	static CSMesh GetMesh(const NativeModel* model, int id);
-	NativeModel* GetNativeModel() const { return mModel; }
-};
 
 class DLLCLASS CSInstance {
 	int mInstanceId;
@@ -362,6 +303,7 @@ public:
 	NativeGraphics* GetNativeGraphics() const { return mGraphics; }
 private:
 	static void Dispose(NativeGraphics* graphics);
+	static uint16_t GetDeviceName(const NativeGraphics* graphics);
 	static CSGraphicsCapabilities GetCapabilities(const NativeGraphics* graphics);
 	static CSRenderStatistics GetRenderStatistics(const NativeGraphics* graphics);
 	static NativeSurface* CreateSurface(NativeGraphics* graphics, NativeWindow* window);
@@ -402,6 +344,11 @@ private:
 	static void RegisterDenyPresent(NativeSurface* surface, int delta);
 	static void Present(NativeSurface* surface);
 };
+struct CSWindowFrame {
+	RectInt Position;
+	Int2 ClientOffset;
+	bool Maximized;
+};
 class DLLCLASS CSWindow {
 	NativeWindow* mWindow = nullptr;
 public:
@@ -414,6 +361,9 @@ private:
 	static Int2C GetSize(const NativeWindow* window);
 	static void SetSize(NativeWindow* window, Int2 size);
 	static void SetInput(NativeWindow* window, NativeInput* input);
+	static CSWindowFrame GetWindowFrame(const NativeWindow* window);
+	static void SetWindowFrame(const NativeWindow* window, const RectInt* frame, bool maximized);
+	static void RegisterMovedCallback(const NativeWindow* window, void (*Callback)(), bool enable);
 };
 
 struct CSPointer {

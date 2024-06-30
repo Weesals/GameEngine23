@@ -70,11 +70,8 @@ namespace Weesals.Engine {
         }
 
         protected void RequireVertexElementFormat(ref sbyte elementId, BufferFormat fmt, string semantic) {
-            if (elementId == -1) {
-                elementId = (sbyte)vertexBuffer.AppendElement(new CSBufferElement(semantic, fmt));
-                return;
-            }
-            vertexBuffer.SetElementFormat(elementId, fmt);
+            if (elementId != -1) vertexBuffer.SetElementFormat(elementId, fmt);
+            else elementId = (sbyte)vertexBuffer.AppendElement(new CSBufferElement(semantic, fmt));
         }
 
         public void RequireVertexPositions(BufferFormat fmt = BufferFormat.FORMAT_R32G32B32_FLOAT) {
@@ -98,20 +95,15 @@ namespace Weesals.Engine {
             indexBuffer.SetElementFormat(0, _32bit ? BufferFormat.FORMAT_R32_UINT : BufferFormat.FORMAT_R16_UINT);
         }
 
-        public void SetVertexCount(int count) {
-		    if (vertexBuffer.Count == count) return;
-            if (!isDynamic) vertexBuffer.AllocResize(count);
-            else if (count > vertexBuffer.BufferCapacityCount) vertexBuffer.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)count));
-            vertexBuffer.BufferLayout.mCount = count;
+        public void SetVertexCount(int count) => SetBufferCount(ref vertexBuffer, count);
+        public void SetIndexCount(int count) => SetBufferCount(ref indexBuffer, count);
+        private void SetBufferCount(ref BufferLayoutPersistent buffer, int count) {
+            if (buffer.Count == count) return;
+            if (!isDynamic) buffer.AllocResize(count);
+            else if (count > buffer.BufferCapacityCount) buffer.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)count));
+            buffer.BufferLayout.mCount = count;
             MarkChanged();
-	    }
-        public void SetIndexCount(int count) {
-		    if (indexBuffer.Count == count) return;
-            if (!isDynamic) indexBuffer.AllocResize(count);
-            else if (count > indexBuffer.BufferCapacityCount) indexBuffer.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)count));
-            indexBuffer.BufferLayout.mCount = count;
-            MarkChanged();
-	    }
+        }
 
         public void SetIndices(Span<uint> indices) {
 		    SetIndexCount(indices.Length);
@@ -122,34 +114,42 @@ namespace Weesals.Engine {
             GetIndicesV<ushort>().Set(indices);
         }
 
-        public TypedBufferView<Vector3> GetPositionsV() {
-            return new TypedBufferView<Vector3>(vertexBuffer.Elements[vertexPositionId], vertexBuffer.Count);
-        }
+        public TypedBufferView<Vector3> GetPositionsV()
+            => GetPositionsV<Vector3>();
         public TypedBufferView<T> GetPositionsV<T>() where T: unmanaged {
             return new TypedBufferView<T>(vertexBuffer.Elements[vertexPositionId], vertexBuffer.Count);
         }
-        public TypedBufferView<Vector3> GetNormalsV(bool require = false) {
+
+        public TypedBufferView<Vector3> GetNormalsV(bool require = false)
+            => GetNormalsV<Vector3>(require);
+        public TypedBufferView<T> GetNormalsV<T>(bool require = false) where T : unmanaged {
             if (vertexNormalId == -1) { if (require) RequireVertexNormals(); else return default; }
-            return new TypedBufferView<Vector3>(vertexBuffer.Elements[vertexNormalId], vertexBuffer.Count);
+            return new TypedBufferView<T>(vertexBuffer.Elements[vertexNormalId], vertexBuffer.Count);
         }
-        public TypedBufferView<Vector3> GetTangentsV(bool require = false) {
+
+        public TypedBufferView<Vector3> GetTangentsV(bool require = false)
+            => GetTangentsV<Vector3>(require);
+        public TypedBufferView<T> GetTangentsV<T>(bool require = false) where T : unmanaged {
             if (vertexTangentId == -1) { if (require) RequireVertexTangents(); else return default; }
-            return new TypedBufferView<Vector3>(vertexBuffer.Elements[vertexTangentId], vertexBuffer.Count);
+            return new TypedBufferView<T>(vertexBuffer.Elements[vertexTangentId], vertexBuffer.Count);
         }
-        public TypedBufferView<Vector2> GetTexCoordsV(int channel = 0, bool require = false) {
+
+        public TypedBufferView<Vector2> GetTexCoordsV(int channel = 0, bool require = false)
+            => GetTexCoordsV<Vector2>(channel, require);
+        public TypedBufferView<T> GetTexCoordsV<T>(int channel = 0, bool require = false) where T : unmanaged {
             if (vertexTexCoord0Id == -1) { if (require) RequireVertexTexCoords(channel); else return default; }
-            return new TypedBufferView<Vector2>(vertexBuffer.Elements[vertexTexCoord0Id], vertexBuffer.Count);
+            return new TypedBufferView<T>(vertexBuffer.Elements[vertexTexCoord0Id], vertexBuffer.Count);
         }
-        public TypedBufferView<Color> GetColorsV(bool require = false) {
-            if (vertexColorId == -1) { if (require) RequireVertexColors(); else return default; }
-            return new TypedBufferView<Color>(vertexBuffer.Elements[vertexColorId], vertexBuffer.Count);
-        }
+
+        public TypedBufferView<Color> GetColorsV(bool require = false)
+            => GetColorsV<Color>(require);
         public TypedBufferView<T> GetColorsV<T>(bool require = false) where T : unmanaged {
             if (vertexColorId == -1) { if (require) RequireVertexColors(); else return default; }
             return new TypedBufferView<T>(vertexBuffer.Elements[vertexColorId], vertexBuffer.Count);
         }
+
         public TypedBufferView<uint> GetIndicesV() {
-            return new TypedBufferView<uint>(indexBuffer.Elements[0], indexBuffer.Count);
+            return GetIndicesV<uint>();
         }
         public TypedBufferView<T> GetIndicesV<T>() where T : unmanaged {
             return new TypedBufferView<T>(indexBuffer.Elements[0], indexBuffer.Count);
@@ -161,21 +161,6 @@ namespace Weesals.Engine {
             revision++;
             indexBuffer.BufferLayout.revision++;
             vertexBuffer.BufferLayout.revision++;
-        }
-
-        unsafe public static Mesh CreateFrom(CSMesh other) {
-            var otherData = other.GetMeshData();
-            var mesh = new Mesh(otherData.mName.ToString());
-            ref var vbo = ref mesh.vertexBuffer;
-            ref var otherVbo = ref *other.GetVertexBuffer();
-            vbo.CopyFrom(otherVbo);
-            ref var ibo = ref mesh.indexBuffer;
-            ref var otherIbo = ref *other.GetIndexBuffer();
-            ibo.CopyFrom(otherIbo);
-            var otherMat = other.GetMaterial();
-            mesh.material.CopyFrom(otherMat);
-            mesh.boundingBox = other.GetBoundingBox();
-            return mesh;
         }
 
         public override string ToString() { return Name; }

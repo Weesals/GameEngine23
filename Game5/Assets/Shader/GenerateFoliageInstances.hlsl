@@ -71,11 +71,11 @@ void CSGenerateFoliage(uint3 gtid : SV_DispatchThreadID) {
             instancePos.xz += 0.5 - offset;
         
             float4 cpos = mul(ViewProjection, float4(instancePos, 1.0));
-            cpos.xy /= cpos.w;
-            if (any(cpos.xy < -1.05) || any(cpos.xy > 1.05)) continue;
+            const float FrustBorder = 1.0;
+            if (any(cpos.xy < -cpos.w - FrustBorder) || any(cpos.xy > cpos.w + FrustBorder)) continue;
         
             float weight = GetMask(IdMap, IdMap._22, offset) / 4.0;
-            if (weight <= 0.0f) continue;
+            if (weight <= 0.01f) continue;
             weight *= saturate(count - i) * scaleModifier;
                         
             Instances.Append(float4(instancePos, rnd + round(weight * 1024)));

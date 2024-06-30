@@ -65,9 +65,9 @@ PER_EXPORT void PER_CALL TracyPlotData(const char* name, int64_t value) {
     TracyPlot(name, value);
 }
 
-/*PER_EXPORT void PER_CALL TracyConfigurePlot(const char* name, tracy::PlotFormatType type) {
-    TracyPlotConfig(name, type);
-}*/
+PER_EXPORT void PER_CALL TracyConfigurePlot(const char* name, tracy::PlotFormatType type, bool step, bool fill, uint32_t color) {
+    TracyPlotConfig(name, type, step, fill, color);
+}
 
 PER_EXPORT void PER_CALL TracyMessageAppInfo(const char* text) {
     TracyAppInfo(text, strlen(text));
@@ -87,4 +87,13 @@ PER_EXPORT void PER_CALL TracyMemAlloc(void* ptr, size_t size) {
 
 PER_EXPORT void PER_CALL TracyMemFree(void* ptr) {
     TracyFree(ptr);
+}
+
+void* SimpleProfilerMarker(const char* name) {
+    auto location = TracyCreateLocation(name, name, name, 0, 0xffffff);
+    return TracyCreateZone(location);
+}
+
+void SimpleProfilerMarkerEnd(void* zone) {
+    TracyDeleteZone((tracy::ScopedZone*)zone);
 }

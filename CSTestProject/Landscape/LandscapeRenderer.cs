@@ -112,11 +112,13 @@ namespace Weesals.Landscape {
 
         int materialPropHash;
         int mRevision;
+        JobHandle loadHandle;
 
         private bool enableStochastic = true;
         private bool highQualityBlend = true;
         private bool secondVariant = false;
         private bool complexity = false;
+        private bool parallax = true;
         [EditorField]
         public bool HighQualityBlend {
             get => highQualityBlend;
@@ -126,101 +128,80 @@ namespace Weesals.Landscape {
             }
         }
         [EditorField]
-        public bool SecondVariant {
-            get => secondVariant;
-            set => LandMaterial.SetMacro("VARIANT", (secondVariant = value) ? "1" : "0");
-        }
-        [EditorField]
         public bool EnableStochastic {
             get => enableStochastic;
             set { enableStochastic = value; runtimeData.Changed.CombineWith(LandscapeChangeEvent.MakeAll(LandscapeData.Size)); }
         }
         [EditorField]
+        public bool SecondVariant {
+            get => secondVariant;
+            set => LandMaterial.SetMacro("VARIANT", (secondVariant = value) ? "1" : CSIdentifier.Invalid);
+        }
+        [EditorField]
         public bool Complexity {
             get => complexity;
-            set { if (complexity = value) LandMaterial.SetMacro("COMPLEXITY", "1"); else LandMaterial.ClearMacro("COMPLEXITY"); }
+            set => LandMaterial.SetMacro("COMPLEXITY", (complexity = value) ? "1" : CSIdentifier.Invalid);
+        }
+        [EditorField]
+        public bool Parallax {
+            get => parallax;
+            set => LandMaterial.SetMacro("ENABLEPARALLAX", (parallax = value) ? "1" : CSIdentifier.Invalid);
         }
 
         public LandscapeRenderer() {
-            tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
-            LandMaterial = new Material("./Assets/landscape3x3.hlsl");
-            LandMaterial.SetMeshShader(Resources.LoadShader("./Assets/landscape3x3.hlsl", "MSMain"));
-            LandMaterial.SetBuffer("Vertices", tileMesh.VertexBuffer);
-            LandMaterial.SetBuffer("Indices", tileMesh.IndexBuffer);
-            WaterMaterial = new("./Assets/water.hlsl", LandMaterial);
-            //WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
-            //WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
-            //EdgeRenderer = new LandscapeEdgeRenderer(this);
+            loadHandle = JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Gen TerQuad").Auto();
+                tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
+                var landMaterial = new Material("./Assets/landscape3x3.hlsl");
+                landMaterial.SetMeshShader(Resources.LoadShader("./Assets/landscape3x3.hlsl", "MSMain"));
+                landMaterial.SetBuffer("Vertices", tileMesh.VertexBuffer);
+                landMaterial.SetBuffer("Indices", tileMesh.IndexBuffer);
+                WaterMaterial = new("./Assets/water.hlsl", landMaterial);
+                //WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
+                //WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+                //EdgeRenderer = new LandscapeEdgeRenderer(this);
+                LandMaterial = landMaterial;
+                HighQualityBlend = HighQualityBlend;
+                SecondVariant = SecondVariant;
+                Complexity = Complexity;
+                Parallax = Parallax;
+            });
         }
 
         unsafe public void Initialise(LandscapeData landscapeData, Material rootMaterial) {
-            const string BaseMapsKey = "tex$LandscapeBaseMaps";
-            const string BumpMapsKey = "tex$LandscapeBumpMaps";
             LandscapeData = landscapeData;
             runtimeData.Dispose();
             runtimeData = new() {
                 Changed = LandscapeChangeEvent.MakeAll(landscapeData.Size),
                 Bounds = BoundingBox.FromMinMax(Vector3.Zero, landscapeData.Sizing.LandscapeToWorld(landscapeData.Size)),
             };
-            if (!runtimeData.BaseTextures.IsValid) {
-                runtimeData.BaseTextures = Resources.TryLoadTexture(BaseMapsKey);
-            }
-            if (!runtimeData.BaseTextures.IsValid) {
-                runtimeData.BaseTextures = CSTexture.Create("BaseMaps")
-                    .SetSize(512)
-                    .SetArrayCount(Layers.LayerCount);
-                for (int i = 0; i < Layers.LayerCount; ++i) {
-                    Resources.LoadTexture(Layers[i].BaseColor)
-                        .GetTextureData()
-                        .CopyTo(runtimeData.BaseTextures.GetTextureData(0, i));
-                }
-                runtimeData.BaseTextures.MarkChanged();
-                runtimeData.BaseTextures.GenerateMips();
-                runtimeData.BaseTextures.CompressTexture(BufferFormat.FORMAT_BC3_UNORM);
-                Resources.TryPutTexture(BaseMapsKey, runtimeData.BaseTextures);
-            }
-            if (!runtimeData.BumpTextures.IsValid) {
-                runtimeData.BumpTextures = Resources.TryLoadTexture(BumpMapsKey);
-            }
-            if (!runtimeData.BumpTextures.IsValid) {
-                runtimeData.BumpTextures = CSTexture.Create("BumpMaps")
-                    .SetSize(256)
-                    .SetArrayCount(Layers.LayerCount);
-                for (int i = 0; i < Layers.LayerCount; ++i) {
-                    Resources.LoadTexture(Layers[i].NormalMap)
-                        .GetTextureData()
-                        .CopyTo(runtimeData.BumpTextures.GetTextureData(0, i));
-                }
-                for (int s = 0; s < runtimeData.BaseTextures.ArrayCount; ++s) {
-                    var data = runtimeData.BaseTextures.GetTextureData(0, s).Reinterpret<Color>();
-                    int totalB = 0;
-                    for (int i = 0; i < data.Length; i++) totalB += data[i].B;
-                    if (totalB == 255 * data.Length) {
-                        for (int i = 0; i < data.Length; i++) data[i].B = 127;
-                    }
-                }
-                runtimeData.BumpTextures.MarkChanged();
-                runtimeData.BumpTextures.GenerateMips();
-                runtimeData.BumpTextures.CompressTexture();
-                Resources.TryPutTexture(BumpMapsKey, runtimeData.BumpTextures);
-            }
 
             layerDataBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
             layerDataBuffer.AppendElement(new CSBufferElement("DATA1", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
             layerDataBuffer.AppendElement(new CSBufferElement("DATA2", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
 
             //if (rootMaterial != null) LandMaterial.InheritProperties(rootMaterial);
-            LandMaterial.SetTexture("BaseMaps", runtimeData.BaseTextures);
-            LandMaterial.SetTexture("BumpMaps", runtimeData.BumpTextures);
-
-            WaterMaterial.SetTexture("NoiseTex", Resources.LoadTexture("./Assets/Noise.jpg"));
-            WaterMaterial.SetTexture("FoamTex", Resources.LoadTexture("./Assets/FoamMask.jpg"));
+            var handle = JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Load TerMaps").Auto();
+                runtimeData.BaseTextures = Layers.RequireBaseMaps();
+                runtimeData.BumpTextures = Layers.RequireBumpMaps();
+                var noise = Resources.LoadTexture("./Assets/Noise.jpg");
+                var foam = Resources.LoadTexture("./Assets/FoamMask.jpg");
+                JobHandle.RunOnMain((_) => {
+                    LandMaterial.SetTexture("BaseMaps", runtimeData.BaseTextures);
+                    LandMaterial.SetTexture("BumpMaps", runtimeData.BumpTextures);
+                    WaterMaterial.SetTexture("NoiseTex", noise);
+                    WaterMaterial.SetTexture("FoamTex", foam);
+                });
+            }, loadHandle);
 
             LandscapeData.OnLandscapeChanged += LandscapeChanged;
         }
 
         private void InitialisePassCache(ref PassCache cache) {
-            cache.landscapeDraw = new MeshDrawInstanced(tileMesh, LandMaterial);
+            cache.landscapeDraw = new MeshDrawInstanced(tileMesh, LandMaterial) {
+                RenderOrder = 100,
+            };
             cache.landscapeDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
             cache.waterDraw = new MeshDrawInstanced(tileMesh, WaterMaterial);
             cache.waterDraw.AddInstanceElement("INSTANCE", BufferFormat.FORMAT_R16G16_SINT);
@@ -232,6 +213,7 @@ namespace Weesals.Landscape {
 
         // Check if anything has changed, and apply changes
         public void ApplyDataChanges() {
+            loadHandle.Complete(); loadHandle = default;
             bool requireMaterialUpdates = false;
             if (Layers != null) {
                 var layerHash = 0;
@@ -248,15 +230,8 @@ namespace Weesals.Landscape {
             if (runtimeData.Changed.HasChanges) {
                 using var profileTerrain = new ProfilerMarker("Terrain Update").Auto();
 
-                //Stopwatch timer = new Stopwatch();
-                //timer.Start();
-                //for (int i = 0; i < 10000; i++)
-                {
-                    var dependency = UpdateRange(runtimeData.Changed);
-                    dependency.Complete();
-                }
-                //timer.Stop();
-                //Trace.WriteLine($"Terrain took {timer.Elapsed.TotalMilliseconds}");
+                var dependency = UpdateRange(runtimeData.Changed);
+                dependency.Complete();
 
                 // Mark the data as current
                 mRevision = LandscapeData.Revision;
@@ -370,7 +345,8 @@ namespace Weesals.Landscape {
                         }
                     }
                 }, RangeInt.FromBeginEnd(chunkMin.Y, chunkMax.Y), dependency);
-                resultDep = JobHandle.Schedule((_) => {
+                resultDep = JobHandle.Schedule(() => {
+                    using var marker = new ProfilerMarker("Ter LandMeta").Auto();
                     runtimeData.LandscapeMeta = SummarizeMeta(runtimeData.LandscapeChunkMeta);
                 }, landDep);
             }
@@ -383,7 +359,8 @@ namespace Weesals.Landscape {
                         }
                     }
                 }, RangeInt.FromBeginEnd(chunkMin.Y, chunkMax.Y), dependency);
-                waterDep = JobHandle.Schedule((_) => {
+                waterDep = JobHandle.Schedule(() => {
+                    using var marker = new ProfilerMarker("Ter WaterMeta").Auto();
                     runtimeData.WaterMeta = SummarizeMeta(runtimeData.WaterChunkMeta);
                 }, waterDep);
                 resultDep = JobHandle.CombineDependencies(resultDep, waterDep);
@@ -458,21 +435,12 @@ namespace Weesals.Landscape {
                         var h21 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x + 1, y), 0, sizing.Size - 1))];
                         var h10 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x, y - 1), 0, sizing.Size - 1))];
                         var h12 = heightmap[sizing.ToIndex(Int2.Clamp(new Int2(x, y + 1), 0, sizing.Size - 1))];
-                        var nrm = new Vector3(
-                            (float)(h01.Height - h21.Height) * normalScale,
-                            (float)(2),
-                            (float)(h10.Height - h12.Height) * normalScale
-                        );
-                        //nrm = Vector3.Normalize(nrm);
-                        // Pack normal into 2nd and 3rd
-                        //((byte*)c)[1] = (byte)Math.Clamp(127 + (nrm.X * 127), 0, 255);
-                        //((byte*)c)[2] = (byte)Math.Clamp(127 + (nrm.Z * 127), 0, 255);
                         ((byte*)c)[1] = (byte)Math.Clamp(127 + (h01.Height - h21.Height) * normalScale, 0, 255);
                         ((byte*)c)[2] = (byte)Math.Clamp(127 + (h10.Height - h12.Height) * normalScale, 0, 255);
                     }
                 }
             }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
-            dependency = JobHandle.Schedule((_) => {
+            dependency = JobHandle.Schedule(() => {
                 // Mark the texture as having been changed
                 runtimeData.HeightMap.MarkChanged();
             }, dependency);
@@ -537,7 +505,7 @@ namespace Weesals.Landscape {
                     }
                 }
             }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
-            dependency = JobHandle.Schedule((_) => {
+            dependency = JobHandle.Schedule(() => {
                 // Mark the texture as having been changed
                 runtimeData.ControlMap.MarkChanged();
             }, dependency);
@@ -557,7 +525,7 @@ namespace Weesals.Landscape {
                     }
                 }
             }, new RangeInt(range.Min.Y, range.Size.Y), dependency);
-            dependency = JobHandle.Schedule((_) => {
+            dependency = JobHandle.Schedule(() => {
                 // Mark the texture as having been changed
                 runtimeData.HeightMap.MarkChanged();
             }, dependency);

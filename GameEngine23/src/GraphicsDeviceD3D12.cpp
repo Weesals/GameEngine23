@@ -737,6 +737,22 @@ void GraphicsDeviceD3D12::CheckDeviceState() const
     }
 }
 
+std::wstring GraphicsDeviceD3D12::GetDeviceName() const {
+    auto* factory = mDevice.GetFactory();
+    auto luid = mDevice.GetD3DDevice()->GetAdapterLuid();
+    ComPtr<IDXGIAdapter1> pAdapter = nullptr;
+    for (UINT adapterIndex = 0; factory->EnumAdapters1(adapterIndex, &pAdapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex)
+    {
+        DXGI_ADAPTER_DESC1 adapterDesc;
+        if (SUCCEEDED(pAdapter->GetDesc1(&adapterDesc)))
+        {
+            if (memcmp(&adapterDesc.AdapterLuid, &luid, sizeof(luid)) == 0)
+                return adapterDesc.Description;
+        }
+    }
+    return L"";
+}
+
 CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
 {
     return CommandBuffer(new D3DCommandBuffer(this));

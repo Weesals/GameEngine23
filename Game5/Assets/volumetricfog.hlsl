@@ -53,6 +53,9 @@ float4 PSMain(PSInput input) : SV_TARGET {
     }
     float deviceDepth = SceneDepth[input.position.xy].x;
     
+    //if(distance(input.position.xy, float2(100, 100)) < 1.5) return 10.2;
+    //if(distance(input.position.xy, float2(300, 100)) < 3.0) return 10.2;
+    
     float3 rayStart = mul(InvViewProjection, float4(viewUV, 0.0, 1.0)).xyz;
     float3 rayEnd = rayStart + transpose(InvViewProjection)[2].xyz * deviceDepth;
     rayStart *= 1.0 / InvViewProjection._44;

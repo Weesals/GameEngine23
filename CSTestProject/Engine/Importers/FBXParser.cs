@@ -246,6 +246,7 @@ namespace Weesals.Engine.Importers {
             var id = ReadShortString(ref data);
 
             var node = new FBXNode(Encoding.ASCII.GetString(GetSpan(id)));
+            node.Properties.EnsureCapacity((int)prop_count);
             for (int p = 0; p < (int)prop_count; ++p) {
                 var prop = ReadPropertyBinary(ref data);
                 node.Properties.Add(prop);

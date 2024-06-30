@@ -1,6 +1,7 @@
 #include <common.hlsl>
 #include <temporal.hlsl>
 #include <basepass.hlsl>
+#include <noise.hlsl>
 
 SamplerState BilinearSampler : register(s1);
 Texture2D<float4> Texture : register(t0);
@@ -42,9 +43,20 @@ PSInput VSMain(VSInput input) {
     float localY = worldPos.y;
     worldPos.xz += instanceData.xz;
     
+    SimplexSample3D noiseSamp0 = CreateSimplex3D(float3(worldPos.xz / 10.0, 0) + float3(0.2, 0.1, 0.5) * Time);
+    SimplexSample3D noiseSamp1 = CreateSimplex3D(float3(worldPos.xz / 30.0, 0) + float3(0.2, 0.1, 0.5) * Time);
     float windTime = Time * 2.0 + worldPos.x * 0.5;
     sc = float2(cos(windTime), sin(windTime * 1.3) + 0.5);
-    worldPos.xz += sc * (localY * localY * sin(windTime * 2.4) * 0.1);
+    float3 windDelta = noiseSamp0.Sample3();//sc * (sin(windTime * 2.4));
+    windDelta += noiseSamp1.Sample3();
+    windDelta /= 2.0;
+    windDelta.xy *= 5;
+    windDelta.xy *= 1 + sin(windDelta.z * 5);
+    float2 displacementXZ = windDelta.xz * (localY * localY * 0.4);
+    worldPos.xz += displacementXZ;
+    worldPos.y -= saturate(dot(displacementXZ, displacementXZ)) * localY;
+    float3 windNrm = float3(windDelta.xz * 0.4, 1).xzy;
+    worldNrm = lerp(windNrm, worldNrm, saturate(localY));
     
     worldPos.y += instanceData.y;
     
@@ -57,11 +69,18 @@ PSInput VSMain(VSInput input) {
     return result;
 }
 
-void PSMain(PSInput input, out BasePassOutput result) {
+void PSMain(PSInput input, bool frontFace : SV_IsFrontFace, out BasePassOutput result) {
+    //if (!frontFace) input.normal *= -1;
     //TemporalAdjust(input.uv);
     
     float4 tex = Texture.Sample(BilinearSampler, input.uv);
-    tex.rgb *= float3(0.72, 0.9, 0.2);
+    float3 Color1 = float3(0.6, 0.9, 0.2);
+    float3 Color2 = float3(0.8, 0.9, 0.25);
+    float4 instanceData = Instances[input.instanceId];
+    float noise = SimplexNoise(instanceData.xz / 5.0);
+    noise += SimplexNoise(instanceData.xz / 20.0);
+    float3 color = lerp(Color1, Color2, noise * 0.5 + 0.5);
+    tex.rgb *= color;
     PBRInput pbrInput = PBRDefault();
     pbrInput.Albedo = tex.rgb;
     pbrInput.Alpha = tex.a;

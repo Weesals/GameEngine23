@@ -124,7 +124,7 @@ void PSSpawn(PSSpawnInput input
     float3 Velocity = float3(0, 0, 0);
     float Age = 0.0 - DeltaTime * frac(Seed * 123.45);
     
-    Position += Emitters[input.params.x * 255].Position;
+    Position += Emitters[input.params.x].Position;
     
 %ParticleSpawn%
 

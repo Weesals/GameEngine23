@@ -387,163 +387,6 @@ namespace Weesals.Engine
         private static extern CSGlyph* GetGlyph([NativeTypeName("const NativeFont *")] NativeFont* font, int id);
     }
 
-    public unsafe partial struct CSMaterial
-    {
-        private NativeMaterial* mMaterial;
-
-        public CSMaterial(NativeMaterial* material)
-        {
-            mMaterial = material;
-        }
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetParameterIdentifiers@CSMaterial@@SAHPEAVMaterial@@PEAUCSIdentifier@@H@Z", ExactSpelling = true)]
-        public static extern int GetParameterIdentifiers(NativeMaterial* material, CSIdentifier* outlist, int capacity);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetRenderPass@CSMaterial@@SAXPEAVMaterial@@UCSIdentifier@@@Z", ExactSpelling = true)]
-        public static extern void SetRenderPass(NativeMaterial* material, CSIdentifier identifier);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetValueData@CSMaterial@@SA?AUCSSpan@@PEAVMaterial@@UCSIdentifier@@@Z", ExactSpelling = true)]
-        public static extern CSSpan GetValueData(NativeMaterial* material, CSIdentifier identifier);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetValueType@CSMaterial@@SAHPEAVMaterial@@UCSIdentifier@@@Z", ExactSpelling = true)]
-        public static extern int GetValueType(NativeMaterial* material, CSIdentifier identifier);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetValueFloat@CSMaterial@@SAXPEAVMaterial@@UCSIdentifier@@PEBMH@Z", ExactSpelling = true)]
-        public static extern void SetValueFloat(NativeMaterial* material, CSIdentifier identifier, [NativeTypeName("const float *")] float* data, int count);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetValueInt@CSMaterial@@SAXPEAVMaterial@@UCSIdentifier@@PEBHH@Z", ExactSpelling = true)]
-        public static extern void SetValueInt(NativeMaterial* material, CSIdentifier identifier, [NativeTypeName("const int *")] int* data, int count);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetValueTexture@CSMaterial@@SAXPEAVMaterial@@UCSIdentifier@@UCSTexture@@@Z", ExactSpelling = true)]
-        public static extern void SetValueTexture(NativeMaterial* material, CSIdentifier identifier, CSTexture texture);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetBlendMode@CSMaterial@@SAXPEAVMaterial@@PEAX@Z", ExactSpelling = true)]
-        public static extern void SetBlendMode(NativeMaterial* material, void* data);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetRasterMode@CSMaterial@@SAXPEAVMaterial@@PEAX@Z", ExactSpelling = true)]
-        public static extern void SetRasterMode(NativeMaterial* material, void* data);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetDepthMode@CSMaterial@@SAXPEAVMaterial@@PEAX@Z", ExactSpelling = true)]
-        public static extern void SetDepthMode(NativeMaterial* material, void* data);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?InheritProperties@CSMaterial@@SAXPEAVMaterial@@0@Z", ExactSpelling = true)]
-        public static extern void InheritProperties(NativeMaterial* material, NativeMaterial* other);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RemoveInheritance@CSMaterial@@SAXPEAVMaterial@@0@Z", ExactSpelling = true)]
-        public static extern void RemoveInheritance(NativeMaterial* material, NativeMaterial* other);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSMaterial@@SAPEAVMaterial@@UCSString@@@Z", ExactSpelling = true)]
-        public static extern NativeMaterial* _Create(CSString shaderPath);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSMaterial@@SAXPEAVMaterial@@@Z", ExactSpelling = true)]
-        public static extern void Dispose(NativeMaterial* material);
-
-        public NativeMaterial* GetNativeMaterial()
-        {
-            return mMaterial;
-        }
-    }
-
-    public partial struct CSMeshData
-    {
-        public int mVertexCount;
-
-        public int mIndexCount;
-
-        public CSString8 mName;
-
-        public CSBufferElement mPositions;
-
-        public CSBufferElement mNormals;
-
-        public CSBufferElement mTexCoords;
-
-        public CSBufferElement mColors;
-
-        public CSBufferElement mIndices;
-    }
-
-    public unsafe partial struct CSMesh
-    {
-        private NativeMesh* mMesh;
-
-        public CSMesh(NativeMesh* mesh)
-        {
-            mMesh = mesh;
-        }
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetVertexCount@CSMesh@@SAHPEBVMesh@@@Z", ExactSpelling = true)]
-        public static extern int GetVertexCount([NativeTypeName("const NativeMesh *")] NativeMesh* mesh);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIndexCount@CSMesh@@SAHPEBVMesh@@@Z", ExactSpelling = true)]
-        public static extern int GetIndexCount([NativeTypeName("const NativeMesh *")] NativeMesh* mesh);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetVertexCount@CSMesh@@SAXPEAVMesh@@H@Z", ExactSpelling = true)]
-        public static extern void SetVertexCount(NativeMesh* mesh, int count);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetIndexCount@CSMesh@@SAXPEAVMesh@@H@Z", ExactSpelling = true)]
-        public static extern void SetIndexCount(NativeMesh* mesh, int count);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetVertexBuffer@CSMesh@@SAPEBUCSBufferLayout@@PEAVMesh@@@Z", ExactSpelling = true)]
-        [return: NativeTypeName("const CSBufferLayout *")]
-        public static extern CSBufferLayout* GetVertexBuffer(NativeMesh* mesh);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIndexBuffer@CSMesh@@SAPEBUCSBufferLayout@@PEAVMesh@@@Z", ExactSpelling = true)]
-        [return: NativeTypeName("const CSBufferLayout *")]
-        public static extern CSBufferLayout* GetIndexBuffer(NativeMesh* mesh);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireVertexNormals@CSMesh@@SAXPEAVMesh@@E@Z", ExactSpelling = true)]
-        public static extern void RequireVertexNormals(NativeMesh* mesh, [NativeTypeName("uint8_t")] byte fmt);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireVertexTexCoords@CSMesh@@SAXPEAVMesh@@E@Z", ExactSpelling = true)]
-        public static extern void RequireVertexTexCoords(NativeMesh* mesh, [NativeTypeName("uint8_t")] byte fmt);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireVertexColors@CSMesh@@SAXPEAVMesh@@E@Z", ExactSpelling = true)]
-        public static extern void RequireVertexColors(NativeMesh* mesh, [NativeTypeName("uint8_t")] byte fmt);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetMeshData@CSMesh@@SAXPEBVMesh@@PEAUCSMeshData@@@Z", ExactSpelling = true)]
-        public static extern void GetMeshData([NativeTypeName("const NativeMesh *")] NativeMesh* mesh, CSMeshData* outdata);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetMaterial@CSMesh@@SAPEAVMaterial@@PEAVMesh@@@Z", ExactSpelling = true)]
-        public static extern NativeMaterial* GetMaterial(NativeMesh* mesh);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetBoundingBox@CSMesh@@SAAEBUBoundingBox@@PEAVMesh@@@Z", ExactSpelling = true)]
-        [return: NativeTypeName("const BoundingBox &")]
-        public static extern Weesals.Engine.BoundingBox* GetBoundingBox(NativeMesh* mesh);
-
-        public NativeMesh* GetNativeMesh()
-        {
-            return mMesh;
-        }
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSMesh@@SAPEAVMesh@@UCSString@@@Z", ExactSpelling = true)]
-        public static extern NativeMesh* _Create(CSString name);
-    }
-
-    public unsafe partial struct CSModel
-    {
-        private NativeModel* mModel;
-
-        public CSModel(NativeModel* mesh)
-        {
-            mModel = mesh;
-        }
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetMeshCount@CSModel@@SAHPEBVModel@@@Z", ExactSpelling = true)]
-        public static extern int GetMeshCount([NativeTypeName("const NativeModel *")] NativeModel* model);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetMeshes@CSModel@@SA?AUCSSpanSPtr@@PEBVModel@@@Z", ExactSpelling = true)]
-        public static extern CSSpanSPtr GetMeshes([NativeTypeName("const NativeModel *")] NativeModel* model);
-
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetMesh@CSModel@@SA?AVCSMesh@@PEBVModel@@H@Z", ExactSpelling = true)]
-        public static extern CSMesh GetMesh([NativeTypeName("const NativeModel *")] NativeModel* model, int id);
-
-        public NativeModel* GetNativeModel()
-        {
-            return mModel;
-        }
-    }
-
     public partial struct CSInstance
     {
         private int mInstanceId;
@@ -827,6 +670,10 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Dispose(NativeGraphics* graphics);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetDeviceName@CSGraphics@@CAGPEBVNativeGraphics@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("uint16_t")]
+        private static extern ushort GetDeviceName([NativeTypeName("const NativeGraphics *")] NativeGraphics* graphics);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetCapabilities@CSGraphics@@CA?AUCSGraphicsCapabilities@@PEBVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern CSGraphicsCapabilities GetCapabilities([NativeTypeName("const NativeGraphics *")] NativeGraphics* graphics);
 
@@ -942,6 +789,18 @@ namespace Weesals.Engine
         private static extern void Present([NativeTypeName("NativeSurface *")] NativeGraphicsSurface* surface);
     }
 
+    public partial struct CSWindowFrame
+    {
+        [NativeTypeName("RectInt")]
+        public Weesals.Engine.RectI Position;
+
+        [NativeTypeName("Int2")]
+        public Weesals.Engine.Int2 ClientOffset;
+
+        [NativeTypeName("bool")]
+        public byte Maximized;
+    }
+
     public unsafe partial struct CSWindow
     {
         [NativeTypeName("NativeWindow *")]
@@ -973,6 +832,15 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetInput@CSWindow@@CAXPEAVWindowBase@@PEAVInput@@@Z", ExactSpelling = true)]
         private static extern void SetInput([NativeTypeName("NativeWindow *")] WindowBase* window, NativeInput* input);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetWindowFrame@CSWindow@@CA?AUCSWindowFrame@@PEBVWindowBase@@@Z", ExactSpelling = true)]
+        private static extern CSWindowFrame GetWindowFrame([NativeTypeName("const NativeWindow *")] WindowBase* window);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetWindowFrame@CSWindow@@CAXPEBVWindowBase@@PEBURectInt@@_N@Z", ExactSpelling = true)]
+        private static extern void SetWindowFrame([NativeTypeName("const NativeWindow *")] WindowBase* window, [NativeTypeName("const RectInt *")] Weesals.Engine.RectI* frame, [NativeTypeName("bool")] byte maximized);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RegisterMovedCallback@CSWindow@@CAXPEBVWindowBase@@P6AXXZ_N@Z", ExactSpelling = true)]
+        private static extern void RegisterMovedCallback([NativeTypeName("const NativeWindow *")] WindowBase* window, [NativeTypeName("void (*)()")] delegate* unmanaged[Cdecl]<void> Callback, [NativeTypeName("bool")] byte enable);
     }
 
     public partial struct CSPointer

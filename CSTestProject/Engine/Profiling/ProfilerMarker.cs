@@ -41,37 +41,40 @@ namespace Weesals.Engine.Profiling {
             Name = enable ? name : null;
         }
 
-        public Scope Auto() {
-            return new Scope(this);
+        public Scope Auto() { return new Scope(this, Color.Clear); }
+        public Scope Auto(Color color) {
+            return new Scope(this, color);
         }
 
         public readonly struct Scope : IDisposable {
             public const bool EnableTracy = true;
             public readonly ProfilerMarker Marker;
-            private readonly long beginTicks;
             private readonly nuint zone;
-            [ThreadStatic] private static int depth = 0;
-            public Scope(ProfilerMarker marker) {
+            public Scope(ProfilerMarker marker) : this(marker, Color.Clear) { }
+            public Scope(ProfilerMarker marker, Color color) {
                 Marker = marker;
-                beginTicks = stopwatch.ElapsedTicks;
-                ++depth;
-                if (EnableTracy) zone = Tracy.StartScopedZone(Marker.tracyLocation);
+                if (EnableTracy) {
+                    zone = Tracy.StartScopedZone(Marker.tracyLocation);
+                    if (color.A != 0) {
+                        Tracy.ZoneColor(zone, color.Packed);
+                    }
+                }
+            }
+            public Scope WithText(string text) {
+                Tracy.ZoneText(zone, Tracy.CreateString(text));
+                return this;
+            }
+            public Scope WithValue(ulong value) {
+                Tracy.ZoneValue(zone, value);
+                return this;
             }
             public void Dispose() {
                 if (EnableTracy) Tracy.EndScopedZone(zone);
-                --depth;
-                if (Marker.Name == null) return;
-                if (snapshots.Count > 5000) return;
-                lock (snapshots) {
-                    snapshots.Add(new() {
-                        Name = Marker.Name,
-                        BeginTick = beginTicks,
-                        TimerTicks = (uint)(stopwatch.ElapsedTicks - beginTicks),
-                        ThreadName = JobScheduler.CurrentThreadName,
-                        ThreadDepth = depth,
-                    });
-                }
             }
+        }
+
+        public static void SetValue(string name, int value) {
+            Tracy.TracyPlot(Tracy.CreateString(name), value);
         }
 
     }

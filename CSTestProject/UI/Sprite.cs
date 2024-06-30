@@ -104,11 +104,10 @@ namespace Weesals.UI {
             var srcEnd = srcOff + size;
             var srcToDstY = dstOff.Y - srcOff.Y;
             for (int y = srcOff.Y; y < srcEnd.Y; ++y) {
-                Unsafe.CopyBlock(
-                    (Color*)dstData.Data + ((y + srcToDstY) * dstSize.X + dstOff.X),
-                    (Color*)srcData.Data + ((y) * srcSize.X + srcOff.X),
-                    (uint)(4 * size.X)
-                );
+                var srcOffset = ((y) * srcSize.X + srcOff.X);
+                var dstOffset = ((y + srcToDstY) * dstSize.X + dstOff.X);
+                srcData.AsSpan().Slice(srcOffset * 4, size.X * 4)
+                    .CopyTo(dstData.AsSpan().Slice(dstOffset * 4, size.X * 4));
             }
         }
     }

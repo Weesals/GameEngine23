@@ -6,39 +6,75 @@ using Weesals.Engine;
 using Weesals.Engine.Jobs;
 using Game5.Game;
 using Game5;
+using Weesals.Engine.Profiling;
 
 class Program {
 
     private static List<ApplicationWindow> windows = new();
 
     public static void Main() {
-        var core = new Core();
-        Core.ActiveInstance = core;
-        Resources.LoadDefaultUIAssets();
+        var loadJob = JobHandle.Schedule(() => {
+            using var marker = new ProfilerMarker("Load UI Assets").Auto();
+            Resources.LoadDefaultUIAssets();
+        });
+
+        GameRoot root;
+        using (var marker = new ProfilerMarker("Creating Root").Auto()) {
+            root = new GameRoot();
+        }
+
+        JobHandle rootJob;
+        using (var marker = new ProfilerMarker("Initialising Root").Auto()) {
+            loadJob.Complete();     // Need UI assets for PlayUI
+            rootJob = root.Initialise();
+        }
+
+        Core core;
+        using (var marker = new ProfilerMarker("Creating Core").Auto()) {
+            core = new Core();
+            Core.ActiveInstance = core;
+        }
 
         EditorWindow? editorWindow = new();
-        ParticleDebugWindow? previewWindow = null;// new();
+        ParticleDebugWindow? previewWindow = null;
         ProfilerWindow? profilerWindow = null;
-        editorWindow?.RegisterRootWindow(core.CreateWindow("Weesals Engine"));
-        previewWindow?.RegisterRootWindow(core.CreateWindow("Preview"));
+        ApplicationWindow primaryWindow;
+        using (var marker = new ProfilerMarker("Create Windows").Auto()) {
+            var rootWindow = core.CreateWindow("Weesals Engine");
+            try {
+                var json = new SJson(File.ReadAllText("./Config/window.txt"));
+                var frame = new RectI(json["x"], json["y"], json["w"], json["h"]);
+                rootWindow.SetWindowFrame(frame, json["max"]);
+            } catch { }
 
-        if (editorWindow != null) windows.Add(editorWindow);
-        if (previewWindow != null) windows.Add(previewWindow);
+            editorWindow?.RegisterRootWindow(rootWindow);
 
-        ApplicationWindow primaryWindow = editorWindow ?? throw new NotImplementedException();
-        Input.Initialise(primaryWindow.Input);
+            if (editorWindow != null) windows.Add(editorWindow);
 
-        var root = new GameRoot();
+            primaryWindow = editorWindow ?? throw new NotImplementedException();
+            Input.Initialise(primaryWindow.Input);
+        }
 
-        if (editorWindow != null) {
-            root.AttachToEditor(editorWindow);
-        } else {
-            //root.EventSystem.SetInput(gameWindow.Input);
-            throw new NotImplementedException("No editor is not supported (yet)");
+        using (var marker = new ProfilerMarker("Waiting for Root").Auto()) {
+            // Need a valid Play to bind the editor to
+            rootJob.Complete();
+            root.Play.SetAutoQuality(core.GetGraphics());
+        }
+
+        using (var marker = new ProfilerMarker("Attach Editor").Auto()) {
+            if (editorWindow != null) {
+                root.AttachToEditor(editorWindow);
+            } else {
+                //root.EventSystem.SetInput(gameWindow.Input);
+                throw new NotImplementedException("No editor is not supported (yet)");
+            }
         }
 
         var timer = new FrameTimer(4);
         var throttler = new FrameThrottler();
+
+        bool windowMoved = false;
+        primaryWindow.Window.RegisterMovedCallback(() => { windowMoved = true; }, true);
 
         // Loop while the window is valid
         for (int f = 0; ; ++f) {
@@ -50,6 +86,14 @@ class Program {
                 }
             }
 
+            if (windowMoved) {
+                var frame = primaryWindow.Window.GetWindowFrame();
+                Debug.WriteLine("Window moved");
+                Directory.CreateDirectory("./Config/");
+                File.WriteAllText("./Config/window.txt", $@"{{ x:{frame.Position.X}, y:{frame.Position.Y}, w:{frame.Position.Width}, h:{frame.Position.Height}, max:{frame.Maximized != 0} }}");
+                windowMoved = false;
+            }
+
             bool isActive = false;
 
             foreach (var window in windows) isActive |= window.Validate();
@@ -58,6 +102,8 @@ class Program {
                 Thread.Sleep(10);
                 continue;
             }
+
+            Tracy.FrameMarkStart(0);
 
             var graphics = core.GetGraphics();
 
@@ -68,6 +114,11 @@ class Program {
                 profilerWindow = new();
                 profilerWindow?.RegisterRootWindow(core.CreateWindow("Profiler"));
                 windows.Add(profilerWindow);
+            }
+            if (Input.GetKeyPressed(KeyCode.F3) && profilerWindow == null) {
+                previewWindow = new();
+                previewWindow?.RegisterRootWindow(core.CreateWindow("Particles"));
+                windows.Add(previewWindow);
             }
 
             float renDT;
@@ -124,6 +175,7 @@ class Program {
             root.ResetFrame();
 
             foreach (var window in windows) window?.Input.ReceiveTickEvent();
+            Tracy.FrameMarkEnd(0);
         }
 
         // Clean up

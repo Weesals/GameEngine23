@@ -209,7 +209,7 @@ namespace Weesals.Engine.Importers {
             if (modelCache.TryGetValue(path, out var model)) return model;
 
             // Path might be denormalized, check if we loaded it with a different path
-            var normalizedPath = new Uri(Path.GetFullPath(path), UriKind.RelativeOrAbsolute).LocalPath.ToUpperInvariant();
+            var normalizedPath = Path.GetFullPath(path).ToLowerInvariant();
             if (modelCache.TryGetValue(normalizedPath, out model)) {
                 modelCache.Add(path, model);
                 return model;
@@ -219,7 +219,8 @@ namespace Weesals.Engine.Importers {
 
             // Perform actual load
             var deferred = JobHandle.CreateDeferred();
-            JobHandle.Schedule((_) => {
+            JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("FBX").Auto();
                 ParseModel(model, path, deferred);
             });
             handle = deferred;
@@ -237,12 +238,16 @@ namespace Weesals.Engine.Importers {
             Matrix4x4 globalTransform = Matrix4x4.Identity;
             var fbxObjectMap = new FBXObjectMap();
 
-            using (new ProfilerMarker("Parse FBX").Auto()) {
+            var hash = path.ComputeStringHash();
+            var color = new Color((uint)(hash | 0xff000000));
+            var name = Path.GetFileNameWithoutExtension(path);
+
+            using (new ProfilerMarker("FBX Parse").Auto(color).WithText(name)) {
                 parser = new FBXParser(path);
                 fbxScene = parser.Parse();
             }
 
-            using (new ProfilerMarker("Parse FBX - Load").Auto()) {
+            using (new ProfilerMarker("FBX Load").Auto(color).WithText(name)) {
                 var scale = 100.0f;
                 var fwdAxis = Vector3.UnitZ;
                 var upAxis = Vector3.UnitY;
@@ -449,8 +454,8 @@ namespace Weesals.Engine.Importers {
                 JobHandle allAnimJob = default;
                 for (int i = 0; i < allAnims.Count; i++) {
                     int a = i;
-                    var animJob = JobHandle.Schedule((_) => {
-                        using var marker = new ProfilerMarker("Parse FBX Anim").Auto();
+                    var animJob = JobHandle.Schedule(() => {
+                        using var marker = new ProfilerMarker("Parse FBX Anim").Auto(color).WithText(name);
                         var fbxAnimLayer = allAnims[a];
                         List<SkeletalAnimation.BoneCurve> bones = new();
                         Dictionary<FBXObjectRef, int> boneMap = new();
@@ -521,7 +526,8 @@ namespace Weesals.Engine.Importers {
                     });
                     allAnimJob = JobHandle.CombineDependencies(allAnimJob, animJob);
                 }
-                allAnimJob = JobHandle.Schedule((_) => {
+                allAnimJob = JobHandle.Schedule(() => {
+                    using var marker = new ProfilerMarker("Push Anim").Auto(color).WithText(name);
                     foreach (var anim in outAnims) {
                         skeletalAnimations.Animations.Add(anim);
                     }
@@ -535,8 +541,8 @@ namespace Weesals.Engine.Importers {
                 JobHandle meshJobs = default;
                 for (int i = 0; i < allMeshes.Count; i++) {
                     int m = i;
-                    var meshJob = JobHandle.Schedule((_) => {
-                        using var marker = new ProfilerMarker("Parse FBX Mesh").Auto();
+                    var meshJob = JobHandle.Schedule(() => {
+                        using var marker = new ProfilerMarker("Parse FBX Mesh").Auto(color).WithText(name);
                         var fbxMesh = allMeshes[m];
                         var fbxMeshRef = new FBXObjectRef(FBXObjectTypes.Mesh, m);
                         Matrix4x4 meshTransform = globalTransform;
@@ -594,7 +600,8 @@ namespace Weesals.Engine.Importers {
                     });
                     meshJobs = JobHandle.CombineDependencies(meshJobs, meshJob);
                 }
-                meshJobs = JobHandle.Schedule((_) => {
+                meshJobs = JobHandle.Schedule(() => {
+                    using var marker = new ProfilerMarker("Push Mesh").Auto(color).WithText(name);
                     foreach (var mesh in outMeshes) model.AppendMesh(mesh);
                     JobHandle.MarkDeferredComplete(deferred);
                 }, meshJobs);
@@ -763,8 +770,8 @@ namespace Weesals.Engine.Importers {
             if (normalData.IsValid) mesh.GetNormalsV(true).Set(normalData.Data);
             if (tangentData.IsValid) mesh.GetTangentsV(true).Set(tangentData.Data);
             if (colorData.IsValid) mesh.GetColorsV<Vector4>(true).Set(colorData.Data);
-            if (boneIndices.IsValid) skinnedMesh.GetBoneIndicesV<Int4>(true).Set(boneIndices.Data);
-            if (boneWeights.IsValid) skinnedMesh.GetBoneWeightsV<Vector4>(true).Set(boneWeights.Data);
+            if (boneIndices.IsValid) skinnedMesh!.GetBoneIndicesV<Int4>(true).Set(boneIndices.Data);
+            if (boneWeights.IsValid) skinnedMesh!.GetBoneWeightsV<Vector4>(true).Set(boneWeights.Data);
             mesh.SetIndexCount(inds.Length);
             mesh.GetIndicesV<int>().Set(inds);
             mesh.SetBoundingBox(BoundingBox.FromMinMax(boundsMin, boundsMax));

@@ -5,6 +5,12 @@
 #include <landscapecommon.hlsl>
 #include <landscapesampling.hlsl>
 #include <basepass.hlsl>
+#include <noise.hlsl>
+
+static const half HeightBlend = 5.0;
+static const half WeightBlend = 2.0;
+
+Texture2D<half4> NoiseTex : register(t5);
 
 cbuffer ConstantBuffer : register(b1) {
     matrix ModelView;
@@ -13,7 +19,8 @@ cbuffer ConstantBuffer : register(b1) {
 }
 
 half3 ApplyHeightBlend(half3 bc, half3 heights) {
-    bc += heights * 4.0 * saturate(bc * 4.0);
+    //bc += heights * 4.0 * saturate(bc * 4.0);
+    bc = bc * WeightBlend + heights * HeightBlend * saturate(bc * 4.0);
     float maxBC = max(max(bc.x, bc.y), max(bc.z, 1.0));
     bc = saturate(bc - (maxBC - 1.0));
     bc *= rcp(dot(bc, 1.0));
@@ -62,34 +69,45 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     return result;
 }
 
-void PSMain(PSInput input, out BasePassOutput result) {    
+BasePassOutput PSMain(PSInput input) {    
     PBRInput pbrInput = PBRDefault();
         
     TemporalAdjust(input.positionOS.xz);
+
+    float2 controlUv = input.positionOS.xz;
+    //controlUv += NoiseTex.Sample(BilinearSampler, controlUv * 1.0).xy * 0.5 - 0.25;
+    //controlUv += CreateSimplex2D(controlUv * 2.0).Sample2() * 0.2;
+
+    controlUv += ddx(controlUv) * (WaveGetLaneIndex() & 0x01 ? -0.5 : 0.5);
+    controlUv += ddy(controlUv) * (WaveGetLaneIndex() & 0x02 ? -0.5 : 0.5);
+
     SampleContext context = { BaseMaps, BumpMaps, input.positionOS, float2(0, 0), float3(0, 1, 0), };
-    Triangle tri = ComputeTriangle(context.WorldPos.xz);
+    Triangle tri = ComputeTriangle(controlUv);
     
     // Dont know why this requires /(size+1)
-    uint4 cp = ControlMap.Gather(AnisotropicSampler, context.WorldPos.xz * _LandscapeSizing1.xy + _LandscapeSizing1.zw);
+    float2 controlUvCtr = (tri.P0 + tri.P2) * 0.5;
+    uint4 cp = ControlMap.Gather(AnisotropicSampler, controlUvCtr * _LandscapeSizing1.xy + _LandscapeSizing1.zw);
     cp = cp.wzxy;
-    if(frac(context.WorldPos.z / 2) > 0.5) cp = cp.zwxy;
-    if(frac(context.WorldPos.x / 2) > 0.5) cp = cp.yxwz;
+    if(!tri.FlipSign.y) cp = cp.zwxy;
+    if(!tri.FlipSign.x) cp = cp.yxwz;
     cp.xyz = uint3(cp[0], cp[tri.TriSign ? 2 : 1], cp[3]);
-        
+
     TerrainSample t0 = (TerrainSample)0, t1 = (TerrainSample)0, t2 = (TerrainSample)0;
     float complexity = 0.0;
-    if (tri.BC.x > 0.01) {
+    if (QuadAny(tri.BC.x > 0.1)) {
+        //cp.x = QuadReadLaneAt(cp.x, 0);
         t0 = SampleTerrain(context, DecodeControlMap(cp.x));
         if (cp.x == cp.y) { tri.BC.x += tri.BC.y; tri.BC.y = 0.0; }
         if (cp.x == cp.z) { tri.BC.x += tri.BC.z; tri.BC.z = 0.0; }
         ++complexity;
     }
-    if (tri.BC.y > 0.01) {
+    if (QuadAny(tri.BC.y > 0.1)) {
+        //cp.y = QuadReadLaneAt(cp.y, 0);
         t1 = SampleTerrain(context, DecodeControlMap(cp.y));
         if (cp.y == cp.z) { tri.BC.y += tri.BC.z; tri.BC.z = 0.0; }
         ++complexity;
     }
-    if (tri.BC.z > 0.01) {
+    if (QuadAny(tri.BC.z > 0.1)) {
         t2 = SampleTerrain(context, DecodeControlMap(cp.z));
         ++complexity;
     }
@@ -102,6 +120,10 @@ void PSMain(PSInput input, out BasePassOutput result) {
     pbrInput.Roughness = (t0.Roughness * bc.x + t1.Roughness * bc.y + t2.Roughness * bc.z);
     float height = (t0.Height * bc.x + t1.Height * bc.y + t2.Height * bc.z);
 
+#if defined(COMPLEXITY) && COMPLEXITY
+    pbrInput.Albedo.r = (complexity - 1) / 3.0;
+#endif
+
     pbrInput.Normal.z = sqrt(1.0 - dot(pbrInput.Normal.xy, pbrInput.Normal.xy));
         
     float3x3 tbn = { float3(0, 0, 0), float3(0, 0, 0), normalize(input.normalOS), };
@@ -112,7 +134,7 @@ void PSMain(PSInput input, out BasePassOutput result) {
     
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
-    result = PBROutput(pbrInput, viewDir);
+    return PBROutput(pbrInput, viewDir);
 }
 
 void ShadowCast_VSMain(VSInput input, out float4 positionCS : SV_POSITION) {

@@ -126,6 +126,9 @@ namespace Game5.Game {
 
         public struct MoveContract : IDisposable {
             private PooledHashMap<Entity, uint> previousChunkId;
+
+            public bool IsValid => previousChunkId.IsValid;
+
             public MoveContract(PooledHashMap<Entity, uint> prev) {
                 previousChunkId = prev;
             }

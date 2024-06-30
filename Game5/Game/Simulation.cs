@@ -111,9 +111,21 @@ namespace Game5.Game {
         public NavMesh NavMesh => navigationSystem.NavMesh;
         public NavMesh2Baker NavBaker => navigationSystem.NavMeshBaker;
 
+        public class ProfiledBootstrap : SystemBootstrap {
+            public override T CreateSystem<T>(StageContext context) {
+                using var marker = new ProfilerMarker("NewSys " + typeof(T).Name).Auto();
+                return base.CreateSystem<T>(context);
+            }
+        }
+
         public Simulation() {
-            World = new World();
-            EntityProxy = new(World);
+            using (new ProfilerMarker("Create World").Auto()) {
+                World = new World();
+                World.Context.SystemBootstrap = new ProfiledBootstrap();
+            }
+            using (new ProfilerMarker("Create Proxy").Auto()) {
+                EntityProxy = new(World);
+            }
 
             TimeSystem = World.GetOrCreateSystem<TimeSystem>();
             LifeSystem = World.GetOrCreateSystem<LifeSystem>();
@@ -134,6 +146,7 @@ namespace Game5.Game {
             navigationSystem.SetLandscape(landscape);
         }
 
+        Entity tcInstance;
         public void GenerateWorld() {
             var rand = new Random(0);
             /*using var tmpEntities = new PooledList<Entity>();
@@ -149,20 +162,25 @@ namespace Game5.Game {
                 World.AddComponent<CSelectable>(entity1);
                 tmpEntities.Add(entity1);
             }*/
-
+            var loadMarker = new ProfilerMarker("Loading meshes").Auto();
             var chickenModel = Resources.LoadModel("./Assets/Models/Ignore/chickenV2.fbx", out var chickenHandle);
             var archerModel = Resources.LoadModel("./Assets/Characters/Character_Archer.fbx", out var archerHandle);
             var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
             var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
+
+            archerHandle = archerHandle.Then(() => {
+                // Character FBX references incorrect texture
+                foreach (var mesh in archerModel.Meshes) {
+                    mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Characters/T_CharactersAtlas.png"));
+                }
+            });
+
             var animHandles = JobHandle.CombineDependencies(idleAnimHandle, runAnimHandle);
             var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, chickenHandle, animHandles);
-
             modelLoadHandle.Complete();
+            loadMarker.Dispose();
 
-            // Character FBX references incorrect texture
-            foreach (var mesh in archerModel.Meshes) {
-                mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Characters/T_CharactersAtlas.png"));
-            }
+            var prefabMarker = new ProfilerMarker("Creating Prefabs").Auto();
 
             var archer = ProtoSystem.CreatePrototype("Archer")
                 .AddComponent<CModel>(new() { PrefabName = "Archer", })
@@ -200,7 +218,7 @@ namespace Game5.Game {
                 .AddComponent<CHitPoints>(new() { Current = 10, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
-                //.AddComponent<ECObstruction>(new() { })
+                .AddComponent<ECObstruction>(new() { })
                 .Build();
 
             var townCentre = ProtoSystem.CreatePrototype("TownCentre",
@@ -222,59 +240,81 @@ namespace Game5.Game {
                 .AddComponent<CHitPoints>(new() { Current = 100, })
                 .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
-                //.AddComponent<ECObstruction>(new() { })
+                .AddComponent<ECObstruction>(new() { })
                 .Build();
 
-            var tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
-            World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
+            prefabMarker.Dispose();
 
-            var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
-            World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
+            using (new ProfilerMarker("Creating Test Entities").Auto()) {
+                tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
+                World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
 
-            var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
-            World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
+                var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
+                World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
 
-            var command = new EntityCommandBuffer(World.Stage);
-            const int Count = 25;
-            var SqrtCount = (int)MathF.Sqrt(Count);
-            for (int i = 0; i < Count; i++) {
-                var pos = 2000 + new Int2(i / SqrtCount, i % SqrtCount) * 6000;
-                if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
-                var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
-                command.AddComponent<ECTransform>(newEntity) = new() {
-                    Position = pos,
-                    Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
-                };
-                //command.RemoveComponent<ECObstruction>(newEntity);
+                var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
+                World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
             }
-            command.Commit();
 
-            for (int i = 0; i < 10; i++) {
-                Int2 groupMin = 4000;
-                Int2 groupMax = Landscape.Sizing.SimulationSize - 4000;
-                var groupPos = new Int2(
-                    rand.Next(groupMin.X, groupMax.X),
-                    rand.Next(groupMin.Y, groupMax.Y)
-                );
-                int spread = 10000;
-                for (int z = 0; z < 5; z++) {
-                    var pos = groupPos + new Int2(rand.Next(-spread, spread), rand.Next(-spread, spread));
+            using (new ProfilerMarker("Creating Houses").Auto()) {
+                var command = new EntityCommandBuffer(World.Stage);
+                const int Count = 25;
+                var SqrtCount = (int)MathF.Sqrt(Count);
+                for (int i = 0; i < Count; i++) {
+                    var pos = 2000 + new Int2(i / SqrtCount, i % SqrtCount) * 6000;
                     if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
-                    var entity = PrefabRegistry.Instantiate(command, tree.Prefab);
-                    command.SetComponent<ECTransform>(entity, new() {
+                    var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
+                    command.AddComponent<ECTransform>(newEntity) = new() {
                         Position = pos,
-                        Orientation = (short)rand.Next(short.MinValue, short.MaxValue),
-                    });
+                        Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
+                    };
+                    //command.RemoveComponent<ECObstruction>(newEntity);
+                }
+                using (new ProfilerMarker("Committing").Auto()) {
+                    command.Commit();
                 }
             }
-            command.Commit();
 
-            navigationSystem.Update();
-            World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(30000, 30000);
-            navigationSystem.Update();
+            using (new ProfilerMarker("Creating Trees").Auto()) {
+                var command = new EntityCommandBuffer(World.Stage);
+                for (int i = 0; i < 10; i++) {
+                    Int2 groupMin = 4000;
+                    Int2 groupMax = Landscape.Sizing.SimulationSize - 4000;
+                    var groupPos = new Int2(
+                        rand.Next(groupMin.X, groupMax.X),
+                        rand.Next(groupMin.Y, groupMax.Y)
+                    );
+                    int spread = 10000;
+                    for (int z = 0; z < 5; z++) {
+                        var pos = groupPos + new Int2(rand.Next(-spread, spread), rand.Next(-spread, spread));
+                        if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
+                        var entity = PrefabRegistry.Instantiate(command, tree.Prefab);
+                        command.SetComponent<ECTransform>(entity, new() {
+                            Position = pos,
+                            Orientation = (short)rand.Next(short.MinValue, short.MaxValue),
+                        });
+                    }
+                }
+                command.Commit();
+            }
+
+            /*using (new ProfilerMarker("Nav Test").Auto()) {
+                //navigationSystem.Update();
+                //World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(30000, 30000);
+                World.GetComponentRef<ECTransform>(tcInstance).Position.X -= 6000;
+                World.GetComponentRef<ECTransform>(tcInstance).Position.Y += 2000;
+                navigationSystem.Update();
+                //World.GetComponentRef<ECTransform>(tcInstance).Position.X += 6000;
+                //navigationSystem.Update();
+            }*/
         }
 
         public void Step(long dtMS) {
+            if (Input.GetKeyPressed(KeyCode.Space)) {
+                //World.GetComponentRef<ECTransform>(tcInstance).Position += new Int2(1000, 1000);
+                World.GetComponentRef<ECTransform>(tcInstance).Position += new Int2(500, 0);
+                navigationSystem.Update();
+            }
             World.GetOrCreateSystem<TimeSystem>().Step(dtMS);
             World.Step();
             World.GetOrCreateSystem<LifeSystem>().PurgeDead();

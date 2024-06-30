@@ -21,7 +21,7 @@ namespace Weesals.UI {
         public AspectModes AspectMode = AspectModes.PreserveAspectContain;
         public Vector2 ImageAnchor = new Vector2(0.5f, 0.5f);
 
-        public CSTexture Texture { get => Element.Texture; set { Element.SetTexture(value); MarkLayoutDirty(); } }
+        public CSBufferReference Texture { get => Element.Texture; set { Element.SetTexture(value); MarkLayoutDirty(); } }
         public Color Color { get => Element.Color; set => Element.Color = value; }
         public CanvasBlending.BlendModes BlendMode { get => Element.BlendMode; set => Element.SetBlendMode(value); } 
 
@@ -97,13 +97,14 @@ namespace Weesals.UI {
             if (anchorDelta.Y > 0f) size.Y /= anchorDelta.Y;
             return size;
         }
+        public override string ToString() { return $"Text<{Text}>"; }
     }
     public abstract class Selectable : CanvasRenderable, ISelectable {
         protected bool selected;
         public bool IsSelected => selected;
         public virtual void OnSelected(ISelectionGroup group, bool _selected) { selected = _selected; }
         public void OnPointerDown(PointerEvent events) {
-            if (events.GetIsButtonDown(0)) this.Select();
+            if (events.HasButton(0)) this.Select();
         }
         protected virtual void DrawSelectionFrame(ref CanvasCompositor.Context composer) {
             if (IsSelected) {

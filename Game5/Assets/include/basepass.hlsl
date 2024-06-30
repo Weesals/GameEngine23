@@ -34,7 +34,7 @@ BasePassOutput DebugOutput(float4 color) {
     color.rgb *= LuminanceFactor;
     BasePassOutput output = (BasePassOutput)0;
     output.BaseColor = color;
-    output.Attributes = float4(OctahedralEncode(float3(0, 0, -1)) * 0.5 + 0.5, 1.0, 1.0);
+    output.Attributes = float4(0.5, 0.5, 0.5, 1.0);
     return output;
 }
 BasePassOutput DebugOutput(float3 color) { return DebugOutput(float4(color, 1)); }
@@ -63,15 +63,19 @@ BasePassOutput PBROutput(PBRInput input, float3 viewDir = float3(0, 0, 1)) {
 
     output = (BasePassOutput)0;
     output.BaseColor = float4(input.Albedo * LuminanceFactor, input.Alpha);
-    output.Attributes = float4(OctahedralEncode(-input.Normal) * 0.5 + 0.5, input.Roughness, input.Occlusion);
+    output.Attributes = float4(
+        OctahedralEncode(-input.Normal) * 0.5 + 0.5,
+        saturate(input.Roughness) * rcp(2.0) + round(input.Metallic * 1024),
+        input.Occlusion
+    );
     return output;
 }
 
-void OutputVelocity(inout BasePassOutput result, float2 velocity) {
-    result.Velocity.xy = velocity * 16.0;
+void OutputVelocity(inout BasePassOutput result, float3 velocity) {
+    result.Velocity.xyz = velocity * float3(16.0, 16.0, 32.0);
 }
 void OutputSelected(inout BasePassOutput result, float selected) {
-    result.Velocity.z = selected;
+    result.Velocity.w = selected;
 }
 
 #endif

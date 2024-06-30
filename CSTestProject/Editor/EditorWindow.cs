@@ -161,8 +161,21 @@ namespace Weesals.Editor {
                         ActivateEntityInspector(world, entity.GetEntity());
                         return;
                     }
+                    if (entity.Owner != null) {
+                        ActivateGenericInspector(entity);
+                        return;
+                    }
                 }
                 Inspector.SetInspector(default);
+            };
+            Inspector.OnRegisterInspector += (inspector, enable) => {
+                if (inspector is IInspectorGameOverlay overlay) {
+                    if (enable) {
+                        GameView.AppendChild(overlay.GameViewOverlay);
+                    } else {
+                        GameView.RemoveChild(overlay.GameViewOverlay);
+                    }
+                }
             };
         }
 
@@ -174,19 +187,28 @@ namespace Weesals.Editor {
         public void ActivateLandscapeTools(LandscapeRenderer landscape) {
             Inspector.LandscapeTools.Initialize(GameView, landscape);
             Inspector.SetInspector(Inspector.LandscapeTools);
-            GameView.AppendChild(Inspector.LandscapeTools.InputDispatcher);
+        }
+        public void ActivateGenericInspector(ItemReference target) {
+            if (target.IsValid) {
+                Inspector.GenericInspector.Editables.Clear();
+                Inspector.GenericInspector.Editables.Add(target.Owner);
+                Inspector.GenericInspector.Refresh();
+                Inspector.SetInspector(Inspector.GenericInspector);
+            } else {
+                Inspector.SetInspector(default);
+            }
         }
         public void ActivateEntityInspector(World world, Entity entity) {
             if (entity.IsValid) {
-                Inspector.SetInspector(Inspector.EntityInspector);
                 Inspector.EntityInspector.Initialise(world, entity);
+                Inspector.SetInspector(Inspector.EntityInspector);
             } else {
                 Inspector.SetInspector(default);
             }
         }
 
         public void Update(float dt, Int2 size) {
-            if (Input.GetKeyPressed((char)KeyCode.F11) && !Input.GetKeyDown((char)KeyCode.LeftAlt)) FullScreen = !FullScreen;
+            if (Input.GetKeyPressed((char)KeyCode.F11) && !Input.GetKeyDown((char)KeyCode.Alt)) FullScreen = !FullScreen;
             using var marker = ProfileMarker_Update.Auto();
             Canvas.SetSize(size);
             EventSystem.Update(dt);

@@ -1,0 +1,57 @@
+﻿{
+	"Visuals": [
+		{
+			"Name": "House",
+			"Model": [
+				{
+					"Path": "./Assets/SM_House.fbx",
+					"VariantMask": "1"
+				},
+				{
+					"Path": "./Assets/B_House2.fbx",
+					"VariantMask": "2"
+				},
+				{
+					"Path": "./Assets/B_House3.fbx",
+					"VariantMask": "3"
+				},
+				{
+					"Path": "./Assets/B_Granary1.fbx",
+					"VariantMask": "4"
+				},
+				{
+					"Path": "./Assets/B_Granary2.fbx",
+					"VariantMask": "5"
+				},
+				{
+					"Path": "./Assets/B_Granary3.fbx",
+					"VariantMask": "6"
+				}
+			],
+			/*"Particle": {
+				"Path": "./Assets/Particles/Smoke.json",
+				"LocalPosition": "0.7, 3.2, -0.8"
+			}*/
+		},
+		{
+			"Name": "TownCentre",
+			"Model": { "Path": "./Assets/SM_TownCentre.fbx" },
+			"Particle": {
+				"Path": "./Assets/Particles/Fire.json",
+				"LocalPosition": "-2, 0.5, 2"
+			}
+		},
+		{
+			"Name": "Tree",
+			"Model": { "Path": "./Assets/SM_Tree.fbx" }
+		},
+		{
+			"Name": "Archer",
+			"Model": { "Path": "./Assets/Characters/Character_Archer.fbx" }
+		},
+		{
+			"Name": "Chicken",
+			"Model": { "Path": "./Assets/Models/Ignore/chickenV2.fbx" }
+		}
+	]
+}

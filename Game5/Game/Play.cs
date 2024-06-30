@@ -89,19 +89,22 @@ namespace Game5.Game {
         public VisualsCollection EntityVisuals;
 
         public NavDebug? NavDebug;
-
+        
         RenderWorldBinding renderBindings;
 
         LandscapeData landscape;
         LandscapeRenderer landscapeRenderer;
         LandscapeFoliageRenderer foliageRenderer;
 
+        LayeredLandscapeData layeredLandscape;
+
         ParticleSystemManager particleManager;
         ParticleSystem fireParticles;
         ParticleSystem.Emitter mouseFire;
+        UIPlay playUI;
 
-        [EditorField] public bool EnableFog = true;
-        [EditorField] public bool EnableAO = true;
+        [EditorField] public bool EnableFog = false;
+        [EditorField] public bool EnableAO = false;
         [EditorField] public float FogIntensity = 0.25f;
         [EditorField] public bool DrawVisibilityVolume = false;
 
@@ -116,7 +119,10 @@ namespace Game5.Game {
         public Play(GameRoot root) {
             GameRoot = root;
 
-            using (var marker = new ProfilerMarker("Landscape").Auto()) {
+            JobHandle loadHandle = default;
+
+            var landscapeHandle = (JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Create Landscape").Auto();
                 landscape = new LandscapeData();
                 var layers = new LandscapeLayerCollection();
                 layers.TerrainLayers = new[] {
@@ -129,19 +135,49 @@ namespace Game5.Game {
                     new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/Terrain/T_Dirt_BaseColor.png", NormalMap = "./Assets/Terrain/T_Dirt_Normal.png", },
                     new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/Terrain/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/Terrain/T_GorgeCliff_Normal.png", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
                 };
-                landscape.Initialise(new Int2(256, 256), layers);
-                landscape.Load();
-                landscapeRenderer = new LandscapeRenderer();
-                landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
-                landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
+                using (new ProfilerMarker("Init").Auto()) {
+                    landscape.Initialise(layers);
+                }
+                using (new ProfilerMarker("Load").Auto()) {
+                    landscape.Load();
+                    if (landscape.Size.X == 0) landscape.SetSize(255);
+                    //landscape.Resize(300);
+                }
+                using (new ProfilerMarker("Renderer").Auto()) {
+                    landscapeRenderer = new LandscapeRenderer();
+                    landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
+                    landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
+                }
+                using (new ProfilerMarker("Foliage").Auto()) {
+                    foliageRenderer = new(landscapeRenderer);
+                }
+            }));
 
-                foliageRenderer = new(landscapeRenderer);
-            }
-
-            using (var marker = new ProfilerMarker("Particles").Auto()) {
+            loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Particles").Auto();
                 particleManager = new ParticleSystemManager();
                 particleManager.Initialise(512);
-            }
+            }));
+
+            JobHandle visualsJob = default;
+            loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Load Visuals").Auto();
+                EntityVisuals = new(this);
+                string contents = File.ReadAllText("./Assets/Visuals.json");
+                using (new ProfilerMarker("Parse ").Auto()) {
+                    visualsJob = EntityVisuals.Load(contents);
+                }
+            }));
+
+            var simHandle = JobHandle.Schedule(() => {
+                using var marker = new ProfilerMarker("Create Simulation").Auto();
+                Simulation = new();
+            }).
+            Join(landscapeHandle).
+            Then(() => {
+                using var marker = new ProfilerMarker("Bind Simulation").Auto();
+                Simulation.SetLandscape(landscape);
+            });
 
             Camera = new Camera() {
                 FOV = 3.14f * 0.15f,
@@ -152,35 +188,13 @@ namespace Game5.Game {
                 FarPlane = 5000.0f,
             };
 
-
-            using (var marker = new ProfilerMarker("UI Play").Auto()) {
-                root.Canvas.AppendChild(new UIPlay(this));
+            using (new ProfilerMarker("UI Play").Auto()) {
+                root.Canvas.AppendChild(playUI = new UIPlay(this));
             }
 
-            using (var marker = new ProfilerMarker("Load Visuals").Auto()) {
-                EntityVisuals = new(this);
-                EntityVisuals.Load(File.ReadAllText("./Assets/Visuals.xml"));
-            }
+            loadHandle.Join(simHandle).Complete();
 
-            using (var marker = new ProfilerMarker("Create Simulation").Auto()) {
-                Simulation = new();
-                Simulation.SetLandscape(landscape);
-            }
-
-            using (var marker = new ProfilerMarker("Render Bindings").Auto()) {
-                renderBindings = new(World, Scene, root.ScenePasses, ParticleManager, EntityVisuals);
-                EntityHighlighting = new(renderBindings);
-            }
-
-            using (var marker = new ProfilerMarker("Generate World").Auto()) {
-                Simulation.GenerateWorld();
-            }
-
-
-            /*if (false) {
-                var stParticles = particleManager.RequireSystemFromJSON("./Assets/Particles/StressTest.json");
-                stParticles.CreateEmitter(new Vector3(0f, 0f, -5f));
-            }*/
+            visualsJob.Complete();
 
             GameRoot.RegisterEditable(this, true);
         }
@@ -188,11 +202,22 @@ namespace Game5.Game {
             GameRoot.RegisterEditable(this, false);
         }
 
+        public void Initialise() {
+            using (new ProfilerMarker("Render Bindings").Auto()) {
+                renderBindings = new(World, Scene, GameRoot.ScenePasses, ParticleManager, EntityVisuals);
+                EntityHighlighting = new(renderBindings);
+            }
+            using (new ProfilerMarker("Generate World").Auto()) {
+                Simulation.GenerateWorld();
+            }
+        }
+
         public void Update(float dt) {
-            Tracy.FrameMarkStart(0);
             using var marker = ProfileMarker_PlayUpdate.Auto();
             time += dt;
             if (dt > 0.02f) dt = 0.02f;
+
+            NavDebug?.OnDrawGizmosSelected();
 
             Simulation.Step((int)MathF.Round(dt * 1000));
             EntityHighlighting.Update((uint)(time * 1000f));
@@ -202,9 +227,7 @@ namespace Game5.Game {
 
             if (Input.GetKeyPressed(KeyCode.Z)) landscapeRenderer.SecondVariant = !landscapeRenderer.SecondVariant;
 
-            NavDebug?.OnDrawGizmosSelected();
-
-            if (Input.GetKeyDown(KeyCode.LeftControl) && Input.GetKeyDown(KeyCode.LeftAlt) && Input.GetKeyPressed(KeyCode.F11)) {
+            if (Input.GetKeyDown(KeyCode.Control) && Input.GetKeyDown(KeyCode.Alt) && Input.GetKeyPressed(KeyCode.F11)) {
                 Resources.ReloadAssets();
             }
 
@@ -228,15 +251,34 @@ namespace Game5.Game {
                     accessor.Archetype.GetHasSparseComponent(moveColumn, accessor.Row);
                 accessor.Component1Ref.Animation = isMoving ? anim.WalkAnim : anim.IdleAnim;
             }
-            Tracy.FrameMarkEnd(0);
+            /*if (Input.GetKeyPressed(KeyCode.Space)) {
+                var query = World.GetEntities();
+                query.MoveNext();
+                var entity = query.Current;
+                ref var tform = ref World.GetComponentRef<ECTransform>(entity);
+                tform.Position.X += 1000;
+            }*/
+        }
+
+        public void SetAutoQuality(CSGraphics graphics) {
+            if (graphics.GetDeviceName().ToString().Contains("nvidia", StringComparison.InvariantCultureIgnoreCase)) {
+                EnableFog = true;
+                EnableAO = true;
+            } else {
+                landscapeRenderer.HighQualityBlend = false;
+                landscapeRenderer.Parallax = false;
+                landscapeRenderer.EnableStochastic = false;
+            }
         }
 
         [EditorButton]
         public void ToggleNavDebug() {
             if (NavDebug == null) {
-                NavDebug = new() { ShowCornerLabels = true, ShowTriangleLabels = true, };
+                NavDebug = new();
                 NavDebug.Initialise(Simulation.NavBaker);
+                SelectionManager.SetSelected(new(NavDebug));
             } else {
+                SelectionManager.RemoveSelected(new(NavDebug));
                 NavDebug = null;
             }
         }

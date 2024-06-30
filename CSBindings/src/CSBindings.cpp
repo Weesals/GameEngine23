@@ -17,6 +17,8 @@
 
 #include "CSBindings.h"
 
+#include <WindowWin32.h>
+
 class PreprocessedShader {
 public:
 	std::string mSource;
@@ -173,145 +175,6 @@ int CSFont::GetGlyphCount(const NativeFont* font) { return font->GetGlyphCount()
 int CSFont::GetGlyphId(const NativeFont* font, wchar_t chr) { return font->GetGlyphId(chr); }
 const CSGlyph& CSFont::GetGlyph(const NativeFont* font, int id) { return (CSGlyph&)font->GetGlyph(id); }
 
-int CSMaterial::GetParameterIdentifiers(NativeMaterial* material, CSIdentifier* outlist, int capacity) {
-	assert(sizeof(Identifier) == sizeof(CSIdentifier));
-	return material->GetParametersRaw().GetItemIdentifiers((Identifier*)outlist, capacity);
-}
-void CSMaterial::SetRenderPass(NativeMaterial* material, CSIdentifier identifier) {
-	material->SetRenderPassOverride(IdentifierWithName(Identifier(identifier.mId)));
-}
-CSSpan CSMaterial::GetValueData(NativeMaterial* material, CSIdentifier identifier) {
-	auto data = material->GetUniformBinaryData(identifier.mId);
-	return MakeSpan(data);
-}
-int CSMaterial::GetValueType(NativeMaterial* material, CSIdentifier identifier) {
-	auto type = material->GetParametersRaw().GetValueType(identifier.mId);
-	return type == &TypeCache::Require<float>() ? 0
-		: type == &TypeCache::Require<int>() ? 1
-		: 2;
-}
-void CSMaterial::SetValueFloat(NativeMaterial* material, CSIdentifier identifier, const float* data, int count) {
-	material->SetUniform(identifier.mId, std::span<const float>(data, count));
-}
-void CSMaterial::SetValueInt(NativeMaterial* material, CSIdentifier identifier, const int* data, int count) {
-	material->SetUniform(identifier.mId, std::span<const int>(data, count));
-}
-void CSMaterial::SetValueTexture(NativeMaterial* material, CSIdentifier identifier, CSTexture texture) {
-	material->SetUniformTexture(identifier.mId, texture.mTexture);
-}
-void CSMaterial::SetBlendMode(NativeMaterial* material, void* data) {
-	material->SetBlendMode(*(BlendMode*)data);
-}
-void CSMaterial::SetRasterMode(NativeMaterial* material, void* data) {
-	material->SetRasterMode(*(RasterMode*)data);
-}
-void CSMaterial::SetDepthMode(NativeMaterial* material, void* data) {
-	material->SetDepthMode(*(DepthMode*)data);
-}
-void CSMaterial::InheritProperties(NativeMaterial* material, NativeMaterial* other) {
-	material->InheritProperties(other->GetSharedPtr());
-}
-void CSMaterial::RemoveInheritance(NativeMaterial* material, NativeMaterial* other) {
-	material->RemoveInheritance(other->GetSharedPtr());
-}
-NativeMaterial* CSMaterial::_Create(CSString shaderPath) {
-	if (shaderPath.mBuffer == nullptr) {
-		return create_shared<Material>();
-	} else {
-		return create_shared<Material>(ToWString(shaderPath));
-	}
-}
-void CSMaterial::Dispose(NativeMaterial* material) {
-	delete_shared<Material>(material);
-}
-
-
-int CSMesh::GetVertexCount(const NativeMesh* mesh) {
-	return mesh->GetVertexCount();
-}
-int CSMesh::GetIndexCount(const NativeMesh* mesh) {
-	return mesh->GetIndexCount();
-}
-void CSMesh::SetVertexCount(NativeMesh* mesh, int count) {
-	mesh->SetVertexCount(count);
-}
-void CSMesh::SetIndexCount(NativeMesh* mesh, int count) {
-	mesh->SetIndexCount(count);
-}
-const CSBufferLayout* CSMesh::GetVertexBuffer(NativeMesh* mesh) {
-	return (CSBufferLayout*)&mesh->GetVertexBuffer();
-}
-const CSBufferLayout* CSMesh::GetIndexBuffer(NativeMesh* mesh) {
-	return (CSBufferLayout*)&mesh->GetIndexBuffer();
-}
-void CSMesh::RequireVertexNormals(NativeMesh* mesh, uint8_t fmt) {
-	mesh->RequireVertexNormals((BufferFormat)fmt);
-}
-void CSMesh::RequireVertexTexCoords(NativeMesh* mesh, uint8_t fmt) {
-	mesh->RequireVertexTexCoords((BufferFormat)fmt);
-}
-void CSMesh::RequireVertexColors(NativeMesh* mesh, uint8_t fmt) {
-	mesh->RequireVertexColors((BufferFormat)fmt);
-}
-void CSMesh::GetMeshData(const NativeMesh* mesh, CSMeshData* data) {
-	static Identifier PositionName = "POSITION";
-	static Identifier NormalName = "NORMAL";
-	static Identifier TexCoordName = "TEXCOORD";
-	static Identifier ColorName = "COLOR";
-	static Identifier IndexName = "INDEX";
-	data->mVertexCount = mesh->GetVertexCount();
-	data->mIndexCount = mesh->GetIndexCount();
-	auto& name = mesh->GetName();
-	data->mName = CSString8(name.c_str(), (int)name.size());
-	for (auto& element : mesh->GetVertexBuffer().GetElements()) {
-		auto* target =
-			element.mBindName == PositionName ? &data->mPositions :
-			element.mBindName == NormalName ? &data->mNormals :
-			element.mBindName == TexCoordName ? &data->mTexCoords :
-			element.mBindName == ColorName ? &data->mColors :
-			nullptr;
-		if (target == nullptr) continue;
-		*target = CSBufferElement{
-			.mBindName = CSIdentifier(element.mBindName),
-			.mBufferStride = element.mBufferStride,
-			.mFormat = element.mFormat,
-			.mData = element.mData,
-		};
-	}
-	for (auto& element : mesh->GetIndexBuffer().GetElements()) {
-		auto* target =
-			element.mBindName == IndexName ? &data->mIndices :
-			nullptr;
-		if (target == nullptr) continue;
-		*target = CSBufferElement{
-			.mBindName = CSIdentifier(element.mBindName),
-			.mBufferStride = element.mBufferStride,
-			.mFormat = element.mFormat,
-			.mData = element.mData,
-		};
-	}
-}
-NativeMaterial* CSMesh::GetMaterial(NativeMesh* mesh) {
-	return mesh->GetMaterial(false).get();
-}
-const BoundingBox& CSMesh::GetBoundingBox(NativeMesh* mesh) {
-	return mesh->GetBoundingBox();
-}
-NativeMesh* CSMesh::_Create(CSString name) {
-	return new NativeMesh(AllocString(name));
-}
-int CSModel::GetMeshCount(const NativeModel* model) {
-	return (int)model->GetMeshes().size();
-}
-CSSpanSPtr CSModel::GetMeshes(const NativeModel* model) {
-	auto meshes = model->GetMeshes();
-	int psize = sizeof(*meshes.data());
-	return MakeSPtrSpan(meshes);
-}
-CSMesh CSModel::GetMesh(const NativeModel* model, int id) {
-	auto meshes = model->GetMeshes();
-	return CSMesh(meshes[id].get());
-}
 
 CSSpan CSConstantBuffer::GetValues(const CSConstantBufferData* cb) {
 	auto* constantBuffer = ((ShaderBase::ConstantBuffer*)cb);
@@ -390,6 +253,7 @@ void CSGraphics::Dispose(NativeGraphics* graphics) {
 		graphics = nullptr;
 	}
 }
+uint16_t CSGraphics::GetDeviceName(const NativeGraphics* graphics) { return Identifier::RequireStringId(graphics->mCmdBuffer.GetGraphics()->GetDeviceName().c_str()); }
 CSGraphicsCapabilities CSGraphics::GetCapabilities(const NativeGraphics* graphics) { return (CSGraphicsCapabilities&)graphics->mCmdBuffer.GetGraphics()->mCapabilities; }
 CSRenderStatistics CSGraphics::GetRenderStatistics(const NativeGraphics* graphics) { return (CSRenderStatistics&)graphics->mCmdBuffer.GetGraphics()->mStatistics; }
 NativeSurface* CSGraphics::CreateSurface(NativeGraphics* graphics, NativeWindow* window) {
@@ -566,6 +430,49 @@ void CSWindow::SetSize(NativeWindow* window, Int2 size) {
 }
 void CSWindow::SetInput(NativeWindow* window, NativeInput* input) {
 	window->SetInput(input->This());
+}
+CSWindowFrame CSWindow::GetWindowFrame(const NativeWindow* window) {
+	auto hwnd = ((WindowWin32*)window)->GetHWND();
+	RECT windowRect;
+	//GetWindowRect(hwnd, &windowRect);
+	WINDOWPLACEMENT placement = { sizeof(WINDOWPLACEMENT), };
+	GetWindowPlacement(hwnd, &placement);
+	// TODO: Might need to convert rect space
+	windowRect = placement.rcNormalPosition;
+	POINT clientPoint = { 0, 0 };
+	ClientToScreen(hwnd, &clientPoint);
+	return {
+		RectInt::FromMinMax(Int2(windowRect.left, windowRect.top), Int2(windowRect.right, windowRect.bottom)),
+		Int2(clientPoint.x - windowRect.left, clientPoint.y - windowRect.top),
+		placement.showCmd == SW_MAXIMIZE
+	};
+}
+void CSWindow::SetWindowFrame(const NativeWindow* window, const RectInt* frame, bool maximized) {
+	auto hwnd = ((WindowWin32*)window)->GetHWND();
+	WINDOWPLACEMENT placement = { sizeof(WINDOWPLACEMENT), };
+	GetWindowPlacement(hwnd, &placement);
+	Int2 tl = frame->GetMin(), br = frame->GetMax();
+	auto& wndRect = placement.rcNormalPosition;
+	wndRect = { tl.x, tl.y, br.x, br.y };
+	auto hMonitor = MonitorFromRect(&wndRect, MONITOR_DEFAULTTONEAREST);
+	if (hMonitor) {
+		MONITORINFO monitorInfo = { sizeof(MONITORINFO) };
+		if (GetMonitorInfo(hMonitor, &monitorInfo)) {
+			auto& workRect = monitorInfo.rcWork;
+			auto width = std::min(wndRect.right - wndRect.left, workRect.right - workRect.left);
+			auto height = std::min(wndRect.bottom - wndRect.top, workRect.bottom - workRect.top);
+			wndRect.left = std::clamp(wndRect.left, workRect.left, workRect.right - width);
+			wndRect.top = std::clamp(wndRect.top, workRect.top, workRect.bottom - height);
+			wndRect.right = wndRect.left + width;
+			wndRect.bottom = wndRect.top + height;
+		}
+	}
+	placement.showCmd = maximized ? SW_MAXIMIZE : SW_RESTORE;
+	SetWindowPlacement(hwnd, &placement);
+}
+void CSWindow::RegisterMovedCallback(const NativeWindow* window, void (*Callback)(), bool enable) {
+	auto win32 = ((WindowWin32*)window);
+	win32->RegisterMovedCallback(Callback, enable);
 }
 
 CSSpanSPtr CSInput::GetPointers(NativeInput* input) {

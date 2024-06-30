@@ -30,6 +30,7 @@ public:
     ~GraphicsDeviceD3D12() override;
 
     void CheckDeviceState() const;
+    std::wstring GetDeviceName() const override;
 
     D3DGraphicsDevice& GetDevice() { return mDevice; }
     ID3D12Device* GetD3DDevice() const { return mDevice.GetD3DDevice(); }

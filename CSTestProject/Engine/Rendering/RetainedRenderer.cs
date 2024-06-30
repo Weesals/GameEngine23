@@ -192,9 +192,10 @@ namespace Weesals.Engine {
         }
         public CSInstance CreateInstance(BoundingBox bounds) {
             int size = 10;
-            var range = gpuSceneFree.Take(size);
-            if (range.Length == -1) {
-                range = new RangeInt(gpuScene.BufferLayout.mCount, size);
+            var start = gpuSceneFree.Take(size);
+            if (start == -1) {
+                start = gpuScene.BufferLayout.mCount;
+                var range = new RangeInt(start, size);
                 if (range.End > gpuScene.BufferCapacityCount) {
                     int resize = (int)BitOperations.RoundUpToPowerOf2((ulong)range.End + 1500);
                     gpuScene.AllocResize(resize);
@@ -203,7 +204,7 @@ namespace Weesals.Engine {
                 }
                 gpuScene.BufferLayout.mCount += size;
             }
-            var id = instances.Add(new Instance() { Data = range, });
+            var id = instances.Add(new Instance() { Data = new(start, size), });
             if (id >= instanceVisibility.Length) Array.Resize(ref instanceVisibility, instances.Items.Length);
             if (id >= instanceBounds.Length) Array.Resize(ref instanceBounds, instances.Items.Length);
             instanceVisibility[id] = 1;
@@ -358,6 +359,8 @@ namespace Weesals.Engine {
             public MemoryBlock<CSBufferLayout> BufferLayouts;
             public MemoryBlock<nint> Resources;
             public int InstanceCount;
+            public int RenderOrder;
+            public override string ToString() { return Name; }
         }
 
         // Data which is erased each frame
@@ -396,27 +399,31 @@ namespace Weesals.Engine {
             }
             return renBufferLayouts;
         }
-        public int AppendMesh(string name, CSPipeline pipeline, MemoryBlock<CSBufferLayout> buffers, MemoryBlock<nint> resources, int instances = 1) {
+        public int AppendMesh(string name, CSPipeline pipeline, MemoryBlock<CSBufferLayout> buffers, MemoryBlock<nint> resources, int instances = 1, int renderOrder = 0) {
             using var marker = ProfileMarker_AppendMesh.Auto();
             int hash = pipeline.GetHashCode();
-            foreach (var buffer in buffers) {
-                hash = hash * 668265263 + (int)buffer.identifier * 374761393 + buffer.revision;
-            }
-            foreach (var resource in resources) {
-                hash = hash * 668265263 + resource.GetHashCode();
-            }
-            return AppendMesh(name, pipeline, buffers, resources, instances, hash);
+            foreach (var buffer in buffers) hash = hash * 668265263 + buffer.GetHashCode();
+            foreach (var resource in resources) hash = hash * 668265263 + resource.GetHashCode();
+            return AppendMesh(name, pipeline, buffers, resources, instances, renderOrder, hash);
         }
-        public int AppendMesh(string name, CSPipeline pipeline, MemoryBlock<CSBufferLayout> buffers, MemoryBlock<nint> resources, int instances, int hash) {
+        public int AppendMesh(string name, CSPipeline pipeline, MemoryBlock<CSBufferLayout> buffers, MemoryBlock<nint> resources, int instances, int renderOrder, int hash) {
             drawHash = drawHash * 668265263 + hash;
-            drawBatches.Add(new DrawBatch() {
+            int min = 0;
+            int max = drawBatches.Count;
+            while (min < max) {
+                var mid = (min + max) / 2;
+                var batch = drawBatches[mid];
+                if (renderOrder > batch.RenderOrder) min = mid + 1;
+                else max = mid;
+            }
+            drawBatches.Insert(min, new DrawBatch() {
                 Name = name,
                 PipelineLayout = pipeline,
                 BufferLayouts = buffers,
                 Resources = resources,
                 InstanceCount = instances,
             });
-            return drawBatches.Count - 1;
+            return min;
         }
 
         unsafe public bool AppendInstance(uint instanceId) {
@@ -706,8 +713,9 @@ namespace Weesals.Engine {
                     pipeline,
                     bindings,
                     resources,
-                    instCount,
-                    HashCode.Combine(mesh.Revision, instCount)
+                    instances: instCount,
+                    renderOrder: 0,
+                    hash: HashCode.Combine(mesh.Revision, instCount)
                 );
             }
         }

@@ -62,23 +62,21 @@ float PCFSample(Texture2D<float> tex, SamplerComparisonState samp, float3 pos, f
     return shadow;
 }    
 float PCFSample2(Texture2D<float> tex, SamplerComparisonState samp, float3 pos, float2 size) {
+    float2 px = pos.xy * size;
+    float2 ctr = floor(px);
+    float2 l = px - ctr;
+    float2 w0 = 1.0 - pow(0 + l, 2) * 0.5;
+    float2 w1 = 1.0 - pow(1 - l, 2) * 0.5;
     float2 texel = 1.0 / size;
-    float2 uv = pos.xy * size;
-    float2 ctr = floor(uv);
-    float2 l = (uv - ctr);
-    float2 o0 = 0 + pow(0 + l, 2);//saturate(l * 2 - 1.0);
-    float2 o1 = 1 - pow(1 - l, 2);//saturate(l * 2 - 0.0);
-    float2 p0 = ctr - 1.0 + (0 + o0) * 0.5;
-    float2 p1 = ctr + 1.0 - (1 - o1) * 0.5;
-    p0 *= texel; p1 *= texel;
+    float2 p0 = ctr * texel - w0 * texel;
+    float2 p1 = ctr * texel + w1 * texel;
+    float4 weights = float4(w0.x * w0.y, w1.x * w0.y, w0.x * w1.y, w1.x * w1.y);
     float shadow = 0.0;
-    float2 w0 = 1.0 - o0 * 0.5;
-    float2 w1 = 0.5 + o1 * 0.5;
-    shadow += w0.x * w0.y * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p0.y), pos.z);
-    shadow += w1.x * w0.y * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p0.y), pos.z);
-    shadow += w0.x * w1.y * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p1.y), pos.z);
-    shadow += w1.x * w1.y * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p1.y), pos.z);
-    shadow /= (w0.x * w0.y + w0.x * w1.y + w1.x * w0.y + w1.x * w1.y);
+    shadow += weights.x * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p0.y), pos.z);
+    shadow += weights.y * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p0.y), pos.z);
+    shadow += weights.z * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p1.y), pos.z);
+    shadow += weights.w * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p1.y), pos.z);
+    shadow /= dot(weights, 1);
     return shadow;
 }
 
@@ -87,23 +85,24 @@ float4 PSMain(PSInput input) : SV_Target {
     float deviceDepth = SceneDepth.Sample(BilinearSampler, input.uv).x;
     
     float3 viewDir = (float3(viewUv * ViewToProj.xy + ViewToProj.zw, 1.0));
-    //viewDir = SceneColor.Sample(BilinearSampler, input.uv).rgb * 2.0 - 1.0;
     float depth = DepthToLinear(deviceDepth);
     
     float3 Albedo = SceneColor.Sample(BilinearSampler, input.uv).rgb * (1.0 / LuminanceFactor);
     //return float4(Albedo * LuminanceFactor, 1);
     float4 Attributes = SceneAttri.Sample(BilinearSampler, input.uv);
     float3 normal = -OctahedralDecode(Attributes.xy * 2.0 - 1.0);
-    //return float4(normal, 1) * LuminanceFactor;
+    //return float4(normal * 0.5 + 0.5, 1) * LuminanceFactor;
         
     float specular = 0.06;
-    float metallic = 0.0;
-    float roughness = Attributes.z;
+    float metallic = 0.0;//Attributes.z * rcp(1024.0);
+    float roughness = frac(Attributes.z) * 2.0;
     float occlusion = Attributes.w;
     
     float4 AmbientOcclusion = SceneAO.Sample(BilinearSampler, input.uv);
     float3 bentNormal = normal;//OctahedralDecode(AmbientOcclusion.xy * 2.0 - 1.0);
+#if ENABLEAO
     occlusion *= AmbientOcclusion.a;
+#endif
     
     float3 o = 0.0;
     
@@ -111,19 +110,18 @@ float4 PSMain(PSInput input) : SV_Target {
     [branch]
     if (NdL > 0) {
         float shadow = 1.0;
+        
         float3 viewPos = viewDir * depth;
         float3 shadowPos = ViewToShadow(viewPos);
-        //return float4(shadowPos, 1);
         //shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z);
         shadow = PCFSample2(ShadowMap, ShadowSampler, shadowPos, 512);
         
+#if ENABLEFOG
         [branch]
-        if (deviceDepth < 0.999 && shadow > 0.0) {
+        if (deviceDepth < 0.999 && shadow > 0.01) {
             float4 farCS = float4((viewUv * 2.0 - 1.0), deviceDepth, 1.0);
             farCS = mul(InvViewProjection, farCS);
-            farCS.xyz /= farCS.w;
-            float3 groundPos = farCS.xyz;
-            //return float4(frac(groundPos), 1);
+            float3 groundPos = farCS.xyz / farCS.w;
         
             GlobalMipBias = 2.0;
             PrimeClouds(groundPos, _WorldSpaceLightDir0);
@@ -131,6 +129,7 @@ float4 PSMain(PSInput input) : SV_Target {
             float jitter = IGN(input.position.xy);
             shadow *= GetGroundShadow(groundPos, jitter, groundCloudShadowSampleCount);
         }
+#endif
         
         // The light
         o = ComputeLight(

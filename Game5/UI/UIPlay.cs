@@ -8,6 +8,7 @@ using Game5.UI.Interaction;
 using Weesals.Utility;
 using Weesals.ECS;
 using Weesals.Engine.Importers;
+using Weesals.Engine.Profiling;
 
 namespace Game5.UI {
 
@@ -25,11 +26,17 @@ namespace Game5.UI {
         private UXEntityTap entityTap;
         private UXEntityOrder entityOrder;
         private UXPlacement placement;
+        private TextBlock debugTxt;
 
         private BufferLayoutPersistent buffer;
         private CSTexture testTexture;
 
         private Int3 cameraMove = Int3.Zero;
+
+        public string DebugString {
+            get => debugTxt.Text;
+            set => debugTxt.Text = value;
+        }
 
         public UIPlay(Play play) {
             Play = play;
@@ -38,12 +45,14 @@ namespace Game5.UI {
 
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
-            AppendChild(inputDispatcher = new());
-            inputDispatcher.AddInteraction(cameraControls = new(this));
-            inputDispatcher.AddInteraction(entityDrag = new(this));
-            inputDispatcher.AddInteraction(entityTap = new(this));
-            inputDispatcher.AddInteraction(entityOrder = new(this));
-            inputDispatcher.AddInteraction(placement = new(this));
+            using (new ProfilerMarker("Add Interactions").Auto()) {
+                AppendChild(inputDispatcher = new());
+                inputDispatcher.AddInteraction(cameraControls = new(this));
+                inputDispatcher.AddInteraction(entityDrag = new(this));
+                inputDispatcher.AddInteraction(entityTap = new(this));
+                inputDispatcher.AddInteraction(entityOrder = new(this));
+                inputDispatcher.AddInteraction(placement = new(this));
+            }
 
             var btn = new TextButton();
             btn.SetTransform(CanvasTransform.MakeAnchored(new Vector2(128, 128), new Vector2(0.5f, 1.0f), new Vector2(0.0f, 0.0f)));
@@ -51,19 +60,22 @@ namespace Game5.UI {
             //AppendChild(btn);
 
             var spriteRenderer = new SpriteRenderer();
-            var atlas = spriteRenderer.Generate(new[] {
-                Resources.LoadTexture("./Assets/ui/T_Bow.png"),
-                Resources.LoadTexture("./Assets/ui/T_House.png"),
-                Resources.LoadTexture("./Assets/ui/T_Castle.png"),
-                Resources.LoadTexture("./Assets/ui/T_Hammer.png"),
-                Resources.LoadTexture("./Assets/ui/T_Sword.png"),
-                Resources.LoadTexture("./Assets/ui/T_Staff.png"),
-                Resources.LoadTexture("./Assets/ui/T_Axe.png"),
-                Resources.LoadTexture("./Assets/ui/T_Meat.png"),
-                Resources.LoadTexture("./Assets/ui/T_Wheat.png"),
-                Resources.LoadTexture("./Assets/ui/T_Tick.png"),
-                Resources.LoadTexture("./Assets/ui/T_Spear.png"),
-            });
+            SpriteAtlas atlas;
+            using (new ProfilerMarker("Generate Atlas").Auto()) {
+                atlas = spriteRenderer.Generate(new[] {
+                    Resources.LoadTexture("./Assets/ui/T_Bow.png"),
+                    Resources.LoadTexture("./Assets/ui/T_House.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Castle.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Hammer.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Sword.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Staff.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Axe.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Meat.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Wheat.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Tick.png"),
+                    Resources.LoadTexture("./Assets/ui/T_Spear.png"),
+                });
+            }
 
 #if FALSE
             var vlist = new ListLayout() {
@@ -98,6 +110,8 @@ namespace Game5.UI {
                 list.AppendChild(imgBtn);
             }
             AppendChild(list);
+            debugTxt = new() { HitTestEnabled = false, };
+            AppendChild(debugTxt);
             Canvas.KeyboardFilter.Insert(0, this);
 
             /*buffer = new(BufferLayoutPersistent.Usages.Uniform);
