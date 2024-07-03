@@ -9,6 +9,7 @@ namespace Weesals.ECS {
     public struct Entity : IEquatable<Entity>, IComparable<Entity> {
         public uint Index;
         public uint Version;
+        public Entity(uint index, uint version) { Index = index; Version = version; }
         public readonly bool IsValid => Index > 0;
         public int CompareTo(Entity other) { return Index.CompareTo(other.Index); }
         public bool Equals(Entity other) { return Index == other.Index; }

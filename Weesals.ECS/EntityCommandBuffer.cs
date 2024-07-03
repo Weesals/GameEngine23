@@ -80,11 +80,7 @@ namespace Weesals.ECS {
                     var mover = Stage.BeginMoveEntity(mutation.Entity, newTableId);
                     //archetype = Stage.GetArchetype(entityAddr.ArchetypeId);
                     foreach (var typeId in mutation.SetTypes) {
-                        ref var column = ref mover.GetColumn(new TypeId(typeId));
-                        //var columnId = archetype.RequireTypeIndex(new TypeId(typeId), Context);
-                        //ref var column = ref archetype.Columns[columnId];
-                        column.CopyValue(mover.To.Row, values[typeId].Items, i);
-                        column.NotifyMutation(mover.To.Row);
+                        mover.CopyFrom(new TypeId(typeId), values[typeId].Items, i);
                     }
                     entityAddr = mover.Commit();
                 }
@@ -93,7 +89,7 @@ namespace Weesals.ECS {
                 foreach (var typeIndex in mutation.SetSparseTypes) {
                     var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeIndex), Context);
                     var row = archetype.RequireSparseIndex(columnId, entityAddr.Row);
-                    ref var column = ref archetype.Columns[columnId];
+                    ref var column = ref archetype.GetColumn(columnId);
                     column.CopyValue(row, sparseValues[typeIndex].Items, i);
                     column.NotifyMutation(entityAddr.Row);
                 }

@@ -108,7 +108,7 @@ namespace Weesals.ECS {
             LambdaId = stage.RequireLambda(Callback);
         }
         public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = (C1[])table.Columns[columnIs[0]].Items;
+            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i]);
@@ -122,8 +122,8 @@ namespace Weesals.ECS {
             LambdaId = stage.RequireLambda(Callback);
         }
         public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = (C1[])table.Columns[columnIs[0]].Items;
-            var col2 = (C2[])table.Columns[columnIs[1]].Items;
+            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i]);
@@ -137,9 +137,9 @@ namespace Weesals.ECS {
             LambdaId = stage.RequireLambda(Callback);
         }
         public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = (C1[])table.Columns[columnIs[0]].Items;
-            var col2 = (C2[])table.Columns[columnIs[1]].Items;
-            var col3 = (C3[])table.Columns[columnIs[2]].Items;
+            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(table, columnIs[2]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i]);
@@ -153,10 +153,10 @@ namespace Weesals.ECS {
             LambdaId = stage.RequireLambda(Callback);
         }
         public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = (C1[])table.Columns[columnIs[0]].Items;
-            var col2 = (C2[])table.Columns[columnIs[1]].Items;
-            var col3 = (C3[])table.Columns[columnIs[2]].Items;
-            var col4 = (C4[])table.Columns[columnIs[3]].Items;
+            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(table, columnIs[2]);
+            var col4 = new ArchetypeComponentGetter<C4>(table, columnIs[3]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i], ref col4[i]);
@@ -170,11 +170,11 @@ namespace Weesals.ECS {
             LambdaId = stage.RequireLambda(Callback);
         }
         public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = (C1[])table.Columns[columnIs[0]].Items;
-            var col2 = (C2[])table.Columns[columnIs[1]].Items;
-            var col3 = (C3[])table.Columns[columnIs[2]].Items;
-            var col4 = (C4[])table.Columns[columnIs[3]].Items;
-            var col5 = (C5[])table.Columns[columnIs[3]].Items;
+            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(table, columnIs[2]);
+            var col4 = new ArchetypeComponentGetter<C4>(table, columnIs[3]);
+            var col5 = new ArchetypeComponentGetter<C5>(table, columnIs[4]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i], ref col4[i], ref col5[i]);

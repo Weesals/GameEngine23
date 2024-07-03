@@ -292,15 +292,15 @@ namespace Weesals.Rendering {
             public DynamicBitField ChangedTransforms = new();
             public DynamicBitField ChangedSelected = new();
             public DynamicBitField ValidEntities = new();
-            public TableBindings(StageContext context, Archetype table) {
-                ModelLookup = new(context, table);
-                ModelLookup.GetColumn(table).AddModificationListener(ChangedModels);
-                TransformLookup = new(context, table);
-                TransformLookup.GetColumn(table).AddModificationListener(ChangedTransforms);
-                SelectedLookup = new(context, table);
+            public TableBindings(StageContext context, Archetype archetype) {
+                ModelLookup = new(context, archetype);
+                ModelLookup.AddModificationListener(archetype, ChangedModels);
+                TransformLookup = new(context, archetype);
+                TransformLookup.AddModificationListener(archetype, ChangedTransforms);
+                SelectedLookup = new(context, archetype);
                 if (SelectedLookup.IsValid)
-                    SelectedLookup.GetColumn(table).AddModificationListener(ChangedSelected);
-                AnimationLookup = new(context, table);
+                    SelectedLookup.AddModificationListener(archetype, ChangedSelected);
+                AnimationLookup = new(context, archetype);
             }
         }
         public TableBindings[] Bindings = Array.Empty<TableBindings>();
@@ -405,7 +405,7 @@ namespace Weesals.Rendering {
         }
         public void UpdateModel(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
+            var emodel = binding.ModelLookup.GetValueRO(World.Stage, entityAddr);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance != null) {
@@ -423,8 +423,8 @@ namespace Weesals.Rendering {
         }
         public void UpdateTransform(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var epos = binding.TransformLookup.GetValue(World.Stage, entityAddr);
-            var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
+            var epos = binding.TransformLookup.GetValueRO(World.Stage, entityAddr);
+            var emodel = binding.ModelLookup.GetValueRO(World.Stage, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -446,7 +446,7 @@ namespace Weesals.Rendering {
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
             var archetype = World.Stage.GetArchetype(entityAddr.ArchetypeId);
-            var selected = binding.SelectedLookup.GetValue(archetype, entityAddr.Row);
+            var selected = binding.SelectedLookup.GetValueRO(archetype, entityAddr.Row);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -456,9 +456,9 @@ namespace Weesals.Rendering {
         }
         private void UpdateAnimation(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var emodel = binding.ModelLookup.GetValue(World.Stage, entityAddr);
+            var emodel = binding.ModelLookup.GetValueRO(World.Stage, entityAddr);
             var archetype = World.Stage.GetArchetype(entityAddr.ArchetypeId);
-            var eanim = binding.AnimationLookup.GetValueRef(archetype, entityAddr.Row);
+            var eanim = binding.AnimationLookup.GetValueRO(archetype, entityAddr.Row);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;

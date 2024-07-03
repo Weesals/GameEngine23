@@ -107,6 +107,7 @@ namespace Game5.Game {
         [EditorField] public bool EnableAO = false;
         [EditorField] public float FogIntensity = 0.25f;
         [EditorField] public bool DrawVisibilityVolume = false;
+        [EditorField] public bool EnableFoliage = false;
 
         [EditorField] public int LoadedModelCount => Resources.LoadedModelCount;
         [EditorField] public int LoadedShaderCount => Resources.LoadedShaderCount;
@@ -264,10 +265,11 @@ namespace Game5.Game {
             if (graphics.GetDeviceName().ToString().Contains("nvidia", StringComparison.InvariantCultureIgnoreCase)) {
                 EnableFog = true;
                 EnableAO = true;
+                EnableFoliage = true;
             } else {
                 landscapeRenderer.HighQualityBlend = false;
-                landscapeRenderer.Parallax = false;
                 landscapeRenderer.EnableStochastic = false;
+                landscapeRenderer.Parallax = false;
             }
         }
 
@@ -292,13 +294,15 @@ namespace Game5.Game {
             particleManager.Update(graphics, dt);
         }
         public void PrepareBasePass(CSGraphics graphics, ScenePass pass) {
-            foliageRenderer.UpdateInstances(graphics, pass);
+            if (EnableFoliage) {
+                foliageRenderer.UpdateInstances(graphics, pass);
+            }
         }
         public void RenderBasePass(CSGraphics graphics, ScenePass pass) {
             var materialStack = new MaterialStack(Scene.RootMaterial);
             using var passMat = materialStack.Push(pass.OverrideMaterial);
             landscapeRenderer.Render(graphics, ref materialStack, pass);
-            if (pass.TagsToInclude.Has(RenderTag.Default)) {
+            if (pass.TagsToInclude.Has(RenderTag.Default) && EnableFoliage) {
                 foliageRenderer.RenderInstances(graphics, ref materialStack, pass);
             }
             if (pass.TagsToInclude.Has(RenderTag.Transparent)) {

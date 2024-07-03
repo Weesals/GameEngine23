@@ -54,7 +54,6 @@ namespace Weesals.Landscape {
         }
 
         public void UpdateInstances(CSGraphics graphics, ScenePass pass) {
-            return;
             if (meshDraw == null) return;
             LandscapeRenderer.ApplyDataChanges();
 

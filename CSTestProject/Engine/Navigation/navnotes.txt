@@ -1,0 +1,7 @@
+Compute pinned edges within region
+Combine with perimeter edges
+Stitch to outer edges
+Generate triangulation
+Prune existing triangles
+Remove culled triangles
+Add new triangles

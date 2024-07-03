@@ -43,11 +43,11 @@ public static class ECSTestProgram {
                 var type = component.GetRawType();
                 Console.WriteLine("  Found component " + type);
                 if (component.GetIs<TestComponent>()) {
-                    var cmp = component.GetAs<TestComponent>();
+                    var cmp = component.GetRO<TestComponent>();
                     Console.WriteLine("   - Value " + cmp.TestValue);
                 }
                 if (component.GetIs<TestComponent2>()) {
-                    var cmp = component.GetAs<TestComponent2>();
+                    var cmp = component.GetRO<TestComponent2>();
                     Console.WriteLine("   - Value " + cmp.TestValue);
                 }
             }

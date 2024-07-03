@@ -616,9 +616,12 @@ namespace Weesals.ECS {
                     bitIndex = -1;
                 }
             }
+            public static readonly Enumerator Invalid = new(None);
         }
         public Enumerator GetEnumerator() => new Enumerator(this);
         IEnumerator<int> IEnumerable<int>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private static readonly DynamicBitField None = new();
     }
 }

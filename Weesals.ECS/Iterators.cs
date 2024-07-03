@@ -1,18 +1,14 @@
 ﻿using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Weesals.ECS {
     public readonly struct EntityComponentAccessor<C1> {
         public readonly Archetype Archetype;
         private readonly int row, column1;
-        public int Row => row;
+        public readonly int Row => row;
         public readonly Entity Entity => Archetype.Entities[row];
-        public readonly C1 Component1 => Archetype.GetColumn(column1).GetValue<C1>(row);
-        public readonly ref C1 Component1Ref => ref Archetype.GetColumn(column1).GetValueRefMut<C1>(row);
+        public readonly ref readonly C1 Component1 => ref Archetype.GetValueRO<C1>(column1, row);
+        public readonly ref C1 Component1Ref => ref Archetype.GetValueRW<C1>(column1, row);
         public EntityComponentAccessor(Archetype archetype, int _row, int _column1) {
             Archetype = archetype; row = _row;
             column1 = _column1;
@@ -24,12 +20,12 @@ namespace Weesals.ECS {
     public readonly struct EntityComponentAccessor<C1, C2> {
         public readonly Archetype Archetype;
         private readonly int row, column1, column2;
-        public int Row => row;
+        public readonly int Row => row;
         public readonly Entity Entity => Archetype.Entities[row];
-        public readonly C1 Component1 => Archetype.GetColumn(column1).GetValue<C1>(row);
-        public readonly C2 Component2 => Archetype.GetColumn(column2).GetValue<C2>(row);
-        public readonly ref C1 Component1Ref => ref Archetype.GetColumn(column1).GetValueRefMut<C1>(row);
-        public readonly ref C2 Component2Ref => ref Archetype.GetColumn(column2).GetValueRefMut<C2>(row);
+        public readonly ref readonly C1 Component1 => ref Archetype.GetValueRO<C1>(column1, row);
+        public readonly ref readonly C2 Component2 => ref Archetype.GetValueRO<C2>(column2, row);
+        public readonly ref C1 Component1Ref => ref Archetype.GetValueRW<C1>(column1, row);
+        public readonly ref C2 Component2Ref => ref Archetype.GetValueRW<C2>(column2, row);
         public EntityComponentAccessor(Archetype archetype, int _row, int _column1, int _column2) {
             Archetype = archetype; row = _row;
             column1 = _column1; column2 = _column2;
@@ -43,14 +39,14 @@ namespace Weesals.ECS {
     public readonly struct EntityComponentAccessor<C1, C2, C3> {
         public readonly Archetype Archetype;
         private readonly int row, column1, column2, column3;
-        public int Row => row;
+        public readonly int Row => row;
         public readonly Entity Entity => Archetype.Entities[row];
-        public readonly C1 Component1 => Archetype.GetColumn(column1).GetValue<C1>(row);
-        public readonly C2 Component2 => Archetype.GetColumn(column2).GetValue<C2>(row);
-        public readonly C3 Component3 => Archetype.GetColumn(column3).GetValue<C3>(row);
-        public readonly ref C1 Component1Ref => ref Archetype.GetColumn(column1).GetValueRefMut<C1>(row);
-        public readonly ref C2 Component2Ref => ref Archetype.GetColumn(column2).GetValueRefMut<C2>(row);
-        public readonly ref C3 Component3Ref => ref Archetype.GetColumn(column3).GetValueRefMut<C3>(row);
+        public readonly ref readonly C1 Component1 => ref Archetype.GetValueRO<C1>(column1, row);
+        public readonly ref readonly C2 Component2 => ref Archetype.GetValueRO<C2>(column2, row);
+        public readonly ref readonly C3 Component3 => ref Archetype.GetValueRO<C3>(column3, row);
+        public readonly ref C1 Component1Ref => ref Archetype.GetValueRW<C1>(column1, row);
+        public readonly ref C2 Component2Ref => ref Archetype.GetValueRW<C2>(column2, row);
+        public readonly ref C3 Component3Ref => ref Archetype.GetValueRW<C3>(column3, row);
         public EntityComponentAccessor(Archetype archetype, int _row, int _column1, int _column2, int _column3) {
             Archetype = archetype; row = _row;
             column1 = _column1; column2 = _column2; column3 = _column3;
@@ -69,7 +65,7 @@ namespace Weesals.ECS {
         private readonly int column1;
         public TableComponentAccessor(Archetype archetype, TypeId typeId) {
             Archetype = archetype;
-            column1 = archetype.RequireTypeIndex(typeId);
+            column1 = archetype.GetColumnId(typeId);
         }
         public struct Enumerator : IEnumerator<EntityComponentAccessor<C1>> {
             public readonly TableComponentAccessor<C1> TableAccessor;
@@ -84,10 +80,7 @@ namespace Weesals.ECS {
             public bool MoveNext() { return ++row < TableAccessor.Archetype.EntityCount; }
             public bool MoveNextFiltered(Query query) {
                 var archetype = TableAccessor.Archetype;
-                ++row;
-                while (true) {
-                    var oldRow = row;
-                    if (oldRow >= archetype.EntityCount) break;
+                for (var oldRow = ++row; oldRow < archetype.EntityCount;) {
                     foreach (var typeId in query.WithSparseTypes) {
                         var column = archetype.RequireSparseComponent(TypeId.MakeSparse(typeId), default!);
                         row = archetype.GetNextSparseRowInclusive(column, oldRow);
@@ -108,8 +101,8 @@ namespace Weesals.ECS {
         private readonly int column1, column2;
         public TableComponentAccessor(Archetype archetype, TypeId typeId1, TypeId typeId2) {
             Archetype = archetype;
-            column1 = archetype.RequireTypeIndex(typeId1);
-            column2 = archetype.RequireTypeIndex(typeId2);
+            column1 = archetype.GetColumnId(typeId1);
+            column2 = archetype.GetColumnId(typeId2);
         }
         public struct Enumerator : IEnumerator<EntityComponentAccessor<C1, C2>> {
             public readonly TableComponentAccessor<C1, C2> TableAccessor;
@@ -123,10 +116,7 @@ namespace Weesals.ECS {
             public bool MoveNext() { return ++row < TableAccessor.Archetype.EntityCount; }
             public bool MoveNextFiltered(Query query) {
                 var archetype = TableAccessor.Archetype;
-                ++row;
-                while (true) {
-                    var oldRow = row;
-                    if (oldRow >= archetype.EntityCount) break;
+                for (var oldRow = ++row; oldRow < archetype.EntityCount;) {
                     foreach (var typeId in query.WithSparseTypes) {
                         var column = archetype.RequireSparseComponent(TypeId.MakeSparse(typeId), default!);
                         row = archetype.GetNextSparseRowInclusive(column, oldRow);
@@ -147,9 +137,9 @@ namespace Weesals.ECS {
         private readonly int column1, column2, column3;
         public TableComponentAccessor(Archetype archetype, TypeId typeId1, TypeId typeId2, TypeId typeId3) {
             Archetype = archetype;
-            column1 = archetype.RequireTypeIndex(typeId1);
-            column2 = archetype.RequireTypeIndex(typeId2);
-            column3 = archetype.RequireTypeIndex(typeId3);
+            column1 = archetype.GetColumnId(typeId1);
+            column2 = archetype.GetColumnId(typeId2);
+            column3 = archetype.GetColumnId(typeId3);
         }
         public struct Enumerator : IEnumerator<EntityComponentAccessor<C1, C2, C3>> {
             public readonly TableComponentAccessor<C1, C2, C3> TableAccessor;
@@ -163,10 +153,7 @@ namespace Weesals.ECS {
             public bool MoveNext() { return ++row < TableAccessor.Archetype.EntityCount; }
             public bool MoveNextFiltered(Query query) {
                 var archetype = TableAccessor.Archetype;
-                ++row;
-                while (true) {
-                    var oldRow = row;
-                    if (oldRow >= archetype.EntityCount) break;
+                for (var oldRow = ++row; oldRow < archetype.EntityCount;) {
                     foreach (var typeId in query.WithSparseTypes) {
                         var column = archetype.RequireSparseComponent(TypeId.MakeSparse(typeId), default!);
                         row = archetype.GetNextSparseRowInclusive(column, oldRow);

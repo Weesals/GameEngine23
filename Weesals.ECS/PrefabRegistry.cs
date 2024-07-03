@@ -144,19 +144,15 @@ namespace Weesals.ECS {
             var prefabData = World.GetComponent<Prefab>(prefab.Index);
             var entity = world.Stage.CreateEntity(prefabData.Name);
             var archetypeId = world.Stage.RequireArchetypeIndex(prefabData.TypeBitField);
-            using var mover = world.Stage.BeginMoveEntity(entity, archetypeId);
-            //var archetype = world.Stage.GetArchetype(archetypeId);
+            var mover = world.Stage.BeginMoveEntity(entity, archetypeId);
             foreach (var typeId in prefabData.TypeBitField) {
-                //var columnId = archetype.RequireTypeIndex(new TypeId(typeId), world.Context);
-                //ref var column = ref archetype.Columns[columnId];
-                ref var column = ref mover.GetColumn(new TypeId(typeId));
                 var array = World.GetRawComponent(new TypeId(typeId), prefab.Index, out var row);
-                column.CopyValue(mover.To.Row, array, row);
+                mover.CopyFrom(new TypeId(typeId), array, row);
             }
             return mover;
         }
         public Entity Instantiate(World world, EntityPrefab prefab) {
-            var mover = BeginInstantiate(world, prefab);
+            using var mover = BeginInstantiate(world, prefab);
             mover.Commit();
             return mover.Entity;
         }

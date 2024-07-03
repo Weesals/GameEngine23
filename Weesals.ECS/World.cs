@@ -109,7 +109,6 @@ namespace Weesals.ECS {
         //private List<SystemLambda.Cache> lambdaCaches = new();
         private List<Query> queries = new(16);
         private List<Query.Cache> queryCaches = new(16);
-        private List<Listener> listeners = new(16);
         private List<ArchetypeListener> archetypeListeners = new(16);
 
         // Archetypes and queries must be unique, these allow efficient lookup
@@ -146,14 +145,10 @@ namespace Weesals.ECS {
 
         public Entity CreateEntity(string name = "unknown") {
             lock (entities) {
-                var entity = new Entity() {
-                    Index = 0,
-                    Version = 1,
-                };
+                var entity = new Entity(0, 1);
                 if (deletedEntity != -1) {
                     var entityData = entities[deletedEntity];
-                    entity.Index = (uint)deletedEntity;
-                    entity.Version = entityData.Version;
+                    entity = new((uint)deletedEntity, entityData.Version);
                     deletedEntity = entityData.Address.Row;
                     entityData.Address = EntityAddress.Invalid;
                     entities[(int)entity.Index] = entityData;
@@ -195,15 +190,16 @@ namespace Weesals.ECS {
         public unsafe ref T AddComponent<T>(Entity entity) {
             return ref RequireComponent<T>(entity);
         }
-        public unsafe ref T RequireComponent<T>(Entity entity, bool markDirty = true) {
+        public unsafe ref T RequireComponent<T>(Entity entity) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var entityAddress = RequireEntityAddress(entity);
             var archetype = archetypes[entityAddress.ArchetypeId];
 
-            var index = -1;
+            var columnId = -1;
+            var denseRow = entityAddress.Row;
             if (componentTypeId.IsSparse) {
-                index = archetype.RequireSparseComponent(componentTypeId, Context);
-                archetype.RequireSparseIndex(index, entityAddress.Row);
+                columnId = archetype.RequireSparseComponent(componentTypeId, Context);
+                denseRow = archetype.RequireSparseIndex(columnId, entityAddress.Row);
             } else {
                 if (archetype.TypeMask.Contains(componentTypeId))
                     throw new Exception($"Entity already has component {typeof(T).Name}");
@@ -214,11 +210,9 @@ namespace Weesals.ECS {
                 entityAddress = MoveEntity(entity,
                     RequireArchetypeIndex(builder.Build()));
                 archetype = archetypes[entityAddress.ArchetypeId];
-                index = archetype.RequireTypeIndex(componentTypeId);
+                columnId = archetype.GetColumnId(componentTypeId);
             }
-            ref var column = ref archetype.GetColumn(index);
-            if (markDirty) column.NotifyMutation(entityAddress.Row);
-            return ref column.GetValueRef<T>(entityAddress.Row);
+            return ref archetype.GetValueRW<T>(columnId, denseRow);
         }
         public bool HasComponent<T>(Entity entity) { return HasComponent<T>(RequireEntityAddress(entity)); }
         public bool HasComponent<T>(EntityAddress entityAddr) {
@@ -228,7 +222,7 @@ namespace Weesals.ECS {
                 if (!archetype.TryGetSparseComponent(componentTypeId, out var column, Context)) return false;
                 if (!archetype.GetHasSparseComponent(column, entityAddr.Row)) return false;
             } else {
-                if (!archetype.GetContainsType(componentTypeId, Context)) return false;
+                if (!archetype.GetHasColumn(componentTypeId, Context)) return false;
             }
             return true;
         }
@@ -238,25 +232,28 @@ namespace Weesals.ECS {
         public ref readonly T GetComponent<T>(EntityAddress entityData) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityData.ArchetypeId];
-            var index = archetype.RequireTypeIndex(componentTypeId, Context);
-            return ref archetype.GetValueAs<T>(index, entityData.Row);
+            var columnId = archetype.GetColumnId(componentTypeId, Context);
+            return ref archetype.GetValueRO<T>(columnId, entityData.Row);
+        }
+        public bool TryGetComponent<T>(Entity entity, out T component) {
+            return TryGetComponent(RequireEntityAddress(entity), out component);
         }
         public bool TryGetComponent<T>(EntityAddress entityData, out T component) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityData.ArchetypeId];
-            if (!archetype.TryGetTypeIndex(componentTypeId, out var index, Context)) { component = default; return false; }
-            component = archetype.GetValueAs<T>(index, entityData.Row);
+            if (!archetype.TryGetColumnId(componentTypeId, out var columnId, Context)) { component = default; return false; }
+            component = archetype.GetValueRO<T>(columnId, entityData.Row);
             return true;
         }
         public ref T GetComponentRef<T>(Entity entity) {
             return ref GetComponentRef<T>(RequireEntityAddress(entity));
         }
-        public ref T GetComponentRef<T>(EntityAddress entityData, bool markDirty = true) {
+        public ref T GetComponentRef<T>(EntityAddress entityData) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityData.ArchetypeId];
-            var index = archetype.RequireTypeIndex(componentTypeId, Context);
-            if (markDirty) archetype.NotifyMutation(index, entityData.Row);
-            return ref archetype.GetValueAs<T>(index, entityData.Row);
+            var columnId = archetype.GetColumnId(componentTypeId, Context);
+            archetype.NotifyMutation(columnId, entityData.Row);
+            return ref archetype.GetValueRW<T>(columnId, entityData.Row);
         }
         public NullableRef<T> TryGetComponentRef<T>(Entity entity, bool markDirty = true) {
             return TryGetComponentRef<T>(RequireEntityAddress(entity), markDirty);
@@ -264,10 +261,10 @@ namespace Weesals.ECS {
         public NullableRef<T> TryGetComponentRef<T>(EntityAddress entityData, bool markDirty = true) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityData.ArchetypeId];
-            if (!archetype.TryGetTypeIndex(componentTypeId, out var index, Context)) return default;
-            if (ComponentType<T>.IsSparse && !archetype.GetHasSparseComponent(index, entityData.Row)) return default;
-            if (markDirty) archetype.NotifyMutation(index, entityData.Row);
-            return new NullableRef<T>(ref archetype.GetValueAs<T>(index, entityData.Row));
+            if (!archetype.TryGetColumnId(componentTypeId, out var columnId, Context)) return default;
+            if (ComponentType<T>.IsSparse && !archetype.GetHasSparseComponent(columnId, entityData.Row)) return default;
+            if (markDirty) archetype.NotifyMutation(columnId, entityData.Row);
+            return new NullableRef<T>(ref archetype.GetValueRW<T>(columnId, entityData.Row));
         }
         unsafe public bool TryRemoveComponent<T>(Entity entity) {
             var entityData = RequireEntityAddress(entity);
@@ -322,7 +319,7 @@ namespace Weesals.ECS {
             var it = query.WithTypes.GetEnumerator();
             for (int i = 0; i < componentOffsets.Length; i++) {
                 Debug.Assert(it.MoveNext());
-                componentOffsets[i] = archetype.RequireTypeIndex(new TypeId(it.Current), Context);
+                componentOffsets[i] = archetype.GetColumnId(new TypeId(it.Current), Context);
             }
             Debug.Assert(!it.MoveNext());
             var match = new Query.Cache.MatchedArchetype() {
@@ -341,10 +338,6 @@ namespace Weesals.ECS {
                 archetypes.Add(archetype);
                 archetypesByTypes[field] = archetypeI;
                 lock (queries) {
-                    foreach (var listener in listeners) {
-                        if (queries[listener.QueryId].Matches(archetype.TypeMask))
-                            archetype.AddListener(listener);
-                    }
                     var builder = new StageContext.TypeInfoBuilder(Context, archetype.ArchetypeListeners);
                     for (int i = 0; i < archetypeListeners.Count; i++) {
                         var listener = archetypeListeners[i];
@@ -395,10 +388,12 @@ namespace Weesals.ECS {
             public ref TComponent GetComponentRef<TComponent>() {
                 return ref Stage.GetComponentRef<TComponent>(To);
             }
-            public ref Column GetColumn(TypeId typeId) {
+            public void CopyFrom(TypeId typeId, Array data, int row) {
                 var archetype = Stage.GetArchetype(To.ArchetypeId);
-                var columnId = archetype.RequireTypeIndex(new TypeId(typeId), Stage.Context);
-                return ref archetype.Columns[columnId];
+                var columnId = archetype.GetColumnId(typeId, Stage.Context);
+                ref var column = ref archetype.GetColumn(columnId);
+                column.CopyValue(To.Row, data, row);
+                column.NotifyMutation(To.Row);
             }
             public EntityData Commit() {
                 var newData = Stage.entities[(int)Entity.Index];
@@ -419,9 +414,6 @@ namespace Weesals.ECS {
             var oldArchetypeListeners = oldArchetype != null ? oldArchetype.ArchetypeListeners : default;
             var newArchetypeListeners = newArchetype != null ? newArchetype.ArchetypeListeners : default;
             if (oldArchetype != null) {
-                foreach (var listener in oldArchetype.Listeners)
-                    if (!queries[listener.QueryId].Matches(newArchetypeMask))
-                        listener.OnRegister(entity, false);
                 foreach (var listenerI in oldArchetypeListeners.Except(newArchetypeListeners))
                     archetypeListeners[listenerI].OnDelete?.Invoke(oldData);
             }
@@ -434,9 +426,6 @@ namespace Weesals.ECS {
                 }
             }
             if (newArchetype != null) {
-                foreach (var listener in newArchetype.Listeners)
-                    if (!queries[listener.QueryId].Matches(oldArchetypeMask))
-                        listener.OnRegister(entity, true);
                 foreach (var listenerI in newArchetypeListeners.Except(oldArchetypeListeners))
                     archetypeListeners[listenerI].OnCreate?.Invoke(newData);
             }
@@ -452,7 +441,7 @@ namespace Weesals.ECS {
         }
 
         public Entity UnsafeGetEntityByIndex(int entityIndex) {
-            return new Entity() { Index = (uint)entityIndex, Version = entities[entityIndex].Version };
+            return new Entity((uint)entityIndex, entities[entityIndex].Version);
         }
         public Entity GetEntity(EntityAddress addr) {
             return GetArchetype(addr.ArchetypeId).Entities[addr.Row];
@@ -467,13 +456,6 @@ namespace Weesals.ECS {
             return queries[query];
         }
 
-        public void AddListener(Listener listener) {
-            listeners.Add(listener);
-            foreach (var archI in queryCaches[listener.QueryId].MatchingArchetypes) {
-                var archetype = archetypes[archI.ArchetypeIndex];
-                archetype.AddListener(listener);
-            }
-        }
         public void AddListener(QueryId query, ArchetypeListener listener) {
             var listenerId = archetypeListeners.Count;
             listener.QueryId = query;
@@ -841,29 +823,6 @@ namespace Weesals.ECS {
         public bool TryRemoveComponent<T>(Entity entity) {
             return Stage.TryRemoveComponent<T>(entity);
         }
-
-        public void OnRegister<C1>(Action<Entity, bool> callback) {
-            var builder = new Query.Builder(Stage);
-            builder.With<C1>();
-            var query = builder.Build();
-            Stage.AddListener(new Listener(query, callback));
-        }
-        public void OnRegister<C1, C2>(Action<Entity, bool> callback) {
-            var builder = new Query.Builder(Stage);
-            builder.With<C1>();
-            builder.With<C2>();
-            var query = builder.Build();
-            Stage.AddListener(new Listener(query, callback));
-        }
-        public void OnRegister<C1, C2, C3>(Action<Entity, bool> callback) {
-            var builder = new Query.Builder(Stage);
-            builder.With<C1>();
-            builder.With<C2>();
-            builder.With<C3>();
-            var query = builder.Build();
-            Stage.AddListener(new Listener(query, callback));
-        }
-
 
         public void AddSystem(SystemBase system) {
             systems.Add(system);

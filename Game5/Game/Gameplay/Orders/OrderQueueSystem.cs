@@ -77,7 +77,7 @@ namespace Game5.Game {
         }
         // Add an action request to be fulfilled at a later date
         public void EnqueueAction(Entity entity, OrderInstance action) {
-            ref var queue = ref Stage.RequireComponent<EntityQueue>(entity, false);
+            ref var queue = ref Stage.RequireComponent<EntityQueue>(entity);
             if (action.Request.TargetEntity != Entity.Null) {
                 if (!Stage.IsValid(action.Request.TargetEntity)) {
                     Debug.Fail("Invalid entity detected");
@@ -89,8 +89,7 @@ namespace Game5.Game {
             VerifyQueue(queue);
         }
         public Span<OrderInstance> GetQueueForEntity(Entity entity) {
-            ref var queue = ref Stage.RequireComponent<EntityQueue>(entity, false);
-            if (queue.Queue.Length <= 0) return default;
+            if (!Stage.TryGetComponent<EntityQueue>(entity, out var queue)) return default;
             return actions.Slice(queue.Queue);
         }
 
@@ -136,9 +135,10 @@ namespace Game5.Game {
         }
 
         private int GetActionIndex(Entity entity, RequestId requestId) {
-            ref var queue = ref Stage.RequireComponent<EntityQueue>(entity, false);
-            for (int i = queue.Queue.Start; i < queue.Queue.End; i++) {
-                if (actions[i].RequestId == requestId) return i;
+            if (Stage.TryGetComponent<EntityQueue>(entity, out var queue)) {
+                for (int i = queue.Queue.Start; i < queue.Queue.End; i++) {
+                    if (actions[i].RequestId == requestId) return i;
+                }
             }
             return -1;
         }
@@ -148,7 +148,7 @@ namespace Game5.Game {
             return actions[id].Request;
         }
         public void CancelAction(Entity entity, RequestId requestId) {
-            ref var queue = ref Stage.RequireComponent<EntityQueue>(entity, true);
+            ref var queue = ref Stage.RequireComponent<EntityQueue>(entity);
             if (requestId.IsAll) {
                 actions.Return(ref queue.Queue);
             } else {
