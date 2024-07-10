@@ -39,7 +39,13 @@ namespace Weesals.Engine {
         public struct PassInput {
             public readonly CSIdentifier Name;
             public readonly bool RequireAttachment;
-            public PassInput(CSIdentifier name, bool requireAttachment = true) { Name = name; RequireAttachment = requireAttachment; }
+            public readonly DefaultTexture DefaultTexture;
+
+            public PassInput(CSIdentifier name, bool requireAttachment = true, DefaultTexture defaultTexture = DefaultTexture.None) {
+                Name = name;
+                RequireAttachment = requireAttachment;
+                DefaultTexture = defaultTexture;
+            }
             public override string ToString() { return Name.ToString(); }
         }
         public struct PassOutput {
@@ -776,13 +782,16 @@ namespace Weesals.Engine {
         public PostProcessPass() : base("PostProcess") {
             Inputs = new[] {
                 new PassInput("SceneColor"),
-                new PassInput("BloomChain"),
+                new PassInput("BloomChain", defaultTexture: DefaultTexture.Black),
             };
             Outputs = new[] {
                 new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }),
             };
             postMaterial = new Material("./Assets/postprocess.hlsl", OverrideMaterial);
             postMaterial.SetBlendMode(BlendMode.MakePremultiplied());
+        }
+        public void SetBloomEnabled(bool enableBloom) {
+            postMaterial.SetMacro("ENABLEBLOOM", enableBloom ? "1" : CSIdentifier.Invalid);
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);

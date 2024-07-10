@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Weesals.Engine;
 using Weesals.Utility;
 using CornerId = System.UInt16;
@@ -482,6 +483,7 @@ namespace Navigation {
                 return false;
             }
 
+            [SkipLocalsInit]
             private unsafe int GetPathIncrement(int triId, Int2 p0, Int2 p1) {
                 Int2 pD = p1 - p0;
                 Int2 pN = new Int2(pD.Y, -pD.X);

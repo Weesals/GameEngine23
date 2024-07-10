@@ -259,6 +259,7 @@ namespace Weesals.Engine {
         public readonly int BufferCapacityCount => mBufferAllocCount;
         public readonly int BufferStride => mBufferStride;
         public readonly Span<CSBufferElement> Elements => new(BufferLayout.mElements, BufferLayout.mElementCount);
+        public readonly bool IsValid => mElementAllocCount > 0;
         public BufferLayoutPersistent(Usages usage) {
             BufferLayout.identifier = MakeId();
             BufferLayout.mUsage = (byte)usage;
@@ -319,6 +320,12 @@ namespace Weesals.Engine {
         }
         public void SetCount(int count) {
             Debug.Assert(count <= mBufferAllocCount, "Buffer must be resized first!");
+            BufferLayout.mCount = count;
+        }
+        public void RequireCount(int count) {
+            if (count >= mBufferAllocCount) {
+                AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)count + 2));
+            }
             BufferLayout.mCount = count;
         }
         public void Clear() {
@@ -638,10 +645,25 @@ namespace Weesals.Engine {
             set { ReadWriter.mWriter((byte*)mData + mStride * index, &value); }
         }
         public void Set(Span<T> values) {
+            Debug.Assert(mCount >= values.Length);
             for (int i = 0; i < values.Length; ++i) this[i] = values[i];
         }
         public void Set(T value) {
-            for (int i = 0; i < mCount; ++i) this[i] = value;
+            if (mCount == 0) return;
+            //for (int i = 0; i < mCount; ++i) this[i] = value;
+            // Convert into the first value
+            this[0] = value;
+            // Then copy into remaining buffer size
+            var dataSize = mStride * mCount;
+            for (int i = mStride; ; i *= 2) {
+                var remain = dataSize - i;
+                if (remain > i) {
+                    new Span<byte>(mData, i).CopyTo(new Span<byte>((byte*)mData + i, i));
+                } else {
+                    new Span<byte>(mData, remain).CopyTo(new Span<byte>((byte*)mData + i, remain));
+                    break;
+                }
+            }
         }
         public void CopyTo(TypedBufferView<T> destination) {
             if (destination.ReadWriter.IsPassthroughWriter) {

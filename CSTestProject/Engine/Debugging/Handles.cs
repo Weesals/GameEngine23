@@ -18,6 +18,7 @@ namespace Weesals.Engine {
         private class MeshBuffer : IDisposable {
             public Material Material;
             public DynamicMesh Mesh;
+            public BufferLayoutPersistent InstanceBuffer;
             public int RenderHash;
             public MeshBuffer(Material material) {
                 Material = material;
@@ -32,12 +33,41 @@ namespace Weesals.Engine {
             }
             public void Clear() {
                 RenderHash = 0;
-                Mesh.SetVertexCount(0);
-                Mesh.SetIndexCount(0);
+                if (InstanceBuffer.IsValid) {
+                    InstanceBuffer.SetCount(0);
+                } else {
+                    Mesh.SetVertexCount(0);
+                    Mesh.SetIndexCount(0);
+                }
+            }
+        }
+        private class LineMeshBuffer : MeshBuffer {
+            public int PositionElement;
+            public int DeltaElement;
+            public int ColorElement;
+            public LineMeshBuffer(Material material) : base(material) {
+                InstanceBuffer = new(BufferLayoutPersistent.Usages.Instance);
+                PositionElement = InstanceBuffer.AppendElement(new("LINEPOSITION", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
+                DeltaElement = InstanceBuffer.AppendElement(new("LINEDELTA", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
+                ColorElement = InstanceBuffer.AppendElement(new("LINECOLOR", BufferFormat.FORMAT_R8G8B8A8_UNORM));
+                Mesh.SetVertexCount(4);
+                Mesh.SetIndexCount(6);
+                Span<Vector3> positions = stackalloc Vector3[] { new(0f, 0f, 0f), new(0f, 0f, 0f), new(0f, 0f, 1f), new(0f, 0f, 1f) };
+                Span<Vector2> uvs = stackalloc Vector2[] { new(0f, 0f), new(1f, 0f), new(0f, 1f), new(1f, 1f) };
+                Mesh.GetPositionsV<Vector3>().Set(positions);
+                Mesh.GetTexCoordsV<Vector2>().Set(uvs);
+                Mesh.GetColorsV<Color>().Set(Color.White);
+                Mesh.GetTangentsV<Vector3>().Set(Vector3.Zero);
+                Span<uint> quadInds = stackalloc uint[] { 0, 1, 3, 0, 3, 2, };
+                Mesh.GetIndicesV().Set(quadInds);
+            }
+            public void Dispose() {
+                base.Dispose();
+                InstanceBuffer.Dispose();
             }
         }
 
-        private static MeshBuffer lineBuffer;
+        private static LineMeshBuffer lineBuffer;
         private static MeshBuffer polygonBuffer;
         private static MeshBuffer textBuffer;
 
@@ -92,20 +122,30 @@ namespace Weesals.Engine {
             Dictionary<MeshBuffer, RenderData> renderMap = new();
             for (int i = 0; i < batches.Count; i++) {
                 var batch = batches[i];
-                var buffers = graphics.RequireFrameData<CSBufferLayout>(2);
+                var instanced = batch.Buffer.InstanceBuffer.IsValid;
+                var instances = 1;
+                var buffers = graphics.RequireFrameData<CSBufferLayout>(instanced ? 3 : 2);
                 buffers[0] = batch.Buffer.Mesh.IndexBuffer;
                 buffers[1] = batch.Buffer.Mesh.VertexBuffer;
-                buffers[0].mOffset = batches[i].Begin;
-                buffers[0].mCount = batches[i].Count;
-                buffers[0].revision = batch.Buffer.RenderHash;
-                buffers[1].revision = batch.Buffer.RenderHash;
+                if (instanced) {
+                    buffers[2] = batch.Buffer.InstanceBuffer;
+                    buffers[2].mOffset = batches[i].Begin;
+                    buffers[2].mCount = batches[i].Count;
+                    buffers[2].revision = batch.Buffer.RenderHash;
+                    instances = batches[i].Count;
+                } else {
+                    buffers[0].mOffset = batches[i].Begin;
+                    buffers[0].mCount = batches[i].Count;
+                    buffers[0].revision = batch.Buffer.RenderHash;
+                    buffers[1].revision = batch.Buffer.RenderHash;
+                }
                 if (!renderMap.TryGetValue(batch.Buffer, out var renderData)) {
                     materials[0] = batch.Buffer.Material;
                     renderData.Pipeline = MaterialEvaluator.ResolvePipeline(graphics, buffers, materials);
                     renderData.Resources = MaterialEvaluator.ResolveResources(graphics, renderData.Pipeline, materials);
                     renderMap[batch.Buffer] = renderData;
                 }
-                pass.RenderQueue.AppendMesh("Handles", renderData.Pipeline, buffers, renderData.Resources);
+                pass.RenderQueue.AppendMesh("Handles", renderData.Pipeline, buffers, renderData.Resources, instances);
             }
         }
 
@@ -166,9 +206,26 @@ namespace Weesals.Engine {
             DrawLine(from, to, Color.White, thickness);
         }
         public static void DrawLine(Vector3 from, Vector3 to, Color color, float thickness = 1f) {
+            color *= Handles.color * ColorFactor;
             from = Vector3.Transform(from, matrix);
             to = Vector3.Transform(to, matrix);
-            var vertices = lineBuffer.Mesh.AppendVerts(4);
+
+            if (lineBuffer.InstanceBuffer.IsValid) {
+                var range = new RangeInt(lineBuffer.InstanceBuffer.Count, 1);
+                lineBuffer.InstanceBuffer.RequireCount(lineBuffer.InstanceBuffer.Count + 1);
+                var linePosition = new TypedBufferView<Vector4>(lineBuffer.InstanceBuffer.Elements[lineBuffer.PositionElement], range);
+                var lineDelta = new TypedBufferView<Vector4>(lineBuffer.InstanceBuffer.Elements[lineBuffer.DeltaElement], range);
+                var lineColor = new TypedBufferView<Color>(lineBuffer.InstanceBuffer.Elements[lineBuffer.ColorElement], range);
+
+                linePosition.Set(new Vector4(from, 0.0f));
+                lineDelta.Set(new Vector4(to - from, thickness));
+                lineColor.Set(color);
+
+                PushBatch(lineBuffer, range.Start, range.Length,
+                    color.GetHashCode() + from.GetHashCode() ^ to.GetHashCode());
+            }
+
+            /*var vertices = lineBuffer.Mesh.AppendVerts(4);
             var indices = lineBuffer.Mesh.AppendIndices(6);
             Span<uint> quadInds = stackalloc uint[] { 0, 1, 3, 0, 3, 2, };
             foreach (ref var i in quadInds) i += (uint)vertices.BaseVertex;
@@ -176,11 +233,11 @@ namespace Weesals.Engine {
             Span<Vector2> quadUVs = stackalloc[] { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f), };
             vertices.GetTangents().Set(Vector3.Normalize(to - from) * thickness);
             vertices.GetTexCoords().Set(quadUVs);
-            vertices.GetColors().Set(color * Handles.color * ColorFactor);
+            vertices.GetColors().Set(color);
             Span<Vector3> quadPos = stackalloc[] { from, from, to, to, };
             vertices.GetPositions().Set(quadPos);
             PushBatch(lineBuffer, indices.BaseIndex, indices.Count,
-                color.GetHashCode() + from.GetHashCode() ^ to.GetHashCode());
+                color.GetHashCode() + from.GetHashCode() ^ to.GetHashCode());*/
         }
 
         public static void Label(Vector3 position, string label) {

@@ -86,16 +86,14 @@ namespace Weesals.ECS {
                 }
 
                 // Sparse components
-                foreach (var typeIndex in mutation.SetSparseTypes) {
-                    var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeIndex), Context);
-                    var row = archetype.RequireSparseIndex(columnId, entityAddr.Row);
-                    ref var column = ref archetype.GetColumn(columnId);
-                    column.CopyValue(row, sparseValues[typeIndex].Items, i);
-                    column.NotifyMutation(entityAddr.Row);
-                }
                 foreach (var typeIndex in mutation.RemoveSparseTypes) {
                     var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeIndex), Context);
                     archetype.ClearSparseIndex(columnId, entityAddr.Row);
+                }
+                foreach (var typeIndex in mutation.SetSparseTypes) {
+                    var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeIndex), Context);
+                    var denseRow = archetype.RequireSparseIndex(columnId, entityAddr.Row);
+                    archetype.CopyValue(columnId, denseRow, sparseValues[typeIndex].Items, i);
                 }
             }
             Reset();

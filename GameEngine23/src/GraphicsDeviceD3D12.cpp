@@ -392,7 +392,7 @@ public:
                 assert(rbinding != nullptr); // Did you call CopyBufferData on this resource?
                 D3D12_RESOURCE_STATES barrierState = InitialBufferState;
                 int count = rbinding->mCount - resource->mSubresourceId;
-                if (resource->mSubresourceCount != -1) count = resource->mSubresourceCount;
+                if (resource->mSubresourceCount != -1) count = (uint16_t)resource->mSubresourceCount;
                 if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
                     if (resource->mSubresourceId == 0 && count == rbinding->mCount) {
                         srvOffset = rbinding->mSRVOffset;

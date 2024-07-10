@@ -34,13 +34,15 @@ bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3
         D3D12_RESOURCE_STATE_COMMON,
         nullptr,
         IID_PPV_ARGS(&d3dBin.mBuffer)));
-    d3dBin.mBuffer->SetName(
-        binding.mUsage == BufferLayout::Usage::Vertex ? L"VertexBuffer" :
+    std::wstring name = binding.mUsage == BufferLayout::Usage::Vertex ? L"VertexBuffer" :
         binding.mUsage == BufferLayout::Usage::Index ? L"IndexBuffer" :
         binding.mUsage == BufferLayout::Usage::Instance ? L"InstanceBuffer" :
         binding.mUsage == BufferLayout::Usage::Uniform ? L"UniformBuffer" :
-        L"UnknownBuffer"
-    );
+        L"UnknownBuffer";
+    name += L" <";
+    for (auto& el : binding.GetElements()) name += el.mBindName.GetWName() + L",";
+    name += L">";
+    d3dBin.mBuffer->SetName(name.c_str());
     d3dBin.mGPUMemory = d3dBin.mBuffer->GetGPUVirtualAddress();
     d3dBin.mSRVOffset = -1;     // TODO: Pool these
     mStatistics.mBufferCreates++;
@@ -239,6 +241,7 @@ D3DResourceCache::D3DBinding* D3DResourceCache::GetBinding(uint64_t bindingIdent
         srvDesc.Buffer.NumElements = binding->mSize / binding->mStride;
         srvDesc.Buffer.StructureByteStride = binding->mStride;
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+        assert(srvDesc.Buffer.NumElements < 10000000);
 
         // Get the CPU handle to the descriptor in the heap
         auto descriptorSize = mD3D12.GetDescriptorHandleSizeSRV();
@@ -295,6 +298,7 @@ void D3DResourceCache::UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int 
             }
             uploadBuffer->Unmap(0, nullptr);
             RequireState(d3dBin, binding, D3D12_RESOURCE_STATE_COPY_DEST);
+            FlushBarriers(cmdList);
 
             it = 0;
             for (auto& range : ranges) {
@@ -397,6 +401,7 @@ int D3DResourceCache::GetBufferSRV(ID3D12Resource* buffer, int offset, int count
             srvDesc.Buffer.NumElements = count;
             srvDesc.Buffer.StructureByteStride = stride;
             srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            assert(srvDesc.Buffer.NumElements < 10000000);
 
             // Get the CPU handle to the descriptor in the heap
             CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
@@ -895,7 +900,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
                 if (cbMask & mask) throw "Two CBs occupy the same bind point";
                 cbMask |= mask;
                 if (cbBinds[cb.mBindPoint].IsValid() && cbBinds[cb.mBindPoint] != cb.mName)
-                    errors += "CB Col " + cbBinds[cb.mBindPoint].GetName() + " and " + cb.mName.GetName() + "\n";
+                    errors += "CB Collision " + cbBinds[cb.mBindPoint].GetName() + " and " + cb.mName.GetName() + "\n";
                 cbBinds[cb.mBindPoint] = cb.mName;
                 pipelineState->mConstantBuffers.push_back(&cb);
             }
@@ -906,7 +911,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
                 if (rbMask & mask) throw "Two Res occupy the same bind point";
                 rbMask |= mask;
                 if (rbBinds[rb.mBindPoint].IsValid() && rbBinds[rb.mBindPoint] != rb.mName)
-                    errors += "RB Col " + rbBinds[rb.mBindPoint].GetName() + " and " + rb.mName.GetName() + "\n";
+                    errors += "RB Collision " + rbBinds[rb.mBindPoint].GetName() + " and " + rb.mName.GetName() + "\n";
                 rbBinds[rb.mBindPoint] = rb.mName;
                 pipelineState->mResourceBindings.push_back(&rb);
             }

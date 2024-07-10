@@ -211,8 +211,9 @@ namespace Weesals.ECS {
                     RequireArchetypeIndex(builder.Build()));
                 archetype = archetypes[entityAddress.ArchetypeId];
                 columnId = archetype.GetColumnId(componentTypeId);
+                denseRow = entityAddress.Row;
             }
-            return ref archetype.GetValueRW<T>(columnId, denseRow);
+            return ref archetype.GetValueRW<T>(columnId, denseRow, entityAddress.Row);
         }
         public bool HasComponent<T>(Entity entity) { return HasComponent<T>(RequireEntityAddress(entity)); }
         public bool HasComponent<T>(EntityAddress entityAddr) {
@@ -253,7 +254,9 @@ namespace Weesals.ECS {
             var archetype = archetypes[entityData.ArchetypeId];
             var columnId = archetype.GetColumnId(componentTypeId, Context);
             archetype.NotifyMutation(columnId, entityData.Row);
-            return ref archetype.GetValueRW<T>(columnId, entityData.Row);
+            var row = entityData.Row;
+            if (ComponentType<T>.IsSparse) row = archetype.TryGetSparseIndex(columnId, entityData.Row);
+            return ref archetype.GetValueRW<T>(columnId, row, entityData.Row);
         }
         public NullableRef<T> TryGetComponentRef<T>(Entity entity, bool markDirty = true) {
             return TryGetComponentRef<T>(RequireEntityAddress(entity), markDirty);
@@ -262,9 +265,13 @@ namespace Weesals.ECS {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var archetype = archetypes[entityData.ArchetypeId];
             if (!archetype.TryGetColumnId(componentTypeId, out var columnId, Context)) return default;
-            if (ComponentType<T>.IsSparse && !archetype.GetHasSparseComponent(columnId, entityData.Row)) return default;
+            var row = entityData.Row;
+            if (ComponentType<T>.IsSparse) {
+                row = archetype.TryGetSparseIndex(columnId, entityData.Row);
+                if (row < 0) return default;
+            }
             if (markDirty) archetype.NotifyMutation(columnId, entityData.Row);
-            return new NullableRef<T>(ref archetype.GetValueRW<T>(columnId, entityData.Row));
+            return new NullableRef<T>(ref archetype.GetValueRW<T>(columnId, row, entityData.Row));
         }
         unsafe public bool TryRemoveComponent<T>(Entity entity) {
             var entityData = RequireEntityAddress(entity);
@@ -388,12 +395,15 @@ namespace Weesals.ECS {
             public ref TComponent GetComponentRef<TComponent>() {
                 return ref Stage.GetComponentRef<TComponent>(To);
             }
+            public void CopyFrom(ComponentRef other) {
+                var item = other.RawItem;
+                CopyFrom(other.TypeId, item.Array, item.Index);
+            }
             public void CopyFrom(TypeId typeId, Array data, int row) {
                 var archetype = Stage.GetArchetype(To.ArchetypeId);
                 var columnId = archetype.GetColumnId(typeId, Stage.Context);
-                ref var column = ref archetype.GetColumn(columnId);
-                column.CopyValue(To.Row, data, row);
-                column.NotifyMutation(To.Row);
+                archetype.CopyValue(columnId, To.Row, data, row);
+                archetype.NotifyMutation(columnId, To.Row);
             }
             public EntityData Commit() {
                 var newData = Stage.entities[(int)Entity.Index];
@@ -409,16 +419,14 @@ namespace Weesals.ECS {
         private void NotifyEntityChange(Entity entity, EntityAddress oldData, EntityAddress newData) {
             var oldArchetype = oldData.ArchetypeId >= 0 ? archetypes[oldData.ArchetypeId] : default;
             var newArchetype = newData.ArchetypeId >= 0 ? archetypes[newData.ArchetypeId] : default;
-            var oldArchetypeMask = oldArchetype != null ? oldArchetype.TypeMask : default;
-            var newArchetypeMask = newArchetype != null ? newArchetype.TypeMask : default;
             var oldArchetypeListeners = oldArchetype != null ? oldArchetype.ArchetypeListeners : default;
             var newArchetypeListeners = newArchetype != null ? newArchetype.ArchetypeListeners : default;
             if (oldArchetype != null) {
-                foreach (var listenerI in oldArchetypeListeners.Except(newArchetypeListeners))
+                foreach (var listenerI in BitField.Except(oldArchetypeListeners, newArchetypeListeners))
                     archetypeListeners[listenerI].OnDelete?.Invoke(oldData);
             }
             if (oldArchetype != null && newArchetype != null) {
-                foreach (var listenerI in oldArchetypeListeners.Intersect(newArchetypeListeners)) {
+                foreach (var listenerI in BitField.Intersection(oldArchetypeListeners, newArchetypeListeners)) {
                     archetypeListeners[listenerI].OnMove?.Invoke(new ArchetypeListener.MoveEvent() {
                         From = oldData,
                         To = newData,
@@ -426,7 +434,7 @@ namespace Weesals.ECS {
                 }
             }
             if (newArchetype != null) {
-                foreach (var listenerI in newArchetypeListeners.Except(oldArchetypeListeners))
+                foreach (var listenerI in BitField.Except(newArchetypeListeners, oldArchetypeListeners))
                     archetypeListeners[listenerI].OnCreate?.Invoke(newData);
             }
         }
@@ -536,7 +544,7 @@ namespace Weesals.ECS {
             public readonly Archetype Archetype;
             public readonly int Row;
             public TypeId TypeId;
-            public ComponentRef Current => new ComponentRef(Context, Archetype, Row, new TypeId(TypeId));
+            public ComponentRef Current => new ComponentRef(Context, Archetype, GetRowIndex(), TypeId);
             object IEnumerator.Current => Current;
             public EntityComponentEnumerator(StageContext context, Archetype archetype, int row) {
                 Context = context;
@@ -560,6 +568,13 @@ namespace Weesals.ECS {
                 if (index == -1) return false;
                 TypeId = TypeId.MakeSparse(index);
                 return true;
+            }
+            private int GetRowIndex() {
+                var row = Row;
+                if (TypeId.IsSparse) {
+                    row = Archetype.RequireSparseIndex(Archetype.GetColumnId(TypeId), row);
+                }
+                return row;
             }
             public EntityComponentEnumerator GetEnumerator() { return this; }
             IEnumerator<ComponentRef> IEnumerable<ComponentRef>.GetEnumerator() => GetEnumerator();
@@ -727,11 +742,13 @@ namespace Weesals.ECS {
             [DebuggerBrowsable(DebuggerBrowsableState.Never)]
             EntityEnumerator entityEn;
             [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+            int count;
+            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
             object IEnumerator.Current => new DebugEntity(entityEn.Stage, entityEn.Current);
             public DebugEntityEnumerator(Stage stage) { entityEn = new(stage); }
             public void Dispose() { entityEn.Dispose(); }
             public void Reset() { entityEn.Reset(); }
-            public bool MoveNext() { return entityEn.MoveNext(); }
+            public bool MoveNext() { return ++count < 1000 && entityEn.MoveNext(); }
             IEnumerator IEnumerable.GetEnumerator() => this;
         }
         public struct DebugStageView {
@@ -761,14 +778,12 @@ namespace Weesals.ECS {
         public Entity CreateEntity(Entity prefab) {
             var instance = Stage.CreateEntity();
             var prefabAddr = Stage.RequireEntityAddress(prefab);
-            var instanceAddr = Stage.MoveEntity(instance, prefabAddr.ArchetypeId);
-            var instanceArchetype = Stage.GetArchetype(instanceAddr.ArchetypeId);
+            using var mover = Stage.BeginMoveEntity(instance, prefabAddr.ArchetypeId);
             foreach (var prefabCmp in Stage.GetEntityComponents(prefab)) {
-                var instanceCmp = new ComponentRef(Context, instanceArchetype, instanceAddr.Row, prefabCmp.TypeId);
-                if (instanceCmp.GetComponentType().IsNoClone) continue;
-                prefabCmp.CopyTo(instanceCmp);
-                instanceCmp.NotifyMutation();
+                if (prefabCmp.GetComponentType().IsNoClone) continue;
+                mover.CopyFrom(prefabCmp);
             }
+            mover.Commit();
             return instance;
         }
         public bool IsValid(Entity entity) { return Stage.IsValid(entity); }

@@ -1,12 +1,12 @@
 #include <colorspace.hlsl>
+#include <common.hlsl>
 
-matrix PreviousVP;
-matrix CurrentVP;
-matrix CurToPrevVP;
-matrix PrevToCurVP;
-float2 TemporalJitter;
-float2 Resolution;
-float TemporalFrame;
+cbuffer TemporalCB : register(b1) {
+    matrix PreviousVP;
+    matrix CurrentVP;
+    matrix CurToPrevVP;
+    matrix PrevToCurVP;
+}
 
 SamplerState PointSampler : register(s0);
 SamplerState BilinearClampedSampler : register(s6);
@@ -47,6 +47,8 @@ float Permute(float v) {
     return frac(v * TemporalFrac2 - TemporalFrac3);
 }
 float4 PSMain(PSInput input) : SV_TARGET {
+    const float4 SelectedColor = float4(1.0, 1.0, 0.0, 1.0) * LuminanceFactor;
+
     float2 gatherUv = input.uv.zw;
     float4 velId = SceneVelId[input.position.xy];
     //return velId.bbbb;
@@ -54,7 +56,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float2 texelSize = abs(input.uv.xy - input.uv.zw) * 2.0;
     
     float4 otherVelId = SceneVelId.Sample(BilinearClampedSampler, gatherUv);
-    if (otherVelId.w != velId.w) return float4(1.0, 1.0, 0.0, 1.0);
+    if (otherVelId.w != velId.w) return SelectedColor;
     
     float2 previousUV = input.uv.xy - velocity.xy * (float2(1, -1) * (0.5 / 16.0));
     

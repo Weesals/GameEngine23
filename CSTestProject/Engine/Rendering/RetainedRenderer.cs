@@ -604,7 +604,7 @@ namespace Weesals.Engine {
                 hull.FromBox(activeRange);
                 enableFrustum = hull.Slice(frustum);
                 var aabb = hull.GetAABB();
-                if (aabb.Extents.X <= 0) return;
+                if (aabb.Size.X <= 0) return;
                 visMask = Scene.GenerateCellMask(aabb.Min, aabb.Max);
             }
 

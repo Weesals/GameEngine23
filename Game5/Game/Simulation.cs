@@ -254,11 +254,13 @@ namespace Game5.Game {
 
                 var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
                 World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
+
+                World.GetComponentRef<ECTransform>(World.CreateEntity(tcInstance)).Position += new Int2(6000, 1000);
             }
 
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Stage);
-                const int Count = 2500;
+                const int Count = 25;
                 var sqrtCount = (int)MathF.Sqrt(Count);
                 for (int i = 0; i < Count; i++) {
                     var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 6000;

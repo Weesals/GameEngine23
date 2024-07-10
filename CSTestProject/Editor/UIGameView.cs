@@ -40,15 +40,18 @@ namespace Weesals.Editor {
             }
         }
 
+        protected readonly ScrollView scrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
+        protected readonly ListLayout list = new() { Name = "Inspector Content", Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
+
         public World World;
-        private ListLayout list = new();
 
         public event Action<Entity, bool> OnEntitySelected;
         public ISelectionGroup SelectionGroup { get; private set; }
 
         public UIHierarchy(Editor editor) : base(editor, "Hierarchy") {
             SelectionGroup = editor.ProjectSelection;
-            AppendChild(list);
+            scrollView.AppendChild(list);
+            AppendChild(scrollView);
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);

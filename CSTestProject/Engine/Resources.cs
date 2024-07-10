@@ -14,6 +14,8 @@ using Weesals.UI;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
+    public enum DefaultTexture { None, White, Black, Clear, }
+
     public struct ReadLockScope : IDisposable {
         public ReaderWriterLockSlim mutex;
         public ReadLockScope(ReaderWriterLockSlim _mutex) { mutex = _mutex; mutex.EnterReadLock(); }
@@ -131,30 +133,22 @@ namespace Weesals.Engine {
         // Might fail and return null if contested
         public Item? TryGetItem(ulong id) {
             if (dictionaryLock.TryEnterReadLock(0)) {
-                loadedItems.TryGetValue(id, out var value);
+                loadedItems.TryGetValue(id, out var item);
                 dictionaryLock.ExitReadLock();
-                return value;
+                return item;
             }
             return default;
         }
-        public Item? RequireGetItem(ulong id) {
-            try {
-                dictionaryLock.EnterReadLock();
-                loadedItems.TryGetValue(id, out var value);
-                return value;
-            } finally {
-                dictionaryLock.ExitReadLock();
-            }
-        }
+        // Will always succeed
         public Item RequireItem(ulong id) {
             var item = TryGetItem(id);
             if (item != null) return item;
             try {
                 dictionaryLock.EnterWriteLock();
-                if (!loadedItems.TryGetValue(id, out var value)) {
-                    loadedItems.Add(id, value = new());
+                if (!loadedItems.TryGetValue(id, out item)) {
+                    loadedItems.Add(id, item = new());
                 }
-                return value;
+                return item;
             } finally {
                 dictionaryLock.ExitWriteLock();
             }
@@ -183,12 +177,22 @@ namespace Weesals.Engine {
         private static TextureImporter textureImporter = new();
         private static ShaderImporter shaderImporter = new();
 
+        private static CSTexture defaultTexWhite;
+        private static CSTexture defaultTexBlack;
+        private static CSTexture defaultTexClear;
+
         public static int LoadedModelCount => loadedModels.Count;
         public static int LoadedSpriteCount => loadedSprites.Count;
         public static int LoadedShaderCount => uniqueShaders.Count;
         public static int LoadedFontCount => loadedFonts.Count;
         public static int LoadedTextureCount => loadedTextures.Count;
         public static int Generation { get; private set; }
+
+        public void Dispose() {
+            defaultTexWhite.Dispose();
+            defaultTexBlack.Dispose();
+            defaultTexClear.Dispose();
+        }
 
         public static void LoadDefaultUIAssets() {
             var spriteRenderer = new SpriteRenderer();
@@ -448,6 +452,21 @@ namespace Weesals.Engine {
                 ++Generation;
             }
             invalidated.Dispose();
+        }
+
+        private static CSTexture RequireSolidTex(ref CSTexture tex, string name, int size, Color color) {
+            if (tex.IsValid) return tex;
+            tex = CSTexture.Create(name, size, size, BufferFormat.FORMAT_R8G8B8A8_UNORM);
+            tex.GetTextureData().Reinterpret<Color>().AsSpan().Fill(color);
+            return tex;
+        }
+        public static CSTexture RequireDefaultTexture(DefaultTexture defaultTexture) {
+            switch (defaultTexture) {
+                case DefaultTexture.White: return RequireSolidTex(ref defaultTexWhite, "White", 4, Color.White);
+                case DefaultTexture.Black: return RequireSolidTex(ref defaultTexBlack, "Black", 4, Color.Black);
+                case DefaultTexture.Clear: return RequireSolidTex(ref defaultTexClear, "Clear", 4, Color.Clear);
+            }
+            return default;
         }
     }
 }

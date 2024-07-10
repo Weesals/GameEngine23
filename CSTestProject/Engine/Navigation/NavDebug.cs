@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Weesals.Editor;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
 namespace Navigation {
@@ -40,6 +41,7 @@ namespace Navigation {
         }
         public void OnDrawGizmosSelected() {
             if (NavBaker == null || !NavBaker.IsCreated) return;
+            using var marker = new ProfilerMarker("NavDebug").Auto();
             var ro = NavBaker.NavMesh.GetReadOnly();
             var aj = NavBaker.NavMesh.GetAdjacency();
 
@@ -51,9 +53,9 @@ namespace Navigation {
             }
 
             return;*/
-            var adjacency = new PooledHashSet<Edge>(ro.NavMesh.adjacency.Count);
-            foreach (var adj in ro.NavMesh.adjacency) adjacency.Add(adj.Key);
-            var adjacency2 = new PooledHashMap<Edge, Int2>(ro.NavMesh.adjacency.Count);
+            //var adjacency = new PooledHashSet<Edge>(ro.NavMesh.adjacency.Count);
+            //foreach (var adj in ro.NavMesh.adjacency) adjacency.Add(adj.Key);
+            //var adjacency2 = new PooledHashMap<Edge, Int2>(ro.NavMesh.adjacency.Count);
 
             var validTriangles = new PooledHashSet<ushort>(32);
             for (var it = ro.GetTriangleEnumerator(); it.MoveNext();) {
@@ -73,18 +75,18 @@ namespace Navigation {
                 var c1 = ro.GetCorner(tri.C1).ToUVector3(0f);
                 var c2 = ro.GetCorner(tri.C2).ToUVector3(0f);
                 var c3 = ro.GetCorner(tri.C3).ToUVector3(0f);
-                adjacency.Remove(tri.GetEdge(0));
+                /*adjacency.Remove(tri.GetEdge(0));
                 adjacency.Remove(tri.GetEdge(1));
-                adjacency.Remove(tri.GetEdge(2));
+                adjacency.Remove(tri.GetEdge(2));*/
                 using (new HandlesColor(GetColor(tri.Type).WithAlpha(32))) {
                     Handles.DrawAAConvexPolygon(c1, c2, c3);
                 }
-                for (int i = 0; i < 3; i++) {
+                /*for (int i = 0; i < 3; i++) {
                     var edge = tri.GetEdge(i);
                     var sign = edge.GetSign(tri.GetCorner(i));
                     if (!adjacency2.TryGetValue(edge, out var item)) item = -1;
                     item[sign ? 0 : 1] = it.Index;
-                }
+                }*/
             }
             if (ShowTriangleLabels) {
                 for (var it = ro.GetTriangleEnumerator(); it.MoveNext();) {
@@ -115,7 +117,7 @@ namespace Navigation {
                     }
                 }
             }
-            foreach (var item in aj.adjacency) {
+            /*foreach (var item in aj.adjacency) {
                 var edge = item.Key;
                 adjacency2.TryGetValue(edge, out var triAj);
                 if (triAj.X != item.Value.Triangle1 || triAj.Y != item.Value.Triangle2) {
@@ -126,7 +128,7 @@ namespace Navigation {
             foreach (var edge in adjacency) {
                 Handles.DrawLine(ro.GetCorner(edge.Corner1).ToUVector3(0f),
                     ro.GetCorner(edge.Corner1).ToUVector3(0f), Color.Red, 2.0f);
-            }
+            }*/
             Handles.matrix = Matrix4x4.Identity;
             /*var mray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
             var mpos = mray.ProjectTo(Vector3.up, Vector3.zero);

@@ -319,9 +319,9 @@ namespace Weesals.Rendering {
                     var entity = World.Stage.GetEntity(entityAddr);
                     var binding = RequireBinding(entityAddr);
                     binding.SceneEntities[entityAddr.Row] = entity;
-                    binding.ChangedModels.Add(entityAddr.Row);
-                    binding.ChangedTransforms.Add(entityAddr.Row);
-                    binding.ValidEntities.Add(entityAddr.Row);
+                    binding.ChangedModels.TryAdd(entityAddr.Row);
+                    binding.ChangedTransforms.TryAdd(entityAddr.Row);
+                    binding.ValidEntities.TryAdd(entityAddr.Row);
                     World.Stage.AddComponent<SceneRenderable>(entity) = new() {
                         //SceneIndex = Array.Empty<CSInstance>(),
                     };
@@ -397,7 +397,7 @@ namespace Weesals.Rendering {
             if (binding == null)
                 binding = new(World.Context, World.Stage.GetArchetype(entityAddr.ArchetypeId));
             if (entityAddr.Row >= binding.SceneEntities.Length)
-                Array.Resize(ref binding.SceneEntities, entityAddr.Row + 256);
+                Array.Resize(ref binding.SceneEntities, (int)BitOperations.RoundUpToPowerOf2((uint)entityAddr.Row + 512));
             return binding;
         }
         public ref Entity RequireEntitySlot(EntityAddress entityAddr) {
@@ -445,8 +445,7 @@ namespace Weesals.Rendering {
         }
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var archetype = World.Stage.GetArchetype(entityAddr.ArchetypeId);
-            var selected = binding.SelectedLookup.GetValueRO(archetype, entityAddr.Row);
+            var selected = binding.SelectedLookup.GetValueRO(World.Stage, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;

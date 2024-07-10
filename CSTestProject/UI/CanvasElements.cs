@@ -88,6 +88,7 @@ namespace Weesals.UI {
     public interface ICanvasTransient {
         void Initialize(Canvas canvas);
         void Dispose(Canvas canvas);
+        void Reset(Canvas canvas);
     }
 
     public struct CanvasImage : ICanvasElement, ICanvasTransient {
@@ -123,10 +124,19 @@ namespace Weesals.UI {
             dirty = DirtyFlags.Indices;
             SetTexture(Texture);
         }
-        public void Dispose(Canvas canvas) { element.Dispose(canvas); dirty |= DirtyFlags.Indices; }
+        public void Dispose(Canvas canvas) {
+            element.Dispose(canvas);
+            dirty |= DirtyFlags.Indices;
+        }
+        public void Reset(Canvas canvas) {
+            Texture = default;
+            blending = CanvasBlending.Default;
+            border = default;
+            uvrect = new(0f, 0f, 1f, 1f);
+        }
         public void SetTexture(CSBufferReference texture) {
             Texture = texture;
-            if (Texture.IsValid) {
+            if (Texture.IsValid || element.Material != null) {
                 RequireMaterial().SetValue("Texture", Texture);
                 MarkLayoutDirty();
             }
@@ -177,8 +187,11 @@ namespace Weesals.UI {
                     element.SetElementId(elementId);
                     dirty |= DirtyFlags.All & ~DirtyFlags.Indices;
                 }
+                Debug.Assert(elementId >= 0);
+                Debug.Assert(element.ElementId >= 0);
                 UpdateIndices(canvas);
             }
+            Debug.Assert(elementId >= 0);
 
             var buffers = canvas.Builder.MapVertices(elementId);
             if (UnmarkDirty(DirtyFlags.Color)) {
@@ -340,6 +353,8 @@ namespace Weesals.UI {
             if (element.IsValid) element.Dispose(canvas);
             MarkLayoutDirty();
 		}
+        public void Reset(Canvas canvas) {
+        }
 
         private void SetText(string value) {
             text = value;
@@ -654,6 +669,8 @@ namespace Weesals.UI {
             frame.Dispose(canvas);
             IsDirty = true;
         }
+        public void Reset(Canvas canvas) {
+        }
         public void MarkLayoutDirty() { frame.MarkLayoutDirty(); IsDirty = true; }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
             var tlayout = layout;
@@ -680,7 +697,10 @@ namespace Weesals.UI {
         public void Dispose(Canvas canvas) {
             if (element.IsValid) element.Dispose(canvas);
         }
+        public void Reset(Canvas canvas) {
+        }
         public void Update(Canvas canvas, Span<Vector3> points) {
+            if (points.Length == 0) return;
             var elementId = element.ElementId;
             var vertices = element.IsValid ? canvas.Builder.MapVertices(elementId) : default;
             if (!element.IsValid || vertices.GetVertexCount() != points.Length * 2) {
@@ -699,12 +719,12 @@ namespace Weesals.UI {
                     indices[i + 5] = (ushort)(vertices.VertexOffset + p * 2 + 2);
                 }
                 vertices.MarkIndicesChanged();
-                vertices.GetColors().Set(Color.Red);
+                vertices.GetColors().Set(Color.White);
             }
             var vertPos = vertices.GetPositions();
             for (int i = 0; i < points.Length; i++) {
-                vertPos[i * 2 + 0] = points[i] + new Vector3(0f, -2f, 0f);
-                vertPos[i * 2 + 1] = points[i] + new Vector3(0f, +2f, 0f);
+                vertPos[i * 2 + 0] = points[i] + new Vector3(0f, -1f, 0f);
+                vertPos[i * 2 + 1] = points[i] + new Vector3(0f, +1f, 0f);
             }
             vertices.MarkVerticesChanged();
         }
@@ -723,8 +743,10 @@ namespace Weesals.UI {
             }
             public class ElementList<T> : ArrayList<ItemContainer<T>>, IElementList where T : ICanvasTransient, new() {
                 public int Iterator;
+                public int InitializedTo;
                 public void Reset(Canvas canvas) {
                     for (int i = Iterator; i < Count; ++i) this[i].Item.Dispose(canvas);
+                    InitializedTo = Iterator;
                     //this.RemoveRange(Iterator, Count - Iterator);
                     Iterator = 0;
                 }
@@ -735,7 +757,7 @@ namespace Weesals.UI {
                         Add(new ItemContainer<T>() { Item = item, Context = context, });
                     } else {
                         int i = Iterator;
-                        int end = Math.Min(Count, Iterator + 5);
+                        int end = Math.Min(InitializedTo, Iterator + 5);
                         for (; i < end; ++i) {
                             if (this[i].Context == context) break;
                         }
@@ -749,6 +771,7 @@ namespace Weesals.UI {
                             ref var item = ref this[Iterator];
                             item.Context = context;
                             item.Item.Dispose(canvas);
+                            item.Item.Reset(canvas);
                             item.Item.Initialize(canvas);
                         }
                     }

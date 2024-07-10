@@ -127,13 +127,12 @@ namespace Weesals.ECS {
             return ref ((T[])Items)[row];
         }
         public ref T GetValueRW<T>(int row) {
-            NotifyMutation(row);
             return ref ((T[])Items)[row];
         }
 
         public void NotifyMutation(int row) {
             if (RowModificationFlags == null) return;
-            foreach (var field in RowModificationFlags) field.Add(row);
+            foreach (var field in RowModificationFlags) field.TryAdd(row);
         }
 
         public void AddModificationListener(DynamicBitField movedRows) {
@@ -145,10 +144,14 @@ namespace Weesals.ECS {
         }
 
         public override string ToString() { return Type.ToString(); }
+
+        public ArrayItem GetRawItem(int row) {
+            return new(Items, row);
+        }
     }
 
     public class SparseColumnMeta {
-        public DynamicBitField Occupied = new();
+        public SparseColumnArchetype SparseData;
     }
 
     // A archetype of component columns and entity rows
@@ -159,12 +162,14 @@ namespace Weesals.ECS {
         public readonly int ColumnCount;
         private Column[] columns;
         public BitField SparseTypeMask;
+        private SparseStorage sparseStorage = new();
         public SparseColumnMeta[] SparseColumns = Array.Empty<SparseColumnMeta>();
         // Index of the last item
         public int MaxItem = -1;
         public int EntityCount => MaxItem + 1;
         // To ensure structure doesnt change during iterate
         public int Revision = 0;
+        // Used to track which listeners are active for this archetype
         public BitField ArchetypeListeners;
         public Entity[] Entities => (Entity[])columns[0].Items;
         public bool IsEmpty => MaxItem < 0;
@@ -200,16 +205,17 @@ namespace Weesals.ECS {
         public void CopyRowTo(int srcRow, Archetype dest, int dstRow, StageContext context) {
             if (dest == this) {
                 // Copying to self, special case
-                for (int i = 0; i < columns.Length; i++) {
+                for (int i = 0; i < ColumnCount; i++) {
                     columns[i].CopyValue(dstRow, columns[i], srcRow);
                 }
+                CopyColumns(srcRow, dest, dstRow, SparseTypeMask, dest.SparseTypeMask, ColumnCount, dest.ColumnCount);
             } else if (!IsNullArchetype) {
+                dest.Entities[dstRow] = Entities[srcRow];
                 CopyColumns(srcRow, dest, dstRow, TypeMask, dest.TypeMask, 1, 1);
                 foreach (var typeIndex in BitField.Except(SparseTypeMask, dest.SparseTypeMask)) {
                     dest.RequireSparseComponent(TypeId.MakeSparse(typeIndex), context);
                 }
                 CopyColumns(srcRow, dest, dstRow, SparseTypeMask, dest.SparseTypeMask, ColumnCount, dest.ColumnCount);
-                dest.Entities[dstRow] = Entities[srcRow];
             }
             ++Revision;
         }
@@ -241,6 +247,12 @@ namespace Weesals.ECS {
                 }
                 dest.columns[dstColBegin + i2].CopyValue(denseDstRow, columns[srcColBegin + i1], srcRow);
             }
+        }
+
+        public void CopyValue(int dstColumnId, int dstRow, Array srcData, int srcRow) {
+            ref var column = ref columns[dstColumnId];
+            column.CopyValue(dstRow, srcData, srcRow);
+            column.NotifyMutation(dstRow);
         }
 
         public void RequireSize(int size) {
@@ -278,8 +290,10 @@ namespace Weesals.ECS {
             return true;
         }
 
-        public ref T GetValueRW<T>(int columnIndex, int row) {
-            return ref columns[columnIndex].GetValueRW<T>(row);
+        public ref T GetValueRW<T>(int columnIndex, int row, int entityArchetypeRow) {
+            ref var column = ref columns[columnIndex];
+            column.NotifyMutation(entityArchetypeRow);
+            return ref column.GetValueRW<T>(row);
         }
         public ref readonly T GetValueRO<T>(int columnIndex, int row) {
             return ref columns[columnIndex].GetValueRO<T>(row);
@@ -299,6 +313,7 @@ namespace Weesals.ECS {
             for (int i = SparseColumns.Length - 1; i > index; --i)
                 SparseColumns[i] = SparseColumns[i - 1];
             SparseColumns[index] = new();
+            SparseColumns[index].SparseData = new(new(sparseStorage, context.GetComponentType(typeId)));
             Array.Resize(ref columns, columns.Length + 1);
             index += ColumnCount;
             for (int i = columns.Length - 1; i > index; --i)
@@ -320,27 +335,56 @@ namespace Weesals.ECS {
             }
             return AddSparseComponent(componentTypeId, context);
         }
-        public int RequireSparseIndex(int column, int row) {
-            if (columns[column].Items.Length <= row) {
-                columns[column].Resize((int)BitOperations.RoundUpToPowerOf2((uint)row + 4));
+        public int TryGetSparseIndex(int column, int row) {
+            var sparseColumn = SparseColumns[column - ColumnCount];
+            row = sparseColumn.SparseData.GetIndex(row);
+            return row;
+        }
+        public int RequireSparseIndex(int columnId, int row) {
+            ref var column = ref columns[columnId];
+            var sparseColumn = SparseColumns[columnId - ColumnCount];
+            var mutation = sparseColumn.SparseData.RequireIndex(row);
+            if (mutation.NewCount >= 0) {
+                var dataEnd = mutation.NewOffset + mutation.NewCount + 1;
+                if (column.Items.Length <= dataEnd) {
+                    column.Resize((int)BitOperations.RoundUpToPowerOf2((uint)dataEnd + 4));
+                }
+                if (mutation.PreviousOffset != mutation.NewOffset) {
+                    Array.Copy(column.Items, mutation.PreviousOffset, column.Items, mutation.NewOffset, mutation.Index);
+                }
+                if (mutation.Index < mutation.NewCount - 1) {
+                    Array.Copy(column.Items, mutation.PreviousOffset + mutation.Index,
+                        column.Items, mutation.NewOffset + mutation.Index + 1,
+                        mutation.NewCount - 1 - mutation.Index);
+                }
             }
-            SparseColumns[column - ColumnCount].Occupied.Add(row);
+            row = mutation.NewOffset + mutation.Index;
             return row;
         }
         public bool GetHasSparseComponent(int column, int row) {
-            return SparseColumns[column - ColumnCount].Occupied.Contains(row);
+            return SparseColumns[column - ColumnCount].SparseData.GetHasIndex(row);
         }
         public int GetNextSparseRowInclusive(int column, int row) {
-            return SparseColumns[column - ColumnCount].Occupied.GetNextBitInclusive(row);
+            return SparseColumns[column - ColumnCount].SparseData.GetNextIndexInclusive(row);
         }
         public void ClearSparseIndex(int column, int row) {
-            SparseColumns[column - ColumnCount].Occupied.Remove(row);
+            var mutation = SparseColumns[column - ColumnCount].SparseData.RemoveIndex(row);
+            ApplyDeleteMutation(column, mutation);
         }
         public void ClearSparseRow(int row) {
             for (int c = 0; c < SparseColumns.Length; ++c) {
-                SparseColumns[c].Occupied.TryRemove(row);
+                var mutation = SparseColumns[c].SparseData.TryRemoveIndex(row);
+                ApplyDeleteMutation(ColumnCount + c, mutation);
             }
         }
+
+        private void ApplyDeleteMutation(int columnId, SparseColumnStorage.DataMutation mutation) {
+            if (mutation.NewCount < 0) return;
+            Debug.Assert(mutation.PreviousOffset == mutation.NewOffset);
+            ref var column = ref columns[columnId];
+            Array.Copy(column.Items, mutation.Index + 1, column.Items, mutation.Index, mutation.NewCount - mutation.Index);
+        }
+
         [Conditional("DEBUG")]
         public void AssertComponentId(TypeId id, StageContext? context = default) {
             if (!GetHasColumn(id, context)) {
@@ -377,7 +421,10 @@ namespace Weesals.ECS {
             archetype.GetColumn(ColumnId).RemoveModificationListener(movedRows);
         }
         public ref readonly T GetValueRO(Stage stage, EntityAddress entityAddr) {
-            return ref GetValueRO(stage.GetArchetype(entityAddr.ArchetypeId), entityAddr.Row);
+            var archetype = stage.GetArchetype(entityAddr.ArchetypeId);
+            var row = entityAddr.Row;
+            if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ColumnId, row);
+            return ref GetValueRO(archetype, row);
         }
         public ref readonly T GetValueRO(Archetype archetype, int row) {
             ValidateArchetype(archetype);
@@ -385,11 +432,13 @@ namespace Weesals.ECS {
         }
         public ref T GetValueRW(Stage stage, EntityAddress entityAddr) {
             var archetype = stage.GetArchetype(entityAddr.ArchetypeId);
-            return ref GetValueRW(stage.GetArchetype(entityAddr.ArchetypeId), entityAddr.Row);
+            var row = entityAddr.Row;
+            if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ColumnId, row);
+            return ref GetValueRW(stage.GetArchetype(entityAddr.ArchetypeId), row, entityAddr.Row);
         }
-        public ref T GetValueRW(Archetype archetype, int row) {
+        public ref T GetValueRW(Archetype archetype, int row, int entityArchetypeRow) {
             ValidateArchetype(archetype);
-            return ref archetype.GetValueRW<T>(ColumnId, row);
+            return ref archetype.GetValueRW<T>(ColumnId, row, entityArchetypeRow);
         }
 
         public bool GetHasSparseComponent(Stage stage, EntityAddress entityAddr) {
@@ -418,35 +467,50 @@ namespace Weesals.ECS {
         public static readonly ArchetypeId Invalid = new(-1);
     }
 
+    public readonly struct ArrayItem {
+        public readonly Array Array;
+        public readonly int Index;
+        public bool IsValid => Array != null;
+        public ArrayItem(Array arr, int index) { Array = arr; Index = index; }
+        public static readonly ArrayItem Null = new();
+        public void CopyFrom(ArrayItem item) {
+            Array.Copy(item.Array, item.Index, Array, Index, 1);
+        }
+    }
+
     public readonly struct ComponentRef {
         public readonly StageContext Context;
         public readonly Archetype Archetype;
         public readonly int Row;
+        public readonly int DenseRow;
         public readonly TypeId TypeId;
         public readonly int ColumnId => Archetype.GetColumnId(TypeId);
-        public readonly ref Column Column => ref Archetype.GetColumn(ColumnId);
         public readonly Entity Entity => Archetype.Entities[Row];
         public readonly EntityAddress EntityAddress => new(Archetype.Id, Row);
+        public readonly ArrayItem RawItem => new(Archetype.GetColumn(ColumnId).Items, DenseRow);
         public ComponentRef(StageContext context, Archetype archetype, int row, TypeId typeId) {
             Context = context;
             Archetype = archetype;
             Row = row;
+            DenseRow = Row;
             TypeId = typeId;
+            if (TypeId.IsSparse) {
+                DenseRow = archetype.RequireSparseIndex(archetype.GetColumnId(typeId), row);
+                Debug.Assert(DenseRow >= 0, "Need to preallocate before creating ComponentRef");
+            }
         }
         public ComponentType GetComponentType() { return Context.GetComponentType(TypeId); }
         public Type GetRawType() { return Context.GetComponentType(TypeId).Type; }
         public bool GetIs<T>() { return Archetype.GetColumn(ColumnId).Items is T[]; }
-        public object? GetValue() { return Archetype.GetColumn(ColumnId).Items.GetValue(Row); }
-        public ref readonly T GetRO<T>() { return ref Archetype.GetValueRO<T>(ColumnId, Row); }
-        public ref T GetRef<T>() { return ref Archetype.GetValueRW<T>(ColumnId, Row); }
+        public object? GetValue() { return Archetype.GetColumn(ColumnId).Items.GetValue(DenseRow); }
+        public ref readonly T GetRO<T>() { return ref Archetype.GetValueRO<T>(ColumnId, DenseRow); }
+        public ref T GetRef<T>() { return ref Archetype.GetValueRW<T>(ColumnId, DenseRow, Row); }
         public void CopyTo(ComponentRef dest) {
-            ref var destColumn = ref dest.Column;
             Debug.Assert(TypeId == dest.TypeId);
-            if (dest.Row >= destColumn.Items.Length) {
-                destColumn.Resize(dest.Archetype.Entities.Length);
-            }
-            destColumn.CopyValue(dest.Row, Column, Row);
-            destColumn.NotifyMutation(dest.Row);
+            ref var srcColumn = ref Archetype.GetColumn(ColumnId);
+            ref var dstColumn = ref dest.Archetype.GetColumn(dest.ColumnId);
+            dstColumn.CopyValue(dest.DenseRow, srcColumn, DenseRow);
+            dstColumn.NotifyMutation(dest.Row);
         }
         public void NotifyMutation() { Archetype.NotifyMutation(ColumnId, Row); }
         public override string ToString() { return Context.GetComponentType(TypeId).Type.Name; }
@@ -554,6 +618,24 @@ namespace Weesals.ECS {
 
         public bool Matches(BitField typeMask) {
             return typeMask.ContainsAll(WithTypes) && !typeMask.ContainsAny(WithoutTypes);
+        }
+
+        public int GetNextSparseRow(Archetype archetype, int row) {
+            // TODO: Store page iterators and iterate sequentially instead of binary search
+            for (var pageId = SparseStorage.IndexToPage(++row); row < archetype.EntityCount;) {
+                uint mask = (~0u << row);
+                foreach (var typeId in WithSparseTypes) {
+                    var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeId), default!);
+                    var sparseColumn = archetype.SparseColumns[columnId - archetype.ColumnCount];
+                    mask &= sparseColumn.SparseData.GetPageMask(pageId);
+                    if (mask == 0) break;
+                }
+                if (mask != 0) {
+                    return SparseStorage.PageToIndex(pageId) + BitOperations.TrailingZeroCount(mask);
+                }
+                row = SparseStorage.PageToIndex(++pageId);
+            }
+            return -1;
         }
     }
     public struct QueryId {

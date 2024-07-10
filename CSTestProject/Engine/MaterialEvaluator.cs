@@ -68,7 +68,8 @@ namespace Weesals.Engine {
 				par.EvaluateValue(data.Slice(value.OutputOffset, value.DataSize), ref context);
 			}
 		}
-		public void EvaluateSafe(Span<byte> data) {
+        [SkipLocalsInit]
+        public void EvaluateSafe(Span<byte> data) {
 			if (data.Length >= mDataSize) {
 				Evaluate(data);
 			}
@@ -107,7 +108,8 @@ namespace Weesals.Engine {
 			ResolveResources(graphics, pipeline, materialStack, resources);
 			return resources;
 		}
-		unsafe public static void ResolveResources(CSGraphics graphics, CSPipeline pipeline, Span<Material> materialStack, Span<nint> outResources) {
+        [SkipLocalsInit]
+        unsafe public static void ResolveResources(CSGraphics graphics, CSPipeline pipeline, Span<Material> materialStack, Span<nint> outResources) {
 			int r = 0;
             if (pipeline.GetHasStencilState()) {
                 var realtimeState = ResolveRealtimeState(materialStack);
@@ -188,6 +190,7 @@ namespace Weesals.Engine {
         unsafe public static CSPipeline ResolvePipeline(CSGraphics graphics, List<CSBufferLayout> pbuffLayout, List<Material> materials) {
             return ResolvePipeline(graphics, CollectionsMarshal.AsSpan(pbuffLayout), CollectionsMarshal.AsSpan(materials));
         }
+        [SkipLocalsInit]
         unsafe public static CSPipeline ResolvePipeline(CSGraphics graphics, Span<CSBufferLayout> pbuffLayout, Span<Material> materials) {
             var macrosBuffer = stackalloc KeyValuePair<CSIdentifier, CSIdentifier>[32];
             int count = MaterialEvaluator.ResolveMacros(new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, 32), materials);

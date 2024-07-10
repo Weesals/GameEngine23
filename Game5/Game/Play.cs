@@ -105,9 +105,10 @@ namespace Game5.Game {
 
         [EditorField] public bool EnableFog = false;
         [EditorField] public bool EnableAO = false;
+        [EditorField] public bool EnableBloom = false;
+        [EditorField] public bool EnableFoliage = false;
         [EditorField] public float FogIntensity = 0.25f;
         [EditorField] public bool DrawVisibilityVolume = false;
-        [EditorField] public bool EnableFoliage = false;
 
         [EditorField] public int LoadedModelCount => Resources.LoadedModelCount;
         [EditorField] public int LoadedShaderCount => Resources.LoadedShaderCount;
@@ -157,7 +158,7 @@ namespace Game5.Game {
             loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Particles").Auto();
                 particleManager = new ParticleSystemManager();
-                particleManager.Initialise(512);
+                particleManager.Initialise(1024);
             }));
 
             JobHandle visualsJob = default;
@@ -250,7 +251,10 @@ namespace Game5.Game {
                 bool isMoving =
                     accessor.Archetype.TryGetSparseComponent(moveTypeId, out var moveColumn) &&
                     accessor.Archetype.GetHasSparseComponent(moveColumn, accessor.Row);
-                accessor.Component1Ref.Animation = isMoving ? anim.WalkAnim : anim.IdleAnim;
+                var desiredClip = isMoving ? anim.WalkAnim : anim.IdleAnim;
+                if (!accessor.Component1.Animation.Equals(desiredClip)) {
+                    accessor.Component1Ref.Animation = desiredClip;
+                }
             }
             /*if (Input.GetKeyPressed(KeyCode.Space)) {
                 var query = World.GetEntities();
@@ -266,6 +270,7 @@ namespace Game5.Game {
                 EnableFog = true;
                 EnableAO = true;
                 EnableFoliage = true;
+                EnableBloom = true;
             } else {
                 landscapeRenderer.HighQualityBlend = false;
                 landscapeRenderer.EnableStochastic = false;

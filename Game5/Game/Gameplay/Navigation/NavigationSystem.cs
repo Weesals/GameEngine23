@@ -120,13 +120,13 @@ namespace Game5.Game {
             NavGrid.Allocate(NavGrid.SimulationToGrid(Landscape.Sizing.SimulationSize));
             NavMesh.Allocate(NavigationSystem.SimulationToNavMesh(Landscape.Sizing.SimulationSize));
             if (Landscape != null) Landscape.OnLandscapeChanged += Landscape_OnLandscapeChanged;
-            UpdateGridRepresentation();
+            UpdateGridRepresentation(new(Int2.Zero, Landscape.Size));
         }
 
         private void Landscape_OnLandscapeChanged(LandscapeData landscape, LandscapeChangeEvent change) {
-            UpdateGridRepresentation();
+            UpdateGridRepresentation(change.Range);
         }
-        private void UpdateGridRepresentation() {
+        private void UpdateGridRepresentation(RectI range) {
             var controlMap = Landscape.GetControlMap();
             var heightMap = Landscape.GetHeightMap();
             var waterMap = Landscape.GetWaterMap();
@@ -137,8 +137,10 @@ namespace Game5.Game {
                 if ((layer.Flags & LandscapeLayer.TerrainFlags.FlagImpassable) != 0)
                     layerIsPassable |= 1ul << i;
             }
-            for (int y = 0; y < accessor.Size.Y; y++) {
-                for (int x = 0; x < accessor.Size.X; x++) {
+            var rangeMin = NavGrid.SimulationToGrid(Landscape.Sizing.LandscapeToSimulation(range.Min));
+            var rangeMax = NavGrid.SimulationToGrid(Landscape.Sizing.LandscapeToSimulation(range.Max));
+            for (int y = rangeMin.Y; y < rangeMax.Y; y++) {
+                for (int x = rangeMin.X; x < rangeMax.X; x++) {
                     var pnt = new Int2(x, y);
                     var mode = NavGrid.LandscapeModes.None;
                     var pos = NavGrid.GridToSimulation(pnt);

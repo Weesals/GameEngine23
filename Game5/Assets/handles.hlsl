@@ -17,6 +17,15 @@ struct VSInput
     float4 color : COLOR0;
 };
 
+struct VSInputLine
+{
+    float4 position : POSITION;
+    float2 uv : TEXCOORD0;
+    float4 start : LINEPOSITION;
+    float4 tangent : LINEDELTA;
+    float4 color : LINECOLOR;
+};
+
 struct PSInput
 {
     float4 position : SV_POSITION;
@@ -25,15 +34,17 @@ struct PSInput
 };
 
 
-PSInput VSLine(VSInput input)
+PSInput VSLine(VSInputLine input)
 {
     PSInput result;
     
-    float thickness = length(input.tangent);
+    float thickness = input.tangent.w;
 
-    float3 worldPos = input.position.xyz;
+    float3 worldPos = 0;
+    worldPos += input.start.xyz;
+    worldPos += input.tangent.xyz * input.position.z;
     result.position = mul(ViewProjection, float4(worldPos, 1.0));
-    float4 clipPos2 = mul(ViewProjection, float4(worldPos + input.tangent * (0.01 / thickness), 1.0));
+    float4 clipPos2 = mul(ViewProjection, float4(worldPos + input.tangent.xyz * (0.01 / thickness), 1.0));
     float2 clipTangent = normalize(clipPos2.xy / clipPos2.w - result.position.xy / result.position.w);
     clipTangent = float2(clipTangent.y, -clipTangent.x);
     result.position.xy += clipTangent * (thickness * 4.0 * (input.uv.x - 0.5) * result.position.w / Resolution);

@@ -246,7 +246,10 @@ namespace Game5.Game {
             renderGraph.BeginPass(temporalJitter);
 
             // Render post processing
-            renderGraph.BeginPass(bloomPass);
+            if (Play.EnableBloom) {
+                renderGraph.BeginPass(bloomPass);
+            }
+            postProcessPass.SetBloomEnabled(Play.EnableBloom);
             renderGraph.BeginPass(postProcessPass);
 
             // Render UI

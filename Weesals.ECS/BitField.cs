@@ -8,6 +8,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
+using BitIndex = System.Int32;
+
 namespace Weesals.ECS {
     // Represents up to 4096 bits broken up into up to 64 blocks of 64 bits.
     // BitFields are compared by pointer, so each allocated instance should be unique.
@@ -58,7 +60,7 @@ namespace Weesals.ECS {
             var pageIndex = CountBitsUntil(pageIds, pageId);
             int counter = 0;
             for (int i = 0; i < pageIndex; i++) counter += BitOperations.PopCount(pages[i]);
-            counter += BitOperations.PopCount(pages[pageIndex] & ((1ul << (bit & 63)) - 1));
+            counter += BitOperations.PopCount(pages[pageIndex] & ~(~0ul << (bit & 63)));
             return counter;
         }
         public bool TryGetBitIndex(int bit, out int index) {
@@ -68,7 +70,7 @@ namespace Weesals.ECS {
             if ((pages[pageIndex] & (1ul << (bit & 63))) == 0) { index = -1; return false; }
             index = 0;
             for (int i = 0; i < pageIndex; i++) index += BitOperations.PopCount(pages[i]);
-            index += BitOperations.PopCount(pages[pageIndex] & ((1ul << (bit & 63)) - 1));
+            index += BitOperations.PopCount(pages[pageIndex] & ~(~0ul << (bit & 63)));
             return true;
         }
         public bool ContainsAll(BitField withTypes) {
@@ -462,7 +464,7 @@ namespace Weesals.ECS {
             for (int p = 0; p < pageCount; ++p)
                 bitIndex += (uint)BitOperations.PopCount(pages[cluster.PageIndexOffset + p]);
             if ((cluster.PageIds & (1ul << localPageId)) != 0)
-                bitIndex += (uint)BitOperations.PopCount(pages[cluster.PageIndexOffset + pageCount] & ((1ul << (bit & 63)) - 1));
+                bitIndex += (uint)BitOperations.PopCount(pages[cluster.PageIndexOffset + pageCount] & ~(~0ul << (bit & 63)));
             return (int)bitIndex;
         }
         public int GetNextBit(int bit) {
@@ -522,61 +524,95 @@ namespace Weesals.ECS {
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
-    public class DynamicBitField : IEnumerable<int> {
-        private ushort[] pageOffsets = Array.Empty<ushort>();
+    public class DynamicBitField : IEnumerable<BitIndex> {
+        public const int BitToPageShift = 6;
+        public const BitIndex InvalidIndex = ~(BitIndex)0;
+        private BitIndex[] pageOffsets = Array.Empty<BitIndex>();
         private ulong[] pages = Array.Empty<ulong>();
-        int pageCount = 0;
+        private int pageCount = 0;
+        private int popCount = 0;
+
+        public bool IsEmpty => popCount == 0;
+        public int Count => popCount;
+
+        private int AllocatePageIndex(int pageIndex, int pageOffset) {
+            Debug.Assert(pageIndex < 0, "Should not allocate valid page index");
+            pageIndex = ~pageIndex;
+            if (pageIndex >= pageCount || pages[pageIndex] != 0) {
+                if (pageCount >= pages.Length) {
+                    int newCount = (int)BitOperations.RoundUpToPowerOf2((uint)pageCount + 4);
+                    Array.Resize(ref pages, newCount);
+                    Array.Resize(ref pageOffsets, newCount);
+                }
+                if (pageIndex < pageCount) {
+                    Array.Copy(pages, pageIndex, pages, pageIndex + 1, pageCount - pageIndex);
+                    Array.Copy(pageOffsets, pageIndex, pageOffsets, pageIndex + 1, pageCount - pageIndex);
+                }
+                pages[pageIndex] = 0;
+                ++pageCount;
+            }
+            pageOffsets[pageIndex] = pageOffset;
+            return pageIndex;
+        }
+
         public void Clear() {
             pageCount = 0;
+            popCount = 0;
         }
-        public void Add(int bit) {
-            var pageOffset = (ushort)((uint)bit / 64);
-            var pageIndex = pageOffsets.AsSpan(0, pageCount).BinarySearch(pageOffset);
-            if (pageIndex < 0) {
-                pageIndex = ~pageIndex;
-                if (pageIndex >= pageCount || pages[pageIndex] != 0) {
-                    if (pageCount >= pages.Length) {
-                        int newCount = (int)BitOperations.RoundUpToPowerOf2((uint)pageCount + 4);
-                        Array.Resize(ref pages, newCount);
-                        Array.Resize(ref pageOffsets, newCount);
-                    }
-                    if (pageIndex < pageCount) {
-                        Array.Copy(pages, pageIndex, pages, pageIndex + 1, pageCount - pageIndex);
-                        Array.Copy(pageOffsets, pageIndex, pageOffsets, pageIndex + 1, pageCount - pageIndex);
-                    }
-                    pageOffsets[pageIndex] = pageOffset;
-                    pages[pageIndex] = 0;
-                    ++pageCount;
-                }
-            }
-            pages[pageIndex] |= 1ul << (bit & 63);
+        public int GetPageIndex(BitIndex pageOffset) {
+            return pageOffsets.AsSpan(0, pageCount).BinarySearch(pageOffset);
         }
-        public bool TryRemove(int bit) {
-            var pageOffset = (ushort)((uint)bit / 64);
-            var pageIndex = pageOffsets.AsSpan(0, pageCount).BinarySearch(pageOffset);
+        public int GetBitPage(BitIndex bit) {
+            var pageOffset = (bit >> BitToPageShift);
+            return GetPageIndex(pageOffset);
+        }
+        public bool TryAdd(BitIndex bit) {
+            var pageOffset = (bit >> BitToPageShift);
+            var pageIndex = GetPageIndex(pageOffset);
+            if (pageIndex < 0) pageIndex = AllocatePageIndex(pageIndex, pageOffset);
+            var mask = 1ul << (int)(bit & 63);
+            var current = pages[pageIndex];
+            var masked = current | mask;
+            if (current == masked) return false;
+            popCount += 1;
+            pages[pageIndex] = masked;
+            return true;
+        }
+        public void Add(BitIndex bit) {
+            Debug.Assert(!Contains(bit));
+            TryAdd(bit);
+        }
+        public bool TryRemove(BitIndex bit) {
+            var pageOffset = (bit >> BitToPageShift);
+            var pageIndex = GetPageIndex(pageOffset);
             if ((uint)pageIndex >= pageCount) return false;
             var current = pages[pageIndex];
-            var masked = current & ~(1ul << (bit & 63));
+            var masked = current & ~(1ul << (int)(bit & 63));
+            if (current == masked) return false;
+            popCount -= 1;
             pages[pageIndex] = masked;
-            return (current != masked);
+            return true;
         }
-        public void Remove(int bit) {
-            var pageOffset = (ushort)((uint)bit / 64);
-            var pageIndex = pageOffsets.AsSpan(0, pageCount).BinarySearch(pageOffset);
-            pages[pageIndex] &= ~(1ul << (bit & 63));
+        public void Remove(BitIndex bit) {
+            var pageOffset = (bit >> BitToPageShift);
+            var pageIndex = GetPageIndex(pageOffset);
+            var mask = (1ul << (int)(bit & 63));
+            Debug.Assert((pages[pageIndex] & mask) != 0);
+            pages[pageIndex] &= ~mask;
+            popCount -= 1;
         }
-        public bool Contains(int bit) {
-            var pageOffset = (ushort)((uint)bit / 64);
-            var pageIndex = pageOffsets.AsSpan(0, pageCount).BinarySearch(pageOffset);
+        public bool Contains(BitIndex bit) {
+            var pageOffset = (bit >> BitToPageShift);
+            var pageIndex = GetPageIndex(pageOffset);
             if (pageIndex < 0) return false;
-            return (pages[pageIndex] & (1ul << (bit & 63))) != 0;
+            return (pages[pageIndex] & (1ul << (int)(bit & 63))) != 0;
         }
-        public int GetNextBitInclusive(int bit) {
-            var pageOffset = (ushort)((uint)bit / 64);
-            var pageIndex = pageOffsets.AsSpan(0, pageCount).BinarySearch(pageOffset);
+        public BitIndex GetNextBitInclusive(BitIndex bit) {
+            var pageOffset = (bit >> BitToPageShift);
+            var pageIndex = GetPageIndex(pageOffset);
             if (pageIndex >= 0) {
-                var mask = pages[pageIndex] & (ulong)-(long)(1ul << (bit & 63));
-                if (mask != 0) return pageOffset * 64 + BitOperations.TrailingZeroCount(mask);
+                var mask = pages[pageIndex] & (ulong)-(long)(1ul << (int)(bit & 63));
+                if (mask != 0) return (BitIndex)(pageOffset * 64 + (uint)BitOperations.TrailingZeroCount(mask));
                 ++pageIndex;
             } else {
                 pageIndex = ~pageIndex;
@@ -585,16 +621,22 @@ namespace Weesals.ECS {
             for (; pageIndex < pageCount; ++pageIndex) {
                 var page = pages[pageIndex];
                 if (page == 0) continue;
-                return pageOffsets[pageIndex] * 64 + BitOperations.TrailingZeroCount(page);
+                return (BitIndex)(pageOffsets[pageIndex] * 64 + (uint)BitOperations.TrailingZeroCount(page));
             }
-            return -1;
+            return ~((BitIndex)0);
         }
 
-        public struct Enumerator : IEnumerator<int> {
+        public interface IPagedEnumerator {
+            public BitIndex MoveNextPage();
+            public BitIndex GetCurrentPageId();
+            public ulong GetCurrentPage();
+        }
+
+        public struct Enumerator : IEnumerator<BitIndex>, IPagedEnumerator {
             public readonly DynamicBitField BitField;
             private int pageIndex;
             private int bitIndex;
-            public int Current => BitField.pageOffsets[pageIndex] * 64 + bitIndex;
+            public BitIndex Current => (BitIndex)(BitField.pageOffsets[pageIndex] * 64 + bitIndex);
             object IEnumerator.Current => Current;
             public Enumerator(DynamicBitField bitField) {
                 BitField = bitField;
@@ -616,12 +658,164 @@ namespace Weesals.ECS {
                     bitIndex = -1;
                 }
             }
-            public static readonly Enumerator Invalid = new(None);
+
+            public void RemoveCurrent() {
+                BitField.pages[pageIndex] &= ~(1ul << bitIndex);
+                BitField.popCount -= 1;
+            }
+
+            public BitIndex MoveNextPage() {
+                ++pageIndex;
+                return pageIndex < BitField.pageOffsets.Length
+                    ? BitField.pageOffsets[pageIndex] : InvalidIndex;
+            }
+            public BitIndex GetCurrentPageId() { return BitField.pageOffsets[pageIndex]; }
+            public ulong GetCurrentPage() { return BitField.pages[pageIndex]; }
+            public static readonly Enumerator Invalid = new(Empty);
         }
         public Enumerator GetEnumerator() => new Enumerator(this);
-        IEnumerator<int> IEnumerable<int>.GetEnumerator() => GetEnumerator();
+        IEnumerator<BitIndex> IEnumerable<BitIndex>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        private static readonly DynamicBitField None = new();
+        public struct UnionEnumerator<BitField1, BitField2>
+            : IEnumerator<BitIndex>, IEnumerable<BitIndex>, IPagedEnumerator
+            where BitField1 : struct, IPagedEnumerator where BitField2 : struct, IPagedEnumerator {
+            public readonly BitField1 Bits1;
+            public readonly BitField2 Bits2;
+            private ulong page;
+            private BitIndex bitIndex;
+            private BitIndex page1, page2;
+            public BitIndex Current => bitIndex;
+            object IEnumerator.Current => Current;
+            public UnionEnumerator(BitField1 bits1, BitField2 bits2) {
+                Bits1 = bits1;
+                Bits2 = bits2;
+                bitIndex = InvalidIndex;
+                Bits1.MoveNextPage();
+                Bits2.MoveNextPage();
+            }
+            public BitIndex MoveNextPage() {
+                var minPage = Math.Min(page1, page2);
+                if (page1 <= minPage) page1 = Bits1.MoveNextPage();
+                if (page2 <= minPage) page2 = Bits2.MoveNextPage();
+                page = 0;
+                minPage = Math.Min(page1, page2);
+                if (page1 == minPage) page |= Bits1.GetCurrentPage();
+                if (page2 == minPage) page |= Bits2.GetCurrentPage();
+                return minPage;
+            }
+            public BitIndex GetCurrentPageId() {
+                return Math.Min(page1, page2);
+            }
+            public ulong GetCurrentPage() {
+                return page;
+            }
+            public void Dispose() { }
+            public void Reset() { bitIndex = InvalidIndex; }
+            public bool MoveNext() {
+                while (true) {
+                    var next = GetNextBit(page, (int)(bitIndex & 63));
+                    if (next < 64) {
+                        bitIndex = (BitIndex)((bitIndex & ~63) + (uint)next);
+                        return true;
+                    }
+                    var pageId = MoveNextPage();
+                    if (pageId == InvalidIndex) return false;
+                }
+            }
+            private static int GetNextBit(ulong page, int bitIndex) {
+                return bitIndex + BitOperations.TrailingZeroCount(page >> bitIndex);
+            }
+            public UnionEnumerator<BitField1, BitField2> GetEnumerator() => this;
+            IEnumerator<BitIndex> IEnumerable<BitIndex>.GetEnumerator() => GetEnumerator();
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        }
+
+        public static UnionEnumerator<BitField1, BitField2> Union<BitField1, BitField2>(BitField1 bits1, BitField2 bits2)
+            where BitField1 : struct, IPagedEnumerator where BitField2 : struct, IPagedEnumerator {
+            return new UnionEnumerator<BitField1, BitField2>(bits1, bits2);
+        }
+
+        public struct PageEnumerator : IEnumerator<BitIndex> {
+            public readonly DynamicBitField BitField;
+            private int pageIndex;
+            public int PageCount => BitField.pageCount;
+            public BitIndex Current => BitField.pageOffsets[pageIndex];
+            public ulong PageContent => BitField.pages[pageIndex];
+            object IEnumerator.Current => Current;
+            public PageEnumerator(DynamicBitField bitField) {
+                BitField = bitField;
+                pageIndex = -1;
+            }
+            public void Dispose() { }
+            public void Reset() { pageIndex = -1; }
+            public bool MoveNext() {
+                while (true) {
+                    if (pageIndex >= BitField.pageCount) return false;
+                    pageIndex++;
+                }
+            }
+            public void JumpToPage(int newPageIndex) {
+                pageIndex = newPageIndex;
+            }
+
+            // Note: All of these do not rely on pageIndex
+            public BitIndex GetPageOffset(BitIndex bit) {
+                return bit >> BitToPageShift;
+            }
+            public BitIndex GetFirstPageBit(BitIndex pageOffset) {
+                return pageOffset << BitToPageShift;
+            }
+            public bool SetBit(int pageIndex, int bit) {
+                ref var page = ref BitField.pages[pageIndex];
+                var mask = 1ul << (bit & 63);
+                if ((page & mask) != 0) return false;
+                page |= mask;
+                BitField.popCount++;
+                return true;
+            }
+            public bool ClearBit(int pageIndex, int bit) {
+                ref var page = ref BitField.pages[pageIndex];
+                var mask = 1ul << (bit & 63);
+                if ((page & mask) == 0) return false;
+                page &= ~mask;
+                BitField.popCount--;
+                return true;
+            }
+            public ulong GetPageContent(BitIndex pageOffset) {
+                var pageIndex = BitField.GetPageIndex(pageOffset);
+                return pageIndex >= 0 ? BitField.pages[pageIndex] : 0;
+            }
+            // Returns ~ of next index if doesnt exist
+            public int RequirePageIndex(BitIndex pageOffset, out bool alocated) {
+                var pageIndex = GetPageIndex(pageOffset);
+                alocated = pageIndex < 0;
+                if (alocated) pageIndex = BitField.AllocatePageIndex(pageIndex, pageOffset);
+                return pageIndex;
+            }
+            public int GetPageIndex(BitIndex pageOffset) {
+                return BitField.GetPageIndex(pageOffset);
+            }
+            public bool IsValidPageIndex(int pageIndex) {
+                return (uint)pageIndex < BitField.pages.Length;
+            }
+            public int GetNextPage(int pageIndex) {
+                pageIndex = pageIndex < 0 ? ~pageIndex : pageIndex + 1;
+                if (pageIndex >= BitField.pages.Length) return -1;
+                return pageIndex;
+            }
+            public BitIndex GetPageOffsetAt(int pageIndex) {
+                return BitField.pageOffsets[pageIndex];
+            }
+            public ulong GetPageContentAt(int pageIndex) {
+                return BitField.pages[pageIndex];
+            }
+            public int GetLocalBitIndex(int pageIndex, BitIndex bit) {
+                return BitOperations.PopCount(BitField.pages[pageIndex] & ~(~0ul << (bit & 63)));
+            }
+        }
+        public PageEnumerator GetPageEnumerator() => new PageEnumerator(this);
+
+        public static DynamicBitField Empty = new();
     }
 }

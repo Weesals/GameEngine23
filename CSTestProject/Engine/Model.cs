@@ -79,7 +79,7 @@ namespace Weesals.Engine {
             return Animations[identifier];
         }
     }
-    public struct AnimationHandle {
+    public struct AnimationHandle : IEquatable<AnimationHandle> {
         public readonly AnimationProvider Provider;
         public readonly int Identifier;
         public bool IsValid => Provider != null;
@@ -90,6 +90,7 @@ namespace Weesals.Engine {
         }
         public AnimationMetadata GetMetadata() { return Provider.GetMetadata(Identifier); }
         public T GetAs<T>() where T : Animation { return (T)Provider.GetRawAnimation(Identifier); }
+        public bool Equals(AnimationHandle other) { return Provider == other.Provider && Identifier == other.Identifier; }
         public override string? ToString() { return GetMetadata().ToString(); }
     }
 

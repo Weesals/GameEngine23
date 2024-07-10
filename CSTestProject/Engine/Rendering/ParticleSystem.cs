@@ -577,10 +577,7 @@ namespace Weesals.Engine {
                 var to = i + 1 >= idOffsets.Length ? ActiveBlocks.Count : idOffsets[i + 1];
                 if (to == from) continue;
                 materials[0] = system.DrawMaterial;
-                rootMaterial.SetValue("ActiveBlocks", new CSBufferReference(ActiveBlocks) {
-                    mSubresourceId = (short)from,
-                    mSubresourceCount = (short)(to - from),
-                });
+                rootMaterial.SetValue("ActiveBlocks", new CSBufferReference(ActiveBlocks, from, to - from));
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
                 var drawConfig = CSDrawConfig.Default;

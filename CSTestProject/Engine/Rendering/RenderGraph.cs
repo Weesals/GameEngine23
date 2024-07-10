@@ -229,8 +229,12 @@ namespace Weesals.Engine {
                             break;
                         }
                     }
-                    Debug.Assert(selfDep.OtherPassId != -1, "Could not find pass for input buffer");
                 }
+                // No pass was found, but we have a default texture, all is ok
+                if (selfDep.OtherPassId == -1 && selfDep.Input.DefaultTexture != DefaultTexture.None) {
+                    continue;
+                }
+                Debug.Assert(selfDep.OtherPassId != -1, "Could not find pass for input buffer");
                 if (selfDep.OtherOutput == -1) {
                     selfDep.OtherOutput = passes[selfDep.OtherPassId].RenderPass.FindOutputI(selfInput.Name);
                 }
@@ -292,6 +296,11 @@ namespace Weesals.Engine {
                             passthroughMask |= 1u << selfOutputs[o].Output.PassthroughInput;
                     for (int i = 0; i < selfInputs.Length; i++) {
                         var selfInput = selfInputs[i];
+                        // This input does not have a pass attached
+                        // (its probably a default texture?)
+                        if (selfInput.OtherPassId == -1) {
+                            continue;
+                        }
                         // Mark any non-write-only dependencies as Required
                         if ((passthroughMask & (1u << i)) != 0) {
                             var otherPassData = passes[selfInput.OtherPassId];
@@ -364,7 +373,7 @@ namespace Weesals.Engine {
                     for (int i = 0; i < selfInputs.Length; i++) {
                         var selfDep = selfInputs[i];
                         var selfInput = selfDep.Input;
-                        if (selfInput.RequireAttachment) {
+                        if (selfInput.RequireAttachment && selfDep.OtherPassId != -1) {
                             int otherEvalI = FindEvaluator(selfDep.OtherPassId);
                             Debug.Assert(otherEvalI >= 0, "Could not find valid pass for input");
                             ref var otherExec = ref executeList[otherEvalI];
@@ -384,6 +393,7 @@ namespace Weesals.Engine {
                     var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange);
                     for (int i = 0; i < selfDeps.Count; i++) {
                         var selfDep = selfDeps[i];
+                        if (selfDep.OtherPassId == -1) continue;
                         refCounter[selfDep.OtherPassId]++;
                     }
                 }
@@ -394,6 +404,7 @@ namespace Weesals.Engine {
                     Debug.Assert(refCounter[selfExec.PassId] == 0, "Pass should have no dependencies by now");
                     var selfDeps = dependencies.Slice(passes[selfExec.PassId].InputsRange);
                     for (int i = 0; i < selfDeps.Count; i++) {
+                        if (selfDeps[i].OtherPassId == -1) continue;
                         refCounter[selfDeps[i].OtherPassId]--;
                     }
                     int best = -1;
@@ -451,6 +462,7 @@ namespace Weesals.Engine {
                         if (inputSize.X == 0) inputSize = selfPassData.OutputSize;
                         if (inputSize.X == 0) continue;
                         for (int i = 0; i < selfInputs.Length; i++) {
+                            if (selfInputs[i].OtherPassId == -1) continue;
                             var otherPass = passes[selfInputs[i].OtherPassId];
                             var otherOutputs = outputs.AsSpan().Slice(otherPass.OutputsRange);
                             var otherOutput = otherOutputs[selfInputs[i].OtherOutput];
@@ -494,6 +506,7 @@ namespace Weesals.Engine {
                         if (inputSize.X == 0) inputSize = selfPassData.OutputSize;
                         if (inputSize.X == 0) continue;
                         for (int i = 0; i < selfInputs.Length; i++) {
+                            if (selfInputs[i].OtherPassId == -1) continue;
                             var otherPass = passes[selfInputs[i].OtherPassId];
                             var otherOutputs = outputs.AsSpan().Slice(otherPass.OutputsRange);
                             ref var buffer = ref buffers[otherOutputs[selfInputs[i].OtherOutput].TargetId];
@@ -573,8 +586,17 @@ namespace Weesals.Engine {
                     for (int i = 0; i < selfInputs.Length; ++i) {
                         var input = selfInputs[i].Input;
                         var dep = selfInputs[i];
-                        var otherTarget = outputs.AsSpan().Slice(passes[dep.OtherPassId].OutputsRange)[dep.OtherOutput];
-                        selfPass.GetPassMaterial().SetTexture(input.Name, buffers[otherTarget.TargetId].Target.Texture);
+                        if (dep.OtherPassId >= 0) {
+                            var otherTarget = outputs.AsSpan().Slice(passes[dep.OtherPassId].OutputsRange)[dep.OtherOutput];
+                            selfPass.GetPassMaterial().SetTexture(input.Name, buffers[otherTarget.TargetId].Target.Texture);
+                        } else {
+                            CSTexture tex = default;
+                            switch (dep.Input.DefaultTexture) {
+                                default: tex = Resources.RequireDefaultTexture(dep.Input.DefaultTexture); break;
+                                case DefaultTexture.None: throw new Exception("Unable to find pass for input, and no default texture was specified");
+                            }
+                            selfPass.GetPassMaterial().SetTexture(input.Name, tex);
+                        }
                     }
 
                     // Collect outputs

@@ -165,15 +165,35 @@ namespace Weesals.Editor {
                 if (HasDirtyFlag(DirtyFlags.Layout)) TitleText.MarkLayoutDirty();
 
                 var layout = mLayoutCache;
-                TitleText.UpdateLayout(Canvas, layout.SliceTop(TitleText.GetPreferredHeight()));
-                TitleText.Append(ref composer);
+                //TitleText.UpdateLayout(Canvas, layout.SliceTop(TitleText.GetPreferredHeight()));
+                //TitleText.Append(ref composer);
 
+                ref var canvasBG = ref composer.CreateTransient<CanvasImage>(Canvas);
+                if (canvasBG.HasDirtyFlags) {
+                    canvasBG.Color = new Color(0xff333333);
+                    canvasBG.SetTexture(default);
+                    canvasBG.UpdateLayout(Canvas, layout);
+                }
+                canvasBG.Append(ref composer);
                 ref var curveDisp = ref composer.CreateTransient<CanvasCurve>(Canvas);
                 var curve = Binding.GetValueAs<FloatCurve>();
-                Span<Vector3> points = stackalloc Vector3[curve.Keyframes.Length];
-                for (int i = 0; i < points.Length; i++) {
-                    var kf = curve.Keyframes[i];
-                    points[i] = layout.TransformPosition2DN(new Vector2(kf.Time, kf.Value));
+                using var points = new PooledList<Vector3>();
+                var curveLayout = layout.Inset(10);
+                for (int i = 1; i < curve.Keyframes.Length; i++) {
+                    var kf0 = curve.Keyframes[i - 1];
+                    var kf1 = curve.Keyframes[i + 0];
+                    int kfPoints = 1;
+                    if (kf0.Interpolation == CurveInterpolation.Bezier) {
+                        var stdTan = (kf1.Value - kf0.Value) / Math.Max(kf1.Time - kf0.Time, 0.0001f);
+                        var curvature = Math.Abs(stdTan - kf0.OutTangent) + Math.Abs(stdTan - kf1.InTangent);
+                        kfPoints = (int)Math.Clamp(curvature * 10, 1, 10);
+                    }
+                    for (int p = i == 1 ? 0 : 1; p <= kfPoints; p++) {
+                        var key = (float)p / kfPoints;
+                        key = Easing.Lerp(kf0.Time, kf1.Time, key);
+                        var value = curve.Evaluate(key);
+                        points.Add(curveLayout.TransformPosition2DN(new Vector2(key, value)));
+                    }
                 }
                 curveDisp.Update(Canvas, points);
                 curveDisp.Append(ref composer);
@@ -341,12 +361,14 @@ namespace Weesals.Editor {
                     var properties = new UIPropertiesList() { Name = "Entity Inspector" };
                     var scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
                     foreach (var field in type.Type.GetFields(scope)) {
-                        properties.AppendProperty(CreatePropertyPath(component.Column.Items, component.Row, field), () => {
+                        var item = component.RawItem;
+                        properties.AppendProperty(CreatePropertyPath(item.Array, item.Index, field), () => {
                             component.NotifyMutation();
                         });
                     }
                     foreach (var property in type.Type.GetProperties(scope)) {
-                        properties.AppendProperty(CreatePropertyPath(component.Column.Items, component.Row, property), () => {
+                        var item = component.RawItem;
+                        properties.AppendProperty(CreatePropertyPath(item.Array, item.Index, property), () => {
                             component.NotifyMutation();
                         });
                     }
@@ -398,8 +420,8 @@ namespace Weesals.Editor {
     }
 
     public class UIInspector : TabbedWindow {
-        public readonly ScrollView ScrollView;
-        public readonly ListLayout Content;
+        protected readonly ScrollView scrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
+        protected readonly ListLayout content = new() { Name = "Inspector Content", Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
         public UILandscapeTools LandscapeTools = new();
         public UIEntityInspector EntityInspector = new();
         public UIEditablesInspector GenericInspector = new();
@@ -409,11 +431,9 @@ namespace Weesals.Editor {
         public Action<CanvasRenderable, bool> OnRegisterInspector;
 
         public UIInspector(Editor editor) : base(editor, "Inspector") {
-            ScrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
-            Content = new() { Name = "Inspector Content", Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
-            Content.AppendChild(EditablesInspector);
-            ScrollView.AppendChild(Content);
-            AppendChild(ScrollView);
+            content.AppendChild(EditablesInspector);
+            scrollView.AppendChild(content);
+            AppendChild(scrollView);
         }
 
         public void AppendEditables(ObservableCollection<object> editables) {
@@ -434,11 +454,11 @@ namespace Weesals.Editor {
         public void SetInspector(CanvasRenderable? inspector) {
             if (activeInspector != null) {
                 OnRegisterInspector?.Invoke(activeInspector, false);
-                Content.RemoveChild(activeInspector);
+                content.RemoveChild(activeInspector);
             }
             activeInspector = inspector;
             if (activeInspector != null) {
-                Content.InsertChild(0, activeInspector);
+                content.InsertChild(0, activeInspector);
                 OnRegisterInspector?.Invoke(activeInspector, true);
             }
         }

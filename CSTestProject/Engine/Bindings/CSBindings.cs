@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -268,11 +269,13 @@ namespace Weesals.Engine {
             mSubresourceId = 0;
             mSubresourceCount = -1;
         }
-        public CSBufferReference(CSBufferLayout buffer) {
+        public CSBufferReference(CSBufferLayout buffer, int from = 0, int length = -1) {
             mBuffer = (void*)buffer.identifier;
             mType = BufferTypes.Buffer;
-            mSubresourceId = 0;
-            mSubresourceCount = -1;
+            mSubresourceId = (short)from;
+            mSubresourceCount = (short)length;
+            Debug.Assert(from < ushort.MaxValue, "From too large for a view");
+            Debug.Assert(length < ushort.MaxValue, "Length too large for a view");
         }
         public CSTexture AsTexture() {
             return mType == BufferTypes.Texture ? new CSTexture((NativeTexture*)mBuffer) : default;
@@ -417,6 +420,7 @@ namespace Weesals.Engine {
         unsafe public void SetRenderTargets(CSRenderTargetBinding colorTarget, CSRenderTargetBinding depth) {
             SetRenderTargets(mGraphics, colorTarget.mTarget != null ? new CSSpan(&colorTarget, 1) : default, depth);
         }
+        [SkipLocalsInit]
         unsafe public void SetRenderTargets(Span<CSRenderTarget> targets, CSRenderTarget depth) {
             var nativeTargets = stackalloc CSRenderTargetBinding[targets.Length];
             for (int i = 0; i < targets.Length; ++i) nativeTargets[i] = new CSRenderTargetBinding(targets[i].mRenderTarget);
@@ -500,6 +504,7 @@ namespace Weesals.Engine {
         }
 
         private static ProfilerMarker ProfileMarker_Draw = new("Draw");
+        [SkipLocalsInit]
         unsafe public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
             var usbindings = stackalloc CSBufferLayout[bindings.Count];
             for (int b = 0; b < bindings.Count; ++b) usbindings[b] = bindings[b];
@@ -542,7 +547,9 @@ namespace Weesals.Engine {
         unsafe public CSWindowFrame GetWindowFrame() { return GetWindowFrame(mWindow); }
         unsafe public void SetWindowFrame(RectI frame, bool maximized) { SetWindowFrame(mWindow, &frame, (byte)(maximized ? 1 : 0)); }
         unsafe public void RegisterMovedCallback(Action callback, bool enable) {
-            RegisterMovedCallback(mWindow, (delegate* unmanaged[Cdecl]<void>)Marshal.GetFunctionPointerForDelegate(callback), (byte)(enable ? 1 : 0));
+            var handle = GCHandle.Alloc(callback);
+            var addr = (delegate* unmanaged[Cdecl]<void>)Marshal.GetFunctionPointerForDelegate(callback);
+            RegisterMovedCallback(mWindow, addr, (byte)(enable ? 1 : 0));
         }
     }
     public partial struct Platform {

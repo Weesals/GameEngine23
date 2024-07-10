@@ -470,6 +470,13 @@ public class NavGrid : IDisposable {
     public void PushToNavMesh(NavMesh2Baker navMesh) {
         if (!HasChanges) return;
 
+        // Partial update is not supported along edges yet
+        // (because RemoveVertex cant always find all triangles with the clockwise walk)
+        if (changeMin.X == 0 || changeMin.Y == 0 || changeMax.X == Size.X - 1 || changeMax.Y == Size.Y - 1) {
+            changeMin = 0;
+            changeMax = Size - 1;
+        }
+
         using var marker = new ProfilerMarker("Updating navmesh").Auto();
         var pushJob = new AdjacencyPushJob() {
             map = map,
