@@ -78,7 +78,7 @@ namespace Weesals.ECS {
             private List<ArchetypeMutateListener>.Enumerator listenersEn;
             private DynamicBitField.Enumerator bitEnum;
             public Archetype CurrentArchetype => listenersEn.Current.Archetype;
-            public ComponentRef Current => new ComponentRef(Listener.Stage.Context, CurrentArchetype, bitEnum.Current, Listener.TypeId);
+            public ComponentRef Current => new ComponentRef(CurrentArchetype, bitEnum.Current, Listener.TypeId);
             object IEnumerator.Current => Current;
             public Enumerator(ComponentMutateListener listener) {
                 Listener = listener;
@@ -104,11 +104,11 @@ namespace Weesals.ECS {
     }
 
     // A column stores a list of data for a specific component type within a archetype
-    public struct Column {
+    public struct ArchetypeColumn {
         public Array Items;
         public ComponentType Type;
         public List<DynamicBitField>? RowModificationFlags;
-        public Column(ComponentType type) {
+        public ArchetypeColumn(ComponentType type) {
             Type = type;
             Type.Resize(ref Items!, 0);
         }
@@ -116,7 +116,7 @@ namespace Weesals.ECS {
             Type.Resize(ref Items, size);
         }
 
-        public void CopyValue(int toRow, Column from, int fromRow) {
+        public void CopyValue(int toRow, ArchetypeColumn from, int fromRow) {
             CopyValue(toRow, from.Items, fromRow);
         }
         public void CopyValue(int toRow, Array from, int fromRow) {
@@ -157,12 +157,12 @@ namespace Weesals.ECS {
     // A archetype of component columns and entity rows
     public class Archetype {
         private static ComponentType<Entity> EntityColumnType = new(new TypeId(0));
+        public readonly Stage Stage;
         public readonly ArchetypeId Id;
         public readonly BitField TypeMask;
         public readonly int ColumnCount;
-        private Column[] columns;
+        private ArchetypeColumn[] columns;
         public BitField SparseTypeMask;
-        private SparseStorage sparseStorage = new();
         public SparseColumnMeta[] SparseColumns = Array.Empty<SparseColumnMeta>();
         // Index of the last item
         public int MaxItem = -1;
@@ -171,19 +171,23 @@ namespace Weesals.ECS {
         public int Revision = 0;
         // Used to track which listeners are active for this archetype
         public BitField ArchetypeListeners;
+
+        public SparseStorage SparseStorage => Stage.SparseStorage;
+        public StageContext Context => Stage.Context;
         public Entity[] Entities => (Entity[])columns[0].Items;
         public bool IsEmpty => MaxItem < 0;
         public bool IsNullArchetype => ColumnCount == 1;
 
-        public Archetype(ArchetypeId id, StageContext context, BitField field) {
+        public Archetype(ArchetypeId id, Stage stage, BitField field) {
+            Stage = stage;
             Id = id;
             TypeMask = field;
-            columns = new Column[1 + field.BitCount];
-            columns[0] = new Column(EntityColumnType);
+            columns = new ArchetypeColumn[1 + field.BitCount];
+            columns[0] = new ArchetypeColumn(EntityColumnType);
             var it = TypeMask.GetEnumerator();
             for (int i = 1; i < columns.Length; i++) {
                 Trace.Assert(it.MoveNext());
-                columns[i] = new Column(context.GetComponentType(it.Current));
+                columns[i] = new ArchetypeColumn(Context.GetComponentType(it.Current));
             }
             ColumnCount = columns.Length;
             Trace.Assert(!it.MoveNext());
@@ -261,7 +265,7 @@ namespace Weesals.ECS {
             }
         }
 
-        public ref Column GetColumn(int id) {
+        public ref ArchetypeColumn GetColumn(int id) {
             return ref columns[id];
         }
         public bool GetHasColumn(TypeId typeId, StageContext? context = default) {
@@ -313,7 +317,7 @@ namespace Weesals.ECS {
             for (int i = SparseColumns.Length - 1; i > index; --i)
                 SparseColumns[i] = SparseColumns[i - 1];
             SparseColumns[index] = new();
-            SparseColumns[index].SparseData = new(new(sparseStorage, context.GetComponentType(typeId)));
+            SparseColumns[index].SparseData = new(new(SparseStorage, context.GetComponentType(typeId)));
             Array.Resize(ref columns, columns.Length + 1);
             index += ColumnCount;
             for (int i = columns.Length - 1; i > index; --i)
@@ -479,7 +483,7 @@ namespace Weesals.ECS {
     }
 
     public readonly struct ComponentRef {
-        public readonly StageContext Context;
+        public readonly StageContext Context => Archetype.Context;
         public readonly Archetype Archetype;
         public readonly int Row;
         public readonly int DenseRow;
@@ -488,8 +492,7 @@ namespace Weesals.ECS {
         public readonly Entity Entity => Archetype.Entities[Row];
         public readonly EntityAddress EntityAddress => new(Archetype.Id, Row);
         public readonly ArrayItem RawItem => new(Archetype.GetColumn(ColumnId).Items, DenseRow);
-        public ComponentRef(StageContext context, Archetype archetype, int row, TypeId typeId) {
-            Context = context;
+        public ComponentRef(Archetype archetype, int row, TypeId typeId) {
             Archetype = archetype;
             Row = row;
             DenseRow = Row;

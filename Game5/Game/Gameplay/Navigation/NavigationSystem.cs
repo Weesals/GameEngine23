@@ -160,8 +160,7 @@ namespace Game5.Game {
 
         protected override void OnUpdate() {
             foreach (var mutation in mutations) {
-                RegisterEntity(mutation.EntityAddress, false);
-                RegisterEntity(mutation.EntityAddress, true);
+                UpdateEntity(mutation.EntityAddress);
             }
             mutations.Clear();
             if (NavGrid.HasChanges) {
@@ -403,6 +402,18 @@ namespace Game5.Game {
                 obstructionCache.Remove(entity);
             }
             RegisterObstruction(entity, obstruction, enable);
+        }
+        private void UpdateEntity(EntityAddress entityAddr) {
+            var entity = World.Stage.GetEntity(entityAddr);
+            var tform = World.Stage.GetComponent<ECTransform>(entityAddr);
+            var proto = ProtoSystem.GetPrototypeData(entityAddr);
+            var newObstruction = new ObstructionCache() { Transform = tform, Footprint = proto.Footprint, };
+            obstructionCache.TryGetValue(entity, out var oldObstruction);
+            if (newObstruction.Transform.Equals(oldObstruction.Transform) &&
+                newObstruction.Footprint.Equals(oldObstruction.Footprint)) return;
+            RegisterObstruction(entity, oldObstruction, false);
+            RegisterObstruction(entity, newObstruction, true);
+            obstructionCache[entity] = newObstruction;
         }
         private void ComputeObstruction(Span<Int2> corners, ObstructionCache obstruction) {
             var fwd = obstruction.Transform.GetFacing();

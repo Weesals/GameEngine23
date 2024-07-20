@@ -132,6 +132,9 @@ namespace Weesals.Engine.Jobs {
         public readonly JobHandle Then(Action action) {
             return JobHandle.Schedule(action, this);
         }
+        public readonly JobHandle Then(Action<object?> action, object context) {
+            return JobHandle.Schedule(action, context, this);
+        }
 
         public static readonly JobHandle None = new();
         internal static readonly JobHandle Invalid = new(-1, 0);

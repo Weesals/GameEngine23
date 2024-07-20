@@ -181,4 +181,85 @@ namespace Weesals.ECS {
             }
         }
     }
+
+
+
+    public struct LambdaId {
+        public readonly int Index;
+        public LambdaId(int index) { Index = index; }
+        public override string ToString() { return Index.ToString(); }
+        public override int GetHashCode() { return Index; }
+        public static implicit operator int(LambdaId id) { return id.Index; }
+        public static readonly LambdaId Invalid = new(-1);
+    }
+    struct LambdaCache {
+        private struct LambdaKey : IEquatable<LambdaKey> {
+            public QueryId RequestQuery;
+            public QueryId Query;
+            public TypeId[] Types;
+
+            public bool Equals(LambdaKey other) {
+                return RequestQuery == other.RequestQuery && Types.SequenceEqual(other.Types);
+            }
+            public override int GetHashCode() {
+                var hash = RequestQuery.GetHashCode();
+                foreach (var item in Types) hash = hash * 1253 + item.GetHashCode();
+                return hash;
+            }
+        }
+        private Dictionary<LambdaKey, LambdaId> lambdasByKey = new();
+        private List<SystemLambda.Cache> lambdaCaches = new();
+        public LambdaId RequireLambda(Stage stage, TypeId[] types, QueryId query) {
+            var key = new LambdaKey() { RequestQuery = query, Types = types, };
+            if (!lambdasByKey.TryGetValue(key, out var lambda)) {
+                key.Query = key.RequestQuery;
+                if (!key.Query.IsValid) {
+                    var builder = new Query.Builder(stage);
+                    foreach (var typeId in types) builder.With(typeId);
+                    key.Query = builder.Build();
+                }
+                lambda = new LambdaId(lambdaCaches.Count);
+                lambdaCaches.Add(new SystemLambda.Cache() {
+                    QueryIndex = query,
+                    ComponentIds = types,
+                });
+                lambdasByKey.Add(key, lambda);
+            }
+            return lambda;
+        }
+        public LambdaCache() { }
+
+        public LambdaId RequireLambda<C1>(Stage stage, SystemLambda.Callback<C1> callback) {
+            return RequireLambda(stage, new[] { stage.Context.RequireComponentTypeId<C1>(), }, QueryId.Invalid);
+        }
+        public LambdaId RequireLambda<C1, C2>(Stage stage, SystemLambda.Callback<C1, C2> callback) {
+            return RequireLambda(stage, new[] {
+                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
+            }, QueryId.Invalid);
+        }
+        public LambdaId RequireLambda<C1, C2, C3>(Stage stage, SystemLambda.Callback<C1, C2, C3> callback) {
+            return RequireLambda(stage, new[] {
+                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
+                stage.Context.RequireComponentTypeId<C3>(),
+            }, QueryId.Invalid);
+        }
+        public LambdaId RequireLambda<C1, C2, C3, C4>(Stage stage, SystemLambda.Callback<C1, C2, C3, C4> callback) {
+            return RequireLambda(stage, new[] {
+                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
+                stage.Context.RequireComponentTypeId<C3>(), stage.Context.RequireComponentTypeId<C4>(),
+            }, QueryId.Invalid);
+        }
+        public LambdaId RequireLambda<C1, C2, C3, C4, C5>(Stage stage, SystemLambda.Callback<C1, C2, C3, C4, C5> callback) {
+            return RequireLambda(stage, new[] {
+                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
+                stage.Context.RequireComponentTypeId<C3>(), stage.Context.RequireComponentTypeId<C4>(),
+                stage.Context.RequireComponentTypeId<C5>(),
+            }, QueryId.Invalid);
+        }
+
+        public SystemLambda.Cache GetLambda(LambdaId lambdaId) {
+            return lambdaCaches[lambdaId];
+        }
+    }
+
 }

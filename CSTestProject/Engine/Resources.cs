@@ -9,6 +9,7 @@ using Weesals.Editor.Assets;
 using Weesals.Engine.Importers;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
+using Weesals.Engine.Serialization;
 using Weesals.Geometry;
 using Weesals.UI;
 using Weesals.Utility;
@@ -252,7 +253,32 @@ namespace Weesals.Engine {
             if (loadedModels.TryGetValue(pathHash, out var model)) return model;
             lock (loadedModels) {
                 if (loadedModels.TryGetValue(pathHash, out model)) return model;
+                /*var key = ResourceKey.CreateFileKey(path, "model");
+                using (var entry = ResourceCacheManager.TryLoad(key)) {
+                    if (entry.IsValid) {
+                        var data = new byte[entry.FileStream.Length];
+                        entry.FileStream.Read(data);
+                        var buffer = new DataBuffer(data);
+                        using (var serializer = TSONNode.CreateRead(buffer)) {
+                            model = new();
+                            model.Serialize(serializer);
+                            return model;
+                        }
+                    }
+                }*/
                 model = FBXImporter.Import(path, out handle);
+                /*handle.Then((modelObj) => {
+                    using var entry = ResourceCacheManager.TrySave(key);
+                    if (entry.IsValid) {
+                        var buffer = new DataBuffer();
+                        using (var serializer = TSONNode.CreateWrite(buffer)) {
+                            ((Model)modelObj).Serialize(serializer);
+                        }
+                        using (var writer = new BinaryWriter(entry.FileStream)) {
+                            writer.Write(buffer.AsSpan());
+                        }
+                    }
+                }, model);*/
                 loadedModels.Add(pathHash, model);
             }
             return model;

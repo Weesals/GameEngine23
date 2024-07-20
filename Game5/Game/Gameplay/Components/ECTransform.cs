@@ -8,7 +8,7 @@ using Weesals.Engine;
 using Weesals.Utility;
 
 namespace Game5.Game {
-    public struct ECTransform {
+    public struct ECTransform : IEquatable<ECTransform> {
         public Int2 Position;
         public short Altitude;
         public short Orientation;
@@ -56,6 +56,11 @@ namespace Game5.Game {
 
         public override string ToString() {
             return $"Position<{Position}>";
+        }
+
+        public bool Equals(ECTransform other) {
+            return Position == other.Position &&
+                Altitude == other.Altitude && Orientation == other.Orientation;
         }
     }
 }

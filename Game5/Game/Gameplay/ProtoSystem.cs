@@ -10,12 +10,15 @@ using Weesals.Utility;
 
 namespace Game5.Game {
 
-    public struct EntityFootprint {
+    public struct EntityFootprint : IEquatable<EntityFootprint> {
         public enum Shapes { Box, Capsule, }
         public Int2 Size;
         public int Height;
         public Shapes Shape;
         public override string ToString() { return $"{Shape}: {Size}x{Height}"; }
+        public bool Equals(EntityFootprint other) {
+            return Size == other.Size && Height == other.Height && Shape == other.Shape;
+        }
     }
     public class PrototypeData {
         public int Id = -1;

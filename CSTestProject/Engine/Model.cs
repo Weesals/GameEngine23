@@ -6,6 +6,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Serialization;
 
 namespace Weesals.Engine {
     public class Model {
@@ -31,6 +32,23 @@ namespace Weesals.Engine {
 
         public override string ToString() { return Name; }
 
+        public void Serialize(TSONNode serializer) {
+            throw new NotImplementedException();
+            using (var sMeshes = serializer.CreateChild("Meshes")) {
+                sMeshes.Serialize(meshes, m => m.Name, n => new Mesh(n),
+                    (Mesh mesh, ref TSONNode sMesh) => {
+                        var vcount = mesh.VertexCount;
+                        sMesh.Serialize(ref vcount);
+                        using (var sIndices = sMesh.CreateChild("Indices")) {
+                            using (var sBinary = sIndices.CreateBinary()) {
+                                var icount = mesh.IndexCount;
+                                sBinary.Serialize(ref icount);
+                                mesh.SetIndexCount(icount);
+                            }
+                        }
+                    });
+            }
+        }
     }
 
     public class Animation {

@@ -6,82 +6,76 @@ using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 
 namespace Weesals.ECS {
+    public struct ColumnData {
+        public struct Range {
+            public int Start;
+            public int Count;
+            public int End => Start + Count;
+        }
+        public Array Items;
+        public ComponentType Type;
+        public ColumnData(ComponentType type) {
+            Type = type;
+            Type.Resize(ref Items!, 0);
+        }
+        public void Resize(int size) {
+            Type.Resize(ref Items, size);
+        }
 
-    public struct LambdaId {
-        public readonly int Index;
-        public LambdaId(int index) { Index = index; }
-        public override string ToString() { return Index.ToString(); }
-        public override int GetHashCode() { return Index; }
-        public static implicit operator int(LambdaId id) { return id.Index; }
-        public static readonly LambdaId Invalid = new(-1);
+        public void CopyValue(int toRow, ColumnData from, int fromRow) {
+            CopyValue(toRow, from.Items, fromRow);
+        }
+        public void CopyValue(int toRow, Array from, int fromRow) {
+            Array.Copy(from, fromRow, Items, toRow, 1);
+        }
+
+        public ref readonly T GetValueRO<T>(int row) {
+            return ref ((T[])Items)[row];
+        }
+        public ref T GetValueRW<T>(int row) {
+            return ref ((T[])Items)[row];
+        }
+        public ArrayItem GetRawItem(int row) {
+            return new(Items, row);
+        }
+
+        public override string ToString() { return Type.ToString(); }
     }
-    struct LambdaCache {
-        private struct LambdaKey : IEquatable<LambdaKey> {
-            public QueryId RequestQuery;
-            public QueryId Query;
-            public TypeId[] Types;
-
-            public bool Equals(LambdaKey other) {
-                return RequestQuery == other.RequestQuery && Types.SequenceEqual(other.Types);
-            }
-            public override int GetHashCode() {
-                var hash = RequestQuery.GetHashCode();
-                foreach (var item in Types) hash = hash * 1253 + item.GetHashCode();
-                return hash;
-            }
+    public struct ColumnStorage {
+        public readonly StageContext Context;
+        private ColumnData[] columns;
+        public struct ColumnRange {
+            public int Start;
+            public int Count;
+            public int End => Start + Count;
         }
-        private Dictionary<LambdaKey, LambdaId> lambdasByKey = new();
-        private List<SystemLambda.Cache> lambdaCaches = new();
-        public LambdaId RequireLambda(Stage stage, TypeId[] types, QueryId query) {
-            var key = new LambdaKey() { RequestQuery = query, Types = types, };
-            if (!lambdasByKey.TryGetValue(key, out var lambda)) {
-                key.Query = key.RequestQuery;
-                if (!key.Query.IsValid) {
-                    var builder = new Query.Builder(stage);
-                    foreach (var typeId in types) builder.With(typeId);
-                    key.Query = builder.Build();
+        private ColumnRange denseRange;
+        private ColumnRange sparseRange;
+        public ColumnStorage(StageContext context) {
+            Context = context;
+            columns = new ColumnData[64];
+        }
+        public ref ColumnData RequireColumn(TypeId typeId) {
+            ref var range = ref typeId.IsSparse ? ref denseRange : ref sparseRange;
+            int index = typeId.Index;
+            if (index >= range.Count) {
+                var type = Context.GetComponentType(typeId);
+                var origSparseRange = sparseRange;
+                var origDenseRange = denseRange;
+                range.Count++;
+                if (denseRange.End >= sparseRange.Start && sparseRange.Count > 0) {
+                    sparseRange.Start = (int)BitOperations.RoundUpToPowerOf2((uint)denseRange.End + 16);
                 }
-                lambda = new LambdaId(lambdaCaches.Count);
-                lambdaCaches.Add(new SystemLambda.Cache() {
-                    QueryIndex = query,
-                    ComponentIds = types,
-                });
-                lambdasByKey.Add(key, lambda);
+                int end = sparseRange.Count > 0 ? sparseRange.End : denseRange.End;
+                if (end > columns.Length) {
+                    Array.Resize(ref columns, (int)BitOperations.RoundUpToPowerOf2((uint)end));
+                }
+                if (origSparseRange.Start != sparseRange.Start) {
+                    Array.Copy(columns, origSparseRange.Start, columns, sparseRange.Start, origSparseRange.Count);
+                }
+                columns[range.Start + index] = new(Context.GetComponentType(typeId));
             }
-            return lambda;
-        }
-        public LambdaCache() { }
-
-        public LambdaId RequireLambda<C1>(Stage stage, SystemLambda.Callback<C1> callback) {
-            return RequireLambda(stage, new[] { stage.Context.RequireComponentTypeId<C1>(), }, QueryId.Invalid);
-        }
-        public LambdaId RequireLambda<C1, C2>(Stage stage, SystemLambda.Callback<C1, C2> callback) {
-            return RequireLambda(stage, new[] {
-                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
-            }, QueryId.Invalid);
-        }
-        public LambdaId RequireLambda<C1, C2, C3>(Stage stage, SystemLambda.Callback<C1, C2, C3> callback) {
-            return RequireLambda(stage, new[] {
-                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
-                stage.Context.RequireComponentTypeId<C3>(),
-            }, QueryId.Invalid);
-        }
-        public LambdaId RequireLambda<C1, C2, C3, C4>(Stage stage, SystemLambda.Callback<C1, C2, C3, C4> callback) {
-            return RequireLambda(stage, new[] {
-                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
-                stage.Context.RequireComponentTypeId<C3>(), stage.Context.RequireComponentTypeId<C4>(),
-            }, QueryId.Invalid);
-        }
-        public LambdaId RequireLambda<C1, C2, C3, C4, C5>(Stage stage, SystemLambda.Callback<C1, C2, C3, C4, C5> callback) {
-            return RequireLambda(stage, new[] {
-                stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
-                stage.Context.RequireComponentTypeId<C3>(), stage.Context.RequireComponentTypeId<C4>(),
-                stage.Context.RequireComponentTypeId<C5>(),
-            }, QueryId.Invalid);
-        }
-
-        public SystemLambda.Cache GetLambda(LambdaId lambdaId) {
-            return lambdaCaches[lambdaId];
+            return ref columns[range.Start + index];
         }
     }
 
@@ -100,6 +94,8 @@ namespace Weesals.ECS {
         }
 
         public readonly StageContext Context;
+        public SparseStorage SparseStorage;
+        public ColumnStorage ColumnStorage;
 
         private EntityData[] entities = Array.Empty<EntityData>();
         private EntityMeta[] entityMeta = Array.Empty<EntityMeta>();
@@ -120,11 +116,13 @@ namespace Weesals.ECS {
 
         public Stage(StageContext context) {
             Context = context;
+            SparseStorage = new();
+            ColumnStorage = new(context);
             // Entity must be first "type"
             var entityTypeId = Context.RequireComponentTypeId<Entity>();
             Debug.Assert(entityTypeId.Packed == -1, "Entity must be invalid type id");
             // Add the zero archetype (when entities are newly created)
-            archetypes.Add(new(new ArchetypeId(0), Context, default));
+            archetypes.Add(new(new ArchetypeId(0), this, default));
             archetypesByTypes.Add(default, new ArchetypeId(0));
             // Allocate the zero entity (reserve the index as its the "null" handle)
             var entityId = AllocateEntity();
@@ -340,7 +338,7 @@ namespace Weesals.ECS {
             lock (archetypes) {
                 if (archetypesByTypes.TryGetValue(field, out archetypeI)) return archetypeI;
                 archetypeI = new ArchetypeId(archetypes.Count);
-                var archetype = new Archetype(archetypeI, Context, field);
+                var archetype = new Archetype(archetypeI, this, field);
                 archetype.RequireSize(4);
                 archetypes.Add(archetype);
                 archetypesByTypes[field] = archetypeI;
@@ -540,14 +538,13 @@ namespace Weesals.ECS {
 
         // Iterate all components of an entity
         public struct EntityComponentEnumerator : IEnumerator<ComponentRef>, IEnumerable<ComponentRef> {
-            public readonly StageContext Context;
             public readonly Archetype Archetype;
+            public readonly StageContext Context => Archetype.Context;
             public readonly int Row;
             public TypeId TypeId;
-            public ComponentRef Current => new ComponentRef(Context, Archetype, GetRowIndex(), TypeId);
+            public ComponentRef Current => new ComponentRef(Archetype, GetRowIndex(), TypeId);
             object IEnumerator.Current => Current;
-            public EntityComponentEnumerator(StageContext context, Archetype archetype, int row) {
-                Context = context;
+            public EntityComponentEnumerator(Archetype archetype, int row) {
                 Archetype = archetype;
                 Row = row;
                 TypeId = TypeId.Invalid;
@@ -583,7 +580,7 @@ namespace Weesals.ECS {
         public EntityComponentEnumerator GetEntityComponents(Entity entity) {
             var entityData = entities[(int)entity.Index];
             if (entityData.Version != entity.Version) return default;
-            return new EntityComponentEnumerator(Context, archetypes[entityData.ArchetypeId], entityData.Row);
+            return new EntityComponentEnumerator(archetypes[entityData.ArchetypeId], entityData.Row);
         }
 
         // Iterate all archetypes with all of the specified types
