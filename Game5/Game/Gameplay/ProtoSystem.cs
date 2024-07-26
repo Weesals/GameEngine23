@@ -81,7 +81,7 @@ namespace Game5.Game {
             return World.TryGetComponent<PrototypeData>(entity, out var protoData) ? protoData : PrototypeData.Default;
         }
         public PrototypeData GetPrototypeData(EntityAddress entityAddr) {
-            return World.Stage.TryGetComponent<PrototypeData>(entityAddr, out var protoData) ? protoData : PrototypeData.Default;
+            return World.Manager.TryGetComponent<PrototypeData>(entityAddr, out var protoData) ? protoData : PrototypeData.Default;
         }
 
         public int GetConstructionProtoId(int protoId) {

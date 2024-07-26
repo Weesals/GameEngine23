@@ -30,7 +30,7 @@ namespace Weesals.ECS {
         }
         public abstract void Resize(ref Array array, int size);
         public override string ToString() { return Type.Name; }
-        public static bool GetIsFloating(Type type) {
+        public static bool GetIsSparse(Type type) {
             return type.GetCustomAttribute<SparseComponentAttribute>() != null;
         }
         public static bool GetIsNoClone(Type type) {
@@ -57,7 +57,7 @@ namespace Weesals.ECS {
         public readonly bool IsSparse => (Packed & Header) == SparseHeader;
         public readonly bool IsTag => (Packed & Header) == TagHeader;
         public TypeId(int index) { Packed = index; }
-        public TypeId(int index, bool isFloating) { Packed = index  | (isFloating ? SparseHeader : 0); }
+        public TypeId(int index, bool isSparse) { Packed = index  | (isSparse ? SparseHeader : 0); }
         public override string ToString() { return Packed.ToString(); }
         public static implicit operator int(TypeId id) { return id.Packed; }
         public static TypeId MakeSparse(int typeIndex) { return new TypeId(SparseHeader + typeIndex); }
@@ -76,7 +76,7 @@ namespace Weesals.ECS {
         public new static readonly bool IsNoClone;
         public static readonly Type[]? RequiredSystems;
         static ComponentType() {
-            IsSparse = ComponentType.GetIsFloating(typeof(Component));
+            IsSparse = ComponentType.GetIsSparse(typeof(Component));
             IsNoClone = ComponentType.GetIsNoClone(typeof(Component));
             //RequiredSystems = ComponentType.GetRequiredSystems(typeof(Component));
         }

@@ -249,8 +249,8 @@ namespace Game5.Game {
             foreach (var accessor in World.QueryAll<CAnimation>()) {
                 var anim = (CAnimation)accessor;
                 bool isMoving =
-                    accessor.Archetype.TryGetSparseComponent(moveTypeId, out var moveColumn) &&
-                    accessor.Archetype.GetHasSparseComponent(moveColumn, accessor.Row);
+                    accessor.Archetype.TryGetSparseColumn(moveTypeId, out var moveColumn) &&
+                    accessor.Archetype.GetHasSparseComponent(ref World.Manager.ColumnStorage, moveColumn, accessor.Row);
                 var desiredClip = isMoving ? anim.WalkAnim : anim.IdleAnim;
                 if (!accessor.Component1.Animation.Equals(desiredClip)) {
                     accessor.Component1Ref.Animation = desiredClip;

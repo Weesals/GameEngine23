@@ -9,8 +9,8 @@ using System.Threading.Tasks;
 namespace Weesals.ECS {
     public class EntityCommandBuffer {
 
-        public readonly Stage Stage;
-        public StageContext Context => Stage.Context;
+        public readonly EntityManager Stage;
+        public EntityContext Context => Stage.Context;
 
         public struct ComponentData {
             public Array Items;
@@ -39,7 +39,7 @@ namespace Weesals.ECS {
         }
         private ItemMutation active;
 
-        public EntityCommandBuffer(Stage stage) {
+        public EntityCommandBuffer(EntityManager stage) {
             Stage = stage;
             active = new() {
                 SetTypes = new(),
@@ -87,13 +87,13 @@ namespace Weesals.ECS {
 
                 // Sparse components
                 foreach (var typeIndex in mutation.RemoveSparseTypes) {
-                    var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeIndex), Context);
-                    archetype.ClearSparseIndex(columnId, entityAddr.Row);
+                    var columnId = archetype.RequireSparseColumn(TypeId.MakeSparse(typeIndex), Stage);
+                    archetype.ClearSparseComponent(ref Stage.ColumnStorage, columnId, entityAddr.Row);
                 }
                 foreach (var typeIndex in mutation.SetSparseTypes) {
-                    var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeIndex), Context);
-                    var denseRow = archetype.RequireSparseIndex(columnId, entityAddr.Row);
-                    archetype.CopyValue(columnId, denseRow, sparseValues[typeIndex].Items, i);
+                    var columnId = archetype.RequireSparseColumn(TypeId.MakeSparse(typeIndex), Stage);
+                    var denseRow = archetype.RequireSparseIndex(ref Stage.ColumnStorage, columnId, entityAddr.Row);
+                    Stage.ColumnStorage.CopyValue(archetype, columnId, denseRow, sparseValues[typeIndex].Items, i);
                 }
             }
             Reset();

@@ -21,6 +21,7 @@ namespace Weesals.Rendering {
         public VisualInstance Instance;
 
         //public override string ToString() { return SceneIndex.Select(i => i.ToString()).Aggregate((i1, i2) => $"{i1}, {i2}").ToString(); }
+        public override string ToString() { return $"{Instance}"; }
     }
 
     public class VisualPrefab {
@@ -288,19 +289,26 @@ namespace Weesals.Rendering {
             public ArchetypeComponentLookup<ECTransform> TransformLookup;
             public ArchetypeComponentLookup<CSelectable> SelectedLookup;
             public ArchetypeComponentLookup<CAnimation> AnimationLookup;
-            public DynamicBitField ChangedModels = new();
-            public DynamicBitField ChangedTransforms = new();
-            public DynamicBitField ChangedSelected = new();
+            public RevisionMonitor ChangedModels;
+            public RevisionMonitor ChangedTransforms;
+            public RevisionMonitor ChangedSelected;
+            //public RevisionMonitor ValidEntities;
+            //public DynamicBitField ChangedModels = new();
+            //public DynamicBitField ChangedTransforms = new();
+            //public DynamicBitField ChangedSelected = new();
             public DynamicBitField ValidEntities = new();
-            public TableBindings(StageContext context, Archetype archetype) {
-                ModelLookup = new(context, archetype);
-                ModelLookup.AddModificationListener(archetype, ChangedModels);
-                TransformLookup = new(context, archetype);
-                TransformLookup.AddModificationListener(archetype, ChangedTransforms);
-                SelectedLookup = new(context, archetype);
+            public TableBindings(EntityManager manager, Archetype archetype) {
+                ModelLookup = new(manager, archetype);
+                //ModelLookup.AddModificationListener(manager, archetype, ChangedModels);
+                ChangedModels = ModelLookup.CreateRevisionMonitor(manager, true);
+                TransformLookup = new(manager, archetype);
+                //TransformLookup.AddModificationListener(manager, archetype, ChangedTransforms);
+                ChangedTransforms = TransformLookup.CreateRevisionMonitor(manager, true);
+                SelectedLookup = new(manager, archetype);
                 if (SelectedLookup.IsValid)
-                    SelectedLookup.AddModificationListener(archetype, ChangedSelected);
-                AnimationLookup = new(context, archetype);
+                    ChangedSelected = SelectedLookup.CreateRevisionMonitor(manager);
+                    //SelectedLookup.AddModificationListener(manager, archetype, ChangedSelected);
+                AnimationLookup = new(manager, archetype);
             }
         }
         public TableBindings[] Bindings = Array.Empty<TableBindings>();
@@ -313,16 +321,16 @@ namespace Weesals.Rendering {
             EntityVisuals = entityVisuals;
 
             var renderables = World.BeginQuery().With<ECTransform>().With<CModel>().Build();
-            World.Stage.AddListener(renderables, new ArchetypeListener() {
+            World.Manager.AddListener(renderables, new ArchetypeListener() {
                 OnCreate = (entityAddr) => {
                     //var renEntity = renderWorld.CreateEntity();
-                    var entity = World.Stage.GetEntity(entityAddr);
+                    var entity = World.Manager.GetEntity(entityAddr);
                     var binding = RequireBinding(entityAddr);
                     binding.SceneEntities[entityAddr.Row] = entity;
-                    binding.ChangedModels.TryAdd(entityAddr.Row);
-                    binding.ChangedTransforms.TryAdd(entityAddr.Row);
+                    /*binding.ChangedModels.TryAdd(entityAddr.Row);
+                    binding.ChangedTransforms.TryAdd(entityAddr.Row);*/
                     binding.ValidEntities.TryAdd(entityAddr.Row);
-                    World.Stage.AddComponent<SceneRenderable>(entity) = new() {
+                    World.Manager.AddComponent<SceneRenderable>(entity) = new() {
                         //SceneIndex = Array.Empty<CSInstance>(),
                     };
                 },
@@ -341,20 +349,20 @@ namespace Weesals.Rendering {
         private void MoveEntityFlags(EntityAddress from, EntityAddress to) {
             ref var fromBining = ref Bindings[from.ArchetypeId];
             ref var toBinding = ref Bindings[to.ArchetypeId];
-            if (fromBining.ChangedModels.TryRemove(from.Row)) toBinding.ChangedModels.Add(to.Row);
+            /*if (fromBining.ChangedModels.TryRemove(from.Row)) toBinding.ChangedModels.Add(to.Row);
             if (fromBining.ChangedTransforms.TryRemove(from.Row)) toBinding.ChangedTransforms.Add(to.Row);
-            if (fromBining.ChangedSelected.TryRemove(from.Row)) toBinding.ChangedSelected.Add(to.Row);
+            if (fromBining.ChangedSelected.TryRemove(from.Row)) toBinding.ChangedSelected.Add(to.Row);*/
             if (fromBining.ValidEntities.TryRemove(from.Row)) toBinding.ValidEntities.Add(to.Row);
         }
         private void RemoveEntityFlags(EntityAddress entityAddr) {
             ref var binding = ref Bindings[entityAddr.ArchetypeId];
-            binding.ChangedModels.TryRemove(entityAddr.Row);
+            /*binding.ChangedModels.TryRemove(entityAddr.Row);
             binding.ChangedTransforms.TryRemove(entityAddr.Row);
-            binding.ChangedSelected.TryRemove(entityAddr.Row);
+            binding.ChangedSelected.TryRemove(entityAddr.Row);*/
             binding.ValidEntities.TryRemove(entityAddr.Row);
         }
         private void RemoveEntityScene(EntityAddress entityAddr) {
-            ref var sceneProxy = ref World.Stage.GetComponentRef<SceneRenderable>(entityAddr);
+            ref var sceneProxy = ref World.Manager.GetComponentRef<SceneRenderable>(entityAddr);
             DestroyInstance(sceneProxy.Instance);
             sceneProxy.Instance = default;
         }
@@ -395,7 +403,7 @@ namespace Weesals.Rendering {
                 Array.Resize(ref Bindings, entityAddr.ArchetypeId + 16);
             ref var binding = ref Bindings[entityAddr.ArchetypeId];
             if (binding == null)
-                binding = new(World.Context, World.Stage.GetArchetype(entityAddr.ArchetypeId));
+                binding = new(World.Manager, World.Manager.GetArchetype(entityAddr.ArchetypeId));
             if (entityAddr.Row >= binding.SceneEntities.Length)
                 Array.Resize(ref binding.SceneEntities, (int)BitOperations.RoundUpToPowerOf2((uint)entityAddr.Row + 512));
             return binding;
@@ -405,7 +413,7 @@ namespace Weesals.Rendering {
         }
         public void UpdateModel(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var emodel = binding.ModelLookup.GetValueRO(World.Stage, entityAddr);
+            var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance != null) {
@@ -417,14 +425,14 @@ namespace Weesals.Rendering {
             if (binding.AnimationLookup.IsValid) {
                 UpdateAnimation(entityAddr);
             }
-            binding.ChangedSelected.TryRemove(entityAddr.Row);
+            //binding.ChangedSelected.TryRemove(entityAddr.Row);
             if (binding.TransformLookup.IsValid) UpdateTransform(entityAddr);
-            if (binding.SelectedLookup.GetHasSparseComponent(World.Stage, entityAddr)) UpdateSelected(entityAddr);
+            if (binding.SelectedLookup.GetHasSparseComponent(World.Manager, entityAddr)) UpdateSelected(entityAddr);
         }
         public void UpdateTransform(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var epos = binding.TransformLookup.GetValueRO(World.Stage, entityAddr);
-            var emodel = binding.ModelLookup.GetValueRO(World.Stage, entityAddr);
+            var epos = binding.TransformLookup.GetValueRO(World.Manager, entityAddr);
+            var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -445,7 +453,7 @@ namespace Weesals.Rendering {
         }
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var selected = binding.SelectedLookup.GetValueRO(World.Stage, entityAddr);
+            var selected = binding.SelectedLookup.GetValueRO(World.Manager, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -455,9 +463,9 @@ namespace Weesals.Rendering {
         }
         private void UpdateAnimation(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var emodel = binding.ModelLookup.GetValueRO(World.Stage, entityAddr);
-            var archetype = World.Stage.GetArchetype(entityAddr.ArchetypeId);
-            var eanim = binding.AnimationLookup.GetValueRO(archetype, entityAddr.Row);
+            var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
+            var archetype = World.Manager.GetArchetype(entityAddr.ArchetypeId);
+            var eanim = binding.AnimationLookup.GetValueRO(ref World.Manager.ColumnStorage, archetype, entityAddr.Row);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -476,16 +484,21 @@ namespace Weesals.Rendering {
         }
 
         public void UpdateChanged() {
+            ref var columnStorage = ref World.Manager.ColumnStorage;
             for (int i = 0; i < Bindings.Length; i++) {
                 var binding = Bindings[i];
                 if (binding == null) continue;
-                foreach (var row in binding.ChangedModels) {
+                var archetype = World.Manager.GetArchetype(new ArchetypeId(i));
+                var changedModels = columnStorage.GetChanges(binding.ChangedModels, archetype);
+                var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, archetype);
+                var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, archetype);
+                foreach (var row in changedModels) {
                     UpdateModel(new EntityAddress(new ArchetypeId(i), row));
                 }
-                foreach (var row in binding.ChangedTransforms) {
+                foreach (var row in changedTransforms) {
                     UpdateTransform(new EntityAddress(new ArchetypeId(i), row));
                 }
-                foreach (var row in binding.ChangedSelected) {
+                foreach (var row in changedSelected) {
                     UpdateSelected(new EntityAddress(new ArchetypeId(i), row));
                 }
                 if (binding.AnimationLookup.IsValid) {
@@ -493,9 +506,12 @@ namespace Weesals.Rendering {
                         UpdateAnimation(new EntityAddress(new ArchetypeId(i), row));
                     }
                 }
-                binding.ChangedModels.Clear();
-                binding.ChangedTransforms.Clear();
-                binding.ChangedSelected.Clear();
+                columnStorage.Reset(ref binding.ChangedModels, archetype);
+                columnStorage.Reset(ref binding.ChangedTransforms, archetype);
+                columnStorage.Reset(ref binding.ChangedSelected, archetype);
+                //binding.ChangedModels.Clear();
+                //binding.ChangedTransforms.Clear();
+                //binding.ChangedSelected.Clear();
             }
         }
 

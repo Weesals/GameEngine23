@@ -35,3 +35,12 @@ class Stage {
 		return value;
 	}
 }
+
+
+
+ArchetypeColumn
+- Handles setting modified	flag if active monitor
+RevisionMonitor
+- Allows lookup of which rows changed for a specific ArchetypeColumn
+- Has a Clear function, which shifts ColumnRevision and increments Revision
+- Creating a new instance also increments Revision

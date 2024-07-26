@@ -23,6 +23,9 @@ public static class EntityProxyExt {
             target.Owner is World ? UnpackEntity(target.Data) :
             default;
     }
+    public static ItemReference CreateItemReference(this EntityManager manager, Entity entity) {
+        return new(manager, PackEntity(entity));
+    }
     public static ulong PackEntity(Entity entity) {
         return ((ulong)(uint)entity.Index << 32) | (uint)entity.Version;
     }

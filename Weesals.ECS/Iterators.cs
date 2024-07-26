@@ -4,37 +4,61 @@ using System.Diagnostics;
 using System.Numerics;
 
 namespace Weesals.ECS {
-    public readonly struct EntityComponentAccessor<C1> {
+    public struct ComponentAccessor {
+        public readonly EntityManager Manager;
         public readonly Archetype Archetype;
+        public bool IsValid => Manager != null;
+        public Span<Entity> Entities => Archetype.GetEntities(ref Manager.ColumnStorage);
+        public int EntityCount => Archetype.EntityCount;
+        public ComponentAccessor(EntityManager manager, Archetype archetype) {
+            Manager = manager;
+            Archetype = archetype;
+        }
+        public ref T GetValueRW<T>(int columnIndex, int row, int entityArchetypeRow) {
+            return ref Archetype.GetValueRW<T>(ref Manager.ColumnStorage, columnIndex, row, entityArchetypeRow);
+        }
+        public ref readonly T GetValueRO<T>(int columnIndex, int row) {
+            return ref Archetype.GetValueRO<T>(ref Manager.ColumnStorage, columnIndex, row);
+        }
+        public int RequireSparseIndex(int column1, int row) {
+            return Archetype.RequireSparseIndex(ref Manager.ColumnStorage, column1, row);
+        }
+    }
+    public readonly struct EntityComponentAccessor<C1> {
+        private readonly ComponentAccessor accessor;
         private readonly int row, column1;
         public readonly int Row => row;
-        public readonly Entity Entity => Archetype.Entities[row];
-        public readonly ref readonly C1 Component1 => ref Archetype.GetValueRO<C1>(column1, GetDenseRow1());
-        public readonly ref C1 Component1Ref => ref Archetype.GetValueRW<C1>(column1, GetDenseRow1(), row);
-        public EntityComponentAccessor(Archetype archetype, int _row, int _column1) {
-            Archetype = archetype; row = _row;
+        public Archetype Archetype => accessor.Archetype;
+        public readonly Entity Entity => accessor.Entities[row];
+        public readonly ref readonly C1 Component1 => ref accessor.GetValueRO<C1>(column1, GetDenseRow1());
+        public readonly ref C1 Component1Ref => ref accessor.GetValueRW<C1>(column1, GetDenseRow1(), row);
+        public EntityComponentAccessor(ComponentAccessor _accessor, int _row, int _column1) {
+            accessor = _accessor;
+            row = _row;
             column1 = _column1;
         }
-        private int GetDenseRow1() { return ComponentType<C1>.IsSparse ? Archetype.RequireSparseIndex(column1, row) : row; }
+        private int GetDenseRow1() { return ComponentType<C1>.IsSparse ? accessor.RequireSparseIndex(column1, row) : row; }
         public void Set(C1 value) => Component1Ref = value;
         public static implicit operator Entity(EntityComponentAccessor<C1> accessor) => accessor.Entity;
         public static implicit operator C1(EntityComponentAccessor<C1> accessor) => accessor.Component1;
     }
     public readonly struct EntityComponentAccessor<C1, C2> {
-        public readonly Archetype Archetype;
+        private readonly ComponentAccessor accessor;
         private readonly int row, column1, column2;
         public readonly int Row => row;
-        public readonly Entity Entity => Archetype.Entities[row];
-        public readonly ref readonly C1 Component1 => ref Archetype.GetValueRO<C1>(column1, GetDenseRow1());
-        public readonly ref readonly C2 Component2 => ref Archetype.GetValueRO<C2>(column2, GetDenseRow2());
-        public readonly ref C1 Component1Ref => ref Archetype.GetValueRW<C1>(column1, GetDenseRow1(), row);
-        public readonly ref C2 Component2Ref => ref Archetype.GetValueRW<C2>(column2, GetDenseRow2(), row);
-        public EntityComponentAccessor(Archetype archetype, int _row, int _column1, int _column2) {
-            Archetype = archetype; row = _row;
+        public Archetype Archetype => accessor.Archetype;
+        public readonly Entity Entity => accessor.Entities[row];
+        public readonly ref readonly C1 Component1 => ref accessor.GetValueRO<C1>(column1, GetDenseRow1());
+        public readonly ref readonly C2 Component2 => ref accessor.GetValueRO<C2>(column2, GetDenseRow2());
+        public readonly ref C1 Component1Ref => ref accessor.GetValueRW<C1>(column1, GetDenseRow1(), row);
+        public readonly ref C2 Component2Ref => ref accessor.GetValueRW<C2>(column2, GetDenseRow2(), row);
+        public EntityComponentAccessor(ComponentAccessor _accessor, int _row, int _column1, int _column2) {
+            accessor = _accessor;
+            row = _row;
             column1 = _column1; column2 = _column2;
         }
-        private int GetDenseRow1() { return ComponentType<C1>.IsSparse ? Archetype.RequireSparseIndex(column1, row) : row; }
-        private int GetDenseRow2() { return ComponentType<C2>.IsSparse ? Archetype.RequireSparseIndex(column2, row) : row; }
+        private int GetDenseRow1() { return ComponentType<C1>.IsSparse ? accessor.RequireSparseIndex(column1, row) : row; }
+        private int GetDenseRow2() { return ComponentType<C2>.IsSparse ? accessor.RequireSparseIndex(column2, row) : row; }
         public void Set(C1 value) => Component1Ref = value;
         public void Set(C2 value) => Component2Ref = value;
         public static implicit operator Entity(EntityComponentAccessor<C1, C2> accessor) => accessor.Entity;
@@ -42,23 +66,24 @@ namespace Weesals.ECS {
         public static implicit operator C2(EntityComponentAccessor<C1, C2> accessor) => accessor.Component2;
     }
     public readonly struct EntityComponentAccessor<C1, C2, C3> {
-        public readonly Archetype Archetype;
+        private readonly ComponentAccessor accessor;
         private readonly int row, column1, column2, column3;
         public readonly int Row => row;
-        public readonly Entity Entity => Archetype.Entities[row];
-        public readonly ref readonly C1 Component1 => ref Archetype.GetValueRO<C1>(column1, GetDenseRow1());
-        public readonly ref readonly C2 Component2 => ref Archetype.GetValueRO<C2>(column2, GetDenseRow2());
-        public readonly ref readonly C3 Component3 => ref Archetype.GetValueRO<C3>(column3, GetDenseRow3());
-        public readonly ref C1 Component1Ref => ref Archetype.GetValueRW<C1>(column1, GetDenseRow1(), row);
-        public readonly ref C2 Component2Ref => ref Archetype.GetValueRW<C2>(column2, GetDenseRow2(), row);
-        public readonly ref C3 Component3Ref => ref Archetype.GetValueRW<C3>(column3, GetDenseRow3(), row);
-        public EntityComponentAccessor(Archetype archetype, int _row, int _column1, int _column2, int _column3) {
-            Archetype = archetype; row = _row;
+        public Archetype Archetype => accessor.Archetype;
+        public readonly Entity Entity => accessor.Entities[row];
+        public readonly ref readonly C1 Component1 => ref accessor.GetValueRO<C1>(column1, GetDenseRow1());
+        public readonly ref readonly C2 Component2 => ref accessor.GetValueRO<C2>(column2, GetDenseRow2());
+        public readonly ref readonly C3 Component3 => ref accessor.GetValueRO<C3>(column3, GetDenseRow3());
+        public readonly ref C1 Component1Ref => ref accessor.GetValueRW<C1>(column1, GetDenseRow1(), row);
+        public readonly ref C2 Component2Ref => ref accessor.GetValueRW<C2>(column2, GetDenseRow2(), row);
+        public readonly ref C3 Component3Ref => ref accessor.GetValueRW<C3>(column3, GetDenseRow3(), row);
+        public EntityComponentAccessor(ComponentAccessor _accessor, int _row, int _column1, int _column2, int _column3) {
+            accessor = _accessor; row = _row;
             column1 = _column1; column2 = _column2; column3 = _column3;
         }
-        private int GetDenseRow1() { return ComponentType<C1>.IsSparse ? Archetype.RequireSparseIndex(column1, row) : row; }
-        private int GetDenseRow2() { return ComponentType<C2>.IsSparse ? Archetype.RequireSparseIndex(column2, row) : row; }
-        private int GetDenseRow3() { return ComponentType<C3>.IsSparse ? Archetype.RequireSparseIndex(column3, row) : row; }
+        private int GetDenseRow1() { return ComponentType<C1>.IsSparse ? accessor.RequireSparseIndex(column1, row) : row; }
+        private int GetDenseRow2() { return ComponentType<C2>.IsSparse ? accessor.RequireSparseIndex(column2, row) : row; }
+        private int GetDenseRow3() { return ComponentType<C3>.IsSparse ? accessor.RequireSparseIndex(column3, row) : row; }
         public void Set(C1 value) => Component1Ref = value;
         public void Set(C2 value) => Component2Ref = value;
         public void Set(C3 value) => Component3Ref = value;
@@ -69,26 +94,26 @@ namespace Weesals.ECS {
     }
 
     public readonly struct TableComponentAccessor<C1> : IEnumerable<EntityComponentAccessor<C1>> {
-        public readonly Archetype Archetype;
+        public readonly ComponentAccessor Accessor;
         private readonly int column1;
-        public TableComponentAccessor(Archetype archetype, TypeId typeId) {
-            Archetype = archetype;
-            column1 = archetype.GetColumnId(typeId);
+        public TableComponentAccessor(ComponentAccessor accessor, TypeId typeId) {
+            Accessor = accessor;
+            column1 = Accessor.Archetype.GetColumnId(typeId);
         }
         public struct Enumerator : IEnumerator<EntityComponentAccessor<C1>> {
             public readonly TableComponentAccessor<C1> TableAccessor;
             private int row;
-            public bool IsValid => TableAccessor.Archetype != null;
+            public bool IsValid => TableAccessor.Accessor.IsValid;
             public int Row => row;
-            public EntityComponentAccessor<C1> Current => new(TableAccessor.Archetype, row, TableAccessor.column1);
+            public EntityComponentAccessor<C1> Current => new(TableAccessor.Accessor, row, TableAccessor.column1);
             object IEnumerator.Current => Current;
             public Enumerator(TableComponentAccessor<C1> accessor) { TableAccessor = accessor; row = -1; }
             public void Dispose() { }
             public void Reset() { row = -1; }
-            public bool MoveNext() { return ++row < TableAccessor.Archetype.EntityCount; }
+            public bool MoveNext() { return ++row < TableAccessor.Accessor.EntityCount; }
             public bool MoveNextFiltered(Query query) {
-                row = query.GetNextSparseRow(TableAccessor.Archetype, row);
-                Debug.Assert(row < TableAccessor.Archetype.EntityCount);
+                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, TableAccessor.Accessor.Archetype, row);
+                Debug.Assert(row < TableAccessor.Accessor.EntityCount);
                 return row >= 0;
             }
         }
@@ -97,25 +122,25 @@ namespace Weesals.ECS {
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
     public readonly struct TableComponentAccessor<C1, C2> : IEnumerable<EntityComponentAccessor<C1, C2>> {
-        public readonly Archetype Archetype;
+        public readonly ComponentAccessor Accessor;
         private readonly int column1, column2;
-        public TableComponentAccessor(Archetype archetype, TypeId typeId1, TypeId typeId2) {
-            Archetype = archetype;
-            column1 = archetype.GetColumnId(typeId1);
-            column2 = archetype.GetColumnId(typeId2);
+        public TableComponentAccessor(ComponentAccessor accessor, TypeId typeId1, TypeId typeId2) {
+            Accessor = accessor;
+            column1 = Accessor.Archetype.GetColumnId(typeId1);
+            column2 = Accessor.Archetype.GetColumnId(typeId2);
         }
         public struct Enumerator : IEnumerator<EntityComponentAccessor<C1, C2>> {
             public readonly TableComponentAccessor<C1, C2> TableAccessor;
             private int row;
-            public bool IsValid => TableAccessor.Archetype != null;
-            public EntityComponentAccessor<C1, C2> Current => new(TableAccessor.Archetype, row, TableAccessor.column1, TableAccessor.column2);
+            public bool IsValid => TableAccessor.Accessor.IsValid;
+            public EntityComponentAccessor<C1, C2> Current => new(TableAccessor.Accessor, row, TableAccessor.column1, TableAccessor.column2);
             object IEnumerator.Current => Current;
             public Enumerator(TableComponentAccessor<C1, C2> accessor) { TableAccessor = accessor; row = -1; }
             public void Dispose() { }
             public void Reset() { row = -1; }
-            public bool MoveNext() { return ++row < TableAccessor.Archetype.EntityCount; }
+            public bool MoveNext() { return ++row < TableAccessor.Accessor.EntityCount; }
             public bool MoveNextFiltered(Query query) {
-                row = query.GetNextSparseRow(TableAccessor.Archetype, row);
+                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, TableAccessor.Accessor.Archetype, row);
                 return row >= 0;
             }
         }
@@ -124,26 +149,26 @@ namespace Weesals.ECS {
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
     public readonly struct TableComponentAccessor<C1, C2, C3> : IEnumerable<EntityComponentAccessor<C1, C2, C3>> {
-        public readonly Archetype Archetype;
+        public readonly ComponentAccessor Accessor;
         private readonly int column1, column2, column3;
-        public TableComponentAccessor(Archetype archetype, TypeId typeId1, TypeId typeId2, TypeId typeId3) {
-            Archetype = archetype;
-            column1 = archetype.GetColumnId(typeId1);
-            column2 = archetype.GetColumnId(typeId2);
-            column3 = archetype.GetColumnId(typeId3);
+        public TableComponentAccessor(ComponentAccessor accessor, TypeId typeId1, TypeId typeId2, TypeId typeId3) {
+            Accessor = accessor;
+            column1 = Accessor.Archetype.GetColumnId(typeId1);
+            column2 = Accessor.Archetype.GetColumnId(typeId2);
+            column3 = Accessor.Archetype.GetColumnId(typeId3);
         }
         public struct Enumerator : IEnumerator<EntityComponentAccessor<C1, C2, C3>> {
             public readonly TableComponentAccessor<C1, C2, C3> TableAccessor;
             private int row;
-            public bool IsValid => TableAccessor.Archetype != null;
-            public EntityComponentAccessor<C1, C2, C3> Current => new(TableAccessor.Archetype, row, TableAccessor.column1, TableAccessor.column2, TableAccessor.column3);
+            public bool IsValid => TableAccessor.Accessor.IsValid;
+            public EntityComponentAccessor<C1, C2, C3> Current => new(TableAccessor.Accessor, row, TableAccessor.column1, TableAccessor.column2, TableAccessor.column3);
             object IEnumerator.Current => Current;
             public Enumerator(TableComponentAccessor<C1, C2, C3> accessor) { TableAccessor = accessor; row = -1; }
             public void Dispose() { }
             public void Reset() { row = -1; }
-            public bool MoveNext() { return ++row < TableAccessor.Archetype.EntityCount; }
+            public bool MoveNext() { return ++row < TableAccessor.Accessor.EntityCount; }
             public bool MoveNextFiltered(Query query) {
-                row = query.GetNextSparseRow(TableAccessor.Archetype, row);
+                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, TableAccessor.Accessor.Archetype, row);
                 return row >= 0;
             }
         }
@@ -154,14 +179,14 @@ namespace Weesals.ECS {
 
     public struct TypedQueryIterator<C1> : IEnumerator<EntityComponentAccessor<C1>>, IEnumerable<EntityComponentAccessor<C1>> {
         public readonly TypeId C1TypeId;
-        private Stage.ArchetypeQueryEnumerator queryEnumerator;
-        public Stage Stage => queryEnumerator.Stage;
+        private EntityManager.ArchetypeQueryEnumerator queryEnumerator;
+        public EntityManager Manager => queryEnumerator.Manager;
         public TableComponentAccessor<C1>.Enumerator TableEnumerator;
         public EntityComponentAccessor<C1> Current => TableEnumerator.Current;
         object IEnumerator.Current => Current;
-        public TypedQueryIterator(Stage.ArchetypeQueryEnumerator tableEn) {
+        public TypedQueryIterator(EntityManager.ArchetypeQueryEnumerator tableEn) {
             queryEnumerator = tableEn;
-            C1TypeId = Stage.Context.RequireComponentTypeId<C1>();
+            C1TypeId = Manager.Context.RequireComponentTypeId<C1>();
         }
         public void Reset() { queryEnumerator.Reset(); }
         public void Dispose() { }
@@ -169,7 +194,7 @@ namespace Weesals.ECS {
             while (true) {
                 if (TableEnumerator.IsValid && TableEnumerator.MoveNextFiltered(queryEnumerator.Query)) return true;
                 if (!queryEnumerator.MoveNext()) return false;
-                var tableAccessor = new TableComponentAccessor<C1>(queryEnumerator.CurrentArchetype, C1TypeId);
+                var tableAccessor = new TableComponentAccessor<C1>(queryEnumerator.CreateAccessor(), C1TypeId);
                 TableEnumerator = tableAccessor.GetEnumerator();
             }
         }
@@ -179,15 +204,15 @@ namespace Weesals.ECS {
     }
     public struct TypedQueryIterator<C1, C2> : IEnumerator<EntityComponentAccessor<C1, C2>>, IEnumerable<EntityComponentAccessor<C1, C2>> {
         public readonly TypeId C1TypeId, C2TypeId;
-        private Stage.ArchetypeQueryEnumerator queryEnumerator;
-        public Stage Stage => queryEnumerator.Stage;
+        private EntityManager.ArchetypeQueryEnumerator queryEnumerator;
+        public EntityManager Manager => queryEnumerator.Manager;
         public TableComponentAccessor<C1, C2>.Enumerator TableEnumerator;
         public EntityComponentAccessor<C1, C2> Current => TableEnumerator.Current;
         object IEnumerator.Current => Current;
-        public TypedQueryIterator(Stage.ArchetypeQueryEnumerator tableEn) {
+        public TypedQueryIterator(EntityManager.ArchetypeQueryEnumerator tableEn) {
             queryEnumerator = tableEn;
-            C1TypeId = Stage.Context.RequireComponentTypeId<C1>();
-            C2TypeId = Stage.Context.RequireComponentTypeId<C2>();
+            C1TypeId = Manager.Context.RequireComponentTypeId<C1>();
+            C2TypeId = Manager.Context.RequireComponentTypeId<C2>();
         }
         public void Reset() { queryEnumerator.Reset(); }
         public void Dispose() { }
@@ -195,7 +220,7 @@ namespace Weesals.ECS {
             while (true) {
                 if (TableEnumerator.IsValid && TableEnumerator.MoveNextFiltered(queryEnumerator.Query)) return true;
                 if (!queryEnumerator.MoveNext()) return false;
-                var tableAccessor = new TableComponentAccessor<C1, C2>(queryEnumerator.CurrentArchetype, C1TypeId, C2TypeId);
+                var tableAccessor = new TableComponentAccessor<C1, C2>(queryEnumerator.CreateAccessor(), C1TypeId, C2TypeId);
                 TableEnumerator = tableAccessor.GetEnumerator();
             }
         }
@@ -205,16 +230,16 @@ namespace Weesals.ECS {
     }
     public struct TypedQueryIterator<C1, C2, C3> : IEnumerator<EntityComponentAccessor<C1, C2, C3>>, IEnumerable<EntityComponentAccessor<C1, C2, C3>> {
         public readonly TypeId C1TypeId, C2TypeId, C3TypeId;
-        private Stage.ArchetypeQueryEnumerator queryEnumerator;
-        public Stage Stage => queryEnumerator.Stage;
+        private EntityManager.ArchetypeQueryEnumerator queryEnumerator;
+        public EntityManager Manager => queryEnumerator.Manager;
         public TableComponentAccessor<C1, C2, C3>.Enumerator TableEnumerator;
         public EntityComponentAccessor<C1, C2, C3> Current => TableEnumerator.Current;
         object IEnumerator.Current => Current;
-        public TypedQueryIterator(Stage.ArchetypeQueryEnumerator tableEn) {
+        public TypedQueryIterator(EntityManager.ArchetypeQueryEnumerator tableEn) {
             queryEnumerator = tableEn;
-            C1TypeId = Stage.Context.RequireComponentTypeId<C1>();
-            C2TypeId = Stage.Context.RequireComponentTypeId<C2>();
-            C3TypeId = Stage.Context.RequireComponentTypeId<C3>();
+            C1TypeId = Manager.Context.RequireComponentTypeId<C1>();
+            C2TypeId = Manager.Context.RequireComponentTypeId<C2>();
+            C3TypeId = Manager.Context.RequireComponentTypeId<C3>();
         }
         public void Reset() { queryEnumerator.Reset(); }
         public void Dispose() { }
@@ -222,7 +247,7 @@ namespace Weesals.ECS {
             while (true) {
                 if (TableEnumerator.IsValid && TableEnumerator.MoveNextFiltered(queryEnumerator.Query)) return true;
                 if (!queryEnumerator.MoveNext()) return false;
-                var tableAccessor = new TableComponentAccessor<C1, C2, C3>(queryEnumerator.CurrentArchetype, C1TypeId, C2TypeId, C3TypeId);
+                var tableAccessor = new TableComponentAccessor<C1, C2, C3>(queryEnumerator.CreateAccessor(), C1TypeId, C2TypeId, C3TypeId);
                 TableEnumerator = tableAccessor.GetEnumerator();
             }
         }

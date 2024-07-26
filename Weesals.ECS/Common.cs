@@ -22,14 +22,15 @@ namespace Weesals.ECS {
     }
 
     public class SystemBootstrap {
-        public virtual T CreateSystem<T>(StageContext context) where T : new() {
+        public virtual T CreateSystem<T>(EntityContext context) where T : new() {
             return new T();
         }
     }
 
     // Context shared between all compatible stages/worlds
     // (so that component IDs are the same)
-    public class StageContext {
+    public class EntityContext {
+        public static ComponentType<Entity> EntityColumnType = new(new TypeId(0));
         public struct DeepBitField : IEquatable<DeepBitField> {
             public BitField Field;
             public bool Equals(DeepBitField other) { return Field.DeepEquals(other.Field); }
@@ -42,12 +43,17 @@ namespace Weesals.ECS {
         private HashSet<DeepBitField> cachedTypeMasks = new(64);
         public event Action<TypeId>? OnTypeIdCreated;
         public SystemBootstrap? SystemBootstrap;
+        public EntityContext() {
+            componentsByType.Add(typeof(Entity), EntityColumnType.TypeId);
+            Debug.Assert(!EntityColumnType.TypeId.IsSparse);
+            componentTypes.Add(EntityColumnType);
+        }
         public TypeId RequireComponentTypeId<T>() {
-            if (typeof(T) == typeof(Entity)) return TypeId.Invalid;
+            //if (typeof(T) == typeof(Entity)) return TypeId.Invalid;
             if (componentsByType.TryGetValue(typeof(T), out var typeId)) return typeId;
             lock (componentsByType) {
                 if (componentsByType.TryGetValue(typeof(T), out typeId)) return typeId;
-                var isFloating = ComponentType.GetIsFloating(typeof(T));
+                var isFloating = ComponentType.GetIsSparse(typeof(T));
                 typeId = new TypeId(isFloating ? sparseComponentTypes.Count : componentTypes.Count, isFloating);
                 var cmpType = new ComponentType<T>(typeId);
                 (typeId.IsSparse ? sparseComponentTypes : componentTypes).Add(cmpType);
@@ -73,14 +79,14 @@ namespace Weesals.ECS {
             return result.Field;
         }
         public struct TypeInfoBuilder {
-            public readonly StageContext Context;
+            public readonly EntityContext Context;
             [ThreadStatic] private static BitField.Generator generator;
-            public TypeInfoBuilder(StageContext context) {
+            public TypeInfoBuilder(EntityContext context) {
                 Context = context;
                 if (generator == null) generator = new();
                 Debug.Assert(generator.IsEmpty);
             }
-            public TypeInfoBuilder(StageContext context, BitField field) : this(context) {
+            public TypeInfoBuilder(EntityContext context, BitField field) : this(context) {
                 Append(field);
             }
             public void Append(BitField field) {

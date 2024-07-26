@@ -22,7 +22,7 @@ namespace Weesals.ECS {
         public static readonly EntityPrefab Null = new();
     }
     public class SparseWorld {
-        public StageContext Context;
+        public EntityContext Context;
         public abstract class SparseColumnBase {
             public int Count;
             public DynamicBitField2 Sparse = new();
@@ -37,7 +37,7 @@ namespace Weesals.ECS {
         private int columnCount = 0;
         private int entityCount = 0;
 
-        public SparseWorld(StageContext context) {
+        public SparseWorld(EntityContext context) {
             Context = context;
         }
         public SparseColumn<TComponent> RequireColumn<TComponent>() {
@@ -108,7 +108,7 @@ namespace Weesals.ECS {
             public Prefab(string name) { Name = name; }
         }
 
-        public PrefabRegistry(StageContext context) {
+        public PrefabRegistry(EntityContext context) {
             World = new(context);
         }
 
@@ -140,11 +140,11 @@ namespace Weesals.ECS {
             return new PrefabBuilder(World, index);
         }
 
-        public Stage.EntityMover BeginInstantiate(World world, EntityPrefab prefab) {
+        public EntityManager.EntityMover BeginInstantiate(World world, EntityPrefab prefab) {
             var prefabData = World.GetComponent<Prefab>(prefab.Index);
-            var entity = world.Stage.CreateEntity(prefabData.Name);
-            var archetypeId = world.Stage.RequireArchetypeIndex(prefabData.TypeBitField);
-            var mover = world.Stage.BeginMoveEntity(entity, archetypeId);
+            var entity = world.Manager.CreateEntity(prefabData.Name);
+            var archetypeId = world.Manager.RequireArchetypeIndex(prefabData.TypeBitField);
+            var mover = world.Manager.BeginMoveEntity(entity, archetypeId);
             foreach (var typeId in prefabData.TypeBitField) {
                 var array = World.GetRawComponent(new TypeId(typeId), prefab.Index, out var row);
                 mover.CopyFrom(new TypeId(typeId), array, row);

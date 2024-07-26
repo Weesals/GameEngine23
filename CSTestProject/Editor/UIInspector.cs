@@ -352,7 +352,7 @@ namespace Weesals.Editor {
         public void Initialise(World world, Entity entity) {
             List.ClearChildren();
             if (world != null) {
-                var entityAddr = world.Stage.RequireEntityAddress(entity);
+                var entityAddr = world.Manager.RequireEntityAddress(entity);
                 var entityName = $"{entity} (Arch {entityAddr.ArchetypeId} Row {entityAddr.Row})";
                 List.AppendChild(new TextBlock(entityName) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat });
                 foreach (var component in world.GetEntityComponents(entity)) {

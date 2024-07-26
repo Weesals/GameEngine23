@@ -112,7 +112,7 @@ namespace Game5.Game {
         public NavMesh2Baker NavBaker => navigationSystem.NavMeshBaker;
 
         public class ProfiledBootstrap : SystemBootstrap {
-            public override T CreateSystem<T>(StageContext context) {
+            public override T CreateSystem<T>(EntityContext context) {
                 using var marker = new ProfilerMarker("NewSys " + typeof(T).Name).Auto();
                 return base.CreateSystem<T>(context);
             }
@@ -259,7 +259,7 @@ namespace Game5.Game {
             }
 
             using (new ProfilerMarker("Creating Houses").Auto()) {
-                var command = new EntityCommandBuffer(World.Stage);
+                var command = new EntityCommandBuffer(World.Manager);
                 const int Count = 25;
                 var sqrtCount = (int)MathF.Sqrt(Count);
                 for (int i = 0; i < Count; i++) {
@@ -278,7 +278,7 @@ namespace Game5.Game {
             }
 
             using (new ProfilerMarker("Creating Trees").Auto()) {
-                var command = new EntityCommandBuffer(World.Stage);
+                var command = new EntityCommandBuffer(World.Manager);
                 for (int i = 0; i < 10; i++) {
                     Int2 groupMin = 4000;
                     Int2 groupMax = Landscape.Sizing.SimulationSize - 4000;
@@ -315,6 +315,7 @@ namespace Game5.Game {
             if (Input.GetKeyPressed(KeyCode.Space)) {
                 //World.GetComponentRef<ECTransform>(tcInstance).Position += new Int2(1000, 1000);
                 World.GetComponentRef<ECTransform>(tcInstance).Position += new Int2(500, 0);
+                World.GetComponentRef<CModel>(tcInstance);
                 navigationSystem.Update();
             }
             World.GetOrCreateSystem<TimeSystem>().Step(dtMS);

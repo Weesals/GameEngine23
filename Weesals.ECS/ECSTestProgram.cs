@@ -15,31 +15,31 @@ public static class ECSTestProgram {
     }
     public static void Main() {
         var world = new World();
-        var entity = world.Stage.CreateEntity();
-        world.Stage.AddComponent<TestComponent>(entity);
-        world.Stage.GetComponentRef<TestComponent>(entity) = new TestComponent() { TestValue = 5, };
-        world.Stage.AddComponent<TestComponent2>(entity);
-        world.Stage.GetComponentRef<TestComponent2>(entity) = new TestComponent2() { TestValue = 1, };
+        var entity = world.Manager.CreateEntity();
+        world.Manager.AddComponent<TestComponent>(entity);
+        world.Manager.GetComponentRef<TestComponent>(entity) = new TestComponent() { TestValue = 5, };
+        world.Manager.AddComponent<TestComponent2>(entity);
+        world.Manager.GetComponentRef<TestComponent2>(entity) = new TestComponent2() { TestValue = 1, };
 
-        Debug.Assert(world.Stage.GetComponentRef<TestComponent>(entity).TestValue == 5);
-        Debug.Assert(world.Stage.GetComponentRef<TestComponent2>(entity).TestValue == 1);
-        world.Stage.RemoveComponent<TestComponent>(entity);
-        Debug.Assert(!world.Stage.HasComponent<TestComponent>(entity));
-        Debug.Assert(world.Stage.HasComponent<TestComponent2>(entity));
+        Debug.Assert(world.Manager.GetComponentRef<TestComponent>(entity).TestValue == 5);
+        Debug.Assert(world.Manager.GetComponentRef<TestComponent2>(entity).TestValue == 1);
+        world.Manager.RemoveComponent<TestComponent>(entity);
+        Debug.Assert(!world.Manager.HasComponent<TestComponent>(entity));
+        Debug.Assert(world.Manager.HasComponent<TestComponent2>(entity));
 
-        var entity2 = world.Stage.CreateEntity();
-        world.Stage.AddComponent<TestComponent>(entity2) = new TestComponent() { TestValue = 7, };
-        world.Stage.AddComponent<TestComponent2>(entity2) = new TestComponent2() { TestValue = 4, };
+        var entity2 = world.Manager.CreateEntity();
+        world.Manager.AddComponent<TestComponent>(entity2) = new TestComponent() { TestValue = 7, };
+        world.Manager.AddComponent<TestComponent2>(entity2) = new TestComponent2() { TestValue = 4, };
 
         for (int i = 0; i < 2; i++) {
-            var entity3 = world.Stage.CreateEntity();
-            world.Stage.AddComponent<TestComponent>(entity3) = new TestComponent() { TestValue = 7, };
-            world.Stage.AddComponent<TestComponent2>(entity3) = new TestComponent2() { TestValue = 6, };
+            var entity3 = world.Manager.CreateEntity();
+            world.Manager.AddComponent<TestComponent>(entity3) = new TestComponent() { TestValue = 7, };
+            world.Manager.AddComponent<TestComponent2>(entity3) = new TestComponent2() { TestValue = 6, };
         }
 
-        foreach (var tentity in world.Stage.GetEntities()) {
+        foreach (var tentity in world.Manager.GetEntities()) {
             Console.WriteLine("== Entity " + tentity.Index);
-            foreach (var component in world.Stage.GetEntityComponents(tentity)) {
+            foreach (var component in world.Manager.GetEntityComponents(tentity)) {
                 var type = component.GetRawType();
                 Console.WriteLine("  Found component " + type);
                 if (component.GetIs<TestComponent>()) {

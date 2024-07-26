@@ -71,7 +71,7 @@ namespace Game5.Game {
             NavMeshBaker = new NavMesh2Baker(NavMesh);
             NavMeshBaker.Allocate();
             var query = World.BeginQuery().With<ECObstruction>().Build();
-            World.Stage.AddListener(query, new ArchetypeListener() {
+            World.Manager.AddListener(query, new ArchetypeListener() {
                 OnCreate = (entityAddr) => {
                     RegisterEntity(entityAddr, true);
                 },
@@ -80,7 +80,7 @@ namespace Game5.Game {
                     RegisterEntity(entityAddr, false);
                 },
             });
-            mutations = new ComponentMutateListener(World.Stage, query, World.Context.RequireComponentTypeId<ECTransform>());
+            mutations = new ComponentMutateListener(World.Manager, query, World.Context.RequireComponentTypeId<ECTransform>());
         }
         protected override void OnDestroy() {
             // TODO: Remove listener
@@ -389,11 +389,11 @@ namespace Game5.Game {
         }
 
         private void RegisterEntity(EntityAddress entityAddr, bool enable) {
-            if (World.Stage.HasComponent<ECMobile>(entityAddr)) return;
+            if (World.Manager.HasComponent<ECMobile>(entityAddr)) return;
             ObstructionCache obstruction;
-            var entity = World.Stage.GetEntity(entityAddr);
+            var entity = World.Manager.GetEntity(entityAddr);
             if (enable) {
-                var tform = World.Stage.GetComponent<ECTransform>(entityAddr);
+                var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
                 var proto = ProtoSystem.GetPrototypeData(entityAddr);
                 obstruction = new ObstructionCache() { Transform = tform, Footprint = proto.Footprint, };
                 obstructionCache.Add(entity, obstruction);
@@ -404,8 +404,8 @@ namespace Game5.Game {
             RegisterObstruction(entity, obstruction, enable);
         }
         private void UpdateEntity(EntityAddress entityAddr) {
-            var entity = World.Stage.GetEntity(entityAddr);
-            var tform = World.Stage.GetComponent<ECTransform>(entityAddr);
+            var entity = World.Manager.GetEntity(entityAddr);
+            var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
             var proto = ProtoSystem.GetPrototypeData(entityAddr);
             var newObstruction = new ObstructionCache() { Transform = tform, Footprint = proto.Footprint, };
             obstructionCache.TryGetValue(entity, out var oldObstruction);

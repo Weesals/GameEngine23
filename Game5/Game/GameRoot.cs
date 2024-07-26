@@ -320,15 +320,33 @@ namespace Game5.Game {
             };
             editorWindow.Inspector.AppendEditables(this.Editables);
             // If Play selection changes, force update project selection
+            var editorSelection = editorWindow.Editor.ProjectSelection;
+            var hierarchySelection = editorWindow.Hierarchy.SelectionManager;
             this.Play.SelectionManager.OnSelectionChanged += (selection) => {
-                using var scope = new Weesals.UI.SelectionManager.Scope(editorWindow.Editor.ProjectSelection);
+                using var scope = new Weesals.UI.SelectionManager.Scope(editorSelection);
+                foreach (var item in selection) {
+                    scope.Append(item);
+                }
+            };
+            editorSelection.OnSelectionChanged += (selection) => {
+                using var scope = new Weesals.UI.SelectionManager.Scope(hierarchySelection);
                 foreach (var item in selection) {
                     var view = editorWindow.Hierarchy.GetEntityView(item.GetEntity());
                     if (view != null) { scope.Append(new(view)); continue; }
                     scope.Append(item);
                 }
-                //editorWindow.Editor.ProjectSelection.SetSelectedItems(selection);
             };
+            hierarchySelection.OnSelectionChanged += (selection) => {
+                using var scope = new Weesals.UI.SelectionManager.Scope(editorSelection);
+                foreach (var item in selection) {
+                    if (item.Owner is UIHierarchy.EntityView entityView) {
+                        scope.Append(Play.Simulation.EntityProxy.MakeHandle(entityView.Entity)); continue;
+                    }
+                    scope.Append(item);
+                }
+            };
+
+
             editorWindow.EventSystem.KeyboardFilter.Insert(0, this.EventSystem);
         }
     }

@@ -267,6 +267,22 @@ namespace Weesals.UI {
         public event Action<ItemReference, bool>? OnEntitySelected;
         public event Action<ICollection<ItemReference>>? OnSelectionChanged;
 
+        private int holdRef;
+
+        public struct Hold : IDisposable {
+            public readonly SelectionManager Manager;
+            public Hold(SelectionManager manager) {
+                Manager = manager;
+                ++Manager.holdRef;
+            }
+            public void Dispose() {
+                --Manager.holdRef;
+                if (Manager.holdRef == 0x8000) {
+                    Manager.NotifySelectionChanged();
+                }
+            }
+        }
+
         public struct Scope : IDisposable {
             public readonly SelectionManager Manager;
             private PooledList<ItemReference> toDeselect;
@@ -285,6 +301,7 @@ namespace Weesals.UI {
                 foreach (var item in items) Manager.selected.Add(item);
             }
             public void Dispose() {
+                using var hold = new Hold(Manager);
                 // TODO: Consider if something externally adds directly to Manager
                 int keepCount = 0;
                 // Separate into 'keep' and 'deselect' chunks
@@ -294,7 +311,7 @@ namespace Weesals.UI {
                     if (index >= 0) toDeselect.Swap(index, keepCount++);
                 }
                 // Deselect items that were not added within scope
-                foreach (var item in toDeselect.Data.AsSpan(keepCount)) {
+                foreach (var item in toDeselect.Data.AsSpan(keepCount, toDeselect.Count - keepCount)) {
                     Manager.NotifySelected(item, false);
                 }
                 toDeselect.Count = keepCount;
@@ -316,12 +333,14 @@ namespace Weesals.UI {
         }
 
         public void ClearSelected() {
+            using var hold = new Hold(this);
             using var toDeselect = new PooledList<ItemReference>(selected.Count);
             foreach (var item in selected) toDeselect.Add(item);
             selected.Clear();
             foreach (var item in toDeselect) NotifySelected(item, false);
         }
         public void SetSelected(ItemReference newItem) {
+            using var hold = new Hold(this);
             using var toDeselect = new PooledList<ItemReference>(selected.Count);
             foreach (var item in selected) if (item != newItem) toDeselect.Add(item);
             if (selected.Count == toDeselect.Count) selected.Clear();
@@ -330,6 +349,7 @@ namespace Weesals.UI {
             if (newItem.IsValid) AppendSelected(newItem);
         }
         public void SetSelectedItems(ICollection<ItemReference> newItems) {
+            using var hold = new Hold(this);
             using var toDeselect = new PooledList<ItemReference>(selected.Count);
             foreach (var item in selected) if (!newItems.Contains(item)) toDeselect.Add(item);
             if (selected.Count == toDeselect.Count) selected.Clear();
@@ -360,7 +380,13 @@ namespace Weesals.UI {
             if (item.Owner is ISelectable selectable)
                 selectable.OnSelected(this, selected);  //item.Data, 
             if (OnEntitySelected != null) OnEntitySelected(item, selected);
-            if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
+            NotifySelectionChanged();
+        }
+        private void NotifySelectionChanged() {
+            if (holdRef == 0x8000) {
+                holdRef = 0;
+                if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
+            } else holdRef |= 0x8000;
         }
     }
 

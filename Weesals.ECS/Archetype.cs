@@ -9,9 +9,9 @@ namespace Weesals.ECS {
         public ArchetypeId ArchetypeId;
         public int Row;
         public EntityAddress(ArchetypeId archetype, int row) { ArchetypeId = archetype; Row = row; }
-        public EntityAddress(Stage.EntityData entity) : this(entity.ArchetypeId, entity.Row) { }
+        public EntityAddress(EntityStorage.EntityData entity) : this(entity.ArchetypeId, entity.Row) { }
         public override string ToString() { return $"{ArchetypeId}:{Row}"; }
-        public static implicit operator EntityAddress(Stage.EntityData entity) { return entity.Address; }
+        public static implicit operator EntityAddress(EntityStorage.EntityData entity) { return entity.Address; }
         public static readonly EntityAddress Invalid = new(new(0), -1);
     }
 
@@ -25,254 +25,179 @@ namespace Weesals.ECS {
         public Action<EntityAddress> OnCreate;
         public Action<MoveEvent> OnMove;
         public Action<EntityAddress> OnDelete;
-
-        public void NotifyCreate(Archetype archetype) {
-            for (int i = 0; i < archetype.EntityCount; i++) {
-                OnCreate?.Invoke(new EntityAddress() {
-                    ArchetypeId = archetype.Id,
-                    Row = i,
-                });
-            }
-        }
     }
 
     // Flag when a component changes on an Archetype
-    public class ArchetypeMutateListener : DynamicBitField, IDisposable {
+    public class ArchetypeMutateListener {
         public readonly Archetype Archetype;
-        public readonly int ColumnIndex;
-        public ComponentType ComponentType => Archetype.GetColumn(ColumnIndex).Type;
-        public ArchetypeMutateListener(Archetype archetype, int columnIndex) {
+        public RevisionMonitor RevisionMonitor;
+        public ArchetypeMutateListener(Archetype archetype) {
             Archetype = archetype;
-            ColumnIndex = columnIndex;
-            Archetype.GetColumn(ColumnIndex).AddModificationListener(this);
         }
-        public void Dispose() {
-            Archetype.GetColumn(ColumnIndex).RemoveModificationListener(this);
+        public RevisionStorage.Enumerator GetEnumerator(EntityManager manager) {
+            return manager.ColumnStorage.GetChanges(RevisionMonitor, Archetype);
         }
     }
     // Flag when a component changes on any archetype
     public class ComponentMutateListener : ArchetypeListener, IDisposable {
-        public readonly Stage Stage;
+        public readonly EntityManager Manager;
         public readonly TypeId TypeId;
         public readonly QueryId Query;
         private List<ArchetypeMutateListener> bindings = new();
-        public ComponentMutateListener(Stage stage, QueryId query, TypeId typeId) {
-            Stage = stage;
+        public ComponentMutateListener(EntityManager manager, QueryId query, TypeId typeId) {
+            Manager = manager;
             TypeId = typeId;
-            Stage.AddListener(query, this);
+            Manager.AddListener(query, this);
             OnCreate += (entityAddr) => {
-                var archetype = Stage.GetArchetype(entityAddr.ArchetypeId);
                 int index = 0;
-                for (; index < bindings.Count; ++index) if (bindings[index].Archetype == archetype) break;
+                for (; index < bindings.Count; ++index) if (bindings[index].Archetype.Id == entityAddr.ArchetypeId) break;
                 if (index >= bindings.Count) {
-                    if (!archetype.TryGetColumnId(TypeId, out var typeIndex)) return;
-                    bindings.Add(new ArchetypeMutateListener(archetype, typeIndex));
+                    var archetype = Manager.GetArchetype(entityAddr.ArchetypeId);
+                    if (!archetype.TryGetColumnId(TypeId, out var columnIndex)) return;
+                    var listener = new ArchetypeMutateListener(archetype);
+                    listener.RevisionMonitor = archetype.CreateRevisionMonitor(Manager, columnIndex);
+                    bindings.Add(listener);
                 }
             };
         }
         public void Dispose() {
-            Debug.WriteLine("TODO: Implement");
+            foreach (var binding in bindings) {
+                Manager.ColumnStorage.RemoveRevisionMonitor(binding.RevisionMonitor);
+                binding.RevisionMonitor = default;
+            }
+        }
+        public void Clear() {
+            foreach (var binding in bindings) {
+                Manager.ColumnStorage.Reset(ref binding.RevisionMonitor, binding.Archetype);
+            }
         }
         public struct Enumerator : IEnumerator<ComponentRef> {
             public readonly ComponentMutateListener Listener;
             private List<ArchetypeMutateListener>.Enumerator listenersEn;
-            private DynamicBitField.Enumerator bitEnum;
+            private RevisionStorage.Enumerator bitEnum;
             public Archetype CurrentArchetype => listenersEn.Current.Archetype;
-            public ComponentRef Current => new ComponentRef(CurrentArchetype, bitEnum.Current, Listener.TypeId);
+            public ComponentRef Current => new ComponentRef(Listener.Manager, CurrentArchetype, bitEnum.Current, Listener.TypeId);
             object IEnumerator.Current => Current;
             public Enumerator(ComponentMutateListener listener) {
                 Listener = listener;
                 listenersEn = Listener.bindings.GetEnumerator();
-                bitEnum = listenersEn.MoveNext() ? listenersEn.Current.GetEnumerator()
-                    : DynamicBitField.Enumerator.Invalid;
+                bitEnum = RevisionStorage.Enumerator.Invalid;
             }
             public void Dispose() { }
             public void Reset() { }
             public bool MoveNext() {
                 while (!bitEnum.MoveNext()) {
                     if (!listenersEn.MoveNext()) return false;
-                    bitEnum = listenersEn.Current.GetEnumerator();
+                    bitEnum = listenersEn.Current.GetEnumerator(Listener.Manager);
                 }
                 return true;
             }
         }
         public Enumerator GetEnumerator() { return new(this); }
-
-        public void Clear() {
-            foreach (var binding in bindings) binding.Clear();
-        }
     }
 
     // A column stores a list of data for a specific component type within a archetype
     public struct ArchetypeColumn {
-        public Array Items;
-        public ComponentType Type;
-        public List<DynamicBitField>? RowModificationFlags;
-        public ArchetypeColumn(ComponentType type) {
-            Type = type;
-            Type.Resize(ref Items!, 0);
-        }
-        public void Resize(int size) {
-            Type.Resize(ref Items, size);
+        public readonly TypeId TypeId;
+        // The range of values for this column within ColumnData.Items
+        public Range DataRange;
+        // The range of pages used for sparse lookup in SparsePages
+        public Range SparsePages;
+
+        public RevisionStorage.ColumnRevision RevisionData;
+        public int Revision => RevisionData.Revision < 0 ? ~RevisionData.Revision : RevisionData.Revision;
+        public bool HasRevision => RevisionData.Revision >= 0;
+
+        public int MonitorRef;
+
+        public ArchetypeColumn(TypeId typeId) {
+            TypeId = typeId;
         }
 
-        public void CopyValue(int toRow, ArchetypeColumn from, int fromRow) {
-            CopyValue(toRow, from.Items, fromRow);
-        }
-        public void CopyValue(int toRow, Array from, int fromRow) {
-            Array.Copy(from, fromRow, Items, toRow, 1);
-        }
-
-        public ref readonly T GetValueRO<T>(int row) {
-            return ref ((T[])Items)[row];
-        }
-        public ref T GetValueRW<T>(int row) {
-            return ref ((T[])Items)[row];
+        public void NotifyMutation(scoped ref ColumnStorage columnStorage, int row) {
+            if (MonitorRef > 0) {
+                ref var column = ref columnStorage.RequireColumn(TypeId);
+                if (!HasRevision) {
+                    columnStorage.RevisionStorage.Clear(ref RevisionData);
+                }
+                columnStorage.RevisionStorage.SetModified(ref RevisionData, row);
+            }
         }
 
-        public void NotifyMutation(int row) {
-            if (RowModificationFlags == null) return;
-            foreach (var field in RowModificationFlags) field.TryAdd(row);
-        }
-
-        public void AddModificationListener(DynamicBitField movedRows) {
-            if (RowModificationFlags == null) RowModificationFlags = new();
-            RowModificationFlags.Add(movedRows);
-        }
-        public void RemoveModificationListener(DynamicBitField movedRows) {
-            RowModificationFlags!.Remove(movedRows);
-        }
-
-        public override string ToString() { return Type.ToString(); }
-
-        public ArrayItem GetRawItem(int row) {
-            return new(Items, row);
-        }
-    }
-
-    public class SparseColumnMeta {
-        public SparseColumnArchetype SparseData;
+        public override string ToString() { return $"C{TypeId}<x{DataRange.Length}>"; }
     }
 
     // A archetype of component columns and entity rows
     public class Archetype {
-        private static ComponentType<Entity> EntityColumnType = new(new TypeId(0));
-        public readonly Stage Stage;
+#if DEBUG
+        private EntityManager debugManager;
+#endif
         public readonly ArchetypeId Id;
-        public readonly BitField TypeMask;
         public readonly int ColumnCount;
-        private ArchetypeColumn[] columns;
+        public readonly BitField TypeMask;
         public BitField SparseTypeMask;
-        public SparseColumnMeta[] SparseColumns = Array.Empty<SparseColumnMeta>();
+        private Range columnRange;
         // Index of the last item
         public int MaxItem = -1;
-        public int EntityCount => MaxItem + 1;
         // To ensure structure doesnt change during iterate
         public int Revision = 0;
         // Used to track which listeners are active for this archetype
         public BitField ArchetypeListeners;
 
-        public SparseStorage SparseStorage => Stage.SparseStorage;
-        public StageContext Context => Stage.Context;
-        public Entity[] Entities => (Entity[])columns[0].Items;
         public bool IsEmpty => MaxItem < 0;
         public bool IsNullArchetype => ColumnCount == 1;
+        public int EntityCount => MaxItem + 1;
+        public int AllColumnCount => columnRange.Length;
 
-        public Archetype(ArchetypeId id, Stage stage, BitField field) {
-            Stage = stage;
+        public Archetype(ArchetypeId id, BitField field, scoped ref ColumnStorage columnStorage) {
             Id = id;
             TypeMask = field;
-            columns = new ArchetypeColumn[1 + field.BitCount];
-            columns[0] = new ArchetypeColumn(EntityColumnType);
+            ColumnCount = 1 + field.BitCount;
+            columnRange = columnStorage.ArchetypeColumns.AllocateRange(ColumnCount);
+            var columns = columnStorage.ArchetypeColumns.GetRange(columnRange);
+            columns[0] = new ArchetypeColumn(EntityContext.EntityColumnType.TypeId);
             var it = TypeMask.GetEnumerator();
             for (int i = 1; i < columns.Length; i++) {
                 Trace.Assert(it.MoveNext());
-                columns[i] = new ArchetypeColumn(Context.GetComponentType(it.Current));
+                columns[i] = new ArchetypeColumn(new TypeId(it.Current));
             }
-            ColumnCount = columns.Length;
             Trace.Assert(!it.MoveNext());
         }
-        public int AllocateRow(Entity entity) {
+        [Conditional("DEBUG")]
+        public void SetDebugManager(EntityManager manager) {
+            debugManager = manager;
+        }
+        public int AllocateRow(scoped ref ColumnStorage columnStorage, Entity entity) {
             ++Revision;
             ++MaxItem;
-            if (MaxItem >= Entities.Length) RequireSize(Math.Max(Entities.Length * 2, 1024));
-            Entities[MaxItem] = entity;
+            if (MaxItem >= GetEntities(ref columnStorage).Length) {
+                RequireSize(ref columnStorage, (int)BitOperations.RoundUpToPowerOf2((uint)MaxItem + 512));
+            }
+            GetEntities(ref columnStorage)[MaxItem] = entity;
             return MaxItem;
         }
-        public void ReleaseRow(int oldRow) {
-            ++Revision;
-            if (MaxItem < 0) { Debug.Assert(TypeMask.IsEmpty, "Only null archetype has invalid count."); return; }
-            Debug.Assert(MaxItem == oldRow, "Must release from end. Move entity to end first.");
-            --MaxItem;
+
+        public Span<Entity> GetEntities(scoped ref ColumnStorage columnStorage) {
+            return columnStorage.GetColumnDataAs<Entity>(0, GetColumn(ref columnStorage, 0).DataRange);
         }
 
-        public void CopyRowTo(int srcRow, Archetype dest, int dstRow, StageContext context) {
-            if (dest == this) {
-                // Copying to self, special case
-                for (int i = 0; i < ColumnCount; i++) {
-                    columns[i].CopyValue(dstRow, columns[i], srcRow);
-                }
-                CopyColumns(srcRow, dest, dstRow, SparseTypeMask, dest.SparseTypeMask, ColumnCount, dest.ColumnCount);
-            } else if (!IsNullArchetype) {
-                dest.Entities[dstRow] = Entities[srcRow];
-                CopyColumns(srcRow, dest, dstRow, TypeMask, dest.TypeMask, 1, 1);
-                foreach (var typeIndex in BitField.Except(SparseTypeMask, dest.SparseTypeMask)) {
-                    dest.RequireSparseComponent(TypeId.MakeSparse(typeIndex), context);
-                }
-                CopyColumns(srcRow, dest, dstRow, SparseTypeMask, dest.SparseTypeMask, ColumnCount, dest.ColumnCount);
-            }
-            ++Revision;
-        }
-
-        private void CopyColumns(int srcRow, Archetype dest, int dstRow, BitField srcTypes, BitField dstTypes, int srcColBegin, int dstColBegin) {
-            var it1 = srcTypes.GetEnumerator();
-            var it2 = dstTypes.GetEnumerator();
-            int i1 = -1, i2 = -1;
-            bool isSparse = srcColBegin >= ColumnCount;
-            while (it1.MoveNext()) {
-                ++i1;
-                // Try to find the matching bit
-                while (it2.Current < it1.Current) {
-                    if (!it2.MoveNext()) return;
-                    ++i2;
-                }
-                // If no matching bit was found
-                if (it2.Current != it1.Current) continue;
-                var denseDstRow = dstRow;
-                // Otherwise copy the value
-                if (isSparse) {
-                    if (!GetHasSparseComponent(srcColBegin + i1, srcRow)) {
-                        // TODO: Probably need to remove sparse components on entity delete
-                        // (otherwise they could leak into this moved entity)
-                        Debug.Assert(!dest.GetHasSparseComponent(dstColBegin + i2, dstRow));
-                        continue;
-                    }
-                    denseDstRow = dest.RequireSparseIndex(dstColBegin + i2, dstRow);
-                }
-                dest.columns[dstColBegin + i2].CopyValue(denseDstRow, columns[srcColBegin + i1], srcRow);
+        public void RequireSize(scoped ref ColumnStorage columnStorage, int size) {
+            for (int i = 0; i < ColumnCount; i++) {
+                ref var column = ref GetColumn(ref columnStorage, i);
+                ref var columnData = ref columnStorage.GetColumn(column.TypeId);
+                columnData.Resize(ref column.DataRange, size);
             }
         }
 
-        public void CopyValue(int dstColumnId, int dstRow, Array srcData, int srcRow) {
-            ref var column = ref columns[dstColumnId];
-            column.CopyValue(dstRow, srcData, srcRow);
-            column.NotifyMutation(dstRow);
-        }
-
-        public void RequireSize(int size) {
-            for (int i = 0; i < columns.Length; i++) {
-                columns[i].Resize(size);
-            }
-        }
-
-        public ref ArchetypeColumn GetColumn(int id) {
+        public ref ArchetypeColumn GetColumn(scoped ref ColumnStorage columnStorage, int id) {
+            var columns = columnStorage.ArchetypeColumns.GetRange(columnRange);
             return ref columns[id];
         }
-        public bool GetHasColumn(TypeId typeId, StageContext? context = default) {
+        public bool GetHasColumn(TypeId typeId) {
             if (!typeId.IsSparse) return TypeMask.Contains(typeId.Packed);
             return SparseTypeMask.Contains(typeId.Index);
         }
-        public int GetColumnId(TypeId typeId, StageContext? context = default) {
+        public int GetColumnId(TypeId typeId, EntityContext? context = default) {
             if (typeId.IsSparse) {
                 return SparseTypeMask.TryGetBitIndex(typeId.Index, out var index) ? ColumnCount + index : -1;
             } else {
@@ -283,7 +208,7 @@ namespace Weesals.ECS {
                 return 1 + index;
             }
         }
-        public bool TryGetColumnId(TypeId typeId, out int index, StageContext? context = default) {
+        public bool TryGetColumnId(TypeId typeId, out int index) {
             if (typeId.IsSparse) {
                 if (!SparseTypeMask.TryGetBitIndex(typeId.Index, out index)) return false;
                 index += ColumnCount;
@@ -294,38 +219,40 @@ namespace Weesals.ECS {
             return true;
         }
 
-        public ref T GetValueRW<T>(int columnIndex, int row, int entityArchetypeRow) {
-            ref var column = ref columns[columnIndex];
-            column.NotifyMutation(entityArchetypeRow);
-            return ref column.GetValueRW<T>(row);
+        public ref T GetValueRW<T>(scoped ref ColumnStorage columnStorage, int columnIndex, int row, int entityArchetypeRow) {
+            ref var column = ref GetColumn(ref columnStorage, columnIndex);
+            ref var columnData = ref columnStorage.GetColumn(column.TypeId);
+            column.NotifyMutation(ref columnStorage, entityArchetypeRow);
+            return ref columnData.GetValueRW<T>(column.DataRange, row);
         }
-        public ref readonly T GetValueRO<T>(int columnIndex, int row) {
-            return ref columns[columnIndex].GetValueRO<T>(row);
+        public ref readonly T GetValueRO<T>(scoped ref ColumnStorage columnStorage, int columnIndex, int row) {
+            ref var column = ref GetColumn(ref columnStorage, columnIndex);
+            ref var columnData = ref columnStorage.GetColumn(column.TypeId);
+            return ref columnData.GetValueRO<T>(column.DataRange, row);
         }
-        public void NotifyMutation(int columnIndex, int row) {
-            columns[columnIndex].NotifyMutation(row);
+        public void NotifyMutation(scoped ref ColumnStorage columnStorage, int columnIndex, int row) {
+            GetColumn(ref columnStorage, columnIndex).NotifyMutation(ref columnStorage, row);
         }
 
-        public int AddSparseComponent(TypeId typeId, StageContext context) {
+        public int AddSparseColumn(TypeId typeId, EntityManager manager) {
+            ref var columnStorage = ref manager.ColumnStorage;
+            var context = manager.Context;
             Debug.Assert(typeId.IsSparse, "Component must be marked as sparse");
             Debug.Assert(!SparseTypeMask.Contains(typeId.Index), "Component already added");
             var index = SparseTypeMask.IsEmpty ? 0 : SparseTypeMask.GetBitIndex(typeId.Index);
-            var builder = new StageContext.TypeInfoBuilder(context, SparseTypeMask);
+            var builder = new EntityContext.TypeInfoBuilder(context, SparseTypeMask);
             builder.AddComponent(new TypeId(typeId.Index));
             SparseTypeMask = builder.Build();
-            Array.Resize(ref SparseColumns, (SparseColumns != null ? SparseColumns.Length : 0) + 1);
-            for (int i = SparseColumns.Length - 1; i > index; --i)
-                SparseColumns[i] = SparseColumns[i - 1];
-            SparseColumns[index] = new();
-            SparseColumns[index].SparseData = new(new(SparseStorage, context.GetComponentType(typeId)));
-            Array.Resize(ref columns, columns.Length + 1);
+            var sparseColumn = columnStorage.RequireSparseColumn(typeId);
+            columnStorage.ArchetypeColumns.Resize(ref columnRange, columnRange.Length + 1);
+            var columns = columnStorage.ArchetypeColumns.GetRange(columnRange);
             index += ColumnCount;
             for (int i = columns.Length - 1; i > index; --i)
                 columns[i] = columns[i - 1];
-            columns[index] = new(context.GetComponentType(typeId));
+            columns[index] = new(typeId);
             return index;
         }
-        public bool TryGetSparseComponent(TypeId componentTypeId, out int column, StageContext? context = default) {
+        public bool TryGetSparseColumn(TypeId componentTypeId, out int column, EntityContext? context = default) {
             if (!SparseTypeMask.IsEmpty && SparseTypeMask.TryGetBitIndex(componentTypeId.Index, out column)) {
                 column += ColumnCount;
                 return true;
@@ -333,82 +260,103 @@ namespace Weesals.ECS {
             column = -1;
             return false;
         }
-        public int RequireSparseComponent(TypeId componentTypeId, StageContext context) {
+        public int RequireSparseColumn(TypeId componentTypeId, EntityManager manager) {
             if (!SparseTypeMask.IsEmpty && SparseTypeMask.TryGetBitIndex(componentTypeId.Index, out var column)) {
                 return ColumnCount + column;
             }
-            return AddSparseComponent(componentTypeId, context);
+            return AddSparseColumn(componentTypeId, manager);
         }
-        public int TryGetSparseIndex(int column, int row) {
-            var sparseColumn = SparseColumns[column - ColumnCount];
-            row = sparseColumn.SparseData.GetIndex(row);
-            return row;
+        public int TryGetSparseIndex(ref ColumnStorage columnStorage, int columnId, int row) {
+            ref var column = ref GetColumn(ref columnStorage, columnId);
+            var sparseColumn = columnStorage.GetSparseColumn(column.TypeId);
+            return sparseColumn.TryGetIndex(column.SparsePages, row);
         }
-        public int RequireSparseIndex(int columnId, int row) {
-            ref var column = ref columns[columnId];
-            var sparseColumn = SparseColumns[columnId - ColumnCount];
-            var mutation = sparseColumn.SparseData.RequireIndex(row);
+        public int RequireSparseIndex(ref ColumnStorage columnStorage, int columnId, int row) {
+            ref var column = ref GetColumn(ref columnStorage, columnId);
+            var sparseColumn = columnStorage.GetSparseColumn(column.TypeId);
+            var mutation = sparseColumn.RequireIndex(ref column.SparsePages, row);
             if (mutation.NewCount >= 0) {
-                var dataEnd = mutation.NewOffset + mutation.NewCount + 1;
-                if (column.Items.Length <= dataEnd) {
-                    column.Resize((int)BitOperations.RoundUpToPowerOf2((uint)dataEnd + 4));
+                ref var columnData = ref columnStorage.GetColumn(column.TypeId);
+                var newSize = mutation.NewSize;
+                if (columnData.Items.Length <= newSize) {
+                    newSize = (int)BitOperations.RoundUpToPowerOf2((uint)newSize + 4);
+                    columnData.Resize(newSize);
                 }
-                if (mutation.PreviousOffset != mutation.NewOffset) {
-                    Array.Copy(column.Items, mutation.PreviousOffset, column.Items, mutation.NewOffset, mutation.Index);
-                }
-                if (mutation.Index < mutation.NewCount - 1) {
-                    Array.Copy(column.Items, mutation.PreviousOffset + mutation.Index,
-                        column.Items, mutation.NewOffset + mutation.Index + 1,
-                        mutation.NewCount - 1 - mutation.Index);
-                }
+                mutation.ApplyInsertion(columnData.Items);
             }
+            Debug.Assert(column.DataRange.Start == 0);
             row = mutation.NewOffset + mutation.Index;
             return row;
         }
-        public bool GetHasSparseComponent(int column, int row) {
-            return SparseColumns[column - ColumnCount].SparseData.GetHasIndex(row);
+        public bool GetHasSparseComponent(ref ColumnStorage columnStorage, TypeId typeId, int row) {
+            return TryGetSparseColumn(typeId, out var columnId)
+                && GetHasSparseComponent(ref columnStorage, columnId, row);
         }
-        public int GetNextSparseRowInclusive(int column, int row) {
-            return SparseColumns[column - ColumnCount].SparseData.GetNextIndexInclusive(row);
+        public bool GetHasSparseComponent(ref ColumnStorage columnStorage, int columnId, int row) {
+            ref var column = ref GetColumn(ref columnStorage, columnId);
+            var sparseColumn = columnStorage.RequireSparseColumn(column.TypeId);
+            return sparseColumn.GetHasIndex(column.SparsePages, row);
         }
-        public void ClearSparseIndex(int column, int row) {
-            var mutation = SparseColumns[column - ColumnCount].SparseData.RemoveIndex(row);
-            ApplyDeleteMutation(column, mutation);
+        public int GetNextSparseRowInclusive(ref ColumnStorage columnStorage, int columnId, int row) {
+            ref var column = ref GetColumn(ref columnStorage, columnId);
+            var sparseColumn = columnStorage.RequireSparseColumn(column.TypeId);
+            return sparseColumn.GetNextIndex(column.SparsePages, row);
         }
-        public void ClearSparseRow(int row) {
-            for (int c = 0; c < SparseColumns.Length; ++c) {
-                var mutation = SparseColumns[c].SparseData.TryRemoveIndex(row);
-                ApplyDeleteMutation(ColumnCount + c, mutation);
+        public void ClearSparseComponent(ref ColumnStorage columnStorage, int columnId, int row) {
+            ref var column = ref GetColumn(ref columnStorage, columnId);
+            var sparseColumn = columnStorage.RequireSparseColumn(column.TypeId);
+            var mutation = sparseColumn.RemoveIndex(ref column.SparsePages, row);
+            ApplyDeleteMutation(ref columnStorage, columnId, mutation);
+        }
+        public void ClearSparseRow(ref ColumnStorage columnStorage, int row) {
+            for (int c = ColumnCount; c < AllColumnCount; ++c) {
+                ref var column = ref GetColumn(ref columnStorage, c);
+                var sparseColumn = columnStorage.RequireSparseColumn(column.TypeId);
+                var mutation = sparseColumn.TryRemoveIndex(ref column.SparsePages, row);
+                ApplyDeleteMutation(ref columnStorage, ColumnCount + c, mutation);
             }
         }
 
-        private void ApplyDeleteMutation(int columnId, SparseColumnStorage.DataMutation mutation) {
+        private void ApplyDeleteMutation(ref ColumnStorage columnStorage, int columnId, SparseColumnStorage.DataMutation mutation) {
             if (mutation.NewCount < 0) return;
-            Debug.Assert(mutation.PreviousOffset == mutation.NewOffset);
-            ref var column = ref columns[columnId];
-            Array.Copy(column.Items, mutation.Index + 1, column.Items, mutation.Index, mutation.NewCount - mutation.Index);
+            ref var column = ref GetColumn(ref columnStorage, columnId);
+            ref var columnData = ref columnStorage.GetColumn(column.TypeId);
+            mutation.ApplyDeletion(columnData.Items);
         }
 
         [Conditional("DEBUG")]
-        public void AssertComponentId(TypeId id, StageContext? context = default) {
-            if (!GetHasColumn(id, context)) {
+        public void AssertComponentId(TypeId id, EntityContext? context = default) {
+            if (!GetHasColumn(id)) {
                 var name = context == null ? "???" : context.GetComponentType(id).Type.Name;
                 throw new Exception($"Missing component {name}");
             }
         }
+        public RevisionMonitor CreateRevisionMonitor(EntityManager manager, int columnIndex) {
+            ref var column = ref GetColumn(ref manager.ColumnStorage, columnIndex);
+            column.MonitorRef++;
+            return manager.ColumnStorage.CreateRevisionMonitor(column.TypeId, this);
+        }
         public override string ToString() {
-            return columns.Select(c => c.ToString()).Aggregate((i1, i2) => $"{i1},{i2}");
+            if (debugManager != null) {
+                var columns = debugManager.ColumnStorage.ArchetypeColumns.GetRange(columnRange);
+                var columnNames = new string[columnRange.Length];
+                for (int i = 0; i < columnNames.Length; i++) {
+                    columnNames[i] = $"{debugManager.Context.GetComponentType(columns[i].TypeId)}<x{columns[i].DataRange.Length}>";
+                }
+                return string.Join(",", columnNames);
+            }
+            return columnRange.ToString();
         }
     }
     public struct ArchetypeComponentLookup<T> {
         public readonly ArchetypeId Id;
         public int ColumnId;
         public readonly bool IsValid => ColumnId != -1;
-        public ArchetypeComponentLookup(StageContext context, Archetype archetype) {
+        public ArchetypeComponentLookup(EntityManager manager, Archetype archetype) {
             Id = archetype.Id;
-            var typeId = context.RequireComponentTypeId<T>();
-            if (ComponentType<T>.IsSparse) ColumnId = archetype.RequireSparseComponent(typeId, context);
-            else archetype.TryGetColumnId(typeId, out ColumnId, context);
+            var typeId = manager.Context.RequireComponentTypeId<T>();
+            if (ComponentType<T>.IsSparse) ColumnId = archetype.RequireSparseColumn(typeId, manager);
+            else archetype.TryGetColumnId(typeId, out ColumnId);
         }
 
         [Conditional("DEBUG")]
@@ -416,49 +364,60 @@ namespace Weesals.ECS {
             Debug.Assert(archetype.Id == Id, "Archetype mismatch");
         }
 
-        public void AddModificationListener(Archetype archetype, DynamicBitField movedRows) {
-            ValidateArchetype(archetype);
-            archetype.GetColumn(ColumnId).AddModificationListener(movedRows);
+        public RevisionMonitor CreateRevisionMonitor(EntityManager manager, bool prewarm = false) {
+            var archetype = manager.GetArchetype(Id);
+            var typeId = manager.Context.RequireComponentTypeId<T>();
+            var monitor = manager.ColumnStorage.CreateRevisionMonitor(typeId, archetype);
+            if (prewarm) {
+                monitor.Revision = -1;
+                Debug.Assert(!typeId.IsSparse, "Prewarm is not supported with sparse components");
+            }
+            return monitor;
         }
-        public void RemoveModificationListener(Archetype archetype, DynamicBitField movedRows) {
-            ValidateArchetype(archetype);
-            archetype.GetColumn(ColumnId).RemoveModificationListener(movedRows);
+        public void RemoveRevisionMonitor(EntityManager manager, ref RevisionMonitor monitor) {
+            Debug.Assert(monitor.ArchetypeId == Id);
+            manager.ColumnStorage.RemoveRevisionMonitor(monitor);
+            monitor = default;
         }
-        public ref readonly T GetValueRO(Stage stage, EntityAddress entityAddr) {
-            var archetype = stage.GetArchetype(entityAddr.ArchetypeId);
+        public ref readonly T GetValueRO(EntityManager manager, EntityAddress entityAddr) {
+            var archetype = manager.GetArchetype(entityAddr.ArchetypeId);
             var row = entityAddr.Row;
-            if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ColumnId, row);
-            return ref GetValueRO(archetype, row);
+            if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ref manager.ColumnStorage, ColumnId, row);
+            return ref GetValueRO(ref manager.ColumnStorage, archetype, row);
         }
-        public ref readonly T GetValueRO(Archetype archetype, int row) {
+        public ref readonly T GetValueRO(ref ColumnStorage columnStorage, Archetype archetype, int row) {
             ValidateArchetype(archetype);
-            return ref archetype.GetValueRO<T>(ColumnId, row);
+            return ref archetype.GetValueRO<T>(ref columnStorage, ColumnId, row);
         }
-        public ref T GetValueRW(Stage stage, EntityAddress entityAddr) {
-            var archetype = stage.GetArchetype(entityAddr.ArchetypeId);
+        public ref T GetValueRW(EntityManager manager, EntityAddress entityAddr) {
+            var archetype = manager.GetArchetype(entityAddr.ArchetypeId);
             var row = entityAddr.Row;
-            if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ColumnId, row);
-            return ref GetValueRW(stage.GetArchetype(entityAddr.ArchetypeId), row, entityAddr.Row);
+            if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ref manager.ColumnStorage, ColumnId, row);
+            return ref GetValueRW(ref manager.ColumnStorage, manager.GetArchetype(entityAddr.ArchetypeId), row, entityAddr.Row);
         }
-        public ref T GetValueRW(Archetype archetype, int row, int entityArchetypeRow) {
+        public ref T GetValueRW(ref ColumnStorage columnStorage, Archetype archetype, int row, int entityArchetypeRow) {
             ValidateArchetype(archetype);
-            return ref archetype.GetValueRW<T>(ColumnId, row, entityArchetypeRow);
+            return ref archetype.GetValueRW<T>(ref columnStorage, ColumnId, row, entityArchetypeRow);
         }
 
-        public bool GetHasSparseComponent(Stage stage, EntityAddress entityAddr) {
+        public bool GetHasSparseComponent(EntityManager manager, EntityAddress entityAddr) {
             if (!IsValid) return false;
-            var archetype = stage.GetArchetype(entityAddr.ArchetypeId);
+            var archetype = manager.GetArchetype(entityAddr.ArchetypeId);
             ValidateArchetype(archetype);
-            return archetype.GetHasSparseComponent(ColumnId, entityAddr.Row);
+            return archetype.GetHasSparseComponent(ref manager.ColumnStorage, ColumnId, entityAddr.Row);
         }
     }
     // Same as above, but only typecast once.
     // (should the above do the same?)
     // Currently does not mark dirty (but should!)
     public struct ArchetypeComponentGetter<T> {
+        public int Offset;
         public T[] Data;
-        public ArchetypeComponentGetter(Archetype archetype, int columnId) {
-            Data = (T[])archetype.GetColumn(columnId).Items;
+        public ArchetypeComponentGetter(ref ColumnStorage columnStorage, Archetype archetype, int columnId) {
+            var column = archetype.GetColumn(ref columnStorage, columnId);
+            ref var columnData = ref columnStorage.GetColumn(column.TypeId);
+            Data = (T[])columnData.Items;
+            Offset = column.DataRange.Start;
         }
         public ref T this[int index] => ref Data[index];
     }
@@ -483,39 +442,46 @@ namespace Weesals.ECS {
     }
 
     public readonly struct ComponentRef {
-        public readonly StageContext Context => Archetype.Context;
+        public readonly EntityManager Manager;
+        public readonly EntityContext Context => Manager.Context;
         public readonly Archetype Archetype;
         public readonly int Row;
         public readonly int DenseRow;
         public readonly TypeId TypeId;
         public readonly int ColumnId => Archetype.GetColumnId(TypeId);
-        public readonly Entity Entity => Archetype.Entities[Row];
+        public readonly Entity Entity => Archetype.GetEntities(ref Manager.ColumnStorage)[Row];
         public readonly EntityAddress EntityAddress => new(Archetype.Id, Row);
-        public readonly ArrayItem RawItem => new(Archetype.GetColumn(ColumnId).Items, DenseRow);
-        public ComponentRef(Archetype archetype, int row, TypeId typeId) {
+        public readonly ArrayItem RawItem {
+            get {
+                ref var column = ref Archetype.GetColumn(ref Manager.ColumnStorage, ColumnId);
+                ref var columnData = ref Manager.ColumnStorage.GetColumn(TypeId);
+                return columnData.GetRawItem(column.DataRange, DenseRow);
+            }
+        }
+        public ComponentRef(EntityManager entityManager, Archetype archetype, int row, TypeId typeId) {
+            Manager = entityManager;
             Archetype = archetype;
             Row = row;
             DenseRow = Row;
             TypeId = typeId;
             if (TypeId.IsSparse) {
-                DenseRow = archetype.RequireSparseIndex(archetype.GetColumnId(typeId), row);
+                DenseRow = Archetype.TryGetSparseIndex(ref Manager.ColumnStorage, Archetype.GetColumnId(typeId), row);
                 Debug.Assert(DenseRow >= 0, "Need to preallocate before creating ComponentRef");
             }
         }
+        private Array itemsArray => Manager.ColumnStorage.GetColumn(TypeId).Items;
+        private ref ArchetypeColumn Column => ref Archetype.GetColumn(ref Manager.ColumnStorage, ColumnId);
         public ComponentType GetComponentType() { return Context.GetComponentType(TypeId); }
         public Type GetRawType() { return Context.GetComponentType(TypeId).Type; }
-        public bool GetIs<T>() { return Archetype.GetColumn(ColumnId).Items is T[]; }
-        public object? GetValue() { return Archetype.GetColumn(ColumnId).Items.GetValue(DenseRow); }
-        public ref readonly T GetRO<T>() { return ref Archetype.GetValueRO<T>(ColumnId, DenseRow); }
-        public ref T GetRef<T>() { return ref Archetype.GetValueRW<T>(ColumnId, DenseRow, Row); }
+        public bool GetIs<T>() { return itemsArray is T[]; }
+        public object? GetValue() { return itemsArray.GetValue(Column.DataRange.Start + DenseRow); }
+        public ref readonly T GetRO<T>() { return ref Archetype.GetValueRO<T>(ref Manager.ColumnStorage, ColumnId, DenseRow); }
+        public ref T GetRef<T>() { return ref Archetype.GetValueRW<T>(ref Manager.ColumnStorage, ColumnId, DenseRow, Row); }
         public void CopyTo(ComponentRef dest) {
-            Debug.Assert(TypeId == dest.TypeId);
-            ref var srcColumn = ref Archetype.GetColumn(ColumnId);
-            ref var dstColumn = ref dest.Archetype.GetColumn(dest.ColumnId);
-            dstColumn.CopyValue(dest.DenseRow, srcColumn, DenseRow);
-            dstColumn.NotifyMutation(dest.Row);
+            Manager.ColumnStorage.CopyValue(Archetype, ColumnId, DenseRow,
+                dest.Archetype, dest.ColumnId, dest.DenseRow, dest.Row);
         }
-        public void NotifyMutation() { Archetype.NotifyMutation(ColumnId, Row); }
+        public void NotifyMutation() { Archetype.NotifyMutation(ref Manager.ColumnStorage, ColumnId, Row); }
         public override string ToString() { return Context.GetComponentType(TypeId).Type.Name; }
     }
 
@@ -552,13 +518,13 @@ namespace Weesals.ECS {
             }
         }
         public struct Builder {
-            public readonly Stage Stage;
-            public readonly StageContext Context => Stage.Context;
+            public readonly EntityManager Manager;
+            public readonly EntityContext Context => Manager.Context;
             [ThreadStatic] public BitField.Generator WithTypes;
             [ThreadStatic] public BitField.Generator WithoutTypes;
             [ThreadStatic] public BitField.Generator WithSparseTypes;
-            public Builder(Stage stage) {
-                Stage = stage;
+            public Builder(EntityManager manager) {
+                Manager = manager;
                 if (WithTypes == null) {
                     WithTypes = new();
                     WithoutTypes = new();
@@ -606,7 +572,7 @@ namespace Weesals.ECS {
                 WithTypes.Clear();
                 WithoutTypes.Clear();
                 WithSparseTypes.Clear();
-                return Stage.RequireQueryIndex(withField, withoutField, withSparseField);
+                return Manager.RequireQueryIndex(withField, withoutField, withSparseField);
             }
         }
         public readonly BitField WithTypes;
@@ -623,20 +589,21 @@ namespace Weesals.ECS {
             return typeMask.ContainsAll(WithTypes) && !typeMask.ContainsAny(WithoutTypes);
         }
 
-        public int GetNextSparseRow(Archetype archetype, int row) {
+        public int GetNextSparseRow(ref ColumnStorage columnStorage, Archetype archetype, int row) {
             // TODO: Store page iterators and iterate sequentially instead of binary search
-            for (var pageId = SparseStorage.IndexToPage(++row); row < archetype.EntityCount;) {
+            for (var pageId = SparseColumnStorage.IndexToPage(++row); row < archetype.EntityCount;) {
                 uint mask = (~0u << row);
                 foreach (var typeId in WithSparseTypes) {
-                    var columnId = archetype.RequireSparseComponent(TypeId.MakeSparse(typeId), default!);
-                    var sparseColumn = archetype.SparseColumns[columnId - archetype.ColumnCount];
-                    mask &= sparseColumn.SparseData.GetPageMask(pageId);
+                    var columnId = archetype.RequireSparseColumn(TypeId.MakeSparse(typeId), default!);
+                    ref var column = ref archetype.GetColumn(ref columnStorage, columnId);
+                    var sparseColumn = columnStorage.GetSparseColumn(column.TypeId);
+                    mask &= sparseColumn.GetPageMask(column.SparsePages, pageId);
                     if (mask == 0) break;
                 }
                 if (mask != 0) {
-                    return SparseStorage.PageToIndex(pageId) + BitOperations.TrailingZeroCount(mask);
+                    return SparseColumnStorage.PageToIndex(pageId) + BitOperations.TrailingZeroCount(mask);
                 }
-                row = SparseStorage.PageToIndex(++pageId);
+                row = SparseColumnStorage.PageToIndex(++pageId);
             }
             return -1;
         }

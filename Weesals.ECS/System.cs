@@ -18,8 +18,8 @@ namespace Weesals.ECS {
 
     public struct ComponentLookup<T> {
         public readonly TypeId TypeId;
-        public readonly Stage Stage;
-        public ComponentLookup(TypeId id, Stage stage) { TypeId = id; Stage = stage; }
+        public readonly EntityManager Stage;
+        public ComponentLookup(TypeId id, EntityManager stage) { TypeId = id; Stage = stage; }
         public ref T GetRefRW(Entity entity) {
             return ref Stage.GetComponentRef<T>(entity);
         }
@@ -52,8 +52,8 @@ namespace Weesals.ECS {
     }
     public abstract class SystemBase {
         public World World { get; private set; }
-        public Stage Stage => World.Stage;
-        public StageContext Context => Stage.Context;
+        public EntityManager Stage => World.Manager;
+        public EntityContext Context => Stage.Context;
         public void Initialise(World world) {
             World = world;
             OnCreate();
@@ -99,16 +99,16 @@ namespace Weesals.ECS {
         public delegate void Callback<C1, C2, C3>(ref C1 c1, ref C2 c2, ref C3 c3);
         public delegate void Callback<C1, C2, C3, C4>(ref C1 c1, ref C2 c2, ref C3 c3, ref C4 c4);
         public delegate void Callback<C1, C2, C3, C4, C5>(ref C1 c1, ref C2 c2, ref C3 c3, ref C4 c4, ref C5 c5);
-        public abstract void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter);
+        public abstract void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter);
     }
     public class SystemLambda<C1> : SystemLambda {
         public Callback<C1> Callback;
-        public SystemLambda(Callback<C1> callback, Stage stage) {
+        public SystemLambda(Callback<C1> callback, EntityManager stage) {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i]);
@@ -117,13 +117,13 @@ namespace Weesals.ECS {
     }
     public class SystemLambda<C1, C2> : SystemLambda {
         public Callback<C1, C2> Callback;
-        public SystemLambda(Callback<C1, C2> callback, Stage stage) {
+        public SystemLambda(Callback<C1, C2> callback, EntityManager stage) {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i]);
@@ -132,14 +132,14 @@ namespace Weesals.ECS {
     }
     public class SystemLambda<C1, C2, C3> : SystemLambda {
         public Callback<C1, C2, C3> Callback;
-        public SystemLambda(Callback<C1, C2, C3> callback, Stage stage) {
+        public SystemLambda(Callback<C1, C2, C3> callback, EntityManager stage) {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
-            var col3 = new ArchetypeComponentGetter<C3>(table, columnIs[2]);
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, table, columnIs[2]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i]);
@@ -148,15 +148,15 @@ namespace Weesals.ECS {
     }
     public class SystemLambda<C1, C2, C3, C4> : SystemLambda {
         public Callback<C1, C2, C3, C4> Callback;
-        public SystemLambda(Callback<C1, C2, C3, C4> callback, Stage stage) {
+        public SystemLambda(Callback<C1, C2, C3, C4> callback, EntityManager stage) {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
-            var col3 = new ArchetypeComponentGetter<C3>(table, columnIs[2]);
-            var col4 = new ArchetypeComponentGetter<C4>(table, columnIs[3]);
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, table, columnIs[2]);
+            var col4 = new ArchetypeComponentGetter<C4>(ref columnStorage, table, columnIs[3]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i], ref col4[i]);
@@ -165,16 +165,16 @@ namespace Weesals.ECS {
     }
     public class SystemLambda<C1, C2, C3, C4, C5> : SystemLambda {
         public Callback<C1, C2, C3, C4, C5> Callback;
-        public SystemLambda(Callback<C1, C2, C3, C4, C5> callback, Stage stage) {
+        public SystemLambda(Callback<C1, C2, C3, C4, C5> callback, EntityManager stage) {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(table, columnIs[1]);
-            var col3 = new ArchetypeComponentGetter<C3>(table, columnIs[2]);
-            var col4 = new ArchetypeComponentGetter<C4>(table, columnIs[3]);
-            var col5 = new ArchetypeComponentGetter<C5>(table, columnIs[4]);
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, table, columnIs[2]);
+            var col4 = new ArchetypeComponentGetter<C4>(ref columnStorage, table, columnIs[3]);
+            var col5 = new ArchetypeComponentGetter<C5>(ref columnStorage, table, columnIs[4]);
             for (int i = 0; i <= table.MaxItem; i++) {
                 if (!filter.IncludeEntity(table, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i], ref col4[i], ref col5[i]);
@@ -209,7 +209,7 @@ namespace Weesals.ECS {
         }
         private Dictionary<LambdaKey, LambdaId> lambdasByKey = new();
         private List<SystemLambda.Cache> lambdaCaches = new();
-        public LambdaId RequireLambda(Stage stage, TypeId[] types, QueryId query) {
+        public LambdaId RequireLambda(EntityManager stage, TypeId[] types, QueryId query) {
             var key = new LambdaKey() { RequestQuery = query, Types = types, };
             if (!lambdasByKey.TryGetValue(key, out var lambda)) {
                 key.Query = key.RequestQuery;
@@ -229,27 +229,27 @@ namespace Weesals.ECS {
         }
         public LambdaCache() { }
 
-        public LambdaId RequireLambda<C1>(Stage stage, SystemLambda.Callback<C1> callback) {
+        public LambdaId RequireLambda<C1>(EntityManager stage, SystemLambda.Callback<C1> callback) {
             return RequireLambda(stage, new[] { stage.Context.RequireComponentTypeId<C1>(), }, QueryId.Invalid);
         }
-        public LambdaId RequireLambda<C1, C2>(Stage stage, SystemLambda.Callback<C1, C2> callback) {
+        public LambdaId RequireLambda<C1, C2>(EntityManager stage, SystemLambda.Callback<C1, C2> callback) {
             return RequireLambda(stage, new[] {
                 stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
             }, QueryId.Invalid);
         }
-        public LambdaId RequireLambda<C1, C2, C3>(Stage stage, SystemLambda.Callback<C1, C2, C3> callback) {
+        public LambdaId RequireLambda<C1, C2, C3>(EntityManager stage, SystemLambda.Callback<C1, C2, C3> callback) {
             return RequireLambda(stage, new[] {
                 stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
                 stage.Context.RequireComponentTypeId<C3>(),
             }, QueryId.Invalid);
         }
-        public LambdaId RequireLambda<C1, C2, C3, C4>(Stage stage, SystemLambda.Callback<C1, C2, C3, C4> callback) {
+        public LambdaId RequireLambda<C1, C2, C3, C4>(EntityManager stage, SystemLambda.Callback<C1, C2, C3, C4> callback) {
             return RequireLambda(stage, new[] {
                 stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
                 stage.Context.RequireComponentTypeId<C3>(), stage.Context.RequireComponentTypeId<C4>(),
             }, QueryId.Invalid);
         }
-        public LambdaId RequireLambda<C1, C2, C3, C4, C5>(Stage stage, SystemLambda.Callback<C1, C2, C3, C4, C5> callback) {
+        public LambdaId RequireLambda<C1, C2, C3, C4, C5>(EntityManager stage, SystemLambda.Callback<C1, C2, C3, C4, C5> callback) {
             return RequireLambda(stage, new[] {
                 stage.Context.RequireComponentTypeId<C1>(), stage.Context.RequireComponentTypeId<C2>(),
                 stage.Context.RequireComponentTypeId<C3>(), stage.Context.RequireComponentTypeId<C4>(),

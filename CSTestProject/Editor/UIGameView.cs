@@ -46,10 +46,12 @@ namespace Weesals.Editor {
         public World World;
 
         public event Action<Entity, bool> OnEntitySelected;
-        public ISelectionGroup SelectionGroup { get; private set; }
+        public SelectionManager SelectionManager { get; private set; }
+        public ISelectionGroup SelectionGroup => SelectionManager;
 
         public UIHierarchy(Editor editor) : base(editor, "Hierarchy") {
-            SelectionGroup = editor.ProjectSelection;
+            SelectionManager = new SelectionManager(editor.ProjectSelection.EventSystem);
+
             scrollView.AppendChild(list);
             AppendChild(scrollView);
         }
@@ -62,7 +64,7 @@ namespace Weesals.Editor {
             base.Uninitialise(binding);
         }
         public void UpdateValues() {
-            if (World.Stage.GetMaximumEntityId() > 100) return;
+            if (World.Manager.EntityStorage.GetMaximumEntityId() > 100) return;
             int i = 0;
             if (World != null) {
                 foreach (var entity in World.GetEntities()) {
