@@ -262,9 +262,8 @@ namespace Weesals.Utility {
         }
 
         public ref T this[int index] {
-            get {
-                return ref Items[index];
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => ref Items[index];
         }
 
         public void Splice(ref RangeInt range, int index, int delete, int insert) {

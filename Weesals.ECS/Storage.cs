@@ -12,9 +12,7 @@ namespace Weesals.ECS {
         public readonly ComponentType Type;
         public Array Items;
         private SparseRanges allocated;
-        public bool IsValid => Items != null;
-        //public int Revision;
-        public int MonitorRef;
+        public bool IsValid => Type != null;
         public ColumnData(ComponentType type) {
             Type = type;
             Type.Resize(ref Items!, 0);
@@ -89,6 +87,10 @@ namespace Weesals.ECS {
             pages = new();
         }
 
+        public void Begin(ref ColumnRevision revisionData) {
+            pages.Clear(ref revisionData.PageRange);
+            revisionData.Realize();
+        }
         public void SetModified(ref ColumnRevision revision, int index) {
             ref var page = ref pages.RequirePage(ref revision.PageRange, IndexToPage(index));
             page.BitMask |= IndexToBit(index);
@@ -105,10 +107,6 @@ namespace Weesals.ECS {
             ref var page = ref pages.GetPage(pageIndex);
             var bit = IndexToBit(index);
             return (page.BitMask & bit) != 0;
-        }
-        public void Clear(ref ColumnRevision revisionData) {
-            pages.Clear(ref revisionData.PageRange);
-            revisionData.Realize();
         }
 
         public struct Enumerator {
@@ -389,12 +387,13 @@ namespace Weesals.ECS {
             ref var archColumn = ref archetype.GetColumn(ref this, archColumnIndex);
             archColumn.RevisionData.Flush();
             archColumn.MonitorRef++;
-            return new RevisionMonitor() { TypeId = typeId, Revision = archColumn.Revision, };
+            return new RevisionMonitor() { TypeId = typeId, Revision = archColumn.Revision, ArchetypeId = archetype.Id, };
         }
-        public void RemoveRevisionMonitor(ref RevisionMonitor monitor) {
-            ref var column = ref GetColumn(monitor.TypeId);
-            Debug.Assert(column.MonitorRef > 0);
-            column.MonitorRef--;
+        public void RemoveRevisionMonitor(ref RevisionMonitor monitor, scoped ref Archetype archetype) {
+            var archColumnIndex = archetype.GetColumnId(monitor.TypeId);
+            ref var archColumn = ref archetype.GetColumn(ref this, archColumnIndex);
+            Debug.Assert(archColumn.MonitorRef > 0);
+            archColumn.MonitorRef--;
             monitor = default;
         }
         public void Reset(ref RevisionMonitor monitor, scoped ref Archetype archetype) {

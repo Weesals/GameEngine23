@@ -192,25 +192,19 @@ namespace Weesals.Utility {
 
         #region Sin
         public static XRT Sin(XRT i) {
-            const int Granularity = 16;
-            const int NinetyDegrees = ((int)XRT.PI_I * 2 * Granularity / 4);
-            bool negative = i.RawValue < 0;
-            var r = (int)(negative ? -i.RawValue : i.RawValue);
-            int q = (4 * r / (int)(XRT.PI_I * 2)) % 4;
-            r = (Granularity * r) % NinetyDegrees;
-            negative ^= q >= 2; // Negate result for last 2 quadrants
-            if (q % 2 == 1) r = NinetyDegrees - r;  // Mirrored for every 2nd quadrant
-
-            // Renormalize to 90 items (in LUT)
-            // == r * 90 / (PI/2)
-            r = r * 90 * 2 / ((int)XRT.PI_I);
-
-            // The index and interpolation
-            int ii = r / Granularity;
-            int il = r % Granularity;
-            int v = SIN_TABLE[ii] + (SIN_TABLE[ii + 1] - SIN_TABLE[ii]) * il / Granularity;
+            const int Magnitude = 0x01000000;
+            const int SaturateScalar = (2 * Magnitude + XRT.PI_I / 2) / XRT.PI_I;
+            var r = (uint)i.RawValue * SaturateScalar;
+            var q = r;
+            r &= Magnitude - 1;
+            if ((q & Magnitude) == Magnitude) r = Magnitude - 1 - r;
+            r *= 90;
+            var ii = (r >> 24);
+            r &= (Magnitude - 1);
+            var v = SIN_TABLE[ii] + (int)(((ulong)(SIN_TABLE[ii + 1] - SIN_TABLE[ii]) * r) >> 24);
             v >>= (16 - XRT.SHIFT_AMOUNT);
-            return new XRT(negative ? -v : v);
+            var negative = (q & (Magnitude << 1)) == (Magnitude << 1);
+            return new XRT(negative ? -(int)v : (int)v);
         }
 
         #endregion

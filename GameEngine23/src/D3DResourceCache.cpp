@@ -241,7 +241,7 @@ D3DResourceCache::D3DBinding* D3DResourceCache::GetBinding(uint64_t bindingIdent
         srvDesc.Buffer.NumElements = binding->mSize / binding->mStride;
         srvDesc.Buffer.StructureByteStride = binding->mStride;
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-        assert(srvDesc.Buffer.NumElements < 10000000);
+        assert(srvDesc.Buffer.NumElements < 100000000);
 
         // Get the CPU handle to the descriptor in the heap
         auto descriptorSize = mD3D12.GetDescriptorHandleSizeSRV();

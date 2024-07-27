@@ -163,10 +163,10 @@ namespace Weesals.ECS {
             (typeId.IsSparse ? active.SetSparseTypes : active.SetTypes).Add(typeId);
             var typeIndex = typeId.Index;
             ref var typeValues = ref (typeId.IsSparse ? ref sparseValues : ref values);
-            if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 4);
-            var type = Context.GetComponentType(typeId);
+            if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 8);
             ref var items = ref typeValues[typeIndex].Items;
             if (items == null || active.EntityIndex >= items.Length) {
+                var type = Context.GetComponentType(typeId);
                 type.Resize(ref items, mutations.Length);
             }
             return new(items, active.EntityIndex);

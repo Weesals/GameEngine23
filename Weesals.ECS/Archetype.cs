@@ -30,11 +30,11 @@ namespace Weesals.ECS {
     // Flag when a component changes on an Archetype
     public class ArchetypeMutateListener {
         public readonly EntityManager Manager;
-        public readonly ArchetypeId ArchetypeId;
         public RevisionMonitor RevisionMonitor;
-        public ArchetypeMutateListener(EntityManager manager, ArchetypeId archetype) {
+        public ArchetypeId ArchetypeId => RevisionMonitor.ArchetypeId;
+        public ArchetypeMutateListener(EntityManager manager, RevisionMonitor monitor) {
             Manager = manager;
-            ArchetypeId = archetype;
+            RevisionMonitor = monitor;
         }
         public RevisionStorage.Enumerator GetEnumerator(EntityManager manager) {
             ref var archetype = ref Manager.GetArchetype(ArchetypeId);
@@ -56,16 +56,15 @@ namespace Weesals.ECS {
                 for (; index < bindings.Count; ++index) if (bindings[index].ArchetypeId == entityAddr.ArchetypeId) break;
                 if (index >= bindings.Count) {
                     ref var archetype = ref Manager.GetArchetype(entityAddr.ArchetypeId);
-                    if (!archetype.TryGetColumnId(TypeId, out var columnIndex)) return;
-                    var listener = new ArchetypeMutateListener(Manager, entityAddr.ArchetypeId);
-                    listener.RevisionMonitor = archetype.CreateRevisionMonitor(Manager, columnIndex);
+                    Debug.Assert(archetype.GetColumnId(TypeId, Manager.Context) >= 0);
+                    var listener = new ArchetypeMutateListener(Manager, Manager.ColumnStorage.CreateRevisionMonitor(TypeId, ref archetype));
                     bindings.Add(listener);
                 }
             };
         }
         public void Dispose() {
             foreach (var binding in bindings) {
-                Manager.ColumnStorage.RemoveRevisionMonitor(ref binding.RevisionMonitor);
+                Manager.ColumnStorage.RemoveRevisionMonitor(ref binding.RevisionMonitor, ref Manager.GetArchetype(binding.ArchetypeId));
             }
         }
         public void Clear() {
@@ -120,9 +119,8 @@ namespace Weesals.ECS {
 
         public void NotifyMutation(scoped ref ColumnStorage columnStorage, int row) {
             if (MonitorRef > 0) {
-                ref var column = ref columnStorage.RequireColumn(TypeId);
                 if (!HasRevision) {
-                    columnStorage.RevisionStorage.Clear(ref RevisionData);
+                    columnStorage.RevisionStorage.Begin(ref RevisionData);
                 }
                 columnStorage.RevisionStorage.SetModified(ref RevisionData, row);
             }
@@ -169,7 +167,9 @@ namespace Weesals.ECS {
         }
         [Conditional("DEBUG")]
         public void SetDebugManager(EntityManager manager) {
+#if DEBUG
             debugManager = manager;
+#endif
         }
         public int AllocateRow(scoped ref ColumnStorage columnStorage, Entity entity) {
             ++Revision;
@@ -341,6 +341,7 @@ namespace Weesals.ECS {
             return manager.ColumnStorage.CreateRevisionMonitor(column.TypeId, ref this);
         }
         public override string ToString() {
+#if DEBUG
             if (debugManager != null) {
                 var columns = debugManager.ColumnStorage.ArchetypeColumns.GetRange(columnRange);
                 var columnNames = new string[columnRange.Length];
@@ -349,6 +350,7 @@ namespace Weesals.ECS {
                 }
                 return string.Join(",", columnNames);
             }
+#endif
             return columnRange.ToString();
         }
     }
@@ -380,7 +382,7 @@ namespace Weesals.ECS {
         }
         public void RemoveRevisionMonitor(EntityManager manager, ref RevisionMonitor monitor) {
             Debug.Assert(monitor.ArchetypeId == Id);
-            manager.ColumnStorage.RemoveRevisionMonitor(ref monitor);
+            manager.ColumnStorage.RemoveRevisionMonitor(ref monitor, ref manager.GetArchetype(monitor.ArchetypeId));
         }
         public ref readonly T GetValueRO(EntityManager manager, EntityAddress entityAddr) {
             ref var archetype = ref manager.GetArchetype(entityAddr.ArchetypeId);

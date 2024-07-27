@@ -22,7 +22,7 @@ namespace Game5.UI.Interaction {
         public Play Play => PlayUI.Play;
 
         public class Renderable : IDisposable {
-            public PooledList<CSInstance> Instances = new();
+            public PooledList<SceneInstance> Instances = new();
             public void Dispose() { Instances.Dispose(); }
         }
         public class Instance {

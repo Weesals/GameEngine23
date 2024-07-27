@@ -306,7 +306,7 @@ namespace Weesals.UI {
                 int keepCount = 0;
                 // Separate into 'keep' and 'deselect' chunks
                 foreach (var item in Manager.selected) {
-                    var index = Array.IndexOf(toDeselect.Data, item, keepCount);
+                    var index = Array.IndexOf(toDeselect.Data, item, keepCount, toDeselect.Count - keepCount);
                     // Item was found, push it to 'keep' range
                     if (index >= 0) toDeselect.Swap(index, keepCount++);
                 }

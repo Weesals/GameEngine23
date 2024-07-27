@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -30,7 +31,7 @@ namespace Weesals.Engine {
 			mPlaneZs *= factors;
 			mPlaneDs *= factors;
 		}
-		public float GetVisibility(Vector3 pos) {
+        public float GetVisibility(Vector3 pos) {
 			Vector4 distances = GetProjectedDistances(pos);
 			return distances.cmin();
 		}
@@ -39,10 +40,12 @@ namespace Weesals.Engine {
 				+ dot4(Vector4.Abs(mPlaneXs), Vector4.Abs(mPlaneYs), Vector4.Abs(mPlaneZs), ext.X, ext.Y, ext.Z);
 			return distances.cmin();
 		}
-		public bool GetIsVisible(Vector3 pos) {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool GetIsVisible(Vector3 pos) {
             return GetVisibility(pos) > 0;
         }
-		public bool GetIsVisible(Vector3 pos, Vector3 ext) {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool GetIsVisible(Vector3 pos, Vector3 ext) {
             return GetVisibility(pos, ext) > 0;
         }
 		public void IntersectPlane(Vector3 dir, float c, Span<Vector3> points) {
@@ -66,9 +69,11 @@ namespace Weesals.Engine {
             points[2] = new Vector3(posXs.Z, posYs.Z, posZs.Z);
             points[3] = new Vector3(posXs.W, posYs.W, posZs.W);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Vector4 GetProjectedDistances(Vector3 pos) {
             return dot4(mPlaneXs, mPlaneYs, mPlaneZs, pos.X, pos.Y, pos.Z) + mPlaneDs;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Vector4 dot4(Vector4 xs, Vector4 ys, Vector4 zs, float mx, float my, float mz) {
             return xs * mx + ys * my + zs * mz;
         }
@@ -128,9 +133,11 @@ namespace Weesals.Engine {
                 + new Vector2(Vector3.Dot(Vector3.Abs(mNearPlane.toxyz()), ext), Vector3.Dot(Vector3.Abs(mFarPlane.toxyz()), ext));
             return MathF.Min(distances.cmin(), nfdistances.cmin());
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetIsVisible(Vector3 pos) {
             return GetVisibility(pos) > 0;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetIsVisible(Vector3 pos, Vector3 ext) {
             return GetVisibility(pos, ext) > 0;
         }

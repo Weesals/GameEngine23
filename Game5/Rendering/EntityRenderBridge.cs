@@ -57,12 +57,12 @@ namespace Weesals.Rendering {
     }
     public class VisualInstance {
         public VisualPrefab Prefab;
-        public CSInstance[] Meshes;
+        public SceneInstance[] Meshes;
         public ParticleSystem.Emitter[] Particles;
         public Material? AnimMaterial;
         public VisualInstance(VisualPrefab prefab) {
             Prefab = prefab;
-            Meshes = new CSInstance[Prefab.MeshCount];
+            Meshes = new SceneInstance[Prefab.MeshCount];
             Particles = new ParticleSystem.Emitter[Prefab.Particles.Length];
         }
     }
@@ -331,7 +331,7 @@ namespace Weesals.Rendering {
                     binding.ChangedTransforms.TryAdd(entityAddr.Row);*/
                     binding.ValidEntities.TryAdd(entityAddr.Row);
                     World.Manager.AddComponent<SceneRenderable>(entity) = new() {
-                        //SceneIndex = Array.Empty<CSInstance>(),
+                        //SceneIndex = Array.Empty<SceneInstance>(),
                     };
                 },
                 OnMove = (move) => {
@@ -394,7 +394,7 @@ namespace Weesals.Rendering {
             foreach (var emitter in instance.Particles) {
                 emitter.MarkDead();
             }
-            instance.Meshes = Array.Empty<CSInstance>();
+            instance.Meshes = Array.Empty<SceneInstance>();
             instance.Particles = Array.Empty<ParticleSystem.Emitter>();
         }
 
@@ -413,12 +413,12 @@ namespace Weesals.Rendering {
         }
         public void UpdateModel(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance != null) {
                 DestroyInstance(sceneProxy.Instance);
             }
+            var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
             var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
             if (prefab == null) return;
             sceneProxy.Instance = CreateInstance(prefab, binding.AnimationLookup.IsValid);
@@ -431,12 +431,11 @@ namespace Weesals.Rendering {
         }
         public void UpdateTransform(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
-            var epos = binding.TransformLookup.GetValueRO(World.Manager, entityAddr);
-            var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
-            var tform = epos.AsMatrix();
+            var transform = binding.TransformLookup.GetValueRO(World.Manager, entityAddr);
+            var tform = transform.AsMatrix();
             var prefab = sceneProxy.Instance.Prefab;
             foreach (var model in prefab.Models) {
                 for(int m = 0; m < model.Meshes.Count; m++) {

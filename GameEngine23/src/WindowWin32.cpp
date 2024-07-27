@@ -96,7 +96,7 @@ std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
 
 LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    std::stringstream str;
+    /*std::stringstream str;
     str << " >> " << std::hex << " M ";
     switch (message) {
     case WM_PAINT: str << "WM_PAINT"; break;
@@ -131,7 +131,7 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     default: str << message; break;
     }
     str << "  " << wParam << " " << lParam << std::endl;
-    OutputDebugStringA(str.str().c_str());
+    OutputDebugStringA(str.str().c_str());*/
     static auto UpdateModifiers = [](WindowWin32* window) {
         static unsigned short keys[] = { VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, /*VK_LMENU, VK_RMENU, Handled by Syskey */ };
         static unsigned long long KeyMask = 0;

@@ -67,6 +67,7 @@ namespace Weesals.Utility {
         public ref T this[int index] { get { Debug.Assert((uint)index < Length); return ref Data[index]; } }
         public ref T this[Index index] => ref this[index.GetOffset(Length)];
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public MemoryBlock(T* data, int count) { Data = data; Length = count; }
 
         public Span<T> AsSpan() { return new Span<T>(Data, Length); }

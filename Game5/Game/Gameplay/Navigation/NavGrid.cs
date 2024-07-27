@@ -45,6 +45,7 @@ public class NavGrid : IDisposable {
     public void AppendGeometry(Span<Int2> polygon, int delta) {
         var gridIt = new GridIteratorUtility(1024, Granularity, Size);
         gridIt.ComputeAABB(polygon, out var aabbMin, out var aabbMax);
+        if (aabbMin.X > aabbMax.X || aabbMin.Y > aabbMax.Y) return;
         using var xCoords = new PooledList<int>(4);
         for (int y = aabbMin.Y; y <= aabbMax.Y; y++) {
             int iY = y * Size.X;
@@ -115,8 +116,9 @@ public class NavGrid : IDisposable {
                 aabbMin = Int2.Min(aabbMin, pnt);
                 aabbMax = Int2.Max(aabbMax, pnt);
             }
-            aabbMin = SimulationToGrid(aabbMin + GranularityFrom / 2 / GranularityTo);
-            aabbMax = SimulationToGrid(aabbMax - GranularityFrom / 2 / GranularityTo);
+            int hafGridToSim = GranularityFrom / (2 * GranularityTo);
+            aabbMin = SimulationToGrid(aabbMin + hafGridToSim);
+            aabbMax = SimulationToGrid(aabbMax - hafGridToSim);
             aabbMin = Int2.Max(aabbMin, 0);
             aabbMax = Int2.Min(aabbMax, Size - 1);
         }

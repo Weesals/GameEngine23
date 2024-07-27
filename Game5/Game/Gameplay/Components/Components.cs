@@ -74,5 +74,7 @@ namespace Game5.Game {
     public struct ECObstruction {
         public short ObstructionHeight;
     }
+    public struct ECTagTest {
+    }
 
 }

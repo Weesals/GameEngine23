@@ -115,6 +115,7 @@ namespace Weesals.Engine {
         public static Vector4 toxyzw(this Vector4 v) {
             return new Vector4(v.X, v.Y, v.Z, v.W);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static float cmin(this Vector2 v) {
             return MathF.Min(v.X, v.Y);
         }
@@ -183,7 +184,9 @@ namespace Weesals.Engine {
         public Int2(int _x, int _y) { X = _x; Y = _y; }
         public Int2(Vector2 o) { X = ((int)o.X); Y = ((int)o.Y); }
         public int this[int index] {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => (index <= 0 ? ref X : ref Y);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set => (index <= 0 ? ref X : ref Y) = value;
         }
         public bool Equals(Int2 o) { return X == o.X && Y == o.Y; }
@@ -203,14 +206,23 @@ namespace Weesals.Engine {
         public static Int2 operator |(Int2 o1, Int2 o) { return new Int2(o1.X | o.X, o1.Y | o.Y); }
         public static Int2 operator ^(Int2 o1, int o) { return new Int2(o1.X ^ o, o1.Y ^ o); }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int2 Min(Int2 v1, Int2 v2) { return new Int2(Math.Min(v1.X, v2.X), Math.Min(v1.Y, v2.Y)); }
-	    public static Int2 Max(Int2 v1, Int2 v2) { return new Int2(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y)); }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static Int2 Max(Int2 v1, Int2 v2) { return new Int2(Math.Max(v1.X, v2.X), Math.Max(v1.Y, v2.Y)); }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int2 Abs(Int2 v) { return new Int2(Math.Abs(v.X), Math.Abs(v.Y)); }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int2 Clamp(Int2 v, Int2 min, Int2 max) { return new Int2(Math.Clamp(v.X, min.X, max.X), Math.Clamp(v.Y, min.Y, max.Y)); }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int DotI(Int2 v1, Int2 v2) { return v1.X * v2.X + v1.Y * v2.Y; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long Dot(Int2 v1, Int2 v2) { return (long)v1.X * v2.X + (long)v1.Y * v2.Y; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int CSum(Int2 v) { return v.X + v.Y; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int CMul(Int2 v) { return v.X * v.Y; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long DistanceSquared(Int2 v1, Int2 v2) { v1 -= v2; return Dot(v1, v1); }
 
         public static Int2 FloorToInt(Vector2 v) { return new Int2(MathExt.FloorToInt(v.X), MathExt.FloorToInt(v.Y)); }

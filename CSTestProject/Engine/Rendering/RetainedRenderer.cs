@@ -138,6 +138,15 @@ namespace Weesals.Engine {
             return new RenderTag(id);
         }
     }
+    public partial struct SceneInstance {
+        private int mInstanceId;
+        public SceneInstance(int instanceId) { mInstanceId = instanceId; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int GetInstanceId() => mInstanceId;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static implicit operator int(SceneInstance instance) { return instance.mInstanceId; }
+        public override string ToString() { return GetInstanceId().ToString(); }
+    }
     public class Scene {
         private static ProfilerMarker ProfileMarker_SubmitToGPU = new("SubmitToGPU");
 
@@ -161,7 +170,7 @@ namespace Weesals.Engine {
         public RetainedMaterialCollection MaterialCollection = new();
         public ResolvedMaterialSets ResolvedMaterials;
         public RenderTagManager TagManager = new();
-        private HashSet<CSInstance> movedInstances = new();
+        private HashSet<SceneInstance> movedInstances = new();
         public Scene() {
             ResolvedMaterials = new(MaterialCollection);
             gpuScene = new(BufferLayoutPersistent.Usages.Instance);
@@ -180,17 +189,19 @@ namespace Weesals.Engine {
         public void ClearListener(int id) {
             listenerFlags &= 1u << id;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void MarkListener(int id, int index) {
             instances[index].Listeners |= 1u << id;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetListenerState(int id) {
             return (listenerFlags & (1u << id)) != 0;
         }
 
-        public CSInstance CreateInstance() {
+        public SceneInstance CreateInstance() {
             return CreateInstance(new BoundingBox(Vector3.Zero, new Vector3(10f)));
         }
-        public CSInstance CreateInstance(BoundingBox bounds) {
+        public SceneInstance CreateInstance(BoundingBox bounds) {
             int size = 10;
             var start = gpuSceneFree.Take(size);
             if (start == -1) {
@@ -209,17 +220,17 @@ namespace Weesals.Engine {
             if (id >= instanceBounds.Length) Array.Resize(ref instanceBounds, instances.Items.Length);
             instanceVisibility[id] = 1;
             instanceBounds[id] = bounds;
-            var data = GetInstanceData(new CSInstance(id));
+            var data = GetInstanceData(new SceneInstance(id));
             data.AsSpan().Fill(Vector4.Zero);
             ref var instanceData = ref instances[id];
             var stride = gpuScene.Elements[0].mBufferStride;
             gpuSceneDirty.Add(instanceData.Data.Start * stride, instanceData.Data.Length * stride);
-            return new CSInstance(id);
+            return new SceneInstance(id);
         }
-        public unsafe bool UpdateInstanceData<T>(CSInstance instance, int offset, T value) where T: unmanaged {
+        public unsafe bool UpdateInstanceData<T>(SceneInstance instance, int offset, T value) where T: unmanaged {
             return UpdateInstanceData(instance, offset, &value, sizeof(T));
         }
-        public unsafe bool UpdateInstanceData(CSInstance instance, int offset, void* data, int dataLen) {
+        public unsafe bool UpdateInstanceData(SceneInstance instance, int offset, void* data, int dataLen) {
             var stride = gpuScene.Elements[0].mBufferStride;
             ref var instanceData = ref instances[instance.GetInstanceId()];
             var srcData = new Span<byte>((byte*)data, dataLen);
@@ -238,12 +249,13 @@ namespace Weesals.Engine {
             instanceData.Listeners = DefaultListenerMask;
             return true;
         }
-        public unsafe MemoryBlock<Vector4> GetInstanceData(CSInstance instance) {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe MemoryBlock<Vector4> GetInstanceData(SceneInstance instance) {
             var instanceData = instances[instance.GetInstanceId()];
             var data = (Vector4*)gpuScene.Elements[0].mData;
             return new MemoryBlock<Vector4>(data + instanceData.Data.Start, instanceData.Data.Length);
         }
-        public void RemoveInstance(CSInstance instance) {
+        public void RemoveInstance(SceneInstance instance) {
             var instanceData = instances[instance.GetInstanceId()];
             listenerFlags |= instanceData.Listeners;
             gpuSceneFree.Add(ref instanceData.Data);
@@ -266,11 +278,11 @@ namespace Weesals.Engine {
             movedInstances.Clear();
         }
 
-        unsafe public Matrix4x4 GetTransform(CSInstance instance) {
+        unsafe public Matrix4x4 GetTransform(SceneInstance instance) {
             var data = GetInstanceData(instance);
             return *((Matrix4x4*)data.Data);
         }
-        unsafe public void SetTransform(CSInstance instance, Matrix4x4 mat) {
+        unsafe public void SetTransform(SceneInstance instance, Matrix4x4 mat) {
             if (!UpdateInstanceData(instance, 0, &mat, sizeof(Matrix4x4))) return;
             var instanceId = instance.GetInstanceId();
             var aabb = TransformBounds(mat, instanceBounds[instance.GetInstanceId()]);
@@ -292,7 +304,7 @@ namespace Weesals.Engine {
             return BoundingBox.FromMinMax(aabbMin, aabbMax);
         }
 
-        unsafe public void SetHighlight(CSInstance instance, Color color) {
+        unsafe public void SetHighlight(SceneInstance instance, Color color) {
             Vector4 col = color;
             UpdateInstanceData(instance, sizeof(Matrix4x4) * 2, &col, sizeof(Vector4));
         }
@@ -345,7 +357,7 @@ namespace Weesals.Engine {
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ulong GetInstanceVisibilityMask(CSInstance instance) {
+        public ulong GetInstanceVisibilityMask(SceneInstance instance) {
             return instanceVisibility[instance.GetInstanceId()];
         }
     }
@@ -489,7 +501,7 @@ namespace Weesals.Engine {
             public StateKey StateKey;
             public Mesh Mesh => StateKey.Mesh;
             public int MaterialSet => StateKey.MaterialSet;
-            public List<CSInstance> Instances = new();
+            public List<SceneInstance> Instances = new();
             public CSBufferLayout[] BufferLayoutCache;
             public Batch(StateKey stateKey, CSBufferLayout[] buffers) {
                 StateKey = stateKey;
@@ -539,7 +551,7 @@ namespace Weesals.Engine {
         private void FindInstanceIndex(StateKey key, int sceneId, out int batchIndex, out int instanceIndex) {
             int bucket = 0, max = batches.Count;
             while (bucket < max) {
-                int mid = (bucket + max) / 2;
+                int mid = (bucket + max) >> 1;
                 if (batches[mid].StateKey.CompareTo(key) < 0) bucket = mid + 1;
                 else max = mid;
             }
@@ -553,7 +565,7 @@ namespace Weesals.Engine {
             var batch = batches[bucket];
             int instance = 0, imax = batch.Instances.Count;
             while (instance < imax) {
-                int mid = (instance + imax) / 2;
+                int mid = (instance + imax) >> 1;
                 if (batch.Instances[mid].GetInstanceId().CompareTo(sceneId) < 0) instance = mid + 1;
                 else imax = mid;
             }
@@ -570,7 +582,7 @@ namespace Weesals.Engine {
             var key = new StateKey(mesh, matSetId);
             FindInstanceIndex(key, sceneId, out var batchIndex, out var instance);
             var batch = batches[batchIndex];
-            batch.Instances.Insert(instance, new CSInstance(sceneId));
+            batch.Instances.Insert(instance, new SceneInstance(sceneId));
             instanceBatches.Add((uint)sceneId, key);
             return sceneId;
         }
@@ -623,7 +635,7 @@ namespace Weesals.Engine {
                         foreach (var instance in batch.Instances) {
                             if ((Scene.GetInstanceVisibilityMask(instance) & visMask) == 0) continue;
                             var data = Scene.GetInstanceData(instance);
-                            var matrix = *(Matrix4x4*)(data.Data);
+                            ref var matrix = ref *(Matrix4x4*)(data.Data);
                             if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
                             //var aabb = Scene.TransformBounds(matrix, bbox);
                             //if (!frustum.GetIsVisible(aabb.Centre, aabb.Extents)) continue;

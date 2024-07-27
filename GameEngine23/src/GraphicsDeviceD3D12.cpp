@@ -581,6 +581,7 @@ public:
             DrawIndirect(*argsBinding, bindings, state, resources, config, instanceCount, name);
             return;
         }
+        assert(instanceCount > 0);
 
         BindGraphicsState(pipelineState, resources);
 

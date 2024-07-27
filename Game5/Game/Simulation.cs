@@ -256,6 +256,13 @@ namespace Game5.Game {
                 World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
 
                 World.GetComponentRef<ECTransform>(World.CreateEntity(tcInstance)).Position += new Int2(6000, 1000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 1000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 1000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 1000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(0000, 2000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 2000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 2000);
+                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 2000);
             }
 
             using (new ProfilerMarker("Creating Houses").Auto()) {

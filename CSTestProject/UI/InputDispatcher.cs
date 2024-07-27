@@ -117,12 +117,17 @@ namespace Weesals.UI {
         public PointerEvent? IntlProcessPointer(PointerEvent events) {
             if (!deferredPointers.TryGetValue(events, out var deferred)) return null;
             var update = deferred.StepPre(events);
+            // Might need to tidy up this code
+            bool deferredStepped = false;
+            if (deferred.Active != null) {
+                deferredStepped = true;
+                deferred.StepPost(events, update);
+                if (deferred.Active != null) return deferred;
+            }
             var hitIterator = Canvas.HitTestGrid.BeginHitTest(deferred.CurrentPosition);
             var target = FindTarget(deferred, ref hitIterator);
-            if (deferred.Active == null) {
-                if (target.Active != null) deferred.SetActive(target.Active);
-            }
-            deferred.StepPost(events, update);
+            if (target.Active != null) deferred.SetActive(target.Active);
+            if (!deferredStepped) deferred.StepPost(events, update);
             //else deferred.SetPress(target.State.Interaction);
             if (deferred.Active != null) return deferred;
             for (int i = 0; i < interactions.Count; i++) {

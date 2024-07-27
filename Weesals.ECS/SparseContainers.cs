@@ -116,8 +116,9 @@ namespace Weesals.ECS {
             }
             // TODO: Do this in 1 pass (update "index" with each step)
             // (or use above info - if potentialEnd == start+newLength)
-            TryMergeAt(pos - 1);
+            if (pos >= 2) TryMergeAt(pos - 2);
             TryMergeAt(pos);
+            Validate();
             return newStart;
         }
         public int RequireResize(int start, int length, int newLength, int minBound = 0, int maxBound = int.MaxValue) {
@@ -125,6 +126,7 @@ namespace Weesals.ECS {
             if (newOffset != -1) return newOffset;
             newOffset = FindAndSetRange(newLength);
             ClearRange(start, length);
+            Validate();
             return newOffset;
         }
         // Find and set a contiguous range that can be flipped to the

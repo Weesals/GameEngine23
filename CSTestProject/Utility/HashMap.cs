@@ -691,10 +691,10 @@ namespace Weesals.Utility {
             MoveUp(count);
         }
         // Either change key, or insert if it doesnt exist
-        public void Assign(TValue value, TPriority priority) {
+        public void Assign<TTValue>(TTValue value, TPriority priority) where TTValue : TValue, IEquatable<TValue> {
             int i = count;
             for (; i >= 1; i--) {
-                if (heap[i].Value.Equals(value)) break;
+                if (value.Equals(heap[i].Value)) break;
             }
             if (i > 0) {
                 var e = heap[i];

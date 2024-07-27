@@ -250,13 +250,13 @@ namespace Weesals.Engine {
             return Frustum;
         }
 
-        public void AddInstance(CSInstance instance, Mesh mesh, Span<Material> materials) {
+        public void AddInstance(SceneInstance instance, Mesh mesh, Span<Material> materials) {
             RetainedRenderer.AppendInstance(mesh, materials, instance.GetInstanceId());
         }
-        public void SetVisible(CSInstance instance, bool visible) {
+        public void SetVisible(SceneInstance instance, bool visible) {
             RetainedRenderer.SetVisible(instance.GetInstanceId(), visible);
         }
-        public void RemoveInstance(CSInstance instance) {
+        public void RemoveInstance(SceneInstance instance) {
             RetainedRenderer.RemoveInstance(instance.GetInstanceId());
         }
 
@@ -331,6 +331,7 @@ namespace Weesals.Engine {
             lightMax.Z += 20.0f;
 
             var lightSize = lightMax - lightMin;
+            lightSize = Vector3.Max(lightSize, Vector3.One * 10.0f);
 
             lightViewMatrix.Translation = lightViewMatrix.Translation - (lightMin + lightMax) / 2.0f;
             var lightProjMatrix = Matrix4x4.CreateOrthographic(-lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
@@ -835,7 +836,7 @@ namespace Weesals.Engine {
         public readonly Scene Scene;
         private Matrix4x4 view, projection;
         private List<ScenePass> scenePasses = new();
-        private List<CSInstance> dynamicInstances = new();
+        private List<SceneInstance> dynamicInstances = new();
         private int dynamicDrawHash = 0;
         private Material mainSceneMaterial;
 
@@ -854,10 +855,10 @@ namespace Weesals.Engine {
             //mainSceneMaterial.InheritProperties(Scene.RootMaterial);
         }
 
-        public void AddInstance(CSInstance instance, Mesh mesh) {
+        public void AddInstance(SceneInstance instance, Mesh mesh) {
             AddInstance(instance, mesh, null, RenderTags.Default);
         }
-        public void AddInstance(CSInstance instance, Mesh mesh, Material? material, RenderTags tags) {
+        public void AddInstance(SceneInstance instance, Mesh mesh, Material? material, RenderTags tags) {
             foreach (var pass in scenePasses) {
                 if (!pass.TagsToInclude.HasAny(tags)) continue;
                 if (pass.TagsToExclude.HasAny(tags)) continue;
@@ -869,7 +870,7 @@ namespace Weesals.Engine {
                 pass.AddInstance(instance, mesh, materials);
             }
         }
-        public void RemoveInstance(CSInstance instance) {
+        public void RemoveInstance(SceneInstance instance) {
             foreach (var pass in scenePasses) {
                 pass.RemoveInstance(instance);
             }
@@ -924,7 +925,7 @@ namespace Weesals.Engine {
             dynamicInstances.Clear();
             dynamicDrawHash = 0;
         }
-        public CSInstance DrawDynamicMesh(Mesh mesh, Matrix4x4 transform, Material material) {
+        public SceneInstance DrawDynamicMesh(Mesh mesh, Matrix4x4 transform, Material material) {
             var instance = Scene.CreateInstance(mesh.BoundingBox);
             dynamicInstances.Add(instance);
             Scene.SetTransform(instance, transform);

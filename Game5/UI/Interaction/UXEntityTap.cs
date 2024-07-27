@@ -37,12 +37,16 @@ namespace Game5.UI.Interaction {
         public void OnPointerClick(PointerEvent events) {
             var entity = FindTarget(events);
             //if (!Play.World.IsValid(entity.GetEntity())) entity = default;
-            if (!entity.IsValid) {
-                Play.SelectionManager.ClearSelected();
-                events.Yield();
-                return;
+            if (events.HasModifier(Modifiers.Shift)) {
+                Play.SelectionManager.AppendSelected(entity);
+            } else {
+                if (!entity.IsValid) {
+                    Play.SelectionManager.ClearSelected();
+                    events.Yield();
+                    return;
+                }
+                Play.SelectionManager.SetSelected(entity);
             }
-            Play.SelectionManager.SetSelected(entity);
             //events.Cancel(this);
         }
     }
