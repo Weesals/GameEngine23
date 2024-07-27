@@ -204,7 +204,7 @@ namespace Game5.Game {
                     WalkAnim = chickenModel.Animations[3],
                 })
                 .AddComponent<CHitPoints>(new() { Current = 10, })
-                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
+                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue, Altitude = -50, })
                 .AddComponent<ECMobile>(new() { MovementSpeed = 4000, TurnSpeed = 500, NavMask = 1, })
                 .AddComponent<ECTeam>(new() { SlotId = 0 })
                 .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })

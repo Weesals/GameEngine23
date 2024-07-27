@@ -11,9 +11,12 @@ Texture2D<float1> SceneDepth : register(t1);
 Texture2D<float4> SceneAttri : register(t2);
 Texture2D<float4> SceneAO : register(t3);
 
+SamplerState MinSampler : register(s4);
+
 cbuffer DeferredCB : register(b2) {
     float2 ZBufferParams;
     float4 ViewToProj;
+    matrix Projection;
 }
 
 struct VSInput {
@@ -71,12 +74,66 @@ float PCFSample2(Texture2D<float> tex, SamplerComparisonState samp, float3 pos, 
     float2 p0 = ctr * texel - w0 * texel;
     float2 p1 = ctr * texel + w1 * texel;
     float4 weights = float4(w0.x * w0.y, w1.x * w0.y, w0.x * w1.y, w1.x * w1.y);
+    float4 samples = float4(
+        ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p0.y), pos.z),
+        ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p0.y), pos.z),
+        ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p1.y), pos.z),
+        ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p1.y), pos.z)
+    );
+    float shadow = dot(weights, samples) / dot(weights, 1);
+
+    float2 minUv = float2(
+        dot(samples.xz, 1) < dot(samples.yw, 1) ? p0.x : p1.x,
+        dot(samples.xy, 1) < dot(samples.zw, 1) ? p0.y : p1.y
+    );
+
+    float minDst = ShadowMap.Sample(MinSampler, minUv);
+    float fringe = 10 * abs(pos.z - minDst);
+    shadow = saturate((shadow - 0.5f) / saturate(fringe) + 0.5f);
+
+    return shadow;
+}
+float PCFSample3(Texture2D<float> tex, SamplerComparisonState samp, float3 pos, float2 size) {
+    float2 px = pos.xy * size;
+    float2 ctr = floor(px);
+    float2 l = px - ctr;
+    float2 w0 = 1.0 - pow(0 + l, 2) * 0.5;
+    float2 w1 = 1.0 - pow(1 - l, 2) * 0.5;
+    float2 texel = 1.0 / size;
+    float2 p[3] = {
+        ctr * texel - (1.0 + w0) * texel,
+        ctr * texel,
+        ctr * texel + (1.0 + w1) * texel
+    };
+    float2 w[3] = {
+        w0, float2(1, 1), w1
+    };
     float shadow = 0.0;
-    shadow += weights.x * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p0.y), pos.z);
-    shadow += weights.y * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p0.y), pos.z);
-    shadow += weights.z * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p0.x, p1.y), pos.z);
-    shadow += weights.w * ShadowMap.SampleCmpLevelZero(ShadowSampler, float2(p1.x, p1.y), pos.z);
-    shadow /= dot(weights, 1);
+    float totWeight = 0;
+    float2 minUv = 0;
+    float minShad = 1;
+    for(int y = 0; y < 3; ++y) {
+        for(int x = 0; x < 3; ++x) {
+            float weight = w[x].x * w[y].y;
+            float2 uv = float2(p[x].x, p[y].y);
+            float compareZ = pos.z - 0.002f;//(x == 1 && y == 1 ? 0.0f : 0.002f);
+            float sample = ShadowMap.SampleCmpLevelZero(ShadowSampler, uv, compareZ);
+            shadow += weight * sample;
+            totWeight += weight;
+            if (sample < minShad) {
+                minShad = sample;
+                minUv = uv;
+            }
+        }
+    }
+    shadow /= totWeight;
+
+    float kernelSize = 50 * pos.z;
+
+    float minDst = ShadowMap.Sample(MinSampler, minUv);
+    float shadowBlend = kernelSize * abs(pos.z - minDst);
+    shadow = saturate((shadow - 0.5f) / saturate(shadowBlend) + 0.5f);
+
     return shadow;
 }
 
@@ -115,6 +172,24 @@ float4 PSMain(PSInput input) : SV_Target {
         float3 shadowPos = ViewToShadow(viewPos);
         //shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z);
         shadow = PCFSample2(ShadowMap, ShadowSampler, shadowPos, 512);
+        float3 ssShadPos = viewPos + _ViewSpaceLightDir0 * 0.2;
+        float4 ssVPos = mul(Projection, float4(ssShadPos, 1));
+        ssVPos.xyz /= ssVPos.w;
+        ssVPos.y = -ssVPos.y;
+        float jitter = IGN(input.position.xy);
+        [unroll]
+        for(int i = 0; i < 2; ++i) {
+            float3 samplePos = float3(ssVPos.xy * 0.5 + 0.5, ssVPos.z);
+            samplePos = lerp(float3(input.uv, deviceDepth), samplePos, (jitter + i) / 2.0);
+            samplePos.z = DepthToLinear(samplePos.z);
+            float newDepth = DepthToLinear(SceneDepth.Sample(PointSampler, samplePos.xy));
+            if (newDepth < samplePos.z && newDepth > samplePos.z - 0.06) {
+                shadow = 0;
+                break;
+                //return float4(1, 0, 0, 1);
+            }
+        }
+        //return float4(newDepth * 0.1, ssVPos.z * 0.1, 0, 1);
         
 #if ENABLEFOG
         [branch]

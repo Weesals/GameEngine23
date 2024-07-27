@@ -1,6 +1,7 @@
 #include "WindowWin32.h"
 
 #include <windowsx.h>
+#include <sstream>
 #include "GraphicsDeviceD3D12.h"
 
 WCHAR szWindowClass[] = L"RTSWINDOW";
@@ -95,6 +96,42 @@ std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
 
 LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    std::stringstream str;
+    str << " >> " << std::hex << " M ";
+    switch (message) {
+    case WM_PAINT: str << "WM_PAINT"; break;
+    case WM_SYSKEYDOWN: str << "WM_SYSKEYDOWN"; break;
+    case WM_SYSKEYUP: str << "WM_SYSKEYUP"; break;
+    case WM_GETICON: str << "WM_GETICON"; break;
+    case WM_DWMNCRENDERINGCHANGED: str << "WM_DWMNCRENDERINGCHANGED"; break;
+    case WM_SYSCOMMAND: str << "WM_SYSCOMMAND"; break;
+    case WM_SETCURSOR: str << "WM_SETCURSOR"; break;
+    case WM_INITMENU: str << "WM_INITMENU"; break;
+    case WM_ENTERMENULOOP: str << "WM_ENTERMENULOOP"; break;
+    case WM_EXITMENULOOP: str << "WM_EXITMENULOOP"; break;
+    case WM_WINDOWPOSCHANGING: str << "WM_WINDOWPOSCHANGING"; break;
+    case WM_WINDOWPOSCHANGED: str << "WM_WINDOWPOSCHANGED"; break;
+    case WM_NCACTIVATE: str << "WM_NCACTIVATE"; break;
+    case WM_MENUSELECT: str << "WM_MENUSELECT"; break;
+    case WM_ENTERIDLE: str << "WM_ENTERIDLE"; break;
+    case WM_CAPTURECHANGED: str << "WM_CAPTURECHANGED"; break;
+    case WM_CLOSE: str << "WM_CLOSE"; break;
+    case WM_NCHITTEST: str << "WM_NCHITTEST"; break;
+    case WM_IME_SETCONTEXT: str << "WM_IME_SETCONTEXT"; break;
+    case WM_IME_NOTIFY: str << "WM_IME_NOTIFY"; break;
+    case WM_ACTIVATEAPP: str << "WM_ACTIVATEAPP"; break;
+    case WM_ACTIVATE: str << "WM_ACTIVATE"; break;
+    case WM_SETFOCUS: str << "WM_SETFOCUS"; break;
+    case WM_KILLFOCUS: str << "WM_KILLFOCUS"; break;
+    case WM_GETOBJECT: str << "WM_GETOBJECT"; break;
+    case WM_MOUSEMOVE: str << "WM_MOUSEMOVE"; break;
+    case WM_GETMINMAXINFO: str << "WM_GETMINMAXINFO"; break;
+    case WM_LBUTTONDOWN: str << "WM_LBUTTONDOWN"; break;
+    case WM_LBUTTONUP: str << "WM_LBUTTONUP"; break;
+    default: str << message; break;
+    }
+    str << "  " << wParam << " " << lParam << std::endl;
+    OutputDebugStringA(str.str().c_str());
     static auto UpdateModifiers = [](WindowWin32* window) {
         static unsigned short keys[] = { VK_LSHIFT, VK_RSHIFT, VK_LCONTROL, VK_RCONTROL, /*VK_LMENU, VK_RMENU, Handled by Syskey */ };
         static unsigned long long KeyMask = 0;
@@ -113,6 +150,9 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
             window->mInput->GetMutator().ReceiveKeyEvent(extended ? VK_RMENU : VK_LMENU, state);
         }
         window->mInput->GetMutator().ReceiveKeyEvent((int)wParam, state);
+        std::stringstream str;
+        str << wParam << " S " << state << std::endl;
+        OutputDebugStringA(str.str().c_str());
     };
 
     switch (message) {
@@ -161,6 +201,10 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         if (window != nullptr && window->mInput != nullptr) {
             SysKeyEvent(window, wParam, lParam, message == WM_SYSKEYDOWN);
+            if (wParam == VK_MENU && message == WM_SYSKEYUP) {
+                DefWindowProc(hWnd, WM_LBUTTONDOWN, 1, 2040198);
+                DefWindowProc(hWnd, WM_LBUTTONUP, 1, 2040198);
+            }
         }
     } break;
     case WM_KEYDOWN:
@@ -170,13 +214,28 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
             if (wParam <= VK_CONTROL) UpdateModifiers(window);
             window->mInput->GetMutator().ReceiveKeyEvent((int)wParam, message == WM_KEYDOWN);
         }
+        std::stringstream str;
+        str << wParam << " M " << message << std::endl;
+        OutputDebugStringA(str.str().c_str());
     } return 0;
+    case WM_KILLFOCUS: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        if (window != nullptr && window->mInput != nullptr) {
+            auto mutator = window->mInput->GetMutator();
+            for (auto key : window->mInput->GetDownKeys()) {
+                mutator.ReceiveKeyEvent(key.KeyId, false);
+            }
+        }
+    } break;
     case WM_CHAR: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         if (window != nullptr && window->mInput != nullptr) {
             window->mInput->GetMutator().ReceiveCharEvent((wchar_t)wParam);
         }
     } return 0;
+    case WM_SYSCOMMAND: {
+        if (wParam == SC_KEYMENU && lParam == 0) return 0;
+    } break;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;

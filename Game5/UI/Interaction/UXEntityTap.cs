@@ -36,7 +36,7 @@ namespace Game5.UI.Interaction {
         }
         public void OnPointerClick(PointerEvent events) {
             var entity = FindTarget(events);
-            if (!Play.World.IsValid(entity.GetEntity())) entity = default;
+            //if (!Play.World.IsValid(entity.GetEntity())) entity = default;
             if (!entity.IsValid) {
                 Play.SelectionManager.ClearSelected();
                 events.Yield();

@@ -322,6 +322,10 @@ namespace Game5.Game {
             // If Play selection changes, force update project selection
             var editorSelection = editorWindow.Editor.ProjectSelection;
             var hierarchySelection = editorWindow.Hierarchy.SelectionManager;
+            this.Play.SelectionManager.OnEntitySelected += (item, selected) => {
+                if (item.Owner is IEntitySelectable selectable)
+                    selectable.NotifySelected(item.Data, selected);
+            };
             this.Play.SelectionManager.OnSelectionChanged += (selection) => {
                 using var scope = new Weesals.UI.SelectionManager.Scope(editorSelection);
                 foreach (var item in selection) {

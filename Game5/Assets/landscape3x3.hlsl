@@ -46,7 +46,7 @@ struct PSInput {
     half2 dHeightDxz : NORMAL;
 };
 
-PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
+PSInput VertMain(VSInput input, out float4 positionCS : SV_POSITION, float heightBias = 0.0) {
     PSInput result;
 
     float3 worldPos = input.position.xyz;
@@ -55,7 +55,7 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     
     // Sample from the heightmap and offset the vertex
     HeightPoint h = DecodeHeightMap(HeightMap.Load(int3(worldPos.xz, 0), 0));
-    worldPos.y += h.HeightOS;
+    worldPos.y += h.HeightOS + heightBias;
     worldNrm = h.NormalOS;
 
     result.positionOS = worldPos;
@@ -63,6 +63,10 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
     positionCS = mul(ModelViewProjection, float4(worldPos, 1.0));
         
     return result;
+}
+
+PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
+    return VertMain(input, positionCS, 0.1);
 }
 
 
@@ -325,7 +329,7 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoints3x3 cp3x3, Contr
     return terResult;
 }
 
-BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
+BasePassOutput PSMain(PSInput input, linear centroid noperspective float4 positionCS : SV_POSITION, out float depth : SV_DepthGreaterEqual0) {
     //uint packedDHDXZ = (f32tof16(input.dHeightDxz.x) << 16) | f32tof16(input.dHeightDxz.y);
     TemporalAdjust(input.positionOS.xz);
         
@@ -427,13 +431,15 @@ BasePassOutput PSMain(PSInput input, float4 positionCS : SV_POSITION) {
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);
 
+    depth = positionCS.z + (1 - terResult.Height) / (positionCS.w * positionCS.w);
+
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
     return PBROutput(pbrInput, viewDir);
 }
 
 void ShadowCast_VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
-    VSMain(input, positionCS);
+    VertMain(input, positionCS, -0.1);
 }
 [NumThreads(128, 1, 1)]
 [OutputTopology("triangle")]

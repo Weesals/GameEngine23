@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -47,7 +48,7 @@ namespace Weesals.ECS {
             var pageId = GetPageIdByBit(bit);
             if ((pageIds & (1uL << pageId)) != 0) {
                 var page = pages[CountBitsUntil(pageIds, pageId)];
-                page &= (ulong)(-(1L << (bit & 63)));
+                page &= ~0ul << (bit & 63);
                 if (page != 0) return pageId * 64 + BitOperations.TrailingZeroCount(page);
             }
             var nextPageId = GetNextBit(pageIds, pageId);
@@ -65,7 +66,7 @@ namespace Weesals.ECS {
         }
         public bool TryGetBitIndex(int bit, out int index) {
             int pageId = GetPageIdByBit(bit);
-            if ((pageIds & 1ul << pageId) == 0) { index = -1; return false; }
+            if ((pageIds & (1ul << pageId)) == 0) { index = -1; return false; }
             var pageIndex = CountBitsUntil(pageIds, pageId);
             if ((pages[pageIndex] & (1ul << (bit & 63))) == 0) { index = -1; return false; }
             index = 0;
@@ -111,14 +112,19 @@ namespace Weesals.ECS {
                 : this.Select(i => i.ToString()).Aggregate((i1, i2) => $"{i1},{i2}");
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetPageIdByBit(int bit) { return bit >> 6; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetLocalBit(int bit) { return bit & 63; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int CountBitsUntil(ulong pattern, int pageId) {
             return BitOperations.PopCount(pattern & ((1ul << pageId) - 1));
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetNextBit(ulong pattern, int bit) {
             return GetBitFrom(pattern, bit + 1);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetBitFrom(ulong pattern, int bit) {
             //return BitOperations.TrailingZeroCount(pattern & ~((2uL << bit) - 1));
             //return BitOperations.TrailingZeroCount(pattern & (ulong)(-(long)(1uL << Math.Min(63, bit + 1))));
@@ -186,7 +192,7 @@ namespace Weesals.ECS {
                     pageId = GetNextBit(pageIds, pageId);
                     if (pageId >= 64) return false;
                     bitIndex = pageId * 64;
-                    page = ~(page = 0);
+                    page = ~0ul;
                     if ((Bits1.pageIds & (1ul << pageId)) != 0)
                         page &= Bits1.pages[Bits1.GetBitIndex(pageId)];
                     if ((Bits2.pageIds & (1ul << pageId)) != 0)

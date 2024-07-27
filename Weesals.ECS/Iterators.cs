@@ -6,13 +6,14 @@ using System.Numerics;
 namespace Weesals.ECS {
     public struct ComponentAccessor {
         public readonly EntityManager Manager;
-        public readonly Archetype Archetype;
+        public readonly ArchetypeId ArchetypeId;
         public bool IsValid => Manager != null;
+        public ref Archetype Archetype => ref Manager.GetArchetype(ArchetypeId);
         public Span<Entity> Entities => Archetype.GetEntities(ref Manager.ColumnStorage);
         public int EntityCount => Archetype.EntityCount;
-        public ComponentAccessor(EntityManager manager, Archetype archetype) {
+        public ComponentAccessor(EntityManager manager, ArchetypeId archetypeId) {
             Manager = manager;
-            Archetype = archetype;
+            ArchetypeId = archetypeId;
         }
         public ref T GetValueRW<T>(int columnIndex, int row, int entityArchetypeRow) {
             return ref Archetype.GetValueRW<T>(ref Manager.ColumnStorage, columnIndex, row, entityArchetypeRow);
@@ -28,7 +29,7 @@ namespace Weesals.ECS {
         private readonly ComponentAccessor accessor;
         private readonly int row, column1;
         public readonly int Row => row;
-        public Archetype Archetype => accessor.Archetype;
+        public ref Archetype Archetype => ref accessor.Archetype;
         public readonly Entity Entity => accessor.Entities[row];
         public readonly ref readonly C1 Component1 => ref accessor.GetValueRO<C1>(column1, GetDenseRow1());
         public readonly ref C1 Component1Ref => ref accessor.GetValueRW<C1>(column1, GetDenseRow1(), row);
@@ -46,7 +47,7 @@ namespace Weesals.ECS {
         private readonly ComponentAccessor accessor;
         private readonly int row, column1, column2;
         public readonly int Row => row;
-        public Archetype Archetype => accessor.Archetype;
+        public ref Archetype Archetype => ref accessor.Archetype;
         public readonly Entity Entity => accessor.Entities[row];
         public readonly ref readonly C1 Component1 => ref accessor.GetValueRO<C1>(column1, GetDenseRow1());
         public readonly ref readonly C2 Component2 => ref accessor.GetValueRO<C2>(column2, GetDenseRow2());
@@ -69,7 +70,7 @@ namespace Weesals.ECS {
         private readonly ComponentAccessor accessor;
         private readonly int row, column1, column2, column3;
         public readonly int Row => row;
-        public Archetype Archetype => accessor.Archetype;
+        public ref Archetype Archetype => ref accessor.Archetype;
         public readonly Entity Entity => accessor.Entities[row];
         public readonly ref readonly C1 Component1 => ref accessor.GetValueRO<C1>(column1, GetDenseRow1());
         public readonly ref readonly C2 Component2 => ref accessor.GetValueRO<C2>(column2, GetDenseRow2());
@@ -112,7 +113,7 @@ namespace Weesals.ECS {
             public void Reset() { row = -1; }
             public bool MoveNext() { return ++row < TableAccessor.Accessor.EntityCount; }
             public bool MoveNextFiltered(Query query) {
-                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, TableAccessor.Accessor.Archetype, row);
+                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, ref TableAccessor.Accessor.Archetype, row);
                 Debug.Assert(row < TableAccessor.Accessor.EntityCount);
                 return row >= 0;
             }
@@ -140,7 +141,7 @@ namespace Weesals.ECS {
             public void Reset() { row = -1; }
             public bool MoveNext() { return ++row < TableAccessor.Accessor.EntityCount; }
             public bool MoveNextFiltered(Query query) {
-                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, TableAccessor.Accessor.Archetype, row);
+                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, ref TableAccessor.Accessor.Archetype, row);
                 return row >= 0;
             }
         }
@@ -168,7 +169,7 @@ namespace Weesals.ECS {
             public void Reset() { row = -1; }
             public bool MoveNext() { return ++row < TableAccessor.Accessor.EntityCount; }
             public bool MoveNextFiltered(Query query) {
-                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, TableAccessor.Accessor.Archetype, row);
+                row = query.GetNextSparseRow(ref TableAccessor.Accessor.Manager.ColumnStorage, ref TableAccessor.Accessor.Archetype, row);
                 return row >= 0;
             }
         }

@@ -297,18 +297,18 @@ namespace Weesals.Rendering {
             //public DynamicBitField ChangedTransforms = new();
             //public DynamicBitField ChangedSelected = new();
             public DynamicBitField ValidEntities = new();
-            public TableBindings(EntityManager manager, Archetype archetype) {
-                ModelLookup = new(manager, archetype);
+            public TableBindings(EntityManager manager, ref Archetype archetype) {
+                ModelLookup = new(manager, ref archetype);
                 //ModelLookup.AddModificationListener(manager, archetype, ChangedModels);
                 ChangedModels = ModelLookup.CreateRevisionMonitor(manager, true);
-                TransformLookup = new(manager, archetype);
+                TransformLookup = new(manager, ref archetype);
                 //TransformLookup.AddModificationListener(manager, archetype, ChangedTransforms);
                 ChangedTransforms = TransformLookup.CreateRevisionMonitor(manager, true);
-                SelectedLookup = new(manager, archetype);
+                SelectedLookup = new(manager, ref archetype);
                 if (SelectedLookup.IsValid)
                     ChangedSelected = SelectedLookup.CreateRevisionMonitor(manager);
                     //SelectedLookup.AddModificationListener(manager, archetype, ChangedSelected);
-                AnimationLookup = new(manager, archetype);
+                AnimationLookup = new(manager, ref archetype);
             }
         }
         public TableBindings[] Bindings = Array.Empty<TableBindings>();
@@ -403,7 +403,7 @@ namespace Weesals.Rendering {
                 Array.Resize(ref Bindings, entityAddr.ArchetypeId + 16);
             ref var binding = ref Bindings[entityAddr.ArchetypeId];
             if (binding == null)
-                binding = new(World.Manager, World.Manager.GetArchetype(entityAddr.ArchetypeId));
+                binding = new(World.Manager, ref World.Manager.GetArchetype(entityAddr.ArchetypeId));
             if (entityAddr.Row >= binding.SceneEntities.Length)
                 Array.Resize(ref binding.SceneEntities, (int)BitOperations.RoundUpToPowerOf2((uint)entityAddr.Row + 512));
             return binding;
@@ -464,8 +464,8 @@ namespace Weesals.Rendering {
         private void UpdateAnimation(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
             var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
-            var archetype = World.Manager.GetArchetype(entityAddr.ArchetypeId);
-            var eanim = binding.AnimationLookup.GetValueRO(ref World.Manager.ColumnStorage, archetype, entityAddr.Row);
+            ref var archetype = ref World.Manager.GetArchetype(entityAddr.ArchetypeId);
+            var eanim = binding.AnimationLookup.GetValueRO(ref World.Manager.ColumnStorage, ref archetype, entityAddr.Row);
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -488,10 +488,10 @@ namespace Weesals.Rendering {
             for (int i = 0; i < Bindings.Length; i++) {
                 var binding = Bindings[i];
                 if (binding == null) continue;
-                var archetype = World.Manager.GetArchetype(new ArchetypeId(i));
-                var changedModels = columnStorage.GetChanges(binding.ChangedModels, archetype);
-                var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, archetype);
-                var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, archetype);
+                ref var archetype = ref World.Manager.GetArchetype(new ArchetypeId(i));
+                var changedModels = columnStorage.GetChanges(binding.ChangedModels, ref archetype);
+                var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, ref archetype);
+                var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, ref archetype);
                 foreach (var row in changedModels) {
                     UpdateModel(new EntityAddress(new ArchetypeId(i), row));
                 }
@@ -506,9 +506,9 @@ namespace Weesals.Rendering {
                         UpdateAnimation(new EntityAddress(new ArchetypeId(i), row));
                     }
                 }
-                columnStorage.Reset(ref binding.ChangedModels, archetype);
-                columnStorage.Reset(ref binding.ChangedTransforms, archetype);
-                columnStorage.Reset(ref binding.ChangedSelected, archetype);
+                columnStorage.Reset(ref binding.ChangedModels, ref archetype);
+                columnStorage.Reset(ref binding.ChangedTransforms, ref archetype);
+                columnStorage.Reset(ref binding.ChangedSelected, ref archetype);
                 //binding.ChangedModels.Clear();
                 //binding.ChangedTransforms.Clear();
                 //binding.ChangedSelected.Clear();

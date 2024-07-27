@@ -70,7 +70,7 @@ namespace Weesals.ECS {
 
                 // Archetype components
                 var entityAddr = Stage.RequireEntityAddress(mutation.Entity);
-                var archetype = Stage.GetArchetype(entityAddr.ArchetypeId);
+                ref var archetype = ref Stage.GetArchetype(entityAddr.ArchetypeId);
                 active.SetTypes.Append(archetype.TypeMask);
                 active.SetTypes.Remove(mutation.RemoveTypes);
                 active.SetTypes.Append(mutation.SetTypes);
@@ -93,7 +93,7 @@ namespace Weesals.ECS {
                 foreach (var typeIndex in mutation.SetSparseTypes) {
                     var columnId = archetype.RequireSparseColumn(TypeId.MakeSparse(typeIndex), Stage);
                     var denseRow = archetype.RequireSparseIndex(ref Stage.ColumnStorage, columnId, entityAddr.Row);
-                    Stage.ColumnStorage.CopyValue(archetype, columnId, denseRow, sparseValues[typeIndex].Items, i);
+                    Stage.ColumnStorage.CopyValue(ref archetype, columnId, denseRow, sparseValues[typeIndex].Items, i);
                 }
             }
             Reset();

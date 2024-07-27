@@ -32,7 +32,7 @@ using Weesals.Engine.Profiling;
 
 namespace Game5.Game {
 
-    public class SelectionManager {
+    /*public class SelectionManager {
         public Action<ItemReference, bool>? OnEntitySelected;
         public Action<ICollection<ItemReference>>? OnSelectionChanged;
         private HashSet<ItemReference> selected = new();
@@ -66,7 +66,7 @@ namespace Game5.Game {
             if (OnEntitySelected != null) OnEntitySelected(item, selected);
             if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
         }
-    }
+    }*/
 
     public class Play : IDisposable {
 
@@ -84,7 +84,7 @@ namespace Game5.Game {
         public Simulation Simulation { get; private set; }
         public World World => Simulation.World;
 
-        public SelectionManager SelectionManager = new();
+        public SelectionManager SelectionManager = new(null);
         public EntityHighlighting EntityHighlighting;
         public VisualsCollection EntityVisuals;
 

@@ -109,7 +109,7 @@ ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input) {
     worldNrm = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldNrm, 0.0)).xyz;
     worldPos = mul(instance.Model, float4(worldPos, 1.0)).xyz;
     worldNrm = mul(instance.Model, float4(worldNrm, 0.0)).xyz;
-    worldPos.xyz += worldNrm * -0.03;
+    worldPos.xyz += worldNrm * -0.02;
     result.positionCS = mul(ViewProjection, float4(worldPos, 1.0));
     return result;
 }

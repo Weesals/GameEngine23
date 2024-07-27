@@ -107,10 +107,10 @@ namespace Weesals.ECS {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
-            for (int i = 0; i <= table.MaxItem; i++) {
-                if (!filter.IncludeEntity(table, i)) continue;
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype archetype, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, ref archetype, columnIs[0]);
+            for (int i = 0; i <= archetype.MaxItem; i++) {
+                if (!filter.IncludeEntity(archetype, i)) continue;
                 Callback(ref col1[i]);
             }
         }
@@ -121,11 +121,11 @@ namespace Weesals.ECS {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
-            for (int i = 0; i <= table.MaxItem; i++) {
-                if (!filter.IncludeEntity(table, i)) continue;
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype archetype, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, ref archetype, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, ref archetype, columnIs[1]);
+            for (int i = 0; i <= archetype.MaxItem; i++) {
+                if (!filter.IncludeEntity(archetype, i)) continue;
                 Callback(ref col1[i], ref col2[i]);
             }
         }
@@ -136,12 +136,12 @@ namespace Weesals.ECS {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
-            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, table, columnIs[2]);
-            for (int i = 0; i <= table.MaxItem; i++) {
-                if (!filter.IncludeEntity(table, i)) continue;
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype archetype, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, ref archetype, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, ref archetype, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, ref archetype, columnIs[2]);
+            for (int i = 0; i <= archetype.MaxItem; i++) {
+                if (!filter.IncludeEntity(archetype, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i]);
             }
         }
@@ -152,13 +152,13 @@ namespace Weesals.ECS {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
-            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, table, columnIs[2]);
-            var col4 = new ArchetypeComponentGetter<C4>(ref columnStorage, table, columnIs[3]);
-            for (int i = 0; i <= table.MaxItem; i++) {
-                if (!filter.IncludeEntity(table, i)) continue;
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype archetype, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, ref archetype, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, ref archetype, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, ref archetype, columnIs[2]);
+            var col4 = new ArchetypeComponentGetter<C4>(ref columnStorage, ref archetype, columnIs[3]);
+            for (int i = 0; i <= archetype.MaxItem; i++) {
+                if (!filter.IncludeEntity(archetype, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i], ref col4[i]);
             }
         }
@@ -169,14 +169,14 @@ namespace Weesals.ECS {
             Callback = callback;
             LambdaId = stage.RequireLambda(Callback);
         }
-        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype table, Span<int> columnIs, Filter filter) {
-            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, table, columnIs[0]);
-            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, table, columnIs[1]);
-            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, table, columnIs[2]);
-            var col4 = new ArchetypeComponentGetter<C4>(ref columnStorage, table, columnIs[3]);
-            var col5 = new ArchetypeComponentGetter<C5>(ref columnStorage, table, columnIs[4]);
-            for (int i = 0; i <= table.MaxItem; i++) {
-                if (!filter.IncludeEntity(table, i)) continue;
+        public override void InvokeForArchetype(ref ColumnStorage columnStorage, Archetype archetype, Span<int> columnIs, Filter filter) {
+            var col1 = new ArchetypeComponentGetter<C1>(ref columnStorage, ref archetype, columnIs[0]);
+            var col2 = new ArchetypeComponentGetter<C2>(ref columnStorage, ref archetype, columnIs[1]);
+            var col3 = new ArchetypeComponentGetter<C3>(ref columnStorage, ref archetype, columnIs[2]);
+            var col4 = new ArchetypeComponentGetter<C4>(ref columnStorage, ref archetype, columnIs[3]);
+            var col5 = new ArchetypeComponentGetter<C5>(ref columnStorage, ref archetype, columnIs[4]);
+            for (int i = 0; i <= archetype.MaxItem; i++) {
+                if (!filter.IncludeEntity(archetype, i)) continue;
                 Callback(ref col1[i], ref col2[i], ref col3[i], ref col4[i], ref col5[i]);
             }
         }

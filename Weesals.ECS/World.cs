@@ -15,7 +15,8 @@ namespace Weesals.ECS {
         public ColumnStorage ColumnStorage;
         public EntityStorage EntityStorage;
 
-        private List<Archetype> archetypes = new(16);
+        private Archetype[] archetypes = new Archetype[32];
+        private int archetypeCount;
         private LambdaCache lambdaCache = new();
         //private List<SystemLambda.Cache> lambdaCaches = new();
         private List<Query> queries = new(16);
@@ -36,9 +37,9 @@ namespace Weesals.ECS {
             ColumnStorage.RequireColumn(entityTypeId);
             //Debug.Assert(entityTypeId.Packed == -1, "Entity must be invalid type id");
             // Add the zero archetype (when entities are newly created)
-            var zeroArchetype = new Archetype(new ArchetypeId(0), default, ref ColumnStorage);
+            ref var zeroArchetype = ref archetypes[archetypeCount++];
+            zeroArchetype = new Archetype(new ArchetypeId(0), default, ref ColumnStorage);
             zeroArchetype.SetDebugManager(this);
-            archetypes.Add(zeroArchetype);
             archetypesByTypes.Add(default, new ArchetypeId(0));
             // Allocate the zero entity (reserve the index as its the "null" handle)
             EntityStorage.CreateEntity("None");
@@ -63,11 +64,11 @@ namespace Weesals.ECS {
         public unsafe ref T RequireComponent<T>(Entity entity) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
             var entityAddress = RequireEntityAddress(entity);
-            var archetype = archetypes[entityAddress.ArchetypeId];
+            ref var archetype = ref archetypes[entityAddress.ArchetypeId];
 
             var columnId = -1;
             var denseRow = entityAddress.Row;
-            if (componentTypeId.IsSparse) {
+            if (ComponentType<T>.IsSparse) {
                 columnId = archetype.RequireSparseColumn(componentTypeId, this);
                 denseRow = archetype.RequireSparseIndex(ref ColumnStorage, columnId, entityAddress.Row);
             } else {
@@ -78,7 +79,7 @@ namespace Weesals.ECS {
                 builder.Append(archetype.TypeMask);
                 builder.AddComponent(componentTypeId);
                 entityAddress = MoveEntity(entity, RequireArchetypeIndex(builder.Build()));
-                archetype = archetypes[entityAddress.ArchetypeId];
+                archetype = ref archetypes[entityAddress.ArchetypeId];
                 columnId = archetype.GetColumnId(componentTypeId);
                 denseRow = entityAddress.Row;
             }
@@ -87,9 +88,9 @@ namespace Weesals.ECS {
         public bool HasComponent<T>(Entity entity) { return HasComponent<T>(RequireEntityAddress(entity)); }
         public bool HasComponent<T>(EntityAddress entityAddr) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
-            var archetype = archetypes[entityAddr.ArchetypeId];
+            ref var archetype = ref archetypes[entityAddr.ArchetypeId];
             if (ComponentType<T>.IsSparse) {
-                if (!archetype.TryGetSparseColumn(componentTypeId, out var column, Context)) return false;
+                if (!archetype.TryGetSparseColumn(componentTypeId, out var column)) return false;
                 if (!archetype.GetHasSparseComponent(ref ColumnStorage, column, entityAddr.Row)) return false;
             } else {
                 if (!archetype.GetHasColumn(componentTypeId)) return false;
@@ -101,7 +102,7 @@ namespace Weesals.ECS {
         }
         public ref readonly T GetComponent<T>(EntityAddress entityData) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
-            var archetype = archetypes[entityData.ArchetypeId];
+            ref var archetype = ref archetypes[entityData.ArchetypeId];
             var columnId = archetype.GetColumnId(componentTypeId, Context);
             var row = entityData.Row;
             if (ComponentType<T>.IsSparse) row = archetype.TryGetSparseIndex(ref ColumnStorage, columnId, entityData.Row);
@@ -112,7 +113,7 @@ namespace Weesals.ECS {
         }
         public bool TryGetComponent<T>(EntityAddress entityData, out T component) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
-            var archetype = archetypes[entityData.ArchetypeId];
+            ref var archetype = ref archetypes[entityData.ArchetypeId];
             if (!archetype.TryGetColumnId(componentTypeId, out var columnId)) { component = default; return false; }
             var row = entityData.Row;
             if (ComponentType<T>.IsSparse) row = archetype.TryGetSparseIndex(ref ColumnStorage, columnId, entityData.Row);
@@ -124,7 +125,7 @@ namespace Weesals.ECS {
         }
         public ref T GetComponentRef<T>(EntityAddress entityData) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
-            var archetype = archetypes[entityData.ArchetypeId];
+            ref var archetype = ref archetypes[entityData.ArchetypeId];
             var columnId = archetype.GetColumnId(componentTypeId, Context);
             archetype.NotifyMutation(ref ColumnStorage, columnId, entityData.Row);
             var row = entityData.Row;
@@ -136,7 +137,7 @@ namespace Weesals.ECS {
         }
         public NullableRef<T> TryGetComponentRef<T>(EntityAddress entityData, bool markDirty = true) {
             var componentTypeId = Context.RequireComponentTypeId<T>();
-            var archetype = archetypes[entityData.ArchetypeId];
+            ref var archetype = ref archetypes[entityData.ArchetypeId];
             if (!archetype.TryGetColumnId(componentTypeId, out var columnId)) return default;
             var row = entityData.Row;
             if (ComponentType<T>.IsSparse) {
@@ -149,7 +150,7 @@ namespace Weesals.ECS {
         unsafe public bool TryRemoveComponent<T>(Entity entity) {
             var entityData = RequireEntityAddress(entity);
             var componentTypeId = Context.RequireComponentTypeId<T>();
-            var archetype = archetypes[entityData.ArchetypeId];
+            ref var archetype = ref archetypes[entityData.ArchetypeId];
             if (ComponentType<T>.IsSparse) {
                 var column = archetype.RequireSparseColumn(componentTypeId, this);
                 if (!archetype.GetHasSparseComponent(ref ColumnStorage, column, entityData.Row)) return false;
@@ -193,7 +194,7 @@ namespace Weesals.ECS {
         }
 
         private Query.Cache.MatchedArchetype CreateArchetypeQueryCache(ArchetypeId archetypeI, QueryId queryI) {
-            var archetype = archetypes[archetypeI];
+            ref var archetype = ref archetypes[archetypeI];
             var query = queries[queryI];
             var componentOffsets = new int[query.WithTypes.BitCount];
             var it = query.WithTypes.GetEnumerator();
@@ -215,11 +216,11 @@ namespace Weesals.ECS {
                 foreach (var bit in field) {
                     ColumnStorage.RequireColumn(new(bit));
                 }
-                archetypeI = new ArchetypeId(archetypes.Count);
-                var archetype = new Archetype(archetypeI, field, ref ColumnStorage);
+                archetypeI = new ArchetypeId(archetypeCount);
+                ref var archetype = ref archetypes[archetypeCount++];
+                archetype = new Archetype(archetypeI, field, ref ColumnStorage);
                 archetype.SetDebugManager(this);
                 archetype.RequireSize(ref ColumnStorage, 4);
-                archetypes.Add(archetype);
                 archetypesByTypes[field] = archetypeI;
                 lock (queries) {
                     var builder = new EntityContext.TypeInfoBuilder(Context, archetype.ArchetypeListeners);
@@ -266,8 +267,8 @@ namespace Weesals.ECS {
                 Manager.EntityStorage.GetEntityDataRef(entity) = newData;
                 if (newData.Row >= 0) {
                     Manager.ColumnStorage.CopyRowTo(
-                        Manager.archetypes[From.ArchetypeId], From.Row,
-                        Manager.archetypes[newData.ArchetypeId], newData.Row,
+                        ref Manager.archetypes[From.ArchetypeId], From.Row,
+                        ref Manager.archetypes[newData.ArchetypeId], newData.Row,
                         Manager
                     );
                 }
@@ -280,9 +281,9 @@ namespace Weesals.ECS {
                 CopyFrom(other.TypeId, item.Array, item.Index);
             }
             public void CopyFrom(TypeId typeId, Array data, int row) {
-                var archetype = Manager.GetArchetype(To.ArchetypeId);
+                ref var archetype = ref Manager.GetArchetype(To.ArchetypeId);
                 var columnId = archetype.GetColumnId(typeId, Manager.Context);
-                Manager.ColumnStorage.CopyValue(archetype, columnId, To.Row, data, row);
+                Manager.ColumnStorage.CopyValue(ref archetype, columnId, To.Row, data, row);
                 archetype.NotifyMutation(ref Manager.ColumnStorage, columnId, To.Row);
             }
             public EntityStorage.EntityData Commit() {
@@ -319,10 +320,10 @@ namespace Weesals.ECS {
             }
         }
         private void RemoveRow(EntityAddress entityData) {
-            var archetype = archetypes[entityData.ArchetypeId];
+            ref var archetype = ref archetypes[entityData.ArchetypeId];
             archetype.ClearSparseRow(ref ColumnStorage, entityData.Row);
             if (archetype.MaxItem == entityData.Row) {
-                ColumnStorage.ReleaseRow(archetype, entityData.Row);
+                ColumnStorage.ReleaseRow(ref archetype, entityData.Row);
             } else {
                 MoveEntity(archetype.GetEntities(ref ColumnStorage)[archetype.MaxItem], new EntityAddress(archetype.Id, entityData.Row));
             }
@@ -334,11 +335,11 @@ namespace Weesals.ECS {
         public Entity GetEntity(EntityAddress addr) {
             return GetArchetype(addr.ArchetypeId).GetEntities(ref ColumnStorage)[addr.Row];
         }
-        public Archetype GetArchetype(Entity entity) {
-            return archetypes[RequireEntityAddress(entity).ArchetypeId];
+        public ref Archetype GetArchetype(Entity entity) {
+            return ref archetypes[RequireEntityAddress(entity).ArchetypeId];
         }
-        public Archetype GetArchetype(ArchetypeId archId) {
-            return archetypes[archId];
+        public ref Archetype GetArchetype(ArchetypeId archId) {
+            return ref archetypes[archId];
         }
         public Query GetQuery(QueryId query) {
             return queries[query];
@@ -349,7 +350,7 @@ namespace Weesals.ECS {
             listener.QueryId = query;
             archetypeListeners.Add(listener);
             foreach (var archI in GetArchetypes(query)) {
-                var archetype = archetypes[archI];
+                ref var archetype = ref archetypes[archI];
                 var builder = new EntityContext.TypeInfoBuilder(Context, archetype.ArchetypeListeners);
                 builder.AddComponent(new TypeId(listenerId));
                 archetype.ArchetypeListeners = builder.Build();
@@ -384,7 +385,7 @@ namespace Weesals.ECS {
             // Entity must appear first (or not at all)
             if (sysCache.ComponentIds[0] == -1) columnIs[beginI++] = 0;
             foreach(var match in GetArchetypes(sysCache.QueryIndex)) {
-                var archetype = archetypes[match.Index];
+                ref var archetype = ref archetypes[match.Index];
                 if (archetype.IsEmpty) continue;
                 for (int i = beginI; i < columnIs.Length; i++)
                     columnIs[i] = archetype.GetColumnId(sysCache.ComponentIds[i]);
@@ -410,7 +411,7 @@ namespace Weesals.ECS {
             public void Dispose() { }
             public void Reset() { Archetype = -1; Entity = -1; }
             public bool MoveNext() {
-                while (Archetype < Manager.archetypes.Count) {
+                while (Archetype < Manager.archetypeCount) {
                     if (++Entity < Manager.archetypes[Archetype].EntityCount) return true;
                     ++Archetype;
                     Entity = -1;
@@ -426,15 +427,16 @@ namespace Weesals.ECS {
         // Iterate all components of an entity
         public struct EntityComponentEnumerator : IEnumerator<ComponentRef>, IEnumerable<ComponentRef> {
             public readonly EntityManager Manager;
-            public readonly Archetype Archetype;
+            public readonly ArchetypeId ArchetypeId;
             public readonly EntityContext Context => Manager.Context;
             public readonly int Row;
             public TypeId TypeId;
-            public ComponentRef Current => new ComponentRef(Manager, Archetype, Row, TypeId);
+            public ref Archetype Archetype => ref Manager.GetArchetype(ArchetypeId);
+            public ComponentRef Current => new ComponentRef(Manager, ArchetypeId, Row, TypeId);
             object IEnumerator.Current => Current;
-            public EntityComponentEnumerator(EntityManager manager, Archetype archetype, int row) {
+            public EntityComponentEnumerator(EntityManager manager, ArchetypeId archetypeId, int row) {
                 Manager = manager;
-                Archetype = archetype;
+                ArchetypeId = archetypeId;
                 Row = row;
                 TypeId = TypeId.Invalid;
             }
@@ -469,7 +471,7 @@ namespace Weesals.ECS {
         public EntityComponentEnumerator GetEntityComponents(Entity entity) {
             var entityData = EntityStorage.GetEntityDataRef(entity);
             if (entityData.Version != entity.Version) return default;
-            return new EntityComponentEnumerator(this, archetypes[entityData.ArchetypeId], entityData.Row);
+            return new EntityComponentEnumerator(this, entityData.ArchetypeId, entityData.Row);
         }
 
         // Iterate all archetypes with all of the specified types
@@ -487,7 +489,7 @@ namespace Weesals.ECS {
             public void Reset() { Current = new ArchetypeId(-1); }
             public bool MoveNext() {
                 Current = new ArchetypeId(Current + 1);
-                for (; Current < Manager.archetypes.Count; Current = new ArchetypeId(Current + 1)) {
+                for (; Current < Manager.archetypeCount; Current = new ArchetypeId(Current + 1)) {
                     var archetype = Manager.archetypes[Current];
                     if (archetype.TypeMask.ContainsAll(WithTypes)) return true;
                 }
@@ -515,7 +517,7 @@ namespace Weesals.ECS {
             public void Reset() { Current = new ArchetypeId(-1); }
             public bool MoveNext() {
                 Current = new ArchetypeId(Current + 1);
-                for (; Current < Manager.archetypes.Count; Current = new ArchetypeId(Current + 1)) {
+                for (; Current < Manager.archetypeCount; Current = new ArchetypeId(Current + 1)) {
                     var archetype = Manager.archetypes[Current];
                     if (!archetype.TypeMask.ContainsAll(WithTypes)) continue;
                     if (archetype.TypeMask.ContainsAny(WithoutTypes)) continue;
@@ -562,7 +564,7 @@ namespace Weesals.ECS {
             IEnumerator IEnumerable.GetEnumerator() => this;
 
             public ComponentAccessor CreateAccessor() {
-                return new(Manager, CurrentArchetype);
+                return new(Manager, Current);
             }
         }
         public ArchetypeQueryEnumerator GetArchetypes(QueryId query) {
