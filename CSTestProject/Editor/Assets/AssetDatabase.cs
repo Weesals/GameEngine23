@@ -139,7 +139,8 @@ namespace Weesals.Editor.Assets {
             if (texture.IsValid) {
                 if (texture.Format != format) {
                     bool isMul4 = (texture.Size.X & 3) == 0 && (texture.Size.Y & 3) == 0;
-                    if (isMul4 && format >= BufferFormat.FORMAT_BC4_TYPELESS) {
+                    if (isMul4 && format >= BufferFormat.FORMAT_BC1_TYPELESS) {
+                        texture.GenerateMips();
                         texture.CompressTexture(format);
                     }
                 }

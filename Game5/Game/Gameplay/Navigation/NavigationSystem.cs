@@ -182,7 +182,7 @@ namespace Game5.Game {
             var heightMap = EntityMapSystem.LandscapeData.GetHeightMap();
             var waterMap = EntityMapSystem.LandscapeData.GetWaterMap();
             var disableMovements = this.disableMovements;
-            EntityCommandBuffer cmdBuffer = new(Stage);
+            EntityCommandBuffer cmdBuffer = Stage.SharedCommandBuffer;
             foreach (var accessor in World.QueryAll<ECMobile, ECActionMove, ECTransform>()) {
                 Entity entity = accessor;
                 ECMobile mobile = accessor;

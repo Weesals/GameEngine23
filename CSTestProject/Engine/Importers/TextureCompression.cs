@@ -175,7 +175,7 @@ namespace Weesals.Engine {
             fixed (byte* arrData = tempArray) {
                 for (int s = 0; s < other.ArrayCount; s++) {
                     for (int m = 0; m < other.MipCount; m++) {
-                        int useMip = Math.Min(m, other.MipCount - 3);
+                        int useMip = Math.Max(0, Math.Min(m, other.MipCount - 3));
                         var mipRes = MipGenerator.GetMipResolution(otherSize, otherFormat, useMip);
                         var srcData = other.GetTextureData(useMip, s);
                         srcData.Length /= otherSize.Z;

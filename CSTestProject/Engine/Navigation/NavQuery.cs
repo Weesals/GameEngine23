@@ -46,8 +46,8 @@ namespace Navigation {
             ReadOnly = navMesh.GetReadOnly();
             NavAdjacency = navMesh.GetAdjacency();
 
-            queue = new(64);
-            next = new(1024);
+            if (!queue.IsCreated) queue = new(64);
+            if (next == null) next = new(512);
         }
 
         public bool ComputePath(Int2 from, Int2 to, byte navmask, ref PooledList<TriangleEdge> portals) {

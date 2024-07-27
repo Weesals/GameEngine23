@@ -258,7 +258,7 @@ namespace Weesals.Engine.Jobs {
     public class JobScheduler {
 
         public const int ThreadCount = -1;
-        public const bool EnableThreading = true;
+        public const bool EnableThreading = false;
         public const ushort BatchBegin_MainThread = ushort.MaxValue;
         public const ushort ContextCount_HasReturn = 0x8000;
 

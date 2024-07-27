@@ -193,11 +193,14 @@ namespace Game5.Game {
 
         public void PreRender() {
             using var updateMarker = ProfileMarker_PreRender.Auto();
+
             Play.PreRender();
-            var Camera = Play.Camera;
-            if (scenePasses.SetViewProjection(Camera.GetViewMatrix(), Camera.GetProjectionMatrix())) {
+
+            var camera = Play.Camera;
+            if (scenePasses.SetViewProjection(camera.GetViewMatrix(), camera.GetProjectionMatrix())) {
                 RenderRevision++;
             }
+
             var activeArea = Play.LandscapeRenderer.GetVisibleBounds(scenePasses.Frustum);
             activeArea = BoundingBox.Union(activeArea, Play.Scene.GetActiveBounds());
             if (activeArea.Extents.X <= 0f) {
@@ -207,9 +210,12 @@ namespace Game5.Game {
                 RenderRevision++;
             }
             if (Play.DrawVisibilityVolume) shadowPass.DrawVolume();
-            foreach (var pass in scenePasses.ScenePasses) {
+
+            for (int i = 0; i < scenePasses.ScenePasses.Count; i++) {
+                var pass = scenePasses.ScenePasses[i];
                 if (pass.GetHasSceneChanges()) ++RenderRevision;
             }
+
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics, float dt) {

@@ -109,7 +109,7 @@ namespace Weesals.Engine {
             DefaultMaterial = material;
         }
 
-        public virtual void GetInputOutput(ref IOContext context) {
+        public virtual void GetInputOutput(scoped ref IOContext context) {
             foreach (var input in Inputs) context.AddInput(input);
             foreach (var output in Outputs) context.AddOutput(output);
         }

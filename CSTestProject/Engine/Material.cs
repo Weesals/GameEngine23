@@ -364,7 +364,7 @@ namespace Weesals.Engine {
         }
         public ComputedParameterBase? GetComputedByIndex(int index) {
             if (index < 0) return default;
-            return ComputedParameters.ElementAt(index).Value;
+            return ComputedParameters.Values[index];
 	    }
 
         // Add a parent material that this material will inherit

@@ -878,7 +878,7 @@ namespace Weesals.UI {
         private RectF ComputeElementBounds(int elementId) {
             var verts = mBuilder.MapVertices(elementId);
             var positions = verts.GetPositions2D();
-            positions.AssetRequireReader();
+            positions.AssertRequireReader();
             Vector2 boundsMin = positions[0];
             Vector2 boundsMax = boundsMin;
             for (int i = 1; i < positions.mCount; ++i) {

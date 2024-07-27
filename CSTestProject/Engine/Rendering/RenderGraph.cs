@@ -194,6 +194,7 @@ namespace Weesals.Engine {
             for (int i = 0; i < newInputs.Length; ++i) selfInputs[i].Input = newInputs[i];
             for (int i = 0; i < newOutputs.Length; ++i) selfOutputs[i].Output = newOutputs[i];
             passes[passId] = selfPassData;
+            iocontext.Dispose();
         }
         [Conditional("DEBUG")]
         private void ValidateInputOutput(Span<RenderPass.PassInput> newInputs, Span<RenderPass.PassOutput> newOutputs) {
@@ -234,11 +235,11 @@ namespace Weesals.Engine {
                 if (selfDep.OtherPassId == -1 && selfDep.Input.DefaultTexture != DefaultTexture.None) {
                     continue;
                 }
-                Debug.Assert(selfDep.OtherPassId != -1, "Could not find pass for input buffer");
+                if (selfDep.OtherPassId == -1) Debug.Fail("Could not find pass for input buffer");
                 if (selfDep.OtherOutput == -1) {
                     selfDep.OtherOutput = passes[selfDep.OtherPassId].RenderPass.FindOutputI(selfInput.Name);
                 }
-                Debug.Assert(selfDep.OtherOutput >= -1, "Could not find dependency for " + selfPass);
+                if (selfDep.OtherOutput == -1) Debug.Fail("Could not find dependency for " + selfPass);
             }
         }
         public struct Evaluator : IDisposable {

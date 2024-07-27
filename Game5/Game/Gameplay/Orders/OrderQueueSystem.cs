@@ -118,6 +118,7 @@ namespace Game5.Game {
                     break;
                 }
             }
+            trackStates.Dispose();
         }
 
         public void NotifyDestroyedEntities(HashSet<Entity> entities) {

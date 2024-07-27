@@ -526,9 +526,9 @@ namespace Weesals.ECS {
         public struct Builder {
             public readonly EntityManager Manager;
             public readonly EntityContext Context => Manager.Context;
-            [ThreadStatic] public BitField.Generator WithTypes;
-            [ThreadStatic] public BitField.Generator WithoutTypes;
-            [ThreadStatic] public BitField.Generator WithSparseTypes;
+            [ThreadStatic] public static BitField.Generator WithTypes;
+            [ThreadStatic] public static BitField.Generator WithoutTypes;
+            [ThreadStatic] public static BitField.Generator WithSparseTypes;
             public Builder(EntityManager manager) {
                 Manager = manager;
                 if (WithTypes == null) {

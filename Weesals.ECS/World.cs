@@ -27,6 +27,7 @@ namespace Weesals.ECS {
         // of existing instances
         private Dictionary<BitField, ArchetypeId> archetypesByTypes = new(64);
         private Dictionary<Query.Key, QueryId> queriesByTypes = new(64);
+        public EntityCommandBuffer SharedCommandBuffer;
 
         public EntityManager(EntityContext context) {
             Context = context;
@@ -43,6 +44,7 @@ namespace Weesals.ECS {
             archetypesByTypes.Add(default, new ArchetypeId(0));
             // Allocate the zero entity (reserve the index as its the "null" handle)
             EntityStorage.CreateEntity("None");
+            SharedCommandBuffer = new(this);
         }
 
         public Entity CreateEntity(string name = "unknown") {

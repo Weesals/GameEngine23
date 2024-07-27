@@ -71,7 +71,7 @@ namespace Game5.Game {
             var strikeEvents = this.strikeEvents;
             var mobileLookup = GetComponentLookup<ECMobile>(true);
             strikeEvents.Clear();
-            EntityCommandBuffer cmdBuffer = new(Stage);
+            EntityCommandBuffer cmdBuffer = Stage.SharedCommandBuffer;
             foreach (var accessor in World.QueryAll<ECActionInteractMelee>()) {
                 Entity entity = accessor;
                 ECActionInteractMelee interact = accessor;

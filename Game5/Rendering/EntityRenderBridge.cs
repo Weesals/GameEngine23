@@ -19,6 +19,7 @@ namespace Weesals.Rendering {
     [SparseComponent, NoCloneComponent]
     public struct SceneRenderable {
         public VisualInstance Instance;
+        public AnimationPlayback AnimationPlayback;
 
         //public override string ToString() { return SceneIndex.Select(i => i.ToString()).Aggregate((i1, i2) => $"{i1}, {i2}").ToString(); }
         public override string ToString() { return $"{Instance}"; }
@@ -475,7 +476,8 @@ namespace Weesals.Rendering {
             Span<Matrix4x4> bones = stackalloc Matrix4x4[32];
             var animation = eanim.Animation;
             var time = UnityEngine.Time.time % (float)animation.Duration.TotalSeconds;
-            var animPlayback = new AnimationPlayback(skinnedMesh);
+            if (sceneProxy.AnimationPlayback == null) sceneProxy.AnimationPlayback = new(skinnedMesh);
+            var animPlayback = sceneProxy.AnimationPlayback;
             animPlayback.SetAnimation(animation.GetAs<Animation>());
             animPlayback.UpdateClip(time);
             var boneTransforms = animPlayback.ApplyBindPose(skinnedMesh);

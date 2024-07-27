@@ -543,9 +543,8 @@ namespace Weesals.Engine {
             }
         }
         [Conditional("DEBUG")]
-        public void AssetRequireReader() {
-            Debug.Assert(ReadWriter.mReader != null,
-                "Require a reader for " + typeof(T).Name);
+        public void AssertRequireReader() {
+            if (ReadWriter.mReader == null) Debug.Fail("Require a reader for " + typeof(T).Name);
         }
         public static ReadWriterPair FindConverterFor<View>(BufferFormat fmt) where View : unmanaged {
             if (fmt == BufferFormat.FORMAT_UNKNOWN) return Initialize<View, View>();
