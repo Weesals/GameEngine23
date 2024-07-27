@@ -291,7 +291,7 @@ namespace Navigation {
                 return adjacency.TryGetValue(edge, out adjacent);
             }
 
-            private void ObserveNearest(in ReadOnly ro, TriangleId triI, byte navMask, Int2 p, ref int bestDst2, ref ushort bestTri, PooledList<ushort> stack) {
+            private void ObserveNearest(in ReadOnly ro, TriangleId triI, byte navMask, Int2 p, ref int bestDst2, ref ushort bestTri, ref PooledList<ushort> stack) {
                 if ((ro.triangles[triI].Type.TypeMask & navMask) == 0) {
                     if (!stack.Contains(triI)) stack.Add(triI);
                     return;
@@ -317,14 +317,14 @@ namespace Navigation {
                     if (triI == InvalidTriId) return InvalidTriId;
                     var stepper = new TriangleDirectionWalker();
                     stepper.Initialise(triI, p);
-                    ObserveNearest(ro, stepper.TriI, navMask, p, ref minDst2, ref bestTri, stack);
+                    ObserveNearest(ro, stepper.TriI, navMask, p, ref minDst2, ref bestTri, ref stack.AsMutable());
                     if (stepper.Step3Way(ro, this)) {
                         for (int i = 0; i < 100; i++) {
-                            ObserveNearest(ro, stepper.TriI, navMask, p, ref minDst2, ref bestTri, stack);
+                            ObserveNearest(ro, stepper.TriI, navMask, p, ref minDst2, ref bestTri, ref stack.AsMutable());
                             if (!stepper.Step2Way(ro, this)) break;
                         }
                     }
-                    ObserveNearest(ro, stepper.TriI, navMask, p, ref minDst2, ref bestTri, stack);
+                    ObserveNearest(ro, stepper.TriI, navMask, p, ref minDst2, ref bestTri, ref stack.AsMutable());
                     if (bestTri == stepper.TriI) return bestTri;
                     stack.Add(stepper.TriI);
                 }
@@ -334,7 +334,7 @@ namespace Navigation {
                         var edge = new TriangleEdge(triI, (ushort)e);
                         var oedge = GetAdjacentEdge(edge, ro);
                         if (oedge.TriangleId == InvalidTriId) continue;
-                        ObserveNearest(ro, oedge.TriangleId, navMask, p, ref minDst2, ref bestTri, stack);
+                        ObserveNearest(ro, oedge.TriangleId, navMask, p, ref minDst2, ref bestTri, ref stack.AsMutable());
                     }
                     if (stack.Count > 20) break;
                 }

@@ -58,7 +58,9 @@ namespace Navigation {
             from = Int2.Max(from, 0);
             to = Int2.Max(to, 0);
             working.FromTri = NavAdjacency.FindNearestPathable(ReadOnly, working.NavMask, from);
-            if (working.FromTri == NavMesh.InvalidTriId) return false;
+            if (working.FromTri == NavMesh.InvalidTriId) {
+                return false;
+            }
             //working.ToTri = NavAdjacency.GetTriangleAt(NavMesh, Coordinate.FromInt2(to));
             /*if (!IsPathable(working.FromTri)) {
                 var nearest = FindNearestPathableTriangle(working.FromTri, from);

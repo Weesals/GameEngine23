@@ -216,6 +216,7 @@ namespace Game5.Game {
                         if (!valid) {
                             if (cache.Points.Length != 0)
                                 pathCachePoints.Reallocate(ref cache.Points, 0);
+                            cache.CanReachTarget = false;
                             cache.ExpiryTime = (int)time.TimeCurrentMS + 10000;
                         } else {
                             if (cache.Points.Length != 2)
@@ -249,7 +250,9 @@ namespace Game5.Game {
                         }
                         pathCache[entity] = cache;
                     }
-                    if (cache.Points.Length <= 0) return;
+                    if (cache.Points.Length <= 0) {
+                        return;
+                    }
                     if (!cache.CanReachTarget) {
                         stopPos = cache.StopPos;
                     }
