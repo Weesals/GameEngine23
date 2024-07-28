@@ -72,13 +72,8 @@ namespace Game5.Game {
             NavMeshBaker.Allocate();
             var query = World.BeginQuery().With<ECObstruction>().Build();
             World.Manager.AddListener(query, new ArchetypeListener() {
-                OnCreate = (entityAddr) => {
-                    RegisterEntity(entityAddr, true);
-                },
-                OnMove = (move) => { },
-                OnDelete = (entityAddr) => {
-                    RegisterEntity(entityAddr, false);
-                },
+                OnCreate = RegisterEntity,
+                OnDelete = UnregisterEntity,
             });
             mutations = new ComponentMutateListener(World.Manager, query, World.Context.RequireComponentTypeId<ECTransform>());
         }
@@ -317,6 +312,10 @@ namespace Game5.Game {
                 );
             }
             foreach (var item in pathCache) {
+                if (!World.IsValid(item.Key)) {
+                    Debug.Fail("Bad entity");
+                    continue;
+                }
                 var stopPos = item.Value.StopPos;
                 var tform = World.GetComponent<ECTransform>(item.Key);
                 if (item.Value.Points.Length > 0) {
@@ -391,20 +390,21 @@ namespace Game5.Game {
 
         }
 
-        private void RegisterEntity(EntityAddress entityAddr, bool enable) {
+        private void RegisterEntity(EntityAddress entityAddr) {
             if (World.Manager.HasComponent<ECMobile>(entityAddr)) return;
-            ObstructionCache obstruction;
             var entity = World.Manager.GetEntity(entityAddr);
-            if (enable) {
-                var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
-                var proto = ProtoSystem.GetPrototypeData(entityAddr);
-                obstruction = new ObstructionCache() { Transform = tform, Footprint = proto.Footprint, };
-                obstructionCache.Add(entity, obstruction);
-            } else {
-                obstruction = obstructionCache[entity];
-                obstructionCache.Remove(entity);
-            }
-            RegisterObstruction(entity, obstruction, enable);
+            var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
+            var proto = ProtoSystem.GetPrototypeData(entityAddr);
+            var obstruction = new ObstructionCache() { Transform = tform, Footprint = proto.Footprint, };
+            obstructionCache.Add(entity, obstruction);
+            RegisterObstruction(entity, obstruction, true);
+        }
+        private void UnregisterEntity(EntityAddress entityAddr) {
+            if (World.Manager.HasComponent<ECMobile>(entityAddr)) return;
+            var entity = World.Manager.GetEntity(entityAddr);
+            var obstruction = obstructionCache[entity];
+            obstructionCache.Remove(entity);
+            RegisterObstruction(entity, obstruction, false);
         }
         private void UpdateEntity(EntityAddress entityAddr) {
             var entity = World.Manager.GetEntity(entityAddr);

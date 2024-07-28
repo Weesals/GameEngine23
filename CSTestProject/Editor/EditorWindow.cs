@@ -18,9 +18,13 @@ using Weesals.UI;
 public static class EntityProxyExt {
     public static Entity GetEntity(this ItemReference target) {
         if (target.Owner is IItemRedirect redirect) target = redirect.GetOwner(target.Data);
+        if (target.Owner is World world) {
+            var entity = UnpackEntity(target.Data);
+            entity.SetDebugManager(world.Manager);
+            return entity;
+        }
         return
             //target.Owner is EntityProxy ? EntityProxy.UnpackEntity(target.Data) :
-            target.Owner is World ? UnpackEntity(target.Data) :
             default;
     }
     public static ItemReference CreateItemReference(this EntityManager manager, Entity entity) {

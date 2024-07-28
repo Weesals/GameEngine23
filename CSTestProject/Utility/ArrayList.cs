@@ -161,6 +161,10 @@ namespace Weesals.Utility {
             if (index < Count) Array.Copy(Data, index + count, Data, index, Count - index);
         }
         public void RemoveAt(int index) { Array.Copy(Data, index + 1, Data, index, Count - index - 1); --Count; }
+        public void Remove(T value) {
+            var index = IndexOf(value);
+            if (index >= 0) RemoveAt(index);
+        }
         private void Reserve(int capacity) {
             if (Data != null && Data.Length >= capacity) return;
             var oldData = Data;
@@ -181,6 +185,13 @@ namespace Weesals.Utility {
             values.CopyTo(Data.AsSpan(Count, values.Length));
             Count += values.Length;
             return new RangeInt(Count - values.Length, values.Length);
+        }
+        public RangeInt AddRange<C>(C values) where C : IReadOnlyCollection<T> {
+            var valueCount = values.Count;
+            if (valueCount == 0) return new RangeInt(Count, 0);
+            Reserve(Count + valueCount);
+            foreach (var item in values) Data[Count++] = item;
+            return new RangeInt(Count - valueCount, valueCount);
         }
         public int IndexOf(T value) { return Array.IndexOf(Data, value, 0, Count); }
         public Span<T> AsSpan() { return Data.AsSpan(0, Count); }

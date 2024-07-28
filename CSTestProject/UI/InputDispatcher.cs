@@ -58,6 +58,11 @@ namespace Weesals.UI {
                 if (other.Score.IsSatisfied) SatisfiedCount += other.SatisfiedCount;
             }
         }
+
+        public override void Uninitialise(CanvasBinding binding) {
+            base.Uninitialise(binding);
+        }
+
         // Find the best interaction for a specific performance
         private ActivationState GetBestInteraction(PointerEvent events) {
             ActivationState state = default;
@@ -116,6 +121,10 @@ namespace Weesals.UI {
         }
         public PointerEvent? IntlProcessPointer(PointerEvent events) {
             if (!deferredPointers.TryGetValue(events, out var deferred)) return null;
+            if (Canvas == null) {
+                deferred.System.SetTargetStates(deferred, default, PointerEvent.States.None);
+                return null;
+            }
             var update = deferred.StepPre(events);
             // Might need to tidy up this code
             bool deferredStepped = false;

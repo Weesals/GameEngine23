@@ -15,6 +15,13 @@ namespace Game5.Game {
         , LifeSystem.IDestroyListener
         {
 
+        [SparseComponent]
+        [NoCloneComponent]
+        public struct EntityMapRegister {
+            public uint ChunkId;
+            public override string ToString() => ChunkId.ToString();
+        }
+
         public const int Separation = 8000;
 
         public interface IMovedEntitiesListener {
@@ -34,9 +41,10 @@ namespace Game5.Game {
                 map.Dispose();
             }
 
-            public void InsertEntity(Int2 pos, Entity entity) {
+            public uint InsertEntity(Int2 pos, Entity entity) {
                 uint chunkId = SimToChunkId(pos);
                 map.Add(chunkId, entity);
+                return chunkId;
             }
             public void RemoveEntity(Int2 pos, Entity entity) {
                 uint chunkId = SimToChunkId(pos);
@@ -48,8 +56,12 @@ namespace Game5.Game {
                 InsertEntity(npos, entity);
             }
 
-            public void RemoveEntityRaw(uint id, Entity entity) {
-                map.Remove(id, entity);
+            public void InsertEntityRaw(uint id, Entity entity) {
+                Debug.Assert(!map.Contains(id, entity));
+                map.Add(id, entity);
+            }
+            public bool RemoveEntityRaw(uint id, Entity entity) {
+                return map.Remove(id, entity);
             }
 
             public MultiHashMap<uint, Entity>.Enumerator GetBundle(Int2 chunk) {
@@ -157,6 +169,8 @@ namespace Game5.Game {
             return new MoveContract(new PooledHashMap<Entity, uint>(32));
         }
 
+        private ComponentMutateListener mutations;
+
         protected override void OnCreate() {
             base.OnCreate();
             LifeSystem = World.GetOrCreateSystem<LifeSystem>();
@@ -164,7 +178,15 @@ namespace Game5.Game {
             movedEntities = new(256);
             LifeSystem.RegisterCreateListener(this, true);
             LifeSystem.RegisterDestroyListener(this, true);
+
+            var query = World.BeginQuery().With<ECTransform>().Build();
+            World.Manager.AddListener(query, new ArchetypeListener() {
+                OnCreate = RegisterEntity,
+                OnDelete = UnregisterEntity,
+            });
+            mutations = new ComponentMutateListener(World.Manager, query, World.Context.RequireComponentTypeId<ECTransform>());
         }
+
         protected override void OnDestroy() {
             //movedEntities.Dispose();
             LifeSystem.RegisterDestroyListener(this, false);
@@ -173,16 +195,41 @@ namespace Game5.Game {
             base.OnDestroy();
         }
         protected override void OnUpdate() {
+            foreach (var transform in mutations) {
+                var mapRegister = World.Manager.GetComponent<EntityMapRegister>(transform.EntityAddress);
+                var newChunkId = SimToChunkId(transform.GetRO<ECTransform>().Position);
+                if (newChunkId != mapRegister.ChunkId) {
+                    Trace.Assert(AllEntities.RemoveEntityRaw(mapRegister.ChunkId, transform.Entity));
+                    mapRegister.ChunkId = newChunkId;
+                    World.Manager.GetComponentRef<EntityMapRegister>(transform.EntityAddress) = mapRegister;
+                    AllEntities.InsertEntityRaw(mapRegister.ChunkId, transform.Entity);
+                }
+            }
             if (movedEntities.Count > 0) {
                 foreach (var listener in movedListeners) listener.NotifyMovedEntities(movedEntities);
                 movedEntities.Clear();
             }
             ValidateEntities();
         }
+        private void RegisterEntity(EntityAddress entityAddr) {
+            var entity = World.Manager.GetEntity(entityAddr);
+            var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
+            var chunkId = AllEntities.InsertEntity(tform.Position, entity);
+            World.Manager.AddComponent<EntityMapRegister>(entity) = new() { ChunkId = chunkId };
+        }
+        private void UnregisterEntity(EntityAddress entityAddr) {
+            var entity = World.Manager.GetEntity(entityAddr);
+            var chunkId = World.Manager.GetComponent<EntityMapRegister>(entityAddr).ChunkId;
+            AllEntities.RemoveEntityRaw(chunkId, entity);
+        }
+
         private bool ValidateEntities() {
             foreach (var kv in AllEntities) {
                 var cell = kv.Key;
                 var entity = kv.Value;
+                var mapRegister = World.Manager.GetComponent<EntityMapRegister>(entity);
+                Debug.Assert(mapRegister.ChunkId == cell,
+                    "Cell mismatch");
                 if (!World.IsValid(entity)) {
                     Debug.WriteLine("Entity was not removed!");
                     return false;
@@ -196,11 +243,13 @@ namespace Game5.Game {
             }
             return true;
         }
+
         public void SetLandscape(LandscapeData landscapeData) {
             LandscapeData = landscapeData;
         }
 
         public void CommitContract(MoveContract contract) {
+            return;
             var tformLookup = GetComponentLookup<ECTransform>(true);
             for (var it = contract.GetEnumerator(); it.MoveNext();) {
                 var kv = it.Current;

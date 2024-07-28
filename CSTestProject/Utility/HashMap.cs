@@ -8,6 +8,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine;
 using Index = System.UInt32;
 
 namespace Weesals.Utility {
@@ -190,6 +191,9 @@ namespace Weesals.Utility {
             set.Insert(hash, key);
             ++count;
             return true;
+        }
+        public void AddRange(IReadOnlyCollection<TKey> values) {
+            foreach (var item in values) AddUnique(item);
         }
         // If the item exists, remove it and return false
         // (used for tracking edges in navmesh adjacency)
@@ -516,13 +520,13 @@ namespace Weesals.Utility {
             Debug.Assert(!ContainsKey(key));
             return c > 0;
         }
-        public bool Remove(TKey key, TValue value) {
+        public bool Remove<VValue>(TKey key, VValue value) where VValue : TValue, IEquatable<TValue> {
             var parent = map.map.CreateIndex(key.GetHashCode());
             var index = map.map.Set.Remap[parent];
             int c = 0;
             while (index != InvalidIndex) {
                 if (key.Equals(map.map.Set.Keys[index])
-                    && EqualityComparer<TValue>.Default.Equals(map.map.Values[index], value)) {
+                    && value.Equals(map.map.Values[index])) {
                     map.map.Set.RemoveChild(parent, index);
                     index = parent;
                     map.count--;

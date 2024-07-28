@@ -353,5 +353,58 @@ namespace Game5.Game {
             return ItemReference.None;
         }
 
+        public void GetEntitiesInScreenRect(RectF rect, ref PooledHashSet<ItemReference> entities) {
+            const int MaxEntitySize = 4000;
+            var world = World;
+            // Adjust the projection matrix to get a tight frustum around the rect
+            var proj = Camera.GetProjectionMatrix();
+            var cameraRot = Camera.Orientation;
+            var size = playUI.Canvas.GetSize();
+            proj.M11 /= rect.Width / size.X;
+            proj.M22 /= rect.Height / size.Y;
+            proj.M31 -= 2f * ((rect.Centre.X - size.X / 2f) / (rect.Width));
+            proj.M32 += 2f * ((rect.Centre.Y - size.Y / 2f) / (rect.Height));
+            var frustum = new Frustum4(Camera.GetViewMatrix() * proj);
+            frustum.Normalize();
+            Vector3 rangeMin = new(float.MaxValue), rangeMax = new(float.MinValue);
+            Span<Vector3> points = stackalloc Vector3[4];
+            frustum.IntersectPlane(Vector3.UnitY, 0f, points);
+            for (int i = 0; i < 4; i++) {
+                rangeMin = Vector3.Min(rangeMin, points[i]);
+                rangeMax = Vector3.Max(rangeMax, points[i]);
+            }
+            frustum.IntersectPlane(Vector3.Transform(Vector3.UnitZ, cameraRot),
+                Vector3.Dot(Vector3.Transform(Vector3.UnitZ, cameraRot), Camera.Position) + Camera.NearPlane, points);
+            for (int i = 0; i < 4; i++) {
+                rangeMin = Vector3.Min(rangeMin, points[i]);
+                rangeMax = Vector3.Max(rangeMax, points[i]);
+            }
+            var cmin = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(rangeMin).XZ - MaxEntitySize);
+            var cmax = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(rangeMax).XZ + MaxEntitySize);
+            var entityMapSystem = World.GetOrCreateSystem<EntityMapSystem>();
+            int count = 0;
+            for (int y = cmin.Y; y <= cmax.Y; y++) {
+                for (int x = cmin.X; x <= cmax.X; x++) {
+                    var chunkEntities = entityMapSystem.AllEntities.GetBundle(new Int2(x, y));
+                    foreach (var entity in chunkEntities) {
+                        if (!World.IsValid(entity)) continue;
+                        var protoData = World.GetComponent<PrototypeData>(entity);
+                        var footprint = protoData.Footprint;
+                        var entitySize = new Vector3(
+                            (float)footprint.Size.X * SimulationWorld.WorldScale * 0.5f,
+                            (float)footprint.Height / SimulationWorld.AltitudeGranularity,
+                            (float)footprint.Size.Y * SimulationWorld.WorldScale * 0.5f
+                        );
+                        var tform = World.GetComponent<ECTransform>(entity);
+                        var pos = SimulationWorld.SimulationToWorld(tform.GetPosition3());
+                        pos.Y += entitySize.Y * 0.5f;
+                        ++count;
+                        if (frustum.GetIsVisible(pos, entitySize)) {
+                            entities.Add(Simulation.EntityProxy.MakeHandle(entity));
+                        }
+                    }
+                }
+            }
+        }
     }
 }

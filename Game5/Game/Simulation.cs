@@ -182,7 +182,10 @@ namespace Game5.Game {
 
             var prefabMarker = new ProfilerMarker("Creating Prefabs").Auto();
 
-            var archer = ProtoSystem.CreatePrototype("Archer")
+            var archer = ProtoSystem.CreatePrototype("Archer",
+                new PrototypeData() {
+                    Footprint = new EntityFootprint() { Size = 600, Height = 1800, Shape = EntityFootprint.Shapes.Capsule, },
+                })
                 .AddComponent<CModel>(new() { PrefabName = "Archer", })
                 .AddComponent<CAnimation>(new() {
                     Animation = runAnim.Animations[0],
@@ -196,7 +199,10 @@ namespace Game5.Game {
                 .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
                 .Build();
 
-            var chicken = ProtoSystem.CreatePrototype("Chicken")
+            var chicken = ProtoSystem.CreatePrototype("Chicken",
+                new PrototypeData() {
+                    Footprint = new EntityFootprint() { Size = 300, Height = 500, Shape = EntityFootprint.Shapes.Capsule, },
+                })
                 .AddComponent<CModel>(new() { PrefabName = "Chicken", })
                 .AddComponent<CAnimation>(new() {
                     Animation = chickenModel.Animations[3],
@@ -259,6 +265,7 @@ namespace Game5.Game {
                 World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 1000);
                 World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 1000);
                 World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 1000);
+                World.Manager.ColumnStorage.Validate?.Invoke();
                 World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(0000, 2000);
                 World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 2000);
                 World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 2000);

@@ -168,7 +168,10 @@ namespace Weesals.ECS {
 
             public void ApplyDeletion(Array items) {
                 Debug.Assert(PreviousOffset == NewOffset);
-                Array.Copy(items, Index + 1, items, Index, NewCount - Index);
+                Array.Copy(items, NewOffset + Index + 1, items, NewOffset + Index, NewCount - Index);
+#if DEBUG
+                Array.Copy(items, items.Length - 1, items, NewOffset + NewCount, 1);
+#endif
             }
             public void ApplyInsertion(Array items) {
                 if (PreviousOffset != NewOffset) {
@@ -177,10 +180,19 @@ namespace Weesals.ECS {
                         items, NewOffset, Index);
                 }
                 if (Index < NewCount - 1) {
+                    var moveCount = NewCount - 1 - Index;
                     Array.Copy(items, PreviousOffset + Index,
                         items, NewOffset + Index + 1,
-                        NewCount - 1 - Index);
+                        moveCount);
                 }
+#if DEBUG
+                for (int i = 0; i < NewCount - 1; i++) {
+                    int index = PreviousOffset + i;
+                    if (index >= NewOffset && index < NewOffset + NewCount && i != Index) continue;
+                    Array.Copy(items, items.Length - 1, items, index, 1);
+                }
+                Array.Copy(items, items.Length - 1, items, NewOffset + Index, 1);
+#endif
             }
         }
         public struct Page : SparsePages.IPage {
@@ -297,8 +309,8 @@ namespace Weesals.ECS {
             }
             return -1;
         }
-        public uint GetPageMask(Range pageRange, int index) {
-            var pageIndex = pageStorage.GetPageIndex(pageRange, IndexToPage(index));
+        public uint GetPageMask(Range pageRange, int pageId) {
+            var pageIndex = pageStorage.GetPageIndex(pageRange, pageId);
             if (pageIndex < 0) return 0;
             return pageStorage.GetPage(pageIndex).BitMask;
         }
@@ -310,6 +322,7 @@ namespace Weesals.ECS {
     }
 
     public struct ColumnStorage {
+        public Action Validate;
         public readonly EntityContext Context;
         public readonly SparsePages<SparseColumnStorage.Page> SparseStorage;
         public readonly RevisionStorage RevisionStorage;
@@ -416,27 +429,28 @@ namespace Weesals.ECS {
             if (dest.Id == src.Id) {
                 // Copying to self, special case
                 for (int i = 0; i < src.ColumnCount; i++) {
-                    ref var columnData = ref GetColumnRaw(src.GetColumn(ref this, i).TypeId, false);
-                    columnData.CopyValue(dstRow, srcRow);
+                    ref var column = ref src.GetColumn(ref this, i);
+                    ref var columnData = ref GetColumnRaw(column.TypeId, false);
+                    columnData.CopyValue(column.DataRange.Start + dstRow, column.DataRange.Start + srcRow);
                 }
-                CopyColumns(ref src, srcRow, ref dest, dstRow, src.SparseTypeMask, dest.SparseTypeMask, src.ColumnCount, dest.ColumnCount);
+                CopySparseColumns(ref src, srcRow, ref dest, dstRow, src.SparseTypeMask, dest.SparseTypeMask, src.ColumnCount, dest.ColumnCount);
             } else if (!src.IsNullArchetype) {
                 var entities = src.GetEntities(ref this);
                 entities[dstRow] = entities[srcRow];
-                CopyColumns(ref src, srcRow, ref dest, dstRow, src.TypeMask, dest.TypeMask, 1, 1);
+                CopyDenseColumns(ref src, srcRow, ref dest, dstRow, src.TypeMask, dest.TypeMask, 1, 1);
                 foreach (var typeIndex in BitField.Except(src.SparseTypeMask, dest.SparseTypeMask)) {
+                    if (!src.GetHasSparseComponent(ref this, TypeId.MakeSparse(typeIndex), srcRow)) continue;
                     dest.RequireSparseColumn(TypeId.MakeSparse(typeIndex), manager);
                 }
-                CopyColumns(ref src, srcRow, ref dest, dstRow, src.SparseTypeMask, dest.SparseTypeMask, src.ColumnCount, dest.ColumnCount);
+                CopySparseColumns(ref src, srcRow, ref dest, dstRow, src.SparseTypeMask, dest.SparseTypeMask, src.ColumnCount, dest.ColumnCount);
             }
             ++src.Revision;
         }
 
-        private void CopyColumns(scoped ref Archetype src, int srcRow, scoped ref Archetype dest, int dstRow, BitField srcTypes, BitField dstTypes, int srcColBegin, int dstColBegin) {
-            var it1 = srcTypes.GetEnumerator();
-            var it2 = dstTypes.GetEnumerator();
+        private void CopyDenseColumns(scoped ref Archetype src, int srcRow, scoped ref Archetype dest, int dstRow, BitField srcTypes, BitField dstTypes, int srcColBegin, int dstColBegin) {
+            var it1 = dstTypes.GetEnumerator();
+            var it2 = srcTypes.GetEnumerator();
             int i1 = -1, i2 = -1;
-            bool isSparse = srcColBegin >= src.ColumnCount;
             while (it1.MoveNext()) {
                 ++i1;
                 // Try to find the matching bit
@@ -446,17 +460,33 @@ namespace Weesals.ECS {
                 }
                 // If no matching bit was found
                 if (it2.Current != it1.Current) continue;
-                int denseSrcRow = srcRow, denseDstRow = dstRow;
-                // Otherwise copy the value
-                if (isSparse) {
-                    denseSrcRow = src.TryGetSparseIndex(ref this, srcColBegin + i1, srcRow);
-                    if (denseSrcRow < 0) {
-                        Debug.Assert(!dest.GetHasSparseComponent(ref this, dstColBegin + i2, dstRow),
-                            "Sparse component will leak! Dest already has component.");
-                        continue;
-                    }
-                    denseDstRow = dest.RequireSparseIndex(ref this, dstColBegin + i2, dstRow);
+                CopyValue(ref src, srcColBegin + i2, srcRow,
+                    ref dest, dstColBegin + i1, dstRow, dstRow);
+            }
+        }
+        private void CopySparseColumns(scoped ref Archetype src, int srcRow, scoped ref Archetype dest, int dstRow, BitField srcTypes, BitField dstTypes, int srcColBegin, int dstColBegin) {
+            Validate?.Invoke();
+            var it1 = srcTypes.GetEnumerator();
+            var it2 = dstTypes.GetEnumerator();
+            int i1 = -1, i2 = -1;
+            while (it1.MoveNext()) {
+                ++i1;
+                // Try to find the matching bit
+                while (it2.Current < it1.Current) {
+                    if (!it2.MoveNext()) return;
+                    ++i2;
                 }
+                // If no matching bit was found
+                if (it2.Current != it1.Current) continue;
+                // Otherwise copy the value
+                if (!src.GetHasSparseComponent(ref this, srcColBegin + i1, srcRow)) {
+                    Debug.Assert(!dest.GetHasSparseComponent(ref this, dstColBegin + i2, dstRow),
+                        "Sparse component will leak! Dest already has component.");
+                    continue;
+                }
+                var denseDstRow = dest.RequireSparseIndex(ref this, dstColBegin + i2, dstRow);
+                // This must happen AFTER the above because the index might shift
+                var denseSrcRow = src.TryGetSparseIndex(ref this, srcColBegin + i1, srcRow);
                 CopyValue(ref src, srcColBegin + i1, denseSrcRow,
                     ref dest, dstColBegin + i2, denseDstRow, dstRow);
             }
@@ -478,15 +508,18 @@ namespace Weesals.ECS {
             columnData.CopyValue(column.DataRange.Start + dstRow, srcData, srcRow);
             column.NotifyMutation(ref this, dstRow);
         }
-        public void ReleaseRow(scoped ref Archetype archetype, int oldRow) {
+        public void ClearRowModifiedFlags(scoped ref Archetype archetype, int row) {
             for (int i = 0; i < archetype.AllColumnCount; i++) {
                 ref var column = ref archetype.GetColumn(ref this, i);
-                RevisionStorage.ClearModified(ref column.RevisionData, oldRow);
+                RevisionStorage.ClearModified(ref column.RevisionData, row);
             }
+        }
+        public void ReleaseRow(scoped ref Archetype archetype, int row) {
             ++archetype.Revision;
             if (archetype.MaxItem < 0) { Debug.Assert(archetype.TypeMask.IsEmpty, "Only null archetype has invalid count."); return; }
-            Debug.Assert(archetype.MaxItem == oldRow, "Must release from end. Move entity to end first.");
+            Debug.Assert(archetype.MaxItem == row, "Must release from end. Move entity to end first.");
             --archetype.MaxItem;
+            Validate?.Invoke();
         }
     }
 

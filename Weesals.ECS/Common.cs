@@ -6,19 +6,41 @@ using System.Runtime.InteropServices;
 
 namespace Weesals.ECS {
     // Reference to an entity in the world
+    [DebuggerTypeProxy(typeof(Entity.DebugEntityView))]
     public struct Entity : IEquatable<Entity>, IComparable<Entity> {
+#if DEBUG
+        public EntityManager Manager;
+#endif
         public uint Index;
         public uint Version;
         public Entity(uint index, uint version) { Index = index; Version = version; }
         public readonly bool IsValid => Index > 0;
+        [Conditional("DEBUG")]
+        public void SetDebugManager(EntityManager manager) {
+#if DEBUG
+            Manager = manager;
+#endif
+        }
         public int CompareTo(Entity other) { return Index.CompareTo(other.Index); }
         public bool Equals(Entity other) { return Index == other.Index; }
         public override bool Equals(object? obj) { throw new NotImplementedException(); }
         public override int GetHashCode() { return (int)Index; }
-        public override string ToString() { return IsValid ? $"Entity #{Index}" : "None"; }
+        public override string ToString() {
+            var name = IsValid ? $"Entity #{Index}" : "None";
+#if DEBUG
+            if (Manager != null) name = $"{name}: {Manager.GetEntityMeta(this).Name}";
+#endif
+            return name;
+        }
         public static bool operator ==(Entity left, Entity right) { return left.Equals(right); }
         public static bool operator !=(Entity left, Entity right) { return !(left == right); }
         public static readonly Entity Null = new();
+
+        public struct DebugEntityView {
+            [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+            public EntityManager.DebugEntity View;
+            public DebugEntityView(Entity entity) { View = new(entity.Manager, entity); }
+        }
     }
 
     public class SystemBootstrap {

@@ -174,7 +174,7 @@ namespace Weesals.ECS {
         public int AllocateRow(scoped ref ColumnStorage columnStorage, Entity entity) {
             ++Revision;
             ++MaxItem;
-            if (MaxItem >= GetEntities(ref columnStorage).Length) {
+            if (MaxItem + 1 >= GetEntities(ref columnStorage).Length) {
                 RequireSize(ref columnStorage, (int)BitOperations.RoundUpToPowerOf2((uint)MaxItem + 512));
             }
             GetEntities(ref columnStorage)[MaxItem] = entity;
@@ -276,6 +276,7 @@ namespace Weesals.ECS {
             return sparseColumn.TryGetIndex(column.SparsePages, row);
         }
         public int RequireSparseIndex(ref ColumnStorage columnStorage, int columnId, int row) {
+            columnStorage.Validate?.Invoke();
             ref var column = ref GetColumn(ref columnStorage, columnId);
             var sparseColumn = columnStorage.GetSparseColumn(column.TypeId);
             var mutation = sparseColumn.RequireIndex(ref column.SparsePages, row);
@@ -290,6 +291,7 @@ namespace Weesals.ECS {
             }
             Debug.Assert(column.DataRange.Start == 0);
             row = mutation.NewOffset + mutation.Index;
+            columnStorage.Validate?.Invoke();
             return row;
         }
         public bool GetHasSparseComponent(ref ColumnStorage columnStorage, TypeId typeId, int row) {
@@ -313,11 +315,13 @@ namespace Weesals.ECS {
             ApplyDeleteMutation(ref columnStorage, columnId, mutation);
         }
         public void ClearSparseRow(ref ColumnStorage columnStorage, int row) {
+            columnStorage.Validate?.Invoke();
             for (int c = ColumnCount; c < AllColumnCount; ++c) {
                 ref var column = ref GetColumn(ref columnStorage, c);
                 var sparseColumn = columnStorage.RequireSparseColumn(column.TypeId);
                 var mutation = sparseColumn.TryRemoveIndex(ref column.SparsePages, row);
-                ApplyDeleteMutation(ref columnStorage, ColumnCount + c, mutation);
+                ApplyDeleteMutation(ref columnStorage, c, mutation);
+                columnStorage.Validate?.Invoke();
             }
         }
 
@@ -446,12 +450,13 @@ namespace Weesals.ECS {
         }
     }
 
+    [DebuggerTypeProxy(typeof(ComponentRef.DebugComponentView))]
     public readonly struct ComponentRef {
         public readonly EntityManager Manager;
         public readonly EntityContext Context => Manager.Context;
         public readonly ArchetypeId ArchetypeId;
         public readonly int Row;
-        public readonly int DenseRow;
+        public readonly int SparseRow;
         public readonly TypeId TypeId;
         public readonly ref Archetype Archetype => ref Manager.GetArchetype(ArchetypeId);
         public readonly int ColumnId => Archetype.GetColumnId(TypeId);
@@ -461,18 +466,18 @@ namespace Weesals.ECS {
             get {
                 ref var column = ref Archetype.GetColumn(ref Manager.ColumnStorage, ColumnId);
                 ref var columnData = ref Manager.ColumnStorage.GetColumn(TypeId);
-                return columnData.GetRawItem(column.DataRange, DenseRow);
+                return columnData.GetRawItem(column.DataRange, SparseRow);
             }
         }
         public ComponentRef(EntityManager entityManager, ArchetypeId archetypeId, int row, TypeId typeId) {
             Manager = entityManager;
             ArchetypeId = archetypeId;
             Row = row;
-            DenseRow = Row;
+            SparseRow = Row;
             TypeId = typeId;
             if (TypeId.IsSparse) {
-                DenseRow = Archetype.TryGetSparseIndex(ref Manager.ColumnStorage, Archetype.GetColumnId(typeId), row);
-                Debug.Assert(DenseRow >= 0, "Need to preallocate before creating ComponentRef");
+                SparseRow = Archetype.TryGetSparseIndex(ref Manager.ColumnStorage, Archetype.GetColumnId(typeId), row);
+                Debug.Assert(SparseRow >= 0, "Need to preallocate before creating ComponentRef");
             }
         }
         private Array itemsArray => Manager.ColumnStorage.GetColumn(TypeId).Items;
@@ -480,15 +485,24 @@ namespace Weesals.ECS {
         public ComponentType GetComponentType() { return Context.GetComponentType(TypeId); }
         public Type GetRawType() { return Context.GetComponentType(TypeId).Type; }
         public bool GetIs<T>() { return itemsArray is T[]; }
-        public object? GetValue() { return itemsArray.GetValue(Column.DataRange.Start + DenseRow); }
-        public ref readonly T GetRO<T>() { return ref Archetype.GetValueRO<T>(ref Manager.ColumnStorage, ColumnId, DenseRow); }
-        public ref T GetRef<T>() { return ref Archetype.GetValueRW<T>(ref Manager.ColumnStorage, ColumnId, DenseRow, Row); }
+        public object? GetValue() { return itemsArray.GetValue(Column.DataRange.Start + SparseRow); }
+        public ref readonly T GetRO<T>() { return ref Archetype.GetValueRO<T>(ref Manager.ColumnStorage, ColumnId, SparseRow); }
+        public ref T GetRef<T>() { return ref Archetype.GetValueRW<T>(ref Manager.ColumnStorage, ColumnId, SparseRow, Row); }
         public void CopyTo(ComponentRef dest) {
-            Manager.ColumnStorage.CopyValue(ref Archetype, ColumnId, DenseRow,
-                ref dest.Archetype, dest.ColumnId, dest.DenseRow, dest.Row);
+            Manager.ColumnStorage.CopyValue(ref Archetype, ColumnId, SparseRow,
+                ref dest.Archetype, dest.ColumnId, dest.SparseRow, dest.Row);
         }
         public void NotifyMutation() { Archetype.NotifyMutation(ref Manager.ColumnStorage, ColumnId, Row); }
         public override string ToString() { return Context.GetComponentType(TypeId).Type.Name; }
+
+        public class DebugComponentView {
+            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
+            public readonly ComponentRef Component;
+            [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+            public object? Value => Component.GetValue();
+            public DebugComponentView(ComponentRef component) { Component = component; }
+            public override string ToString() => $"{Component.GetRawType().Name}:  {Component.GetValue()}";
+        }
     }
 
     // A specific set of filters

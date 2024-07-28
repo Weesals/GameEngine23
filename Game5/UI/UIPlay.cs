@@ -26,6 +26,7 @@ namespace Game5.UI {
         private UXEntityTap entityTap;
         private UXEntityOrder entityOrder;
         private UXPlacement placement;
+        private UXBoxSelect boxSelect;
         private TextBlock debugTxt;
 
         private BufferLayoutPersistent buffer;
@@ -52,6 +53,7 @@ namespace Game5.UI {
                 inputDispatcher.AddInteraction(entityTap = new(this));
                 inputDispatcher.AddInteraction(entityOrder = new(this));
                 inputDispatcher.AddInteraction(placement = new(this));
+                inputDispatcher.AddInteraction(boxSelect = new(this));
             }
 
             var btn = new TextButton();

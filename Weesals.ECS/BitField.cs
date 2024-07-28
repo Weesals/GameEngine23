@@ -115,6 +115,8 @@ namespace Weesals.ECS {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetPageIdByBit(int bit) { return bit >> 6; }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int GetBitByPageId(int bit) { return bit << 6; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetLocalBit(int bit) { return bit & 63; }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int CountBitsUntil(ulong pattern, int pageId) {
@@ -222,21 +224,19 @@ namespace Weesals.ECS {
                 bitIndex = -1;
             }
             public void Dispose() { }
-            public void Reset() { bitIndex = -1; }
+            public void Reset() { page = 0; bitIndex = -1; }
             public bool MoveNext() {
-                var next = GetNextBit(page, bitIndex);
-                if (next >= 64) {
-                    var pageIds = Bits1.pageIds;
-                    var pageId = GetPageIdByBit(bitIndex);
-                    pageId = GetNextBit(pageIds, pageId);
+                while (page == 0) {
+                    var pageId = GetPageIdByBit(bitIndex) + 1;
+                    pageId = GetBitFrom(Bits1.pageIds, pageId);
                     if (pageId >= 64) return false;
-                    bitIndex = pageId * 64;
+                    bitIndex = GetBitByPageId(pageId);
                     page = Bits1.pages[Bits1.GetBitIndex(pageId)];
                     if ((Bits2.pageIds & (1ul << pageId)) != 0)
-                        page &= Bits2.pages[Bits2.GetBitIndex(pageId)];
-                    next = GetNextBit(page, -1);
+                        page &= ~Bits2.pages[Bits2.GetBitIndex(pageId)];
                 }
-                bitIndex = (bitIndex & ~63) + next;
+                bitIndex = (bitIndex & ~63) + BitOperations.TrailingZeroCount(page);
+                page &= page - 1;
                 return true;
             }
             public DifferenceEnumerator GetEnumerator() { return this; }

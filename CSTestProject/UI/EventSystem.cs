@@ -699,6 +699,10 @@ namespace Weesals.UI {
                 }
             }
 
+            if (events.Active is IUpdateInteractionHandler updater) {
+                updater.OnUpdateInteraction(events);
+            }
+
             if (update.PreviousButtonState != 0 && events.ButtonState == 0) {
                 SendClickEvent(events);
             }
@@ -931,6 +935,9 @@ namespace Weesals.UI {
     }
     public interface IBeginInteractionHandler : IEventSystemHandler {
         void OnBeginInteraction(PointerEvent events);
+    }
+    public interface IUpdateInteractionHandler : IEventSystemHandler {
+        void OnUpdateInteraction(PointerEvent events);
     }
     public interface IEndInteractionHandler : IEventSystemHandler {
         void OnEndInteraction(PointerEvent events);

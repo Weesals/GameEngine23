@@ -33,6 +33,7 @@ namespace Weesals.Rendering {
             public ModelInstance(Model model) {
                 Model = model;
             }
+            public override string ToString() { return Model.ToString(); }
         }
         public struct ParticleInstance {
             public ParticleSystem Particle;
@@ -65,6 +66,10 @@ namespace Weesals.Rendering {
             Prefab = prefab;
             Meshes = new SceneInstance[Prefab.MeshCount];
             Particles = new ParticleSystem.Emitter[Prefab.Particles.Length];
+        }
+        public override string ToString() {
+            var id = Meshes.Length > 0 ? Meshes[0].GetInstanceId() : -1;
+            return $"Id<{id}> Prefab<{Prefab}> Mesh<{Meshes.Length}> Part<{Particles.Length}>";
         }
     }
 
@@ -337,12 +342,14 @@ namespace Weesals.Rendering {
                 },
                 OnMove = (move) => {
                     RequireEntitySlot(move.To) = RequireEntitySlot(move.From);
+                    RequireEntitySlot(move.From) = default;
                     MoveEntityFlags(move.From, move.To);
                 },
                 OnDelete = (entityAddr) => {
                     RemoveEntityFlags(entityAddr);
                     RemoveEntityScene(entityAddr);
                     //renderWorld.DeleteEntity(RequireEntitySlot(entity));
+                    RequireEntitySlot(entityAddr) = default;
                 }
             });
         }
@@ -365,7 +372,7 @@ namespace Weesals.Rendering {
         private void RemoveEntityScene(EntityAddress entityAddr) {
             ref var sceneProxy = ref World.Manager.GetComponentRef<SceneRenderable>(entityAddr);
             DestroyInstance(sceneProxy.Instance);
-            sceneProxy.Instance = default;
+            sceneProxy = default;
         }
 
         private VisualInstance CreateInstance(VisualPrefab prefab, bool animated = false) {
@@ -494,16 +501,20 @@ namespace Weesals.Rendering {
                 var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, ref archetype);
                 var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, ref archetype);
                 foreach (var row in changedModels) {
+                    if (!binding.ValidEntities.Contains(row)) continue;
                     UpdateModel(new EntityAddress(new ArchetypeId(i), row));
                 }
                 foreach (var row in changedTransforms) {
+                    if (!binding.ValidEntities.Contains(row)) continue;
                     UpdateTransform(new EntityAddress(new ArchetypeId(i), row));
                 }
                 foreach (var row in changedSelected) {
+                    if (!binding.ValidEntities.Contains(row)) continue;
                     UpdateSelected(new EntityAddress(new ArchetypeId(i), row));
                 }
                 if (binding.AnimationLookup.IsValid) {
                     foreach (var row in binding.ValidEntities) {
+                        if (!binding.ValidEntities.Contains(row)) continue;
                         UpdateAnimation(new EntityAddress(new ArchetypeId(i), row));
                     }
                 }

@@ -5,8 +5,16 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace Weesals.ECS {
+    [SparseComponent]
+    [NoCloneComponent]
+    public struct EntityIdTest {
+        public int Index;
+        public override string ToString() => Index.ToString();
+    }
+
     // Management object for a collection of entities and components
     [DebuggerTypeProxy(typeof(EntityManager.DebugManagerView))]
     public class EntityManager {
@@ -45,10 +53,26 @@ namespace Weesals.ECS {
             // Allocate the zero entity (reserve the index as its the "null" handle)
             EntityStorage.CreateEntity("None");
             SharedCommandBuffer = new(this);
+            ColumnStorage.Validate += () => {
+                foreach (var entity in GetEntities()) {
+                    var entityAddr = RequireEntityAddress(entity);
+                    if (entityAddr.ArchetypeId == 0) continue;
+                    if (!TryGetComponent<EntityIdTest>(entity, out var id)) continue;
+                    Debug.Assert(id.Index == 0 || id.Index == (int)entity.Index);
+                }
+            };
+            AddListener(new Query.Builder(this).Build(), new() {
+                OnCreate = (addr) => {
+                    var entity = GetEntity(addr);
+                    RequireComponent<EntityIdTest>(entity) = new() { Index = (int)entity.Index, };
+                },
+            });
         }
 
         public Entity CreateEntity(string name = "unknown") {
-            return EntityStorage.CreateEntity(name);
+            var entity = EntityStorage.CreateEntity(name);
+            entity.SetDebugManager(this);
+            return entity;
         }
         public bool IsValid(Entity entity) {
             return EntityStorage.IsValid(entity);
@@ -68,6 +92,7 @@ namespace Weesals.ECS {
             var entityAddress = RequireEntityAddress(entity);
             ref var archetype = ref archetypes[entityAddress.ArchetypeId];
 
+            ColumnStorage.Validate?.Invoke();
             var columnId = -1;
             var denseRow = entityAddress.Row;
             if (ComponentType<T>.IsSparse) {
@@ -118,7 +143,10 @@ namespace Weesals.ECS {
             ref var archetype = ref archetypes[entityData.ArchetypeId];
             if (!archetype.TryGetColumnId(componentTypeId, out var columnId)) { component = default; return false; }
             var row = entityData.Row;
-            if (ComponentType<T>.IsSparse) row = archetype.TryGetSparseIndex(ref ColumnStorage, columnId, entityData.Row);
+            if (ComponentType<T>.IsSparse) {
+                row = archetype.TryGetSparseIndex(ref ColumnStorage, columnId, entityData.Row);
+                if (row < 0) { component = default; return false; }
+            }
             component = archetype.GetValueRO<T>(ref ColumnStorage, columnId, row);
             return true;
         }
@@ -150,6 +178,7 @@ namespace Weesals.ECS {
             return new NullableRef<T>(ref archetype.GetValueRW<T>(ref ColumnStorage, columnId, row, entityData.Row));
         }
         unsafe public bool TryRemoveComponent<T>(Entity entity) {
+            ColumnStorage.Validate?.Invoke();
             var entityData = RequireEntityAddress(entity);
             var componentTypeId = Context.RequireComponentTypeId<T>();
             ref var archetype = ref archetypes[entityData.ArchetypeId];
@@ -169,6 +198,7 @@ namespace Weesals.ECS {
             return true;
         }
         unsafe public bool RemoveComponent<T>(Entity entity) {
+            ColumnStorage.Validate?.Invoke();
             bool result = TryRemoveComponent<T>(entity);
             Trace.Assert(result);
             return result;
@@ -185,8 +215,11 @@ namespace Weesals.ECS {
                 queryCaches.Add(cache);
                 queriesByTypes.Add(key, queryI);
                 lock (archetypes) {
-                    foreach (var archetypeI in QueryArchetypes(queryI))
+                    foreach (var archetypeI in QueryArchetypes(queryI)) {
+                        // Nothing can match the null archetype
+                        if (archetypeI == 0) continue;
                         cache.MatchingArchetypes.Add(CreateArchetypeQueryCache(archetypeI, queryI));
+                    }
                 }
             }
             return queryI;
@@ -300,6 +333,7 @@ namespace Weesals.ECS {
         }
 
         private void NotifyEntityChange(Entity entity, EntityAddress oldData, EntityAddress newData) {
+            ColumnStorage.Validate?.Invoke();
             var oldArchetype = oldData.ArchetypeId >= 0 ? archetypes[oldData.ArchetypeId] : default;
             var newArchetype = newData.ArchetypeId >= 0 ? archetypes[newData.ArchetypeId] : default;
             var oldArchetypeListeners = oldData.ArchetypeId >= 0 ? oldArchetype.ArchetypeListeners : default;
@@ -320,19 +354,26 @@ namespace Weesals.ECS {
                 foreach (var listenerI in BitField.Except(newArchetypeListeners, oldArchetypeListeners))
                     archetypeListeners[listenerI].OnCreate?.Invoke(newData);
             }
+            ColumnStorage.Validate?.Invoke();
         }
         private void RemoveRow(EntityAddress entityData) {
+            ColumnStorage.Validate?.Invoke();
             ref var archetype = ref archetypes[entityData.ArchetypeId];
             archetype.ClearSparseRow(ref ColumnStorage, entityData.Row);
+            ColumnStorage.ClearRowModifiedFlags(ref archetype, entityData.Row);
             if (archetype.MaxItem == entityData.Row) {
                 ColumnStorage.ReleaseRow(ref archetype, entityData.Row);
             } else {
-                MoveEntity(archetype.GetEntities(ref ColumnStorage)[archetype.MaxItem], new EntityAddress(archetype.Id, entityData.Row));
+                var moveEnitty = archetype.GetEntities(ref ColumnStorage)[archetype.MaxItem];
+                MoveEntity(moveEnitty, new EntityAddress(archetype.Id, entityData.Row));
             }
+            ColumnStorage.Validate?.Invoke();
         }
 
         public Entity UnsafeGetEntityByIndex(int entityIndex) {
-            return new Entity((uint)entityIndex, EntityStorage.GetEntityDataRef(entityIndex).Version);
+            var entity = new Entity((uint)entityIndex, EntityStorage.GetEntityDataRef(entityIndex).Version);
+            entity.SetDebugManager(this);
+            return entity;
         }
         public Entity GetEntity(EntityAddress addr) {
             return GetArchetype(addr.ArchetypeId).GetEntities(ref ColumnStorage)[addr.Row];
@@ -352,6 +393,9 @@ namespace Weesals.ECS {
             listener.QueryId = query;
             archetypeListeners.Add(listener);
             foreach (var archI in GetArchetypes(query)) {
+                // Nothing can match the null archetype
+                if (archI.Index == 0) continue;
+
                 ref var archetype = ref archetypes[archI];
                 var builder = new EntityContext.TypeInfoBuilder(Context, archetype.ArchetypeListeners);
                 builder.AddComponent(new TypeId(listenerId));
@@ -620,35 +664,29 @@ namespace Weesals.ECS {
             return new EntityQueryEnumerator(GetArchetypes(query));
         }
 
-        public struct DebugEntity {
+        public class DebugEntity {
+            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
             public readonly EntityManager Manager;
             public readonly Entity Entity;
-            public EntityComponentEnumerator Components => Manager.GetEntityComponents(Entity);
+            public ComponentRef.DebugComponentView[] Components;
             public DebugEntity(EntityManager manager, Entity entity) {
                 Manager = manager;
                 Entity = entity;
+                var components = new List<ComponentRef.DebugComponentView>();
+                foreach (var cmp in manager.GetEntityComponents(entity)) components.Add(new(cmp));
+                Components = components.ToArray();
             }
             public override string ToString() {
-                return Components.Select(c => $"{c.GetRawType().Name}:{c.GetValue()}").Aggregate((i1, i2) => $"{i1},{i2}");
+                return string.Join(",", Components.Select(c => c.ToString()));
             }
         }
-        public struct DebugEntityEnumerator : IEnumerator, IEnumerable {
-            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-            EntityEnumerator entityEn;
-            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-            int count;
-            [DebuggerBrowsable(DebuggerBrowsableState.Never)]
-            object IEnumerator.Current => new DebugEntity(entityEn.Manager, entityEn.Current);
-            public DebugEntityEnumerator(EntityManager manger) { entityEn = new(manger); }
-            public void Dispose() { entityEn.Dispose(); }
-            public void Reset() { entityEn.Reset(); }
-            public bool MoveNext() { return ++count < 1000 && entityEn.MoveNext(); }
-            IEnumerator IEnumerable.GetEnumerator() => this;
-        }
-        public struct DebugManagerView {
-            [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-            public DebugEntityEnumerator View;
-            public DebugManagerView(EntityManager manager) { View = new DebugEntityEnumerator(manager); }
+        public class DebugManagerView {
+            public DebugEntity[] Entities;
+            public DebugManagerView(EntityManager manager) {
+                var entities = new List<DebugEntity>();
+                foreach (var entity in manager.GetEntities()) entities.Add(new(manager, entity));
+                Entities = entities.ToArray();
+            }
         }
     }
 
@@ -661,24 +699,26 @@ namespace Weesals.ECS {
         public World() {
             Manager = new(Context);
             Context.OnTypeIdCreated += Context_OnTypeIdCreated;
+
+            TypeId.DebugContext = Context;
         }
 
         private void Context_OnTypeIdCreated(TypeId typeId) {
             
         }
 
-        public Entity CreateEntity() { return Manager.EntityStorage.CreateEntity(); }
-        public Entity CreateEntity(string name) { return Manager.EntityStorage.CreateEntity(name); }
+        public Entity CreateEntity() => Manager.CreateEntity();
+        public Entity CreateEntity(string name) => Manager.CreateEntity(name);
         public Entity CreateEntity(Entity prefab) {
-            var instance = Manager.EntityStorage.CreateEntity();
+            var entity = Manager.CreateEntity();
             var prefabAddr = Manager.RequireEntityAddress(prefab);
-            using var mover = Manager.BeginMoveEntity(instance, prefabAddr.ArchetypeId);
+            using var mover = Manager.BeginMoveEntity(entity, prefabAddr.ArchetypeId);
             foreach (var prefabCmp in Manager.GetEntityComponents(prefab)) {
                 if (prefabCmp.GetComponentType().IsNoClone) continue;
                 mover.CopyFrom(prefabCmp);
             }
             mover.Commit();
-            return instance;
+            return entity;
         }
         public bool IsValid(Entity entity) { return Manager.IsValid(entity); }
         public void DeleteEntity(Entity entity) { Manager.DeleteEntity(entity); }

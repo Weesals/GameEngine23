@@ -37,6 +37,7 @@ namespace Game5.Game {
 
         // A queue for a specific entity
         [SparseComponent]
+        [NoCloneComponent]
         public struct EntityQueue {
             // This references a block within the `actions` array
             public RangeInt Queue;

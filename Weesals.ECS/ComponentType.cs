@@ -58,11 +58,15 @@ namespace Weesals.ECS {
         public readonly bool IsTag => (Packed & Header) == TagHeader;
         public TypeId(int index) { Packed = index; }
         public TypeId(int index, bool isSparse) { Packed = index  | (isSparse ? SparseHeader : 0); }
-        public override string ToString() { return Packed.ToString(); }
+        public override string ToString() {
+            return DebugContext != null ? DebugContext.GetComponentType(Packed).ToString()
+                : Packed.ToString();
+        }
         public static implicit operator int(TypeId id) { return id.Packed; }
         public static TypeId MakeSparse(int typeIndex) { return new TypeId(SparseHeader + typeIndex); }
         public static TypeId MakeTag(int typeIndex) { return new TypeId(TagHeader + typeIndex); }
         public static readonly TypeId Invalid = new(-1);
+        public static EntityContext? DebugContext;
     }
     public class ComponentType<Component> : ComponentType {
         public ComponentType(TypeId id) : base(typeof(Component), id, GetFlags()) { }

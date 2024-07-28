@@ -73,6 +73,10 @@ namespace Weesals.Engine {
             }
             return viewMatrix;
         }
+        public Matrix4x4 GetWorldMatrix() {
+            return Matrix4x4.CreateFromQuaternion(orientation) *
+                Matrix4x4.CreateTranslation(position);
+        }
 
         // Viewport space is [0, 1]
         public Ray ViewportToRay(Vector2 vpos) {
