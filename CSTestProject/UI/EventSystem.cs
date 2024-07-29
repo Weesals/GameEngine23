@@ -876,6 +876,9 @@ namespace Weesals.UI {
         internal void SetButtonState(PointerEvent events, uint buttons) {
             if (events.ButtonState == buttons) return;
             events.ButtonState = buttons;
+            if (buttons == 0) {
+                int a = 0;
+            }
             var isPress = buttons != 0;
             if (isPress) BeginPress(events);
             SetState(events, PointerEvent.States.Press, isPress);

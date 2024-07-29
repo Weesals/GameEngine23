@@ -182,72 +182,19 @@ namespace Game5.Game {
 
             var prefabMarker = new ProfilerMarker("Creating Prefabs").Auto();
 
-            var archer = ProtoSystem.CreatePrototype("Archer",
-                new PrototypeData() {
-                    Footprint = new EntityFootprint() { Size = 600, Height = 1800, Shape = EntityFootprint.Shapes.Capsule, },
-                })
-                .AddComponent<CModel>(new() { PrefabName = "Archer", })
-                .AddComponent<CAnimation>(new() {
-                    Animation = runAnim.Animations[0],
-                    IdleAnim = idleAnim.Animations[0],
-                    WalkAnim = runAnim.Animations[0],
-                })
-                .AddComponent<CHitPoints>(new() { Current = 10, })
-                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
-                .AddComponent<ECMobile>(new() { MovementSpeed = 6000, TurnSpeed = 500, NavMask = 1, })
-                .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
-                .Build();
-
-            var chicken = ProtoSystem.CreatePrototype("Chicken",
-                new PrototypeData() {
-                    Footprint = new EntityFootprint() { Size = 300, Height = 500, Shape = EntityFootprint.Shapes.Capsule, },
-                })
-                .AddComponent<CModel>(new() { PrefabName = "Chicken", })
-                .AddComponent<CAnimation>(new() {
-                    Animation = chickenModel.Animations[3],
-                    IdleAnim = chickenModel.Animations[2],
-                    WalkAnim = chickenModel.Animations[3],
-                })
-                .AddComponent<CHitPoints>(new() { Current = 10, })
-                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue, Altitude = -50, })
-                .AddComponent<ECMobile>(new() { MovementSpeed = 4000, TurnSpeed = 500, NavMask = 1, })
-                .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECAbilityAttackMelee>(new() { Damage = 1, Interval = 1000, })
-                .Build();
-
-            var house = ProtoSystem.CreatePrototype("House",
-                new PrototypeData() {
-                    Footprint = new EntityFootprint() { Size = 4000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
-                })
-                .AddComponent<CModel>(new() { PrefabName = "House", })
-                .AddComponent<CHitPoints>(new() { Current = 10, })
-                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
-                .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECObstruction>(new() { })
-                .Build();
-
-            var townCentre = ProtoSystem.CreatePrototype("TownCentre",
-                new PrototypeData() {
-                    Footprint = new EntityFootprint() { Size = 6000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
-                })
-                .AddComponent<CModel>(new() { PrefabName = "TownCentre", })
-                .AddComponent<CHitPoints>(new() { Current = 1000, })
-                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
-                .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECObstruction>(new() { })
-                .Build();
-
-            var tree = ProtoSystem.CreatePrototype("Tree",
-                new PrototypeData() {
-                    Footprint = new EntityFootprint() { Size = 3000, Height = 200, Shape = EntityFootprint.Shapes.Box, },
-                })
-                .AddComponent<CModel>(new() { PrefabName = "Tree", })
-                .AddComponent<CHitPoints>(new() { Current = 100, })
-                .AddComponent<ECTransform>(new() { Position = default, Orientation = short.MinValue })
-                .AddComponent<ECTeam>(new() { SlotId = 0 })
-                .AddComponent<ECObstruction>(new() { })
-                .Build();
+            var loader = new PrefabLoader(ProtoSystem);
+            loader.RegisterSerializer((ref AnimationHandle handle, SJson serializer) => {
+                foreach (var field in serializer.GetFields()) {
+                    var model = Resources.LoadModel(field.Key.ToString(), out var loadHandle);
+                    loadHandle.Complete();
+                    handle = model.Animations[field.Value.ToString()];
+                }
+            });
+            var archer = loader.LoadPrototype("./Assets/Prefabs/Archer.json");
+            var chicken = loader.LoadPrototype("./Assets/Prefabs/Chicken.json");
+            var house = loader.LoadPrototype("./Assets/Prefabs/House.json");
+            var townCentre = loader.LoadPrototype("./Assets/Prefabs/TownCentre.json");
+            var tree = loader.LoadPrototype("./Assets/Prefabs/Tree.json");
 
             prefabMarker.Dispose();
 

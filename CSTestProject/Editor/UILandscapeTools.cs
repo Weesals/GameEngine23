@@ -17,7 +17,7 @@ namespace Weesals.Editor {
         public TextButton HeightButton = new("Cliff") { Name = "Edit Height Btn" };
         public TextButton PaintButton = new("Paint") { Name = "Terrain Paint Btn" };
         public TextButton WaterButton = new("Water") { Name = "Edit Water Btn" };
-        public InputDispatcher InputDispatcher = new();
+        public InputDispatcher InputDispatcher = new() { Name = "Landscape Dispatcher" };
 
         public UXLandscapeCliffTool CliffTool = new();
         public UXLandscapePaintTool PaintTool = new ();

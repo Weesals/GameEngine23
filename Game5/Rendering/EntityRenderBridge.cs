@@ -482,6 +482,7 @@ namespace Weesals.Rendering {
             Debug.Assert(skinnedMesh != null, "Attempting to skin a non-skinnable mesh. Probaby remove CAnimation");
             Span<Matrix4x4> bones = stackalloc Matrix4x4[32];
             var animation = eanim.Animation;
+            if (!animation.IsValid) return;
             var time = UnityEngine.Time.time % (float)animation.Duration.TotalSeconds;
             if (sceneProxy.AnimationPlayback == null) sceneProxy.AnimationPlayback = new(skinnedMesh);
             var animPlayback = sceneProxy.AnimationPlayback;

@@ -97,6 +97,12 @@ namespace Weesals.ECS {
             var index = column.Sparse.GetBitIndex(entity);
             return ref column.Components[index];
         }
+        public ArrayItem GetComponentAsItem<TComponent>(int entity) {
+            var column = RequireColumn<TComponent>();
+            Debug.Assert(column.Sparse.Contains(entity));
+            var index = column.Sparse.GetBitIndex(entity);
+            return new(column.Components, index);
+        }
     }
     public class PrefabRegistry {
 
@@ -126,6 +132,9 @@ namespace Weesals.ECS {
                     bitGenerator.Add(world.Context.RequireComponentTypeId<TComponent>());
                 world.AddComponent<TComponent>(index) = data;
                 return this;
+            }
+            public ArrayItem GetComponent<TComponent>() {
+                return world.GetComponentAsItem<TComponent>(index);
             }
             public EntityPrefab Build() {
                 ref var prefab = ref world.GetComponent<Prefab>(index);

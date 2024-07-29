@@ -1,0 +1,15 @@
+{
+  "Name": "Tree",
+  "PrototypeData": {
+    "Footprint": {
+      "Size": 3000,
+      "Height": 200,
+      "Shape": "Box"
+    }
+  },
+  "CModel": { "PrefabName": "Tree" },
+  "CHitPoints": { "Current": 100 },
+  "ECTransform": {},
+  "ECTeam": { "SlotId": 0 },
+  "ECObstruction": {}
+}

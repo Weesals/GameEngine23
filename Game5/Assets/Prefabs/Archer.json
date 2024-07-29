@@ -1,0 +1,31 @@
+{
+  "Name": "Archer",
+  "PrototypeData": {
+    "Footprint": {
+      "Size": 600,
+      "Height": 1800,
+      "Shape": "Capsule"
+    }
+  },
+  "CModel": { "PrefabName": "Archer" },
+  "CAnimation": {
+    "IdleAnim": {
+      "./Assets/Characters/Animation_Idle.fbx": "Idle"
+    },
+    "WalkAnim": {
+      "./Assets/Characters/Animation_Run.fbx": "Run"
+    }
+  },
+  "CHitPoints": { "Current": 10 },
+  "ECTransform": {},
+  "ECMobile": {
+    "MovementSpeed": 6000,
+    "TurnSpeed": 500,
+    "NavMask": 1
+  },
+  "ECTeam": { "SlotId": 0 },
+  "ECAbilityAttackMelee": {
+    "Damage": 1,
+    "Interval": 1000
+  }
+}

@@ -15,6 +15,15 @@ namespace Weesals.Engine {
             public readonly AnimationProvider Provider;
             public int Count => Provider.AnimationCount;
             public AnimationHandle this[int index] => new AnimationHandle(Provider, index);
+            public AnimationHandle this[string name] {
+                get {
+                    for (int i = 0; i < Provider.Animations.Count; i++) {
+                        var anim = Provider.Animations[i];
+                        if (anim.Name == name) return new AnimationHandle(Provider, i);
+                    }
+                    return default;
+                }
+            }
             public AnimationSet(AnimationProvider provider) { Provider = provider; }
         }
 
@@ -109,7 +118,10 @@ namespace Weesals.Engine {
         public AnimationMetadata GetMetadata() { return Provider.GetMetadata(Identifier); }
         public T GetAs<T>() where T : Animation { return (T)Provider.GetRawAnimation(Identifier); }
         public bool Equals(AnimationHandle other) { return Provider == other.Provider && Identifier == other.Identifier; }
-        public override string? ToString() { return GetMetadata().ToString(); }
+        public override string? ToString() {
+            if (!IsValid) return "<invalid>";
+            return GetMetadata().ToString();
+        }
     }
 
     /*

@@ -175,7 +175,8 @@ namespace Weesals.ECS {
             int end = pos + 1;
             for (; end < posCount && index >= positions[end]; end += 2) ;
             if (end > pos + 1) {
-                RemoveAt(end + 1 < posCount && index >= positions[end + 1] ? pos + 1 : pos, end - pos - 1);
+                // was end+1, this seems correct but might not be
+                RemoveAt(end < posCount && index >= positions[end] ? pos + 1 : pos, end - pos - 1);
             }
         }
         private void InsertAt(int index, int count) {

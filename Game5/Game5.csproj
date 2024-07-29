@@ -33,6 +33,11 @@
     </Content>  
   </ItemGroup>
   <ItemGroup>
+    <None Remove="Assets\Config\Archer.json" />
+    <None Remove="Assets\Config\Chicken.json" />
+    <None Remove="Assets\Config\House.json" />
+    <None Remove="Assets\Config\TownCentre.json" />
+    <None Remove="Assets\Config\Tree.json" />
     <None Remove="Assets\ParticleAtlas.png" />
     <None Remove="assets\shader\GTAO.hlsl" />
     <None Remove="Assets\Visuals.json" />
@@ -40,6 +45,11 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Assets\Characters\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="Assets\Config\House.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

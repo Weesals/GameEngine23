@@ -47,7 +47,7 @@ namespace Game5.UI {
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
             using (new ProfilerMarker("Add Interactions").Auto()) {
-                AppendChild(inputDispatcher = new());
+                AppendChild(inputDispatcher = new() { Name = "Play Dispatcher" });
                 inputDispatcher.AddInteraction(cameraControls = new(this));
                 inputDispatcher.AddInteraction(entityDrag = new(this));
                 inputDispatcher.AddInteraction(entityTap = new(this));

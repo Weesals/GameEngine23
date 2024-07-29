@@ -1,0 +1,15 @@
+{
+  "Name": "TownCentre",
+  "PrototypeData": {
+    "Footprint": {
+      "Size": 6000,
+      "Height": 200,
+      "Shape": "Box"
+    }
+  },
+  "CModel": { "PrefabName": "TownCentre" },
+  "CHitPoints": { "Current": 1000 },
+  "ECTransform": { "Orientation": 32768 },
+  "ECTeam": { "SlotId": 0 },
+  "ECObstruction": {}
+}

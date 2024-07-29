@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 
 namespace Weesals.UI {
     // Represents the "score" for an interaction which could be activated
@@ -40,7 +41,13 @@ namespace Weesals.UI {
 
         private List<IInteraction> interactions = new();
 
-        private Dictionary<PointerEvent, PointerEvent> deferredPointers = new();
+        public class DeferredPointerEvent : PointerEvent {
+            public InputDispatcher? DeferredDispatcher;
+            public DeferredPointerEvent(PointerEvent other) : base(other) {
+            }
+        }
+
+        private Dictionary<PointerEvent, DeferredPointerEvent> deferredPointers = new();
 
         struct ActivationState {
             public ActivationScore Score;
@@ -103,6 +110,7 @@ namespace Weesals.UI {
         private struct Target {
             public object? Active;
             public ActivationState State;
+            public InputDispatcher Owner;
         }
         private Target FindTarget(PointerEvent deferred, ref HittestGrid.HitEnumerator hitIterator) {
             Target target = default;
@@ -114,12 +122,16 @@ namespace Weesals.UI {
             // Iterate any other InputDispatchers immediately following
             while (hitIterator.MoveNext() && hitIterator.Current is InputDispatcher odispatcher) {
                 var ostate = odispatcher.GetBestInteraction(deferred);
-                if (CheckInvokeInteraction(deferred, ostate)) { target.Active = ostate.Interaction; return target; }
+                if (CheckInvokeInteraction(deferred, ostate)) {
+                    target.Active = ostate.Interaction;
+                    target.Owner = odispatcher;
+                    return target;
+                }
                 state.CombineWith(ostate);
             }
             return target;
         }
-        public PointerEvent? IntlProcessPointer(PointerEvent events) {
+        public DeferredPointerEvent? IntlProcessPointer(PointerEvent events) {
             if (!deferredPointers.TryGetValue(events, out var deferred)) return null;
             if (Canvas == null) {
                 deferred.System.SetTargetStates(deferred, default, PointerEvent.States.None);
@@ -135,7 +147,13 @@ namespace Weesals.UI {
             }
             var hitIterator = Canvas.HitTestGrid.BeginHitTest(deferred.CurrentPosition);
             var target = FindTarget(deferred, ref hitIterator);
-            if (target.Active != null) deferred.SetActive(target.Active);
+            if (target.Active != null) {
+                if (target.Owner != null) {
+                    events.SetActive(target.Owner);
+                    return null;
+                }
+                deferred.SetActive(target.Active);
+            }
             if (!deferredStepped) deferred.StepPost(events, update);
             //else deferred.SetPress(target.State.Interaction);
             if (deferred.Active != null) return deferred;
@@ -155,7 +173,7 @@ namespace Weesals.UI {
             return null;
         }
         public void OnPointerEnter(PointerEvent events) {
-            var deferred = new PointerEvent(events);
+            var deferred = new DeferredPointerEvent(events);
             deferredPointers.Add(events, deferred);
         }
         public void OnPointerExit(PointerEvent events) {
@@ -166,6 +184,9 @@ namespace Weesals.UI {
         }
         public void ProcessPointer(PointerEvent events) {
             var deferred = IntlProcessPointer(events);
+            if (deferred != null && deferred.DeferredDispatcher != null) {
+                deferred.DeferredDispatcher.ProcessPointer(deferred);
+            }
             //if(deferred == null) OnPointerExit(events);
             // On mouse-up, clear the active action
             // (implicit hover/press may remain)
@@ -184,7 +205,7 @@ namespace Weesals.UI {
         }
 
         public override string ToString() {
-            return $"Dispatcher: Count={interactions.Count} Active={deferredPointers.Count}";
+            return $"{Name ?? "Dispatcher"}: Count={interactions.Count} Active={deferredPointers.Count}";
         }
 
     }
