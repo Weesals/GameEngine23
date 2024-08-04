@@ -191,6 +191,20 @@ namespace Weesals.Utility {
         #endregion
 
         #region Sin
+        public static XRT SinI16(ushort rot16) {
+            const int Magnitude = 0x01000000;
+            var r = (uint)rot16 << 10;
+            var q = r;
+            r &= Magnitude - 1;
+            if ((q & Magnitude) == Magnitude) r = Magnitude - 1 - r;
+            r *= 90;
+            var ii = (r >> 24);
+            r &= (Magnitude - 1);
+            var v = SIN_TABLE[ii] + (int)(((ulong)(SIN_TABLE[ii + 1] - SIN_TABLE[ii]) * r) >> 24);
+            v >>= (16 - XRT.SHIFT_AMOUNT);
+            var negative = (q & (Magnitude << 1)) == (Magnitude << 1);
+            return new XRT(negative ? -(int)v : (int)v);
+        }
         public static XRT Sin(XRT i) {
             const int Magnitude = 0x01000000;
             const int SaturateScalar = (2 * Magnitude + XRT.PI_I / 2) / XRT.PI_I;
@@ -213,6 +227,9 @@ namespace Weesals.Utility {
         #region Cos, Tan, Asin
         public static XRT Cos(XRT i) {
             return Sin(i + XRT.HalfPI);
+        }
+        public static XRT CosI16(ushort r) {
+            return SinI16((ushort)(r + 0x4000));
         }
 
         public static XRT Tan(XRT i) {

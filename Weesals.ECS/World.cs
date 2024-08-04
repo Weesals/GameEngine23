@@ -53,14 +53,14 @@ namespace Weesals.ECS {
             // Allocate the zero entity (reserve the index as its the "null" handle)
             EntityStorage.CreateEntity("None");
             SharedCommandBuffer = new(this);
-            ColumnStorage.Validate += () => {
+            /*ColumnStorage.Validate += () => {
                 foreach (var entity in GetEntities()) {
                     var entityAddr = RequireEntityAddress(entity);
                     if (entityAddr.ArchetypeId == 0) continue;
                     if (!TryGetComponent<EntityIdTest>(entity, out var id)) continue;
                     Debug.Assert(id.Index == 0 || id.Index == (int)entity.Index);
                 }
-            };
+            };*/
             AddListener(new Query.Builder(this).Build(), new() {
                 OnCreate = (addr) => {
                     var entity = GetEntity(addr);

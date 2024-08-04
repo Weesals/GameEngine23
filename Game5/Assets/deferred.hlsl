@@ -65,7 +65,7 @@ float PCFSample(Texture2D<float> tex, SamplerComparisonState samp, float3 pos, f
     return shadow;
 }    
 float PCFSample2(Texture2D<float> tex, SamplerComparisonState samp, float3 pos, float2 size) {
-    float2 px = pos.xy * size;
+    float2 px = pos.xy * size + 0.5;
     float2 ctr = floor(px);
     float2 l = px - ctr;
     float2 w0 = 1.0 - pow(0 + l, 2) * 0.5;
@@ -177,16 +177,17 @@ float4 PSMain(PSInput input) : SV_Target {
         ssVPos.xyz /= ssVPos.w;
         ssVPos.y = -ssVPos.y;
         float jitter = IGN(input.position.xy);
+        const int SampleCount = 2;
         [unroll]
-        for(int i = 0; i < 2; ++i) {
+        for(int i = 0; i < SampleCount; ++i) {
             float3 samplePos = float3(ssVPos.xy * 0.5 + 0.5, ssVPos.z);
-            samplePos = lerp(float3(input.uv, deviceDepth), samplePos, (jitter + i) / 2.0);
+            samplePos = lerp(float3(input.uv, deviceDepth), samplePos, (jitter + i) / SampleCount);
             samplePos.z = DepthToLinear(samplePos.z);
             float newDepth = DepthToLinear(SceneDepth.Sample(PointSampler, samplePos.xy));
-            if (newDepth < samplePos.z && newDepth > samplePos.z - 0.06) {
+            if (newDepth < samplePos.z && newDepth > samplePos.z - 1.08) {
                 shadow = 0;
+                //return float4(1, 0, 0, 1) * LuminanceFactor;
                 break;
-                //return float4(1, 0, 0, 1);
             }
         }
         //return float4(newDepth * 0.1, ssVPos.z * 0.1, 0, 1);

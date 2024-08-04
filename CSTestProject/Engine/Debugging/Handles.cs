@@ -171,12 +171,12 @@ namespace Weesals.Engine {
         }
         public static void DrawAAConvexPolygon(Span<Vector3> points) {
             if (points.Length < 3) return;
-            var renderHash = color.GetHashCode();
+            var renderHash = Handles.color.GetHashCode();
             var vertices = polygonBuffer.Mesh.AppendVerts(points.Length);
             var indRange = polygonBuffer.Mesh.AppendIndices((points.Length - 2) * 3);
             var positions = vertices.GetPositions();
             var tangents = vertices.GetTangents();
-            vertices.GetColors().Set(color * ColorFactor);
+            vertices.GetColors().Set(Handles.color * ColorFactor);
             for (int i = 0; i < vertices.Count; i++) {
                 var pos = Vector3.Transform(points[i], matrix);
                 positions[i] = pos;

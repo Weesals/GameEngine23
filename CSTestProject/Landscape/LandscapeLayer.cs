@@ -77,7 +77,7 @@ namespace Weesals.Landscape {
                     .SetSize(512)
                     .SetArrayCount(LayerCount);
                 for (int i = 0; i < LayerCount; ++i) {
-                    Resources.LoadTexture(this[i].BaseColor)
+                    Resources.LoadTexture(this[i].BaseColor, BufferFormat.FORMAT_R8G8B8A8_UNORM)
                         .GetTextureData()
                         .CopyTo(baseTextures.GetTextureData(0, i));
                 }
@@ -96,7 +96,7 @@ namespace Weesals.Landscape {
                     .SetSize(256)
                     .SetArrayCount(LayerCount);
                 for (int i = 0; i < LayerCount; ++i) {
-                    Resources.LoadTexture(this[i].NormalMap)
+                    Resources.LoadTexture(this[i].NormalMap, BufferFormat.FORMAT_R8G8B8A8_UNORM)
                         .GetTextureData()
                         .CopyTo(bumpTextures.GetTextureData(0, i));
                 }

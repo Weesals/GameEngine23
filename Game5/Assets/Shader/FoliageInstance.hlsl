@@ -43,19 +43,19 @@ PSInput VSMain(VSInput input) {
     float localY = worldPos.y;
     worldPos.xz += instanceData.xz;
     
-    SimplexSample3D noiseSamp0 = CreateSimplex3D(float3(worldPos.xz / 10.0, 0) + float3(0.2, 0.1, 0.5) * Time);
-    SimplexSample3D noiseSamp1 = CreateSimplex3D(float3(worldPos.xz / 30.0, 0) + float3(0.2, 0.1, 0.5) * Time);
+    float3 windDirection = float3(0.1, 0.08, 0.2);
+    SimplexSample3D noiseSamp0 = CreateSimplex3D(float3(worldPos.xz / 10.0, 0) + (windDirection) * Time);
+    SimplexSample3D noiseSamp1 = CreateSimplex3D(float3(worldPos.xz / 30.0, 0) + (windDirection * 0.4) * Time);
     float windTime = Time * 2.0 + worldPos.x * 0.5;
     sc = float2(cos(windTime), sin(windTime * 1.3) + 0.5);
-    float3 windDelta = noiseSamp0.Sample3();//sc * (sin(windTime * 2.4));
+    float3 windDelta = noiseSamp0.Sample3();
     windDelta += noiseSamp1.Sample3();
-    windDelta /= 2.0;
-    windDelta.xy *= 5;
+    windDelta *= float3(2.5, 0.5, 2.5);
     windDelta.xy *= 1 + sin(windDelta.z * 5);
     float2 displacementXZ = windDelta.xz * (localY * localY * 0.4);
     worldPos.xz += displacementXZ;
     worldPos.y -= saturate(dot(displacementXZ, displacementXZ)) * localY;
-    float3 windNrm = float3(windDelta.xz * 0.4, 1).xzy;
+    float3 windNrm = normalize(float3(windDelta.xz * 0.1, 1).xzy);
     worldNrm = lerp(windNrm, worldNrm, saturate(localY));
     
     worldPos.y += instanceData.y;
@@ -86,7 +86,7 @@ void PSMain(PSInput input, bool frontFace : SV_IsFrontFace, out BasePassOutput r
     pbrInput.Alpha = tex.a;
     pbrInput.Specular = 0.06;
     pbrInput.Roughness = 0.7;
-    pbrInput.Normal = normalize(input.normal);
+    pbrInput.Normal = (input.normal);
     
     clip(pbrInput.Alpha - 0.5);
 

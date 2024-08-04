@@ -63,7 +63,7 @@ void CSGenerateFoliage(uint3 gtid : SV_DispatchThreadID) {
     float scaleModifier = 1.0 / pow(countScale, 0.5);
     
     if (c.Layer == 0) {
-        float count = 5 * countScale;
+        float count = 7 * countScale;
         for (float i = 0; i < count; ++i) {
             float2 offset = frac(rnd * float2(123, 12345));
             

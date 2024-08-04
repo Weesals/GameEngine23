@@ -1,6 +1,6 @@
-{
+/*ParticleSystem:*/ {
   "RenderState": {
-    "Texture": "./Assets/ParticleAtlas.png",
+    "Texture": "./Assets/ParticleAtlas.png"
     //"RenderTag": "Volumetric",
     //"ShaderTemplate": "./Assets/templates/ParticleTemplateVolumetric.hlsl"
   },

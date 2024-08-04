@@ -7,6 +7,8 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.ECS;
+using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Weesals.Geometry;
 using Weesals.Utility;
@@ -138,7 +140,7 @@ namespace Weesals.Engine {
             return new RenderTag(id);
         }
     }
-    public partial struct SceneInstance {
+    public partial struct SceneInstance : IEquatable<SceneInstance> {
         private int mInstanceId;
         public SceneInstance(int instanceId) { mInstanceId = instanceId; }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -146,6 +148,7 @@ namespace Weesals.Engine {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator int(SceneInstance instance) { return instance.mInstanceId; }
         public override string ToString() { return GetInstanceId().ToString(); }
+        public bool Equals(SceneInstance other) { return mInstanceId == other.mInstanceId; }
     }
     public class Scene {
         private static ProfilerMarker ProfileMarker_SubmitToGPU = new("SubmitToGPU");
@@ -153,13 +156,12 @@ namespace Weesals.Engine {
         const uint DefaultListenerMask = 1;
         public struct Instance {
             public RangeInt Data;
-            public uint Listeners;
-            //public uint VisibilityCells;
         }
         private BufferLayoutPersistent gpuScene;
         private SparseIndices gpuSceneFree = new();
         private SparseIndices gpuSceneDirty = new();
         private SparseArray<Instance> instances = new();
+        private uint[] instanceListeners = Array.Empty<uint>();
         private ulong[] instanceVisibility = Array.Empty<ulong>();
         private BoundingBox[] instanceBounds = Array.Empty<BoundingBox>();
         private uint listenerMask = DefaultListenerMask;
@@ -171,6 +173,9 @@ namespace Weesals.Engine {
         public ResolvedMaterialSets ResolvedMaterials;
         public RenderTagManager TagManager = new();
         private HashSet<SceneInstance> movedInstances = new();
+
+        public bool DrawSceneBVH;
+
         public Scene() {
             ResolvedMaterials = new(MaterialCollection);
             gpuScene = new(BufferLayoutPersistent.Usages.Instance);
@@ -189,10 +194,11 @@ namespace Weesals.Engine {
         public void ClearListener(int id) {
             listenerFlags &= 1u << id;
         }
+        // Allows instances to notify passes when their data has changed (and the pass needs reevaluation)
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void MarkListener(int id, int index) {
-            instances[index].Listeners |= 1u << id;
-        }
+        public void MarkListener(int id, int index) => MarkListener(1u << id, index);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void MarkListener(uint id, int index) => instanceListeners[index] |= id;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetListenerState(int id) {
             return (listenerFlags & (1u << id)) != 0;
@@ -216,6 +222,7 @@ namespace Weesals.Engine {
                 gpuScene.BufferLayout.mCount += size;
             }
             var id = instances.Add(new Instance() { Data = new(start, size), });
+            if (id >= instanceListeners.Length) Array.Resize(ref instanceListeners, instances.Items.Length);
             if (id >= instanceVisibility.Length) Array.Resize(ref instanceVisibility, instances.Items.Length);
             if (id >= instanceBounds.Length) Array.Resize(ref instanceBounds, instances.Items.Length);
             instanceVisibility[id] = 1;
@@ -232,7 +239,7 @@ namespace Weesals.Engine {
         }
         public unsafe bool UpdateInstanceData(SceneInstance instance, int offset, void* data, int dataLen) {
             var stride = gpuScene.Elements[0].mBufferStride;
-            ref var instanceData = ref instances[instance.GetInstanceId()];
+            ref var instanceData = ref instances[instance];
             var srcData = new Span<byte>((byte*)data, dataLen);
             var dstData = new Span<byte>((byte*)gpuScene.Elements[0].mData + stride * instanceData.Data.Start + offset, dataLen);
             if (srcData.SequenceEqual(dstData)) return false;
@@ -245,8 +252,8 @@ namespace Weesals.Engine {
             offsetEnd = (int)((uint)(offsetEnd + ~RoundMask) & RoundMask);
             gpuSceneDirty.Add(offsetBegin, offsetEnd - offsetBegin);
             //gpuSceneDirty.Add(stride * instanceData.Data.Start, stride * instanceData.Data.Length);
-            listenerFlags |= instanceData.Listeners;
-            instanceData.Listeners = DefaultListenerMask;
+            listenerFlags |= instanceListeners[instance];
+            instanceListeners[instance] = DefaultListenerMask;
             return true;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -256,8 +263,8 @@ namespace Weesals.Engine {
             return new MemoryBlock<Vector4>(data + instanceData.Data.Start, instanceData.Data.Length);
         }
         public void RemoveInstance(SceneInstance instance) {
-            var instanceData = instances[instance.GetInstanceId()];
-            listenerFlags |= instanceData.Listeners;
+            ref var instanceData = ref instances[instance];
+            listenerFlags |= instanceListeners[instance];
             gpuSceneFree.Add(ref instanceData.Data);
             instances.Return(instance.GetInstanceId());
         }
@@ -269,12 +276,14 @@ namespace Weesals.Engine {
             return activeBounds;
         }
 
+        public HashSet<SceneInstance> GetMovedInstances() => movedInstances;
+        unsafe public void CommitMotion(SceneInstance instance) {
+            var data = GetInstanceData(instance);
+            Matrix4x4 mat = *(Matrix4x4*)data.Data;
+            UpdateInstanceData(instance, sizeof(Matrix4x4), &mat, sizeof(Matrix4x4));
+        }
         unsafe public void CommitMotion() {
-            foreach (var instance in movedInstances) {
-                var data = GetInstanceData(instance);
-                Matrix4x4 mat = *(Matrix4x4*)data.Data;
-                UpdateInstanceData(instance, sizeof(Matrix4x4), &mat, sizeof(Matrix4x4));
-            }
+            foreach (var instance in movedInstances) CommitMotion(instance);
             movedInstances.Clear();
         }
 
@@ -290,6 +299,9 @@ namespace Weesals.Engine {
             activeBounds.Max = Vector3.Max(activeBounds.Max, aabb.Max);
             instanceVisibility[instanceId] = GenerateCellMask(aabb.Min, aabb.Max);
             movedInstances.Add(instance);
+        }
+        unsafe public BoundingBox GetInstanceAABB(SceneInstance instance) {
+            return TransformBounds(*(Matrix4x4*)GetInstanceData(instance).Data, instanceBounds[instance]);
         }
 
         public static BoundingBox TransformBounds(Matrix4x4 mat, BoundingBox boundingBox) {
@@ -390,6 +402,8 @@ namespace Weesals.Engine {
             InstanceBufferLayout.AppendElement(
                 new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32_UINT)
             );
+            // Typecast to SceneInstance often
+            Debug.Assert(sizeof(SceneInstance) == sizeof(int));
         }
 
         public void Clear() {
@@ -438,16 +452,60 @@ namespace Weesals.Engine {
             return min;
         }
 
-        unsafe public bool AppendInstance(uint instanceId) {
+        unsafe public bool AppendInstance(SceneInstance instance) {
             if (InstanceCount >= InstanceBufferLayout.BufferCapacityCount) {
                 InstanceBufferLayout.AllocResize(Math.Max(16, InstanceBufferLayout.BufferCapacityCount * 2));
             }
             var instIndex = InstanceBufferLayout.BufferLayout.mCount++;
-            ref uint instId = ref ((uint*)InstanceBufferLayout.Elements[0].mData)[instIndex];
-            if (instId == instanceId) return false;
-            instId = instanceId;
+            ref int instId = ref ((int*)InstanceBufferLayout.Elements[0].mData)[instIndex];
+            if (instId == instance) return false;
+            instId = instance;
             instanceDirty.Add(instIndex * sizeof(uint), sizeof(uint));
             return true;
+        }
+        public bool AppendInstances(Span<SceneInstance> instances) {
+            if (InstanceCount + instances.Length > InstanceBufferLayout.BufferCapacityCount) {
+                InstanceBufferLayout.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)(InstanceCount + instances.Length + 16)));
+            }
+            var instIndex = InstanceBufferLayout.BufferLayout.mCount;
+            InstanceBufferLayout.BufferLayout.mCount += instances.Length;
+            Debug.Assert(sizeof(SceneInstance) == sizeof(int));
+            var instData = new Span<SceneInstance>((SceneInstance*)InstanceBufferLayout.Elements[0].mData + instIndex, instances.Length);
+            if (instances.SequenceEqual(instData)) return false;
+            instances.CopyTo(instData);
+            instanceDirty.Add(instIndex * sizeof(uint), instances.Length * sizeof(uint));
+            return true;
+        }
+        public ref struct Appender {
+            public RenderQueue Queue;
+            private Span<SceneInstance> instances;
+            private int iterator = 0;
+            private bool changes = false;
+            public Appender(RenderQueue queue, int count) {
+                Queue = queue;
+                ref var layout = ref Queue.InstanceBufferLayout;
+                if (Queue.InstanceCount + count > layout.BufferCapacityCount) {
+                    layout.AllocResize((int)BitOperations.RoundUpToPowerOf2((uint)(Queue.InstanceCount + count + 16)));
+                }
+                instances = new Span<SceneInstance>((SceneInstance*)layout.Elements[0].mData + layout.BufferLayout.mCount, count);
+            }
+            public void Add(SceneInstance instance) {
+                if (instances[iterator] != instance) {
+                    instances[iterator] = instance;
+                    changes = true;
+                }
+                ++iterator;
+            }
+            public void Dispose() {
+                Debug.Assert(iterator == instances.Length);
+                ref var layout = ref Queue.InstanceBufferLayout;
+                var beginIndex = layout.BufferLayout.mCount;
+                layout.BufferLayout.mCount += instances.Length;
+                if (changes) {
+                    Queue.instanceDirty.Add(beginIndex * sizeof(uint),
+                        instances.Length * sizeof(uint));
+                }
+            }
         }
 
         public void Render(CSGraphics graphics) {
@@ -479,48 +537,63 @@ namespace Weesals.Engine {
         private static ProfilerMarker ProfileMarker_SubmitToRQ = new ProfilerMarker("Submit To RQ");
         private static ProfilerMarker ProfileMarker_ComputeHull = new ProfilerMarker("Hull");
         private static ProfilerMarker ProfileMarker_FrustumCull = new ProfilerMarker("FrustumCull");
+        private static ProfilerMarker ProfileMarker_SortInstances = new ProfilerMarker("Sort");
+        private static ProfilerMarker ProfileMarker_AppendInstances = new ProfilerMarker("Append");
+        private static ProfilerMarker ProfileMarker_FrustumJobCull = new ProfilerMarker("FrustumCullJob");
         private static ProfilerMarker ProfileMarker_ComputeResources = new ProfilerMarker("ComputeResources");
+        private static ProfilerMarker ProfileMarker_FrustumFast = new ProfilerMarker("Fast");
+        private static ProfilerMarker ProfileMarker_FrustumSlow = new ProfilerMarker("Slow");
 
         public struct StateKey : IEquatable<StateKey>, IComparable<StateKey> {
-            public Mesh Mesh;
+            public int MeshHash;
             public int MaterialSet;
-            public StateKey(Mesh mesh, int matSet) {
-                Mesh = mesh;
+            public StateKey(int meshHash, int matSet) {
+                MeshHash = meshHash;
                 MaterialSet = matSet;
             }
             public bool Equals(StateKey o) {
-                return Mesh.Equals(o.Mesh) && MaterialSet == o.MaterialSet;
+                return MeshHash.Equals(MeshHash) && MaterialSet == o.MaterialSet;
             }
             public int CompareTo(StateKey o) {
-                int compare = Mesh.VertexBuffer.identifier.CompareTo(o.Mesh.VertexBuffer.identifier);
+                int compare = MeshHash.CompareTo(o.MeshHash);
                 if (compare == 0) compare = MaterialSet - o.MaterialSet;
                 return compare;
             }
+            public override int GetHashCode() { return HashCode.Combine(MeshHash, MaterialSet); }
         }
         public class Batch {
             public StateKey StateKey;
-            public Mesh Mesh => StateKey.Mesh;
+            public Mesh Mesh;
             public int MaterialSet => StateKey.MaterialSet;
-            public List<SceneInstance> Instances = new();
-            public CSBufferLayout[] BufferLayoutCache;
-            public Batch(StateKey stateKey, CSBufferLayout[] buffers) {
+            public BoundingVolumeHierarchy BVH;
+            public Batch(Scene scene, Mesh mesh, StateKey stateKey) {
+                BVH = new(scene);
+                Mesh = mesh;
                 StateKey = stateKey;
-                BufferLayoutCache = buffers;
             }
         }
         public class ResolvedPipeline {
-            public CSPipeline mPipeline;
-            public List<int> mResolvedCBs = new();
-            public int mResolvedResources;
+            public CSPipeline Pipeline;
+            public List<int> ResolvedCBs = new();
+            public int ResolvedResources;
+            public int TotalResourceCount;
         };
+        public struct InstanceCache {
+            public int BatchIndex;
+            public override string ToString() => BatchIndex.ToString();
+            public static readonly InstanceCache None = new() { BatchIndex = -1, };
+        }
 
         public readonly Scene Scene;
 
         // All batches that currently exist
         private List<Batch> batches = new();
-        private Dictionary<uint, StateKey> instanceBatches = new();
+        private Dictionary<StateKey, int> batchesByState = new();
+        private PooledHashMap<int, int> instanceBatches = new(32);
         // Stores cached PSOs per mesh/matset/graphics
         Dictionary<int, ResolvedPipeline> mPipelineCache = new();
+        private int generation;
+        public BoundingVolumeHierarchy BVH;
 
         // Passes the typed instance buffer to a CommandList
         BufferLayoutPersistent mInstanceBufferLayout;
@@ -532,6 +605,8 @@ namespace Weesals.Engine {
 
         public RetainedRenderer(Scene scene) {
             Scene = scene;
+            BVH = new(Scene);
+            BVH.SetInstanceMetaType<InstanceCache>();
             instanceMaterial = new();
             mInstanceBufferLayout = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
             mInstanceBufferLayout.MarkInvalid();
@@ -548,58 +623,135 @@ namespace Weesals.Engine {
         public bool GetHasSceneChanges() {
             return Scene.GetListenerState(changeListenerId);
         }
-        private void FindInstanceIndex(StateKey key, int sceneId, out int batchIndex, out int instanceIndex) {
-            int bucket = 0, max = batches.Count;
-            while (bucket < max) {
-                int mid = (bucket + max) >> 1;
-                if (batches[mid].StateKey.CompareTo(key) < 0) bucket = mid + 1;
-                else max = mid;
+        private int RequireBatchIndex(Mesh mesh, int matSetId) {
+            var key = new StateKey((int)mesh.IndexBuffer.identifier, matSetId);
+            if (batchesByState.TryGetValue(key, out var batchId)) {
+                return batchId;
             }
-            if (bucket == batches.Count || !batches[bucket].StateKey.Equals(key)) {
-                var buffers = new CSBufferLayout[3];
-                buffers[0] = key.Mesh.IndexBuffer;
-                buffers[1] = key.Mesh.VertexBuffer;
-                buffers[2] = mInstanceBufferLayout.BufferLayout;
-                batches.Insert(bucket, new Batch(key, buffers));
-            }
-            var batch = batches[bucket];
-            int instance = 0, imax = batch.Instances.Count;
-            while (instance < imax) {
-                int mid = (instance + imax) >> 1;
-                if (batch.Instances[mid].GetInstanceId().CompareTo(sceneId) < 0) instance = mid + 1;
-                else imax = mid;
-            }
-            batchIndex = bucket;
-            instanceIndex = instance;
+            batchId = batches.Count;
+            batches.Add(new Batch(Scene, mesh, key));
+            batchesByState.Add(key, batchId);
+            return batchId;
+        }
+
+        unsafe public Int2 GetPosition(SceneInstance instance) {
+            var instanceData = Scene.GetInstanceData(instance);
+            return GetPosition(*(Matrix4x4*)instanceData.Data);
+        }
+        public static Int2 GetPosition(in Matrix4x4 matrix) {
+            return new Int2((int)matrix.Translation.X, (int)matrix.Translation.Z);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int Permute(int instance) {
+            return instance ^ (instance >> 6);
         }
 
         // Add an instance to be drawn each frame
-        unsafe public int AppendInstance(Mesh mesh, Span<Material> materials, int sceneId) {
+        unsafe public int AppendInstance(Mesh mesh, Span<Material> materials, SceneInstance instance) {
             using var mats = new PooledArray<Material>(materials, materials.Length + 1);
             mats[^1] = instanceMaterial;
 
             int matSetId = Scene.MaterialCollection.Require(mats);
-            var key = new StateKey(mesh, matSetId);
-            FindInstanceIndex(key, sceneId, out var batchIndex, out var instance);
+            var batchIndex = RequireBatchIndex(mesh, matSetId);
             var batch = batches[batchIndex];
-            batch.Instances.Insert(instance, new SceneInstance(sceneId));
-            instanceBatches.Add((uint)sceneId, key);
-            return sceneId;
+            var mut = BVH.Add(GetPosition(instance), instance);
+            instanceBatches.Add(Permute(instance), batchIndex);
+            BVH.GetInstanceMeta<InstanceCache>()[mut.NewIndex] = new InstanceCache() { BatchIndex = batchIndex, };
+            return instance;
+        }
+        // Update the BVH
+        public void MoveInstance(SceneInstance instance, Int2 oldPos, Int2 newPos) {
+            Debug.Assert(instanceBatches.TryGetValue(Permute(instance), out _));
+            if (BVH.Move(oldPos, newPos, instance, out var remMut, out var addMut)) {
+            }
         }
         // Set visibility
-        public void SetVisible(int sceneId, bool visible) {
+        public void SetVisible(SceneInstance instance, bool visible) {
+            throw new NotImplementedException();
+            Debug.Assert(instanceBatches.TryGetValue(Permute(instance), out _));
+            if (visible) {
+                var mut = BVH.Add(GetPosition(instance), instance);
+            } else {
+                var mut = BVH.Remove(GetPosition(instance), instance);
+            }
         }
         // Remove an instance from rendering
-        public void RemoveInstance(int sceneId) {
-            if (!instanceBatches.TryGetValue((uint)sceneId, out var key)) return;
-            FindInstanceIndex(key, sceneId, out var batchIndex, out var instance);
-            var batch = batches[batchIndex];
-            Debug.Assert(batch.Instances[instance] == (uint)sceneId);
-            batch.Instances.RemoveAt(instance);
-            instanceBatches.Remove((uint)sceneId);
+        public void RemoveInstance(SceneInstance instance) {
+            Debug.Assert(instanceBatches.TryGetValue(Permute(instance), out _));
+            var mut = BVH.Remove(GetPosition(instance), instance);
+            instanceBatches.Remove(Permute(instance));
         }
 
         private ConvexHull hull = new();
+
+        private RangeInt AppendInstances(RenderQueue queue, BoundingVolumeHierarchy vbh, in Frustum frustum) {
+            var change = false;
+            var instBegin = queue.InstanceCount;
+            // Calculate visible instances
+            using (var frustumMarker = ProfileMarker_FrustumCull.Auto()) {
+                var en = BVH.CreateFrustumEnumerator(frustum);
+                while (en.MoveNext()) {
+                    using var frustMarker = (en.IsFullyInFrustum ? ProfileMarker_FrustumFast : ProfileMarker_FrustumSlow).Auto();
+                    var instances = en.GetInstances();
+                    if (Scene.DrawSceneBVH && !en.IsParentFullyInFrustum) {
+                        var activeBounds = en.ActiveBoundingBox;
+                        Gizmos.DrawWireCube(activeBounds.Centre, activeBounds.Size, en.IsFullyInFrustum ? Color.Blue : Color.Red);
+                    }
+                    if (en.IsFullyInFrustum) {
+                        change |= queue.AppendInstances(instances);
+                        foreach (var instance in instances) {
+                            Scene.MarkListener(changeListenerId, instance);
+                        }
+                    } else {
+                        BoundingBox bounds = BoundingBox.Invalid;
+                        foreach (var instance in instances) {
+                            var aabb = Scene.GetInstanceAABB(instance);
+                            bounds = BoundingBox.Union(bounds, aabb);
+                            if (!frustum.GetIsVisible(aabb)) continue;
+                            change |= queue.AppendInstance(instance);
+                            Scene.MarkListener(changeListenerId, instance);
+                        }
+                        en.OverwriteBoundingBox(bounds);
+                    }
+                }
+            }
+            return new(instBegin, queue.InstanceCount - instBegin);
+        }
+        private RangeInt AppendInstances(ref PooledList<int> queue, BoundingVolumeHierarchy bvh, in Frustum frustum) {
+            var instBegin = queue.Count;
+            // Calculate visible instances
+            using (var frustumMarker = ProfileMarker_FrustumCull.Auto()) {
+                var en = BVH.CreateFrustumEnumerator(frustum);
+                while (en.MoveNext()) {
+                    using var frustMarker = (en.IsFullyInFrustum ? ProfileMarker_FrustumFast : ProfileMarker_FrustumSlow).Auto();
+                    var indexRange = en.GetInstanceRange();
+                    if (Scene.DrawSceneBVH && !en.IsParentFullyInFrustum) {
+                        var activeBounds = en.ActiveBoundingBox;
+                        Gizmos.DrawWireCube(activeBounds.Centre, activeBounds.Size, en.IsFullyInFrustum ? Color.Blue : Color.Red);
+                    }
+                    if (en.IsFullyInFrustum) {
+                        var range = queue.AddCount(indexRange.Length);
+                        var delta = indexRange.Start - range.Start;
+                        var end = range.End;
+                        for (int i = range.Start; i < end; i++) {
+                            queue[i] = i + delta;
+                        }
+                    } else {
+                        BoundingBox bounds = BoundingBox.Invalid;
+                        foreach (var index in indexRange) {
+                            var instance = en.GetInstance(index);
+                            var aabb = Scene.GetInstanceAABB(instance);
+                            bounds = BoundingBox.Union(bounds, aabb);
+                            if (!frustum.GetIsVisible(aabb)) continue;
+                            queue.Add(index);
+                        }
+                        en.OverwriteBoundingBox(bounds);
+                    }
+                }
+            }
+            return new(instBegin, queue.Count - instBegin);
+        }
 
         // Generate a drawlist for rendering currently visible objects
         unsafe public void SubmitToRenderQueue(CSGraphics graphics, RenderQueue queue, in Frustum frustum) {
@@ -607,7 +759,14 @@ namespace Weesals.Engine {
             Scene.ClearListener(changeListenerId);
             bool change = false;
 
-            ulong visMask;
+            // Clear PSO cache if resources were reloaded
+            if (Resources.Generation != generation) {
+                mPipelineCache.Clear();
+                generation = Resources.Generation;
+            }
+
+            // No longer using this acceleration
+            /*ulong visMask;
             bool enableFrustum = true;
             {       // Generate a mask representing the cells intersecting the frustum
                 using var hullMarker = ProfileMarker_ComputeHull.Auto();
@@ -618,86 +777,71 @@ namespace Weesals.Engine {
                 var aabb = hull.GetAABB();
                 if (aabb.Size.X <= 0) return;
                 visMask = Scene.GenerateCellMask(aabb.Min, aabb.Max);
+            }*/
+
+            // Collect all visible instances
+            var instOffset = queue.InstanceCount;
+            var indices = new PooledList<int>(1 << 18);
+            AppendInstances(ref indices, BVH, frustum);
+            var instanceMeta = BVH.GetInstanceMeta<InstanceCache>();
+            Span<int> instanceSortKeys = stackalloc int[indices.Count];
+            for (int i = 0; i < indices.Count; i++) {
+                instanceSortKeys[i] = instanceMeta[indices[i]].BatchIndex;
+            }
+            // Sort them into batches
+            using (var frustumSort = ProfileMarker_SortInstances.Auto()) {
+                MemoryExtensions.Sort(instanceSortKeys, indices.AsSpan());
+            }
+            // Preallocate buffer space
+            using (var frustumSort = ProfileMarker_AppendInstances.Auto()) {
+                new RenderQueue.Appender(queue, indices.Count);
+                var rawInstances = BVH.RawInstances;
+                var listenerMask = 1u << changeListenerId;
+                // Push them into the buffer (64 batches to reduce overheads)
+                for (int i = 0; i < indices.Count; i += 64) {
+                    int count = Math.Min(64, indices.Count - i);
+                    using (var appender = new RenderQueue.Appender(queue, count)) {
+                        foreach (var index in indices.AsSpan(i, count)) {
+                            var instance = rawInstances[index];
+                            Scene.MarkListener(listenerMask, instance);
+                            appender.Add(instance);
+                        }
+                    }
+                }
+                indices.Dispose();
             }
 
-            foreach (var batch in batches) {
-                if (batch.Instances.Count == 0) continue;
-
-                var mesh = batch.Mesh;
-                var instBegin = queue.InstanceCount;
-
-                // Calculate visible instances
-                using (var frustumMarker = ProfileMarker_FrustumCull.Auto()) {
-                    if (enableFrustum) {
-                        var bbox = mesh.BoundingBox;
-                        var bboxCtr = bbox.Centre;
-                        var bboxExt = bbox.Extents;
-                        foreach (var instance in batch.Instances) {
-                            if ((Scene.GetInstanceVisibilityMask(instance) & visMask) == 0) continue;
-                            var data = Scene.GetInstanceData(instance);
-                            ref var matrix = ref *(Matrix4x4*)(data.Data);
-                            if (!frustum.GetIsVisible(Vector3.Transform(bboxCtr, matrix), bboxExt)) continue;
-                            //var aabb = Scene.TransformBounds(matrix, bbox);
-                            //if (!frustum.GetIsVisible(aabb.Centre, aabb.Extents)) continue;
-                            var id = instance.GetInstanceId();
-                            change |= queue.AppendInstance((uint)id);
-                            Scene.MarkListener(changeListenerId, id);
-
-                            //Handles.matrix = matrix;
-                            //Gizmos.DrawWireCube(mesh.BoundingBox.Centre, mesh.BoundingBox.Size);
-                        }
-                    } else {
-                        foreach (var instance in batch.Instances) {
-                            var id = instance.GetInstanceId();
-                            change |= queue.AppendInstance((uint)id);
-                            Scene.MarkListener(changeListenerId, id);
-                        }
-                    }
+            for (int instIt = 0; instIt < instanceSortKeys.Length; ) {
+                // Get the instance range for this batch
+                var instBegin = instIt;
+                var b = instanceSortKeys[instIt];
+                for (; instIt < instanceSortKeys.Length; ++instIt) {
+                    if (b != instanceSortKeys[instIt]) break;
                 }
-                // If no instances were created, quit
-                if (queue.InstanceCount == instBegin) continue;
-                int instCount = queue.InstanceCount - instBegin;
+                int instCount = instOffset + instIt - instBegin;
+                var batch = batches[b];
+                var mesh = batch.Mesh;
+
+                // Need to force this to use queues instance buffer
+                // TODO: A more generic approach
+                var bindings = graphics.RequireFrameData<CSBufferLayout>(3);
+                bindings[0] = mesh.IndexBuffer;
+                bindings[1] = mesh.VertexBuffer;
+                bindings[^1] = queue.InstanceBufferLayout;
+                bindings[^1].mOffset = instOffset + instBegin;
+                bindings[^1].mCount = instCount;
 
                 // Compute and cache CB and resource data
-                var meshMatHash = HashCode.Combine(batch.Mesh.GetHashCode(), batch.MaterialSet, graphics.GetHashCode());
-                if (!mPipelineCache.TryGetValue(meshMatHash, out var resolved)) {
-                    var materials = Scene.MaterialCollection.GetMaterials(batch.MaterialSet);
-                    var pso = MaterialEvaluator.ResolvePipeline(graphics, batch.BufferLayoutCache, materials);
-                    resolved = new ResolvedPipeline() {
-                        mPipeline = pso,
-                    };
-                    mPipelineCache.Add(meshMatHash, resolved);
-                    var psobuffsers = pso.GetConstantBuffers();
-                    var psoresources = pso.GetResources();
-                    foreach (var cb in psobuffsers) {
-                        var resolvedId = Scene.ResolvedMaterials.RequireResolved(graphics, cb.GetValues(), batch.MaterialSet);
-                        resolved.mResolvedCBs.Add(resolvedId);
-                    }
-                    using var tresources = new PooledArray<CSUniformValue>(psoresources.Length);
-                    for (int i = 0; i < psoresources.Length; ++i) {
-                        var res = psoresources[i];
-                        tresources[i] = new CSUniformValue {
-                            mName = res.mName,
-                            mOffset = (int)(i * sizeof(CSBufferReference)),
-                            mSize = (int)sizeof(CSBufferReference),
-                        };
-                    }
-                    resolved.mResolvedResources = tresources.Count == 0 ? default
-                        : Scene.ResolvedMaterials.RequireResolved(graphics, tresources, batch.MaterialSet);
-                }
+                var resolved = RequirePipeline(graphics, batch, bindings);
 
-                var pipeline = resolved.mPipeline;
-                var psoconstantBuffers = pipeline.GetConstantBuffers();
-                var resources = graphics.RequireFrameData<nint>(psoconstantBuffers.Length + pipeline.GetResourceCount() * 2);
-
+                var resources = graphics.RequireFrameData<nint>(resolved.TotalResourceCount);
                 using (var resourceMarker = ProfileMarker_ComputeResources.Auto()) {
                     int r = 0;
                     // Get constant buffer data for this batch
-                    for (int i = 0; i < resolved.mResolvedCBs.Count; ++i) {
-                        var cbid = resolved.mResolvedCBs[i];
+                    for (int i = 0; i < resolved.ResolvedCBs.Count; ++i) {
+                        var cbid = resolved.ResolvedCBs[i];
                         nint resource = 0;
                         if (cbid >= 0) {
-                            var psocb = psoconstantBuffers[i];
                             ref var resolvedMat = ref Scene.ResolvedMaterials.GetResolved(cbid);
                             resource = RequireConstantBuffer(graphics, resolvedMat.mEvaluator);
                         }
@@ -705,31 +849,55 @@ namespace Weesals.Engine {
                     }
                     // Get other resource data for this batch
                     if (r > 0) {
-                        ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.mResolvedResources);
+                        ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.ResolvedResources);
                         resCB.mEvaluator.EvaluateSafe(resources.Slice(r).Reinterpret<byte>());
-                        r += resources.Length;
                     }
                 }
 
-                // Need to force this to use queues instance buffer
-                // TODO: A more generic approach
-                var bindings = graphics.RequireFrameData<CSBufferLayout>(batch.BufferLayoutCache);
-                bindings[0] = mesh.IndexBuffer;
-                bindings[1] = mesh.VertexBuffer;
-                bindings[^1] = queue.InstanceBufferLayout;
-                bindings[^1].mOffset = instBegin;
-                bindings[^1].mCount = instCount;
                 // Add the draw command
                 queue.AppendMesh(
                     mesh.Name,
-                    pipeline,
+                    resolved.Pipeline,
                     bindings,
                     resources,
                     instances: instCount,
                     renderOrder: 0,
+                    // TODO: instCount may not capture all changes
                     hash: HashCode.Combine(mesh.Revision, instCount)
                 );
             }
+        }
+
+        private unsafe ResolvedPipeline RequirePipeline(CSGraphics graphics, Batch batch, Span<CSBufferLayout> buffers) {
+            var meshMatHash = HashCode.Combine(batch.StateKey.GetHashCode(), graphics.GetHashCode());
+            if (!mPipelineCache.TryGetValue(meshMatHash, out var resolved)) {
+                var materials = Scene.MaterialCollection.GetMaterials(batch.MaterialSet);
+                var pso = MaterialEvaluator.ResolvePipeline(graphics, buffers, materials);
+                resolved = new ResolvedPipeline() {
+                    Pipeline = pso,
+                };
+                var cbuffers = pso.GetConstantBuffers();
+                foreach (var cb in cbuffers) {
+                    var resolvedId = Scene.ResolvedMaterials.RequireResolved(graphics, cb.GetValues(), batch.MaterialSet);
+                    resolved.ResolvedCBs.Add(resolvedId);
+                }
+                var resources = pso.GetResources();
+                if (resources.Length > 0) {
+                    Span<CSUniformValue> tresources = stackalloc CSUniformValue[resources.Length];
+                    for (int i = 0; i < resources.Length; ++i) {
+                        var res = resources[i];
+                        tresources[i] = new CSUniformValue {
+                            mName = res.mName,
+                            mOffset = (int)(i * sizeof(CSBufferReference)),
+                            mSize = (int)sizeof(CSBufferReference),
+                        };
+                    }
+                    resolved.ResolvedResources = Scene.ResolvedMaterials.RequireResolved(graphics, tresources, batch.MaterialSet);
+                }
+                resolved.TotalResourceCount = resolved.ResolvedCBs.Count + pso.GetResourceCount() * 2;
+                mPipelineCache.Add(meshMatHash, resolved);
+            }
+            return resolved;
         }
 
         unsafe private nint RequireConstantBuffer(CSGraphics graphics, MaterialEvaluator evaluator) {

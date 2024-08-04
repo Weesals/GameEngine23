@@ -97,8 +97,11 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     auto createDeviceZone = SimpleProfilerMarker("Create Device");
 
     // Create the device
-    int DeviceId = 0;
-    if ((GetKeyState(VK_CAPITAL) & 0x00ff) && DeviceId == 0) DeviceId = 1;
+    SYSTEM_POWER_STATUS sps;
+    bool useLowPower = GetSystemPowerStatus(&sps) && (sps.ACLineStatus == 0);
+    if ((GetKeyState(VK_CAPITAL) & 0x00ff)) useLowPower = !useLowPower;
+
+    int DeviceId = useLowPower ? 0 : 1;
     ThrowIfFailed(D3D12CreateDevice(adapters[std::min(DeviceId, (int)adapters.size() - 1)].Get(),
         D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice)));
     mD3DDevice->SetName(L"Device");

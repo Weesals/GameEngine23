@@ -32,6 +32,7 @@ PSInput VSMain(VSInput input)
     InstanceData instance = instanceData[input.primitiveId];
     
     result.primitiveId = input.primitiveId;
+
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
     float3 worldNrm = mul(instance.Model, float4(input.normal.xyz, 0.0)).xyz;
     result.position = mul(ViewProjection, float4(worldPos, 1.0));
@@ -41,14 +42,12 @@ PSInput VSMain(VSInput input)
 
     float3 prevWorldPos = mul(instance.PreviousModel, float4(input.position.xyz, 1.0)).xyz;
     float4 previousVPos = mul(PreviousViewProjection, float4(prevWorldPos, 1.0));
-    result.velocity = result.position.xyz / result.position.w - previousVPos.xyz / previousVPos.w;
+    //result.velocity = result.position.xyz / result.position.w - previousVPos.xyz / previousVPos.w;
+    float invW = rcp(previousVPos.w * result.position.w);
+    result.velocity = result.position.xyz * (previousVPos.w * invW) - previousVPos.xyz * (result.position.w * invW);
     // Add a slight amount to avoid velocity being 0 (special case)
     result.velocity.x += 0.0000001;
         
-#if defined(VULKAN)
-    result.position.y = -result.position.y;
-#endif
-
     return result;
 }
 

@@ -102,22 +102,19 @@ namespace Weesals.ECS {
         private void SetActiveEntity(Entity entity) {
             if (entity == active.Entity) return;
             PushActiveEntity();
+            active.Entity = entity;
             if (!entityIndexLookup.TryGetValue(entity, out active.EntityIndex)) {
                 active.EntityIndex = entityIndexLookup.Count;
                 entityIndexLookup.Add(entity, active.EntityIndex);
                 if (active.EntityIndex >= mutations.Length)
                     Array.Resize(ref mutations, (int)BitOperations.RoundUpToPowerOf2((uint)active.EntityIndex + 4));
                 mutations[active.EntityIndex].Entity = entity;
+            } else {
+                active.SetTypes.Append(mutations[active.EntityIndex].SetTypes);
+                active.RemoveTypes.Append(mutations[active.EntityIndex].RemoveTypes);
+                active.SetSparseTypes.Append(mutations[active.EntityIndex].SetSparseTypes);
+                active.RemoveSparseTypes.Append(mutations[active.EntityIndex].RemoveSparseTypes);
             }
-            active.Entity = entity;
-            active.SetTypes.Clear();
-            active.RemoveTypes.Clear();
-            active.SetSparseTypes.Clear();
-            active.RemoveSparseTypes.Clear();
-            active.SetTypes.Append(mutations[active.EntityIndex].SetTypes);
-            active.RemoveTypes.Append(mutations[active.EntityIndex].RemoveTypes);
-            active.SetSparseTypes.Append(mutations[active.EntityIndex].SetSparseTypes);
-            active.RemoveSparseTypes.Append(mutations[active.EntityIndex].RemoveSparseTypes);
         }
         private void PushActiveEntity() {
             if (active.EntityIndex == -1) return;
@@ -128,6 +125,10 @@ namespace Weesals.ECS {
             mutation.RemoveSparseTypes = Stage.Context.RequireTypeMask(active.RemoveSparseTypes);
             active.Entity = default;
             active.EntityIndex = -1;
+            active.SetTypes.Clear();
+            active.RemoveTypes.Clear();
+            active.SetSparseTypes.Clear();
+            active.RemoveSparseTypes.Clear();
         }
 
         public Entity CreateEntity() {
@@ -161,8 +162,8 @@ namespace Weesals.ECS {
         public ArrayReference AddComponent(Entity entity, TypeId typeId) {
             SetActiveEntity(entity);
             (typeId.IsSparse ? active.SetSparseTypes : active.SetTypes).Add(typeId);
-            var typeIndex = typeId.Index;
             ref var typeValues = ref (typeId.IsSparse ? ref sparseValues : ref values);
+            var typeIndex = typeId.Index;
             if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 8);
             ref var items = ref typeValues[typeIndex].Items;
             if (items == null || active.EntityIndex >= items.Length) {
@@ -176,14 +177,22 @@ namespace Weesals.ECS {
 
             var typeId = Stage.Context.RequireComponentTypeId<T>();
             (typeId.IsSparse ? active.SetSparseTypes : active.SetTypes).Add(typeId);
-            var typeIndex = typeId.Index;
             ref var typeValues = ref (typeId.IsSparse ? ref sparseValues : ref values);
-            if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 4);
+            var typeIndex = typeId.Index;
+            if (typeIndex >= typeValues.Length) Array.Resize(ref typeValues, typeIndex + 8);
             var items = (T[])typeValues[typeIndex].Items;
             if (items == null || active.EntityIndex >= items.Length) {
                 Array.Resize(ref items, mutations.Length);
                 typeValues[typeIndex].Items = items;
             }
+            return ref items[active.EntityIndex];
+        }
+        // Note: Can only be called after AddComponent!
+        public ref T MutateComponent<T>(Entity entity) {
+            var typeId = Stage.Context.RequireComponentTypeId<T>();
+            Debug.Assert((typeId.IsSparse ? active.SetSparseTypes : active.SetTypes).Contains(typeId));
+            ref var typeValues = ref (typeId.IsSparse ? ref sparseValues : ref values);
+            var items = (T[])typeValues[typeId.Index].Items;
             return ref items[active.EntityIndex];
         }
         public ref T SetComponent<T>(Entity entity, T value) {

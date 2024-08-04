@@ -31,6 +31,7 @@ namespace Weesals.Utility {
             public Index[] Remap;
             public ulong[] UnallocBucketMask;
             public int Capacity;
+            private int unallocMinIndex;
 #if DEBUG
             public PooledSentinel Sentinel;
 #endif
@@ -59,6 +60,7 @@ namespace Weesals.Utility {
 #endif
             }
             private void IntlClear() {
+                unallocMinIndex = 0;
                 UnallocBucketMask.AsSpan().Fill(~0ul);
                 Remap.AsSpan().Fill(InvalidIndex);
             }
@@ -78,9 +80,9 @@ namespace Weesals.Utility {
             }
             [MethodImpl(MethodImplOptions.AggressiveOptimization)]
             public Index FindFreeBucket() {
-                for (int i = 0; i < UnallocBucketMask.Length; i++) {
-                    if (UnallocBucketMask[i] == 0) continue;
-                    return (Index)(i * 64 + BitOperations.TrailingZeroCount(UnallocBucketMask[i]));
+                for (; unallocMinIndex < UnallocBucketMask.Length; unallocMinIndex++) {
+                    if (UnallocBucketMask[unallocMinIndex] == 0) continue;
+                    return (Index)(unallocMinIndex * 64 + BitOperations.TrailingZeroCount(UnallocBucketMask[unallocMinIndex]));
                 }
                 return InvalidIndex;
             }
@@ -117,6 +119,7 @@ namespace Weesals.Utility {
                 Keys[index] = default;
 #endif
                 UnallocBucketMask[index >> 6] |= (1ul << ((int)index & 63));
+                unallocMinIndex = Math.Min(unallocMinIndex, (int)(index >> 6));
             }
             public Index FindParent(Index parent, Index child) {
                 while (parent != InvalidIndex) {

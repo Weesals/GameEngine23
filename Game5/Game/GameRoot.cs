@@ -219,6 +219,7 @@ namespace Game5.Game {
             Canvas.RequireComposed();
         }
         public void Render(CSGraphics graphics, float dt) {
+            scenePasses.CommitMotion();
             using var updateMarker = ProfileMarker_Render.Auto();
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
@@ -303,12 +304,23 @@ namespace Game5.Game {
                 var pos = mray.ProjectTo(new Plane(Vector3.UnitY, 0f));
 
                 if (item.FilePath.EndsWith(".json")) {
-                    var particleSystem = Play.ParticleManager.RequireSystemFromJSON(Scene, item.FilePath);
-                    if (particleSystem != null) {
-                        var emitter = particleSystem.CreateEmitter(pos);
-                        var entity = Play.World.CreateEntity(name);
-                        Play.World.AddComponent<ECTransform>(entity, new(SimulationWorld.WorldToSimulation(pos).XZ));
-                        Play.World.AddComponent<ECParticleBinding>(entity, new() { Emitter = emitter, });
+                    var type = Resources.GetResourceType(item.FilePath);
+                    switch (type) {
+                        case "Prefab": {
+                            var prefab = Play.Simulation.PrefabLoader.LoadPrototype(item.FilePath);
+                            var instance = Play.Simulation.PrefabRegistry.Instantiate(Play.Simulation.World, prefab.Prefab);
+                            ref var tform = ref Play.Simulation.World.GetComponentRef<ECTransform>(instance);
+                            tform.Position = SimulationWorld.WorldToSimulation(pos).XZ;
+                        } break;
+                        case "ParticleSystem": {
+                            var particleSystem = Play.ParticleManager.RequireSystemFromJSON(Scene, item.FilePath);
+                            if (particleSystem != null) {
+                                var emitter = particleSystem.CreateEmitter(pos);
+                                var entity = Play.World.CreateEntity(name);
+                                Play.World.AddComponent<ECTransform>(entity, new(SimulationWorld.WorldToSimulation(pos).XZ));
+                                Play.World.AddComponent<ECParticleBinding>(entity, new() { Emitter = emitter, });
+                            }
+                        } break;
                     }
                 }
                 if (item.FilePath.EndsWith(".fbx")) {

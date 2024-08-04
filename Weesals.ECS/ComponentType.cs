@@ -71,6 +71,7 @@ namespace Weesals.ECS {
     public class ComponentType<Component> : ComponentType {
         public ComponentType(TypeId id) : base(typeof(Component), id, GetFlags()) { }
         public override void Resize(ref Array array, int size) {
+            if (size == 0) { array = Array.Empty<Component>(); return; }
             Component[] typedArray = (Component[])array;
             Array.Resize(ref typedArray, size);
             array = typedArray;

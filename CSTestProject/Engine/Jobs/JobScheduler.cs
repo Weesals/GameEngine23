@@ -258,7 +258,7 @@ namespace Weesals.Engine.Jobs {
     public class JobScheduler {
 
         public const int ThreadCount = -1;
-        public const bool EnableThreading = false;
+        public const bool EnableThreading = true;
         public const ushort BatchBegin_MainThread = ushort.MaxValue;
         public const ushort ContextCount_HasReturn = 0x8000;
 
@@ -441,7 +441,8 @@ namespace Weesals.Engine.Jobs {
             }
             internal static int GetRunCount(int maxCount) {
                 int batchBit = 31 - BitOperations.LeadingZeroCount((uint)maxCount);
-                return maxCount >> Math.Max(batchBit - 4, 0);
+                var shift = Math.Max(batchBit - 4, 0);
+                return (maxCount + (1 << shift) - 1) >> shift;
             }
             internal static void GetRunIndices(int index, JobTask task, out ushort batchBegin, out ushort batchCount) {
                 int batchBit = 31 - BitOperations.LeadingZeroCount((uint)task.BatchCount);

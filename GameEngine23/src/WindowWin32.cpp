@@ -214,9 +214,9 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
             if (wParam <= VK_CONTROL) UpdateModifiers(window);
             window->mInput->GetMutator().ReceiveKeyEvent((int)wParam, message == WM_KEYDOWN);
         }
-        std::stringstream str;
-        str << wParam << " M " << message << std::endl;
-        OutputDebugStringA(str.str().c_str());
+        //std::stringstream str;
+        //str << wParam << " M " << message << std::endl;
+        //OutputDebugStringA(str.str().c_str());
     } return 0;
     case WM_KILLFOCUS: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));

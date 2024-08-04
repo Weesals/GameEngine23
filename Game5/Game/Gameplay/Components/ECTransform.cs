@@ -47,10 +47,9 @@ namespace Game5.Game {
             return (short)FixedMath.RoundToInt(ang);
         }
         public static Int2 FacingFromOrientation(short orientation, int magnitude = 1024) {
-            var ang = new Fixed16_16((int)((long)Fixed16_16.TwoPI.RawValue * orientation / ushort.MaxValue));
             return new Int2(
-                FixedMath.RoundToInt(FixedMath.Sin(ang) * magnitude),
-                FixedMath.RoundToInt(FixedMath.Cos(ang) * magnitude)
+                FixedMath.RoundToInt(FixedMath.SinI16((ushort)orientation) * magnitude),
+                FixedMath.RoundToInt(FixedMath.CosI16((ushort)orientation) * magnitude)
             );
         }
 

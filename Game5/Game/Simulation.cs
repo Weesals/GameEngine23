@@ -97,6 +97,7 @@ namespace Game5.Game {
         public World World { get; private set; }
         public LandscapeData Landscape { get; private set; }
 
+        public PrefabLoader PrefabLoader { get; private set; }
         public EntityProxy EntityProxy { get; private set; }
         public TimeSystem TimeSystem { get; private set; }
         public ProtoSystem ProtoSystem { get; private set; }
@@ -182,60 +183,67 @@ namespace Game5.Game {
 
             var prefabMarker = new ProfilerMarker("Creating Prefabs").Auto();
 
-            var loader = new PrefabLoader(ProtoSystem);
-            loader.RegisterSerializer((ref AnimationHandle handle, SJson serializer) => {
+            PrefabLoader = new PrefabLoader(ProtoSystem);
+            PrefabLoader.RegisterSerializer((ref AnimationHandle handle, SJson serializer) => {
                 foreach (var field in serializer.GetFields()) {
                     var model = Resources.LoadModel(field.Key.ToString(), out var loadHandle);
                     loadHandle.Complete();
                     handle = model.Animations[field.Value.ToString()];
                 }
             });
-            var archer = loader.LoadPrototype("./Assets/Prefabs/Archer.json");
-            var chicken = loader.LoadPrototype("./Assets/Prefabs/Chicken.json");
-            var house = loader.LoadPrototype("./Assets/Prefabs/House.json");
-            var townCentre = loader.LoadPrototype("./Assets/Prefabs/TownCentre.json");
-            var tree = loader.LoadPrototype("./Assets/Prefabs/Tree.json");
+            var archer = PrefabLoader.LoadPrototype("./Assets/Prefabs/Archer.json");
+            var chicken = PrefabLoader.LoadPrototype("./Assets/Prefabs/Chicken.json");
+            var house = PrefabLoader.LoadPrototype("./Assets/Prefabs/House.json");
+            var townCentre = PrefabLoader.LoadPrototype("./Assets/Prefabs/TownCentre.json");
+            var tree = PrefabLoader.LoadPrototype("./Assets/Prefabs/Tree.json");
 
             prefabMarker.Dispose();
 
-            using (new ProfilerMarker("Creating Test Entities").Auto()) {
-                tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
-                World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
+            if (true) {
+                using (new ProfilerMarker("Creating Test Entities").Auto()) {
+                    //tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
+                    //World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
 
-                var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
-                World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
+                    var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
+                    World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
 
-                var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
-                World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
+                    //var chickenInstance = PrefabRegistry.Instantiate(World, chicken.Prefab);
+                    //World.GetComponentRef<ECTransform>(chickenInstance).Position = new Int2(50000, 28000);
 
-                World.GetComponentRef<ECTransform>(World.CreateEntity(tcInstance)).Position += new Int2(6000, 1000);
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 1000);
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 1000);
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 1000);
-                World.Manager.ColumnStorage.Validate?.Invoke();
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(0000, 2000);
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 2000);
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 2000);
-                World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 2000);
+                    //World.GetComponentRef<ECTransform>(World.CreateEntity(tcInstance)).Position += new Int2(6000, 1000);
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 1000);
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 1000);
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 1000);
+                    World.Manager.ColumnStorage.Validate?.Invoke();
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(0000, 2000);
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(1000, 2000);
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(2000, 2000);
+                    World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 2000);
+                }
             }
 
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Manager);
-                const int Count = 25;
+                const int Count = 2000000 * 4;
                 var sqrtCount = (int)MathF.Sqrt(Count);
+                int totCount = 0;
                 for (int i = 0; i < Count; i++) {
-                    var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 6000;
+                    var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 4000;
+                    if (rand.Next(0, 4) != 0) continue;
                     if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
                     var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
                     command.AddComponent<ECTransform>(newEntity) = new() {
                         Position = pos,
                         Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
                     };
+                    command.MutateComponent<CModel>(newEntity).Variant = i;
                     //command.RemoveComponent<ECObstruction>(newEntity);
+                    ++totCount;
                 }
                 using (new ProfilerMarker("Committing").Auto()) {
                     command.Commit();
                 }
+                Trace.WriteLine($"Spawned {totCount} houses");
             }
 
             using (new ProfilerMarker("Creating Trees").Auto()) {

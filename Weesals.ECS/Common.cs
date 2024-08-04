@@ -39,7 +39,13 @@ namespace Weesals.ECS {
         public struct DebugEntityView {
             [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
             public EntityManager.DebugEntity View;
-            public DebugEntityView(Entity entity) { View = new(entity.Manager, entity); }
+            public DebugEntityView(Entity entity) {
+#if DEBUG
+                View = new(entity.Manager, entity);
+#else
+                View = new(null, entity);
+#endif
+            }
         }
     }
 

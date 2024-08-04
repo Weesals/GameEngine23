@@ -12,6 +12,20 @@ using System.Threading.Tasks;
 using BitIndex = System.Int32;
 
 namespace Weesals.ECS {
+    public struct BitEnumerator : IEnumerator<int> {
+        public readonly ulong Bits;
+        public int Current { get; private set; }
+        object IEnumerator.Current => Current;
+        public BitEnumerator(ulong bits) { Bits = bits; Current = -1; }
+        public void Dispose() { }
+        public void Reset() { Current = -1; }
+        public bool MoveNext() {
+            if (++Current >= 64) { Current = -1; return false; }
+            Current += BitOperations.TrailingZeroCount(Bits >> Current);
+            return Current < 64;
+        }
+        public BitEnumerator GetEnumerator() { return this; }
+    }
     // Represents up to 4096 bits broken up into up to 64 blocks of 64 bits.
     // BitFields are compared by pointer, so each allocated instance should be unique.
     public unsafe readonly struct BitField : IEquatable<BitField>, IEnumerable<int> {
@@ -48,13 +62,14 @@ namespace Weesals.ECS {
             var pageId = GetPageIdByBit(bit);
             if ((pageIds & (1uL << pageId)) != 0) {
                 var page = pages[CountBitsUntil(pageIds, pageId)];
-                page &= ~0ul << (bit & 63);
-                if (page != 0) return pageId * 64 + BitOperations.TrailingZeroCount(page);
+                page &= ~0ul << bit;
+                if (page != 0) return GetBitByPageId(pageId) + BitOperations.TrailingZeroCount(page);
+                ++pageId;   // Move to next page
             }
-            var nextPageId = GetNextBit(pageIds, pageId);
+            var nextPageId = GetBitFrom(pageIds, pageId);
             if (nextPageId >= 64) return -1;
             var nextPage = pages[CountBitsUntil(pageIds, nextPageId)];
-            return nextPageId * 64 + BitOperations.TrailingZeroCount(nextPage);
+            return GetBitByPageId(nextPageId) + BitOperations.TrailingZeroCount(nextPage);
         }
         public int GetBitIndex(int bit) {
             int pageId = GetPageIdByBit(bit);
@@ -338,6 +353,12 @@ namespace Weesals.ECS {
                     Pages.RemoveAt(pageIndex);
                 }
                 return true;
+            }
+            public bool Contains(int bit) {
+                var pageId = GetPageIdByBit(bit);
+                if (((1ul << pageId) & PageIds) == 0) return false;
+                var pageIndex = CountBitsUntil(PageIds, pageId);
+                return (Pages[pageIndex] & (1ul << (bit & 63))) != 0;
             }
         }
         // Allocate this BitField on the heap.

@@ -40,7 +40,14 @@ public struct SJson : IEnumerable<SJson>, IEquatable<string> {
     public readonly int Start;
     public readonly int End;
 
-    public SJson(string data) : this(data, 0, data.Length) { }
+    public SJson(string data) : this(data, 0, data.Length) {
+        var self = new SJson(data, 0, data.Length);
+        int start = self.Start;
+        self.SkipWhitespace(ref start);
+        Data = self.Data;
+        Start = start;
+        End = self.End;
+    }
     public SJson(string data, int start, int end) {
         Data = data;
         Start = start;

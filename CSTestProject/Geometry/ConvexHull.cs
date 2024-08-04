@@ -107,8 +107,8 @@ namespace Weesals.Geometry {
             for (var it = edges.GetEnumerator(); it.MoveNext();) {
                 var dp1 = dpCache[it.Current.Corner1];
                 var dp2 = dpCache[it.Current.Corner2];
-                var bit1 = dp1 >= 0.01f;// GetBit(pointMasks, it.Current.Corner1);
-                var bit2 = dp2 >= 0.01f;// GetBit(pointMasks, it.Current.Corner2);
+                var bit1 = dp1 >= 0.01f;
+                var bit2 = dp2 >= 0.01f;
                 if (bit1 == bit2) {
                     if (!bit1) {
                         RemoveEdge(it.Index);
@@ -116,18 +116,21 @@ namespace Weesals.Geometry {
                     }
                     continue;
                 }
-                var corner1 = corners[it.Current.Corner1].Position;
-                var corner2 = corners[it.Current.Corner2].Position;
-                //var dp1 = Plane.DotCoordinate(plane, corner1);
-                //var dp2 = Plane.DotCoordinate(plane, corner2);
+                insertedCorners.Add(new Int2(it.Index, bit1 ? 1 : 0));
+            }
+            for (int i = 0; i < insertedCorners.Count; i++) {
+                ref var edge = ref edges[insertedCorners[i].X];
+                var dp1 = dpCache[edge.Corner1];
+                var dp2 = dpCache[edge.Corner2];
+                var bit1 = insertedCorners[i].Y != 0;
+                var corner1 = corners[edge.Corner1].Position;
+                var corner2 = corners[edge.Corner2].Position;
                 var dpDelta = (dp2 - dp1);
                 minDP = Math.Min(minDP, Math.Abs(dpDelta));
-                var intersect = Math.Abs(dpDelta) < 0.0000000001f ? it.Current.Corner1
+                var intersect = Math.Abs(dpDelta) < 0.0000000001f ? edge.Corner1
                     : RequireCorner(Vector3.Lerp(corner1, corner2, (0 - dp1) / dpDelta));
-                //pointMasks[intersect >> 6] |= 1ul << (intersect & 63);
-                OverwriteCorner(ref (bit1 ? ref it.Current.Corner2 : ref it.Current.Corner1), intersect);
-                Debug.Assert(it.Current.HasCorner(intersect));
-                insertedCorners.Add(new Int2(it.Index, bit1 ? 1 : 0));
+                OverwriteCorner(ref (bit1 ? ref edge.Corner2 : ref edge.Corner1), intersect);
+                Debug.Assert(edge.HasCorner(intersect));
             }
             var newPoly = AllocatePolygon();
             for (int c1 = 0; c1 < insertedCorners.Count; ++c1) {
@@ -175,6 +178,7 @@ namespace Weesals.Geometry {
         }
 
         private void OverwriteCorner(ref int edgeCorner, int newCorner) {
+            if (edgeCorner == newCorner) return;
             var oldCorner = edgeCorner;
             edgeCorner = newCorner;
             corners[newCorner].Edges.Length++;

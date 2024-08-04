@@ -61,6 +61,9 @@ namespace Weesals.Engine {
             }
             return hash;
         }
+        public override int GetHashCode() {
+            return Key == null ? 0 : Key.GetHashCode();
+        }
     }
     // Use FileSystemWatcher
     public class ResourceCacheManager {
@@ -381,6 +384,20 @@ namespace Weesals.Engine {
                 return material;
             }
         }
+        public static string GetResourceType(string filePath) {
+            using (var reader = File.OpenRead(filePath)) {
+                Span<byte> header = stackalloc byte[64];
+                int len = reader.Read(header);
+                if (header[0] == '/' && header[1] == '*') {
+                    int end = 2;
+                    while (end < len && header[end] != '*' && header[end] != ':') ++end;
+                    var typeName = header.Slice(2, end - 2);
+                    return Encoding.UTF8.GetString(typeName);
+                }
+            }
+            return null;
+        }
+
         unsafe public static PreprocessedShader RequirePreprocessedShader(string shaderPath, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
             // TODO: Cache in 'shader'
             ulong hash = shaderPath.ComputeStringHash();

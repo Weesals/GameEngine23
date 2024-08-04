@@ -64,7 +64,7 @@ namespace Game5.Game {
                 return map.Remove(id, entity);
             }
 
-            public MultiHashMap<uint, Entity>.Enumerator GetBundle(Int2 chunk) {
+            public MultiHashMap<uint, Entity>.Enumerator GetChunk(Int2 chunk) {
                 return map.GetValuesForKey(ChunkToId(chunk));
             }
             public MultiHashMap<uint, Entity>.KeyValueEnumerator GetEnumerator() {
@@ -107,7 +107,7 @@ namespace Game5.Game {
                 }
                 public bool MoveNext1(in EntityMap map) {
                     if (!SpiralIt.MoveNext() || SpiralIt.GetDistanceSq(Position) >= nearestDst2) return false;
-                    entityIt = map.GetBundle(SpiralIt.Current);
+                    entityIt = map.GetChunk(SpiralIt.Current);
                     return true;
                 }
                 public bool MoveNext2() {
@@ -205,11 +205,12 @@ namespace Game5.Game {
                     AllEntities.InsertEntityRaw(mapRegister.ChunkId, transform.Entity);
                 }
             }
+            mutations.Clear();
             if (movedEntities.Count > 0) {
                 foreach (var listener in movedListeners) listener.NotifyMovedEntities(movedEntities);
                 movedEntities.Clear();
             }
-            ValidateEntities();
+            //ValidateEntities();
         }
         private void RegisterEntity(EntityAddress entityAddr) {
             var entity = World.Manager.GetEntity(entityAddr);

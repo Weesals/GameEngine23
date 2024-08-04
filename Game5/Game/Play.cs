@@ -109,6 +109,10 @@ namespace Game5.Game {
         [EditorField] public bool EnableFoliage = false;
         [EditorField] public float FogIntensity = 0.25f;
         [EditorField] public bool DrawVisibilityVolume = false;
+        [EditorField] public bool DrawSceneBVH {
+            get => Scene.DrawSceneBVH;
+            set => Scene.DrawSceneBVH = value;
+        }
 
         [EditorField] public int LoadedModelCount => Resources.LoadedModelCount;
         [EditorField] public int LoadedShaderCount => Resources.LoadedShaderCount;
@@ -329,19 +333,26 @@ namespace Game5.Game {
         public ItemReference HitTest(Ray ray) {
             float nearestDst2 = float.MaxValue;
             ItemReference entityHit = ItemReference.None;
-            foreach (var accessor in World.QueryAll<ECTransform, CModel>()) {
-                var epos = (ECTransform)accessor;
-                var emodel = (CModel)accessor;
-                var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
-                if (prefab == null) continue;
-                foreach (var model in prefab.Models) {
-                    foreach (var mesh in model.Meshes) {
-                        var lray = ray;
-                        lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
-                        var dst = mesh.BoundingBox.RayCast(lray);
-                        if (dst >= 0f && dst < nearestDst2) {
-                            entityHit = Simulation.EntityProxy.MakeHandle(accessor);
-                            nearestDst2 = dst;
+            var entityMap = World.GetOrCreateSystem<EntityMapSystem>();
+            var chunkBeg = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(ray.Origin).XZ);
+            var chunkEnd = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(ray.ProjectTo(new Plane(Vector3.UnitY, 0f))).XZ);
+            var rayIt = new GridThickRayIterator(chunkBeg, chunkEnd - chunkBeg, 1);
+            foreach (var cell in rayIt) {
+                var entities = entityMap.AllEntities.GetChunk(cell);
+                foreach (var entity in entities) {
+                    if (!World.TryGetComponent<ECTransform>(entity, out var epos)) continue;
+                    if (!World.TryGetComponent<CModel>(entity, out var emodel)) continue;
+                    var prefab = EntityVisuals.GetVisuals(emodel.PrefabName, emodel.Variant);
+                    if (prefab == null) continue;
+                    foreach (var model in prefab.Models) {
+                        foreach (var mesh in model.Meshes) {
+                            var lray = ray;
+                            lray.Origin -= SimulationWorld.SimulationToWorld(epos.GetPosition3());
+                            var dst = mesh.BoundingBox.RayCast(lray);
+                            if (dst >= 0f && dst < nearestDst2) {
+                                entityHit = Simulation.EntityProxy.MakeHandle(entity);
+                                nearestDst2 = dst;
+                            }
                         }
                     }
                 }
@@ -385,7 +396,7 @@ namespace Game5.Game {
             int count = 0;
             for (int y = cmin.Y; y <= cmax.Y; y++) {
                 for (int x = cmin.X; x <= cmax.X; x++) {
-                    var chunkEntities = entityMapSystem.AllEntities.GetBundle(new Int2(x, y));
+                    var chunkEntities = entityMapSystem.AllEntities.GetChunk(new Int2(x, y));
                     foreach (var entity in chunkEntities) {
                         if (!World.IsValid(entity)) continue;
                         var protoData = World.GetComponent<PrototypeData>(entity);

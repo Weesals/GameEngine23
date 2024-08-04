@@ -119,8 +119,15 @@ namespace Weesals.Engine {
         public static float cmin(this Vector2 v) {
             return MathF.Min(v.X, v.Y);
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float cmax(this Vector2 v) {
+            return MathF.Max(v.X, v.Y);
+        }
         public static float cmin(this Vector4 v) {
             return MathF.Min(MathF.Min(v.X, v.Y), MathF.Min(v.Z, v.W));
+        }
+        public static float cmax(this Vector4 v) {
+            return MathF.Max(MathF.Max(v.X, v.Y), MathF.Max(v.Z, v.W));
         }
 
         public static Vector3 AppendY(this Vector2 v, float y = 0.0f) {
@@ -190,6 +197,7 @@ namespace Weesals.Engine {
             set => (index <= 0 ? ref X : ref Y) = value;
         }
         public bool Equals(Int2 o) { return X == o.X && Y == o.Y; }
+        public static Int2 operator -(Int2 o1) { return new Int2(-o1.X, -o1.Y); }
         public static Int2 operator +(Int2 o1, Int2 o2) { return new Int2(o1.X + o2.X, o1.Y + o2.Y); }
 	    public static Int2 operator -(Int2 o1, Int2 o2) { return new Int2(o1.X - o2.X, o1.Y - o2.Y); }
 	    public static Int2 operator *(Int2 o1, Int2 o2) { return new Int2(o1.X * o2.X, o1.Y * o2.Y); }

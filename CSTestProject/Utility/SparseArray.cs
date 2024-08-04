@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -17,6 +18,9 @@ namespace Weesals.Utility {
         public bool Overlaps(RangeInt other) {
             return Start <= other.End && End >= other.Start;
         }
+        public bool Contains(int index) {
+            return (uint)(index - Start) < Length;
+        }
         public struct Enumerator : IEnumerator<int> {
             private int index;
             private int end;
@@ -28,6 +32,14 @@ namespace Weesals.Utility {
             public void Reset() { }
         }
         public Enumerator GetEnumerator() { return new(Start, Length); }
+
+        public RangeInt Slice(int offset) {
+            return new(Start + offset, Length - offset);
+        }
+        public RangeInt Slice(int offset, int length) {
+            Debug.Assert(offset + length <= Length);
+            return new(Start + offset, length);
+        }
     }
     public static class SpanExt {
         public static Span<T> Slice<T>(this Span<T> span, RangeInt range) {
@@ -132,10 +144,11 @@ namespace Weesals.Utility {
             }
             return count;
         }
-        public int Take(int pointCount) {
+        public int Take(int pointCount, int maxLength = -1) {
             for (int i = 0; i < ranges.Count; i++) {
                 var block = ranges[i];
                 if (block.Length >= pointCount) {
+                    if (block.Length <= maxLength) pointCount = block.Length;
                     block.Length -= pointCount;
                     block.Start += pointCount;
                     if (block.Length <= 0) ranges.RemoveAt(i);
@@ -286,10 +299,10 @@ namespace Weesals.Utility {
         public int Allocate() {
             return Allocate(1).Start;
         }
-        public RangeInt Allocate(int itemCount) {
+        public RangeInt Allocate(int itemCount, int maxLength = -1) {
             if (itemCount == 0) return default;
             while (true) {
-                var start = Unused.Take(itemCount);
+                var start = Unused.Take(itemCount, maxLength);
                 if (start >= 0) return new RangeInt(start, itemCount);
                 start = Items.Length;
                 RequireCapacity(start + itemCount);
@@ -306,13 +319,13 @@ namespace Weesals.Utility {
             Return(range.Start, range.Length);
             range = default;
         }
-        public void Reallocate(ref RangeInt range, int newLength) {
+        public void Reallocate(ref RangeInt range, int newLength, int maxLength = -1) {
             if (newLength > range.Length) {
                 if (Unused.TryTakeAt(range.End, newLength - range.Length)) {
                     range.Length = newLength;
                     return;
                 } else {
-                    var nrange = Allocate(newLength);
+                    var nrange = Allocate(newLength, maxLength);
                     if (range.Length > 0) {
                         Array.Copy(Items, range.Start, Items, nrange.Start, range.Length);
                         Return(ref range);

@@ -204,9 +204,9 @@ namespace Weesals.Rendering {
             return loadHandle;
         }
 
-        public VisualPrefab GetVisuals(string name) {
+        public VisualPrefab GetVisuals(string name, int variant = 0) {
             if (name != null && VisualsByName.TryGetValue(name, out var visual)) {
-                return visual.Variants[0];
+                return visual.Variants[(uint)variant % visual.Variants.Length];
             }
             return default!;
         }
@@ -383,7 +383,6 @@ namespace Weesals.Rendering {
                 for (int m = 0; m < model.Meshes.Count; m++) {
                     var mesh = model.Meshes[m];
                     var instance = Scene.CreateInstance(mesh.BoundingBox);
-                    ScenePasses.AddInstance(instance, mesh, visuals.AnimMaterial, RenderTags.Default);
                     visuals.Meshes[model.IdOffset + m] = instance;
                 }
             }
@@ -392,6 +391,18 @@ namespace Weesals.Rendering {
                 visuals.Particles[i] = particle.Particle.CreateEmitter(Vector3.Zero);
             }
             return visuals;
+        }
+        private void RegisterInstance(VisualInstance visuals) {
+            var prefab = visuals.Prefab;
+            for (int i = 0; i < prefab.Models.Length; i++) {
+                var model = prefab.Models[i];
+                for (int m = 0; m < model.Meshes.Count; m++) {
+                    var mesh = model.Meshes[m];
+                    var instance = visuals.Meshes[model.IdOffset + m];
+                    Scene.CommitMotion(instance);
+                    ScenePasses.AddInstance(instance, mesh, visuals.AnimMaterial, RenderTags.Default);
+                }
+            }
         }
         private void DestroyInstance(VisualInstance instance) {
             if (instance == null) return;
@@ -427,15 +438,13 @@ namespace Weesals.Rendering {
                 DestroyInstance(sceneProxy.Instance);
             }
             var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
-            var prefab = EntityVisuals.GetVisuals(emodel.PrefabName);
+            var prefab = EntityVisuals.GetVisuals(emodel.PrefabName, emodel.Variant);
             if (prefab == null) return;
             sceneProxy.Instance = CreateInstance(prefab, binding.AnimationLookup.IsValid);
-            if (binding.AnimationLookup.IsValid) {
-                UpdateAnimation(entityAddr);
-            }
-            //binding.ChangedSelected.TryRemove(entityAddr.Row);
+            if (binding.AnimationLookup.IsValid) UpdateAnimation(entityAddr);
             if (binding.TransformLookup.IsValid) UpdateTransform(entityAddr);
             if (binding.SelectedLookup.GetHasSparseComponent(World.Manager, entityAddr)) UpdateSelected(entityAddr);
+            RegisterInstance(sceneProxy.Instance);
         }
         public void UpdateTransform(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];

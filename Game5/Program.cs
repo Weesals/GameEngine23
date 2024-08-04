@@ -62,6 +62,15 @@ class Program {
     }
 
     public static void Main() {
+        /*{
+            var b64 = new Base64Map<int>();
+            b64.Insert(new Vector2(0f, 0f), 1);
+            b64.Insert(new Vector2(-5f, -5f), 2);
+            b64.Insert(new Vector2(0f, 5f), 3);
+            b64.Insert(new Vector2(2f, 2f), 4);
+            b64.Insert(new Vector2(3f, 1f), 5);
+            b64.Remove(new Vector2(0f, 0f), 1);
+        }*/
         {
             var buffer = new DataBuffer();
             using (var docroot = TSONNode.CreateWrite(buffer)) {

@@ -140,6 +140,12 @@ namespace Weesals.Editor.Assets {
                 if (texture.Format != format) {
                     bool isMul4 = (texture.Size.X & 3) == 0 && (texture.Size.Y & 3) == 0;
                     if (isMul4 && format >= BufferFormat.FORMAT_BC1_TYPELESS) {
+                        var texData = texture.GetTextureData().Reinterpret<Color>();
+                        bool hasTrans = false;
+                        foreach (var c in texData) if (c.A < 255) { hasTrans = true; break; }
+                        if (hasTrans && format == BufferFormat.FORMAT_BC1_UNORM) {
+                            format = BufferFormat.FORMAT_BC3_UNORM;
+                        }
                         texture.GenerateMips();
                         texture.CompressTexture(format);
                     }

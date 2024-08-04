@@ -113,13 +113,15 @@ public struct GridThickRayIterator : IEnumerator<Int2> {
     private bool GetIsEnded() {
         var sfrom = IsSwizzled ? From.YX : From;
         var sdir = IsSwizzled ? Direction.YX : Direction;
-        var sstep = Step.X;
-        if (IsNegated) { sstep = -sstep; }
-        return sstep * GridSize > sfrom.X + sdir.X + GridSize;
+        var sstep = Step.X * GridSize;
+        var send = sfrom.X + sdir.X;
+        if (IsNegated) send = -send;
+        return sstep > send;
     }
     public Int2 GetExtents() {
         var sfrom = IsSwizzled ? From.YX : From;
         var sdir = IsSwizzled ? Direction.YX : Direction;
+        if (sdir.X == 0) return new Int2(sfrom.Y, sfrom.Y);
         if (IsNegated) { sfrom.X *= -1; sdir.X *= -1; }
         int x0 = Step.X, x1 = x0 + 1;
         var y0 = (sfrom.Y + FloorDiv(sdir.Y * (x0 * GridSize - sfrom.X), sdir.X));
@@ -136,7 +138,7 @@ public struct GridThickRayIterator : IEnumerator<Int2> {
         var extents = GetExtents();
         ExtentEnd = extents.Y;
         Step.Y = extents.X;
-        return true;
+        return !IsEnded;
     }
     private static int RoundDiv(int value, int div) {
         return (value + (value < 0 ? -div / 2 : div / 2)) / div;
@@ -144,4 +146,5 @@ public struct GridThickRayIterator : IEnumerator<Int2> {
     private static int FloorDiv(int value, int div) {
         return (value + (value < 0 ? -(div - 1) : 0)) / div;
     }
+    public GridThickRayIterator GetEnumerator() => this;
 }

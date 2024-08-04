@@ -1,4 +1,4 @@
-{
+/*ParticleSystem:*/ {
   "RenderState": {
     "BlendMode": "Additive",
     "Texture": "./Assets/Particles/Ring.png"

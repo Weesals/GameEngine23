@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.ECS;
 using Weesals.Engine.Profiling;
 using Weesals.Geometry;
 using Weesals.Utility;
@@ -251,13 +252,13 @@ namespace Weesals.Engine {
         }
 
         public void AddInstance(SceneInstance instance, Mesh mesh, Span<Material> materials) {
-            RetainedRenderer.AppendInstance(mesh, materials, instance.GetInstanceId());
+            RetainedRenderer.AppendInstance(mesh, materials, instance);
         }
         public void SetVisible(SceneInstance instance, bool visible) {
-            RetainedRenderer.SetVisible(instance.GetInstanceId(), visible);
+            RetainedRenderer.SetVisible(instance, visible);
         }
         public void RemoveInstance(SceneInstance instance) {
-            RetainedRenderer.RemoveInstance(instance.GetInstanceId());
+            RetainedRenderer.RemoveInstance(instance);
         }
 
         public override void PrepareRender(CSGraphics graphics) {
@@ -282,6 +283,10 @@ namespace Weesals.Engine {
 
         public bool GetHasSceneChanges() {
             return RetainedRenderer.GetHasSceneChanges();
+        }
+
+        public void MoveInstance(SceneInstance instance, Int2 oldPos, Int2 newPos) {
+            RetainedRenderer.MoveInstance(instance, oldPos, newPos);
         }
     }
 
@@ -837,6 +842,7 @@ namespace Weesals.Engine {
         private Matrix4x4 view, projection;
         private List<ScenePass> scenePasses = new();
         private List<SceneInstance> dynamicInstances = new();
+        private uint[] instancePasses = Array.Empty<uint>();
         private int dynamicDrawHash = 0;
         private Material mainSceneMaterial;
 
@@ -859,7 +865,11 @@ namespace Weesals.Engine {
             AddInstance(instance, mesh, null, RenderTags.Default);
         }
         public void AddInstance(SceneInstance instance, Mesh mesh, Material? material, RenderTags tags) {
-            foreach (var pass in scenePasses) {
+            if (instance >= instancePasses.Length) {
+                Array.Resize(ref instancePasses, (int)BitOperations.RoundUpToPowerOf2((uint)instance.GetInstanceId() + 16));
+            }
+            for (int p = 0; p < scenePasses.Count; p++) {
+                var pass = scenePasses[p];
                 if (!pass.TagsToInclude.HasAny(tags)) continue;
                 if (pass.TagsToExclude.HasAny(tags)) continue;
                 using var materials = new PooledList<Material>();
@@ -868,12 +878,15 @@ namespace Weesals.Engine {
                 if (pass.OverrideMaterial != null) materials.Add(pass.OverrideMaterial);
                 materials.Add(pass.RetainedRenderer.Scene.RootMaterial);
                 pass.AddInstance(instance, mesh, materials);
+                instancePasses[instance] |= 1u << p;
             }
         }
         public void RemoveInstance(SceneInstance instance) {
-            foreach (var pass in scenePasses) {
+            foreach (var bit in new BitEnumerator(instancePasses[instance])) {
+                var pass = scenePasses[bit];
                 pass.RemoveInstance(instance);
             }
+            instancePasses[instance] = default;
         }
 
         public void AddPass(ScenePass pass) {
@@ -932,6 +945,20 @@ namespace Weesals.Engine {
             AddInstance(instance, mesh, material, RenderTags.Default);
             dynamicDrawHash += HashCode.Combine(mesh.Revision, material.GetHashCode());
             return instance;
+        }
+
+        unsafe public void CommitMotion() {
+            var movedInstances = Scene.GetMovedInstances();
+            foreach (var instance in movedInstances) {
+                var data = Scene.GetInstanceData(instance);
+                var matrices = (Matrix4x4*)data.Data;
+                var oldPos = RetainedRenderer.GetPosition(matrices[1]);
+                var newPos = RetainedRenderer.GetPosition(matrices[0]);
+                foreach (var bit in new BitEnumerator(instancePasses[instance])) {
+                    var pass = scenePasses[bit];
+                    pass.MoveInstance(instance, oldPos, newPos);
+                }
+            }
         }
     }
 }

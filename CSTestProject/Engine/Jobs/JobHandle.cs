@@ -100,11 +100,11 @@ namespace Weesals.Engine.Jobs {
             return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(value, context1, context2), dependency);
         }
 
-        public static JobHandle ScheduleBatch(Action<RangeInt> value, int count, JobHandle dependency) {
+        public static JobHandle ScheduleBatch(Action<RangeInt> value, int count, JobHandle dependency = default) {
             var job = JobScheduler.Instance.CreateBatchTask(value, count);
             return JobDependencies.Instance.CreateHandle(job, dependency);
         }
-        public static JobHandle ScheduleBatch(Action<RangeInt> value, RangeInt range, JobHandle dependency) {
+        public static JobHandle ScheduleBatch(Action<RangeInt> value, RangeInt range, JobHandle dependency = default) {
             var job = JobScheduler.Instance.CreateBatchTask(value, range);
             return JobDependencies.Instance.CreateHandle(job, dependency);
         }
