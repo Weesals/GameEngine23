@@ -323,7 +323,8 @@ struct BufferLayout {
 			: mBindName(name), mFormat(format), mBufferStride(stride), mData(data)
 		{ }
 		int GetItemByteSize() const {
-			int bsize = BufferFormatType::GetType(mFormat).GetByteSize();
+			int bsize = mFormat == FORMAT_UNKNOWN ? mBufferStride
+				: BufferFormatType::GetType(mFormat).GetByteSize();
 			assert(bsize <= mBufferStride);
 			return bsize;
 		}

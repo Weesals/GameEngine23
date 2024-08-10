@@ -116,6 +116,7 @@ namespace Weesals.Engine {
             public bool Loaded;
             public TResource Resource;
             public JobHandle LoadHandle;
+            public ulong ConfigHash;
 
             public void SetResource(TResource resource) {
                 Resource = resource;
@@ -245,12 +246,16 @@ namespace Weesals.Engine {
             }
         }
 
-        public static Model LoadModel(string path) {
-            var model = LoadModel(path, out var handle);
+        public static Model LoadModel(string path)
+            => LoadModel(path, FBXImporter.LoadConfig.Default);
+        public static Model LoadModel(string path, FBXImporter.LoadConfig config) {
+            var model = LoadModel(path, config, out var handle);
             handle.Complete();
             return model;
         }
-        public static Model LoadModel(string path, out JobHandle handle) {
+        public static Model LoadModel(string path, out JobHandle handle)
+            => LoadModel(path, FBXImporter.LoadConfig.Default, out handle);
+        public static Model LoadModel(string path, FBXImporter.LoadConfig config, out JobHandle handle) {
             handle = default;
             var pathHash = ResourceKey.GeneratePathHash(path);
             if (loadedModels.TryGetValue(pathHash, out var model)) return model;
@@ -269,7 +274,7 @@ namespace Weesals.Engine {
                         }
                     }
                 }*/
-                model = FBXImporter.Import(path, out handle);
+                model = FBXImporter.Import(path, config, out handle);
                 /*handle.Then((modelObj) => {
                     using var entry = ResourceCacheManager.TrySave(key);
                     if (entry.IsValid) {
@@ -308,14 +313,15 @@ namespace Weesals.Engine {
         }
 
         public static CSTexture LoadTexture(string path, BufferFormat format = BufferFormat.FORMAT_BC1_UNORM) {
-            var pathHash = ResourceKey.GeneratePathHash(path);
+            var pathHash = ResourceKey.GeneratePathHash(path) + (ulong)format;
             var item = loadedTextures.RequireItem(pathHash);
             if (item.Loaded) return item.Resource;
             lock (item) {
                 if (item.Loaded) return item.Resource;
-                var key = ResourceKey.CreateFileKey(path, "tex");
+                item.ConfigHash = (ulong)format;
+                var key = ResourceKey.CreateFileKey(path, $"tex@{format}");
                 item.SetResource(textureImporter.LoadAsset(key, format));
-                RegisterLoadedAsset(key, textureImporter, 0);
+                RegisterLoadedAsset(key, textureImporter, (ulong)format);
                 return item.Resource;
             }
         }

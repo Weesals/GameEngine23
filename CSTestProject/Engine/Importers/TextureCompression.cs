@@ -124,6 +124,9 @@ namespace Weesals.Engine {
             var end = src + count * 2;
             for (; src < end; src += 1) { *(dst++) = *(src++); }
         }
+        unsafe public static bool GetIsCompressed(this CSTexture other) {
+            return BufferFormatType.GetMeta(other.Format).GetSize() == BufferFormatType.Sizes.Other;
+        }
         unsafe public static void CompressTexture(this CSTexture other, BufferFormat compressedFormat = BufferFormat.FORMAT_BC1_UNORM) {
             var compressed = CreateCompressed(other, compressedFormat);
             compressed.Swap(other);

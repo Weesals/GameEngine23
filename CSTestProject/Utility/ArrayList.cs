@@ -71,6 +71,8 @@ namespace Weesals.Utility {
         public MemoryBlock(T* data, int count) { Data = data; Length = count; }
 
         public Span<T> AsSpan() { return new Span<T>(Data, Length); }
+        public Span<T> AsSpan(int offset) { return new Span<T>(Data + offset, Length - offset); }
+        public Span<T> AsSpan(int offset, int length) { Debug.Assert(offset + length < Length); return new Span<T>(Data + offset, length); }
         public ref T GetPinnableReference() { return ref *Data; }
         public MemoryBlock<T> Slice(int start) {
             return new MemoryBlock<T>(Data + start, Length - start);

@@ -211,6 +211,10 @@ struct ShaderStages {
     const CompiledShader* mPixelShader;
 };
 
+struct Readback {
+    uint64_t mHandle;
+};
+
 // Draw commands are forwarded to a subclass of this class
 class CommandBufferInteropBase
 {
@@ -218,7 +222,6 @@ public:
     virtual ~CommandBufferInteropBase() { }
     virtual GraphicsDeviceBase* GetGraphics() const = 0;
     virtual void Reset() = 0;
-    virtual std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) = 0;
     virtual void SetSurface(GraphicsSurface* surface) = 0;
     virtual GraphicsSurface* GetSurface() = 0;
     virtual void SetRenderTargets(std::span<RenderTargetBinding> colorTargets, RenderTargetBinding depthTarget) { }
@@ -240,6 +243,9 @@ public:
     virtual void DispatchMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void DrawIndirect(const BufferLayout& argsBuffer, std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void DispatchCompute(const PipelineLayout* pso, std::span<const void*> resources, Int3 groupCount) { }
+    virtual Readback CreateReadback(const RenderTarget2D* rt) { return { }; }
+    virtual int GetReadbackResult(const Readback& readback) { return 0; }
+    virtual int CopyAndDisposeReadback(Readback& readback, std::span<uint8_t> dest) { return 0; }
     virtual void Execute() = 0;
 };
 
@@ -257,7 +263,6 @@ public:
     CommandBuffer& operator = (CommandBuffer&& other) = default;
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
     void Reset() { mInterop->Reset(); mArena.Clear(); }
-    std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) { return mInterop->CreateSurface(window); }
     void SetSurface(GraphicsSurface* surface) { mInterop->SetSurface(surface); }
     GraphicsSurface* GetSurface() { return mInterop->GetSurface(); }
     void SetViewport(RectInt viewport) { mInterop->SetViewport(viewport); }
@@ -319,6 +324,15 @@ public:
     void DispatchCompute(const PipelineLayout* pso, std::span<const void*> resources, Int3 groupCount) {
         mInterop->DispatchCompute(pso, resources, groupCount);
     }
+    Readback CreateReadback(const RenderTarget2D* rt) {
+        return mInterop->CreateReadback(rt);
+    }
+    int GetReadbackResult(const Readback& readback) {
+        return mInterop->GetReadbackResult(readback);
+    }
+    int CopyAndDisposeReadback(Readback& readback, std::span<uint8_t> dest) {
+        return mInterop->CopyAndDisposeReadback(readback, dest);
+    }
     void Execute() { mInterop->Execute(); }
 };
 
@@ -360,6 +374,7 @@ public:
 
     // Create a command buffer which allows draw calls to be submitted
     virtual CommandBuffer CreateCommandBuffer() = 0;
+    virtual std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) = 0;
 
     virtual CompiledShader CompileShader(const std::wstring_view& path, const std::string_view& entry,
         const std::string_view& profile, std::span<const MacroValue> macros) { return { }; }

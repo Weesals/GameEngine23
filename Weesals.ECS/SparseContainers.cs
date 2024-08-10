@@ -116,8 +116,8 @@ namespace Weesals.ECS {
             }
             // TODO: Do this in 1 pass (update "index" with each step)
             // (or use above info - if potentialEnd == start+newLength)
-            if (pos >= 2) TryMergeAt(pos - 2);
             TryMergeAt(pos);
+            if (pos >= 2) TryMergeAt(pos - 2);
             Validate();
             return newStart;
         }

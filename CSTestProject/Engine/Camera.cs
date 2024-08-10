@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 namespace Weesals.Engine {
     public class Camera {
         private float fov = 3.14f / 2.0f;
+        private float orthoSize = 0f;
         private float aspect = 1.0f;
         private float nearPlane = 0.1f;
         private float farPlane = 1000.0f;
@@ -21,6 +22,10 @@ namespace Weesals.Engine {
         public float FOV {
             get => fov;
             set { if (fov == value) return; fov = value; InvalidateProjection(); }
+        }
+        public float OrthoSize {
+            get => orthoSize;
+            set { if (orthoSize == value) return; orthoSize = value; InvalidateProjection(); }
         }
         public float Aspect {
             get => aspect;
@@ -60,8 +65,11 @@ namespace Weesals.Engine {
         // Get (and calculate if needed) the camera matrices
         public Matrix4x4 GetProjectionMatrix() {
             if (projectionMatrix.M11 == float.MaxValue) {
-                projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, nearPlane, farPlane);
-                projectionMatrix = projectionMatrix.RHSToLHS();
+                projectionMatrix = Matrix4x4.Identity;
+                if (fov != 0f)
+                    projectionMatrix = Matrix4x4.CreatePerspectiveFieldOfView(fov, aspect, nearPlane, farPlane).RHSToLHS();
+                if (orthoSize != 0)
+                    projectionMatrix = Matrix4x4.CreateOrthographic(orthoSize * aspect, orthoSize, nearPlane, farPlane).RHSToLHS();
             }
             return projectionMatrix;
         }

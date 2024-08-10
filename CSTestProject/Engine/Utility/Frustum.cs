@@ -91,6 +91,8 @@ namespace Weesals.Engine {
 		Vector4 mFarPlane;
 		public Vector3 Backward => mNearPlane.toxyz();
         public Vector3 Forward => mFarPlane.toxyz();
+        public Plane NearPlane => new(mNearPlane.toxyz(), mNearPlane.W);
+        public Plane FarPlane => new(mFarPlane.toxyz(), mFarPlane.W);
         public Frustum(Matrix4x4 vp) {
             mFrustum4 = new Frustum4(vp);
             mNearPlane = new Vector4(vp.M14 + vp.M13, vp.M24 + vp.M23, vp.M34 + vp.M33, vp.M44 + vp.M43);
@@ -208,8 +210,5 @@ namespace Weesals.Engine {
             planes[5] = new Plane(mFarPlane.X, mFarPlane.Y, mFarPlane.Z, mFarPlane.W);
         }
 
-        internal void GetIsContained(BoundingBox bounds) {
-            throw new NotImplementedException();
-        }
     }
 }

@@ -64,6 +64,8 @@ void PSMain(PSInput input, out BasePassOutput result) {
     pbrInput.Roughness = 0.7;
     pbrInput.Emissive = instance.Highlight;
     pbrInput.Normal = normalize(input.normal);
+    //pbrInput.Albedo = pbrInput.Normal * 0.5 + 0.5;
+    //pbrInput.Normal = mul((float3x3)View, float3(0, 1, 0));
 
     float3 shadowPos = ViewToShadow(input.viewPos);
     float shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z).r;

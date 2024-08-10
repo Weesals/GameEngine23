@@ -25,7 +25,7 @@ float3 OctahedralDecode(float2 e) {
 }
 
 float2 HemiOctahedralEncode(float3 v) {
-    return float2(v.x - v.y, v.x + v.y);
+    return float2(v.x + v.y, v.x - v.y) / dot(abs(v), 1);
 }
 float3 HemiOctahedralDecode(float2 v) {
     float2 t = float2(v.x + v.y, v.x - v.y);

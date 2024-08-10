@@ -72,7 +72,6 @@ namespace Game5.UI.Interaction {
 
             var ray = PlayUI.ScreenToRay(events.CurrentPosition);
             var pos = ray.ProjectTo(instance.DragPlane) + instance.DragOffset;
-            pos = ItemReference.MakeVector3(pos).GetWorldPosition();
             instance.Target.SetWorldPosition(pos);
         }
         public void OnEndDrag(PointerEvent events) {

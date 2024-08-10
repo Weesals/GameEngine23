@@ -1,8 +1,8 @@
 #ifndef __RETAINED__
 #define __RETAINED__
 
-#include "include/common.hlsl"
-#include "include/temporal.hlsl"
+#include <common.hlsl>
+#include <temporal.hlsl>
 
 struct InstanceData
 {

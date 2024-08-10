@@ -10,6 +10,7 @@
 
 #include "MathTypes.h"
 
+typedef uint64_t LockMask;
 
 // memcpy but with a stride
 template<class T>
@@ -133,15 +134,19 @@ protected:
         size_t mLayoutHash;
         T mData;
         int mLockId = 0;
+        const T& operator * () const { return mData; }
+        const T* operator -> () const { return &mData; }
+        T& operator * () { return mData; }
+        T* operator -> () { return &mData; }
     };
     struct Block {
         std::unique_ptr<std::array<Item, BlockSize> > mItems;
         int mFirstEmpty;
         Block() : mItems(std::make_unique< std::array<Item, BlockSize> >()), mFirstEmpty(0) { }
-        Item& operator [](int index) { return (*mItems)[index]; }
+        Item& operator [](int index) const { return (*mItems)[index]; }
     };
     struct LockBundle {
-        size_t mHandles;
+        LockMask mHandles;
         int mItemCount;
     };
 
@@ -153,13 +158,13 @@ private:
     // Ranges within mItems which are locked
     std::vector<LockBundle> mLocks;
 
-    int FindLock(size_t mask) {
+    int FindLock(LockMask mask) {
         for (int i = 1; i < (int)mLocks.size(); ++i) {
             if (mLocks[i].mHandles == mask) return i;
         }
         return -1;
     }
-    int RequireLock(size_t mask) {
+    int RequireLock(LockMask mask) {
         int index = FindLock(mask);
         if (index == -1) {
             for (index = 1; index < (int)mLocks.size(); ++index) if (mLocks[index].mItemCount == 0) break;
@@ -210,24 +215,26 @@ public:
     }
     ~PerFrameItemStoreNoHash() { }
 
-    Item& InsertItem(const T& data, size_t layoutHash, size_t lockBits) {
+    Item& InsertItem(const T& data, size_t layoutHash, LockMask lockBits) {
         Item& item = AllocateItem(layoutHash, [&](Item& item) { });
         item.mData = data;
         SetLock(item, RequireLock(lockBits));
         return item;
     }
     template<class Allocate, class DataFill>
-    Item& RequireItem(uint64_t layoutHash, size_t lockBits, Allocate&& alloc, DataFill&& dataFill) {
+    Item& RequireItem(uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
         Item& item = AllocateItem(layoutHash, alloc);
         // Setup item state
         SetLock(item, RequireLock(lockBits));
         dataFill(item);
         return item;
     }
-    void Unlock(size_t mask) {
+    uint64_t Unlock(LockMask mask) {
         int changeCount = 0;
+        uint64_t lockMask = 0ull;
         for (int i = 0; i < (int)mLocks.size(); ++i) {
             if ((mLocks[i].mHandles & mask) != 0) {
+                lockMask |= 1ull << i;
                 mLocks[i].mHandles &= ~mask;
                 ++changeCount;
             }
@@ -235,6 +242,7 @@ public:
         if (changeCount > 0) {
             for (auto& block : mBlocks) block.mFirstEmpty = -1;
         }
+        return lockMask;
     }
     void Clear() {
         for (int b = 0; b < (int)mBlocks.size(); ++b) {
@@ -246,6 +254,68 @@ public:
         for (int i = 0; i < (int)mLocks.size(); ++i) mLocks[i] = { };
         mLocks[0].mItemCount = -1;
         mItemCount = 0;
+    }
+    void PurgeUnlocked() {
+        for (auto& block : mBlocks) {
+            block.mFirstEmpty = BlockSize;
+            for (auto i = 0; i < BlockSize; ++i) {
+                auto& item = block[i];
+                if (item.mLockId != 0 && mLocks[item.mLockId].mHandles == 0)
+                    SetLock(item, 0);
+                if (item.mLockId == 0) {
+                    item = { };
+                    block.mFirstEmpty = std::min(block.mFirstEmpty, i);
+                }
+            }
+        }
+    }
+    struct MaskedCollection {
+        PerFrameItemStoreNoHash<T, FrameDelay>& mItemStore;
+        uint64_t mLockMask;
+        struct Iterator {
+            MaskedCollection mCollection;
+            int mItemId;
+            Iterator(const MaskedCollection& collection, int itemId)
+                : mCollection(collection), mItemId(itemId) { }
+            Iterator& operator ++() {
+                auto& blocks = mCollection.mItemStore.mBlocks;
+                for (++mItemId; mItemId < mCollection.mItemStore.mItemCount; ++mItemId) {
+                    int blockId = mItemId >> BlockShift;
+                    int itemId = mItemId & BlockMask;
+                    auto& item = blocks[blockId][itemId];
+                    if (((1ull << item.mLockId) & mCollection.mLockMask) != 0) return *this;
+                }
+                mItemId = -1;
+                return *this;
+            }
+            Item& GetItem() const { return mCollection.mItemStore.mBlocks[mItemId >> BlockShift][mItemId & BlockMask]; }
+            uint64_t GetLockHandle() const { return mCollection.mItemStore.mLocks[GetItem().mLockId].mHandles; }
+            void Delete() { mCollection.mItemStore.SetLock(GetItem(), 0); }
+            bool operator ==(const Iterator& other) const { return mItemId == other.mItemId; }
+            T* operator -> () const { return &*this; }
+            T& operator *() const { return GetItem().mData; }
+        };
+        MaskedCollection(PerFrameItemStoreNoHash<T, FrameDelay>& itemStore, uint64_t mask)
+            : mItemStore(itemStore), mLockMask(mask)
+        { }
+        Iterator begin() const {
+            auto it = Iterator(*this, -1);
+            ++it;
+            return it;
+        }
+        Iterator end() const {
+            return Iterator(*this, -1);
+        }
+    };
+    MaskedCollection GetMaskItemIterator(uint64_t mask) {
+        return MaskedCollection(*this, mask);
+    }
+    MaskedCollection GetAllActive() {
+        uint64_t lockMask = 0ull;
+        for (int i = 0; i < mLocks.size(); ++i) {
+            if (mLocks[i].mHandles != 0) lockMask |= 1ull << i;
+        }
+        return MaskedCollection(*this, lockMask);
     }
 };
 
@@ -270,7 +340,7 @@ protected:
         Item& operator [](int index) { return (*mItems)[index]; }
     };
     struct LockBundle {
-        size_t mHandles;
+        LockMask mHandles;
         int mItemCount;
     };
 
@@ -284,13 +354,13 @@ private:
     // Ranges within mItems which are locked
     std::vector<LockBundle> mLocks;
 
-    int FindLock(size_t mask) {
+    int FindLock(LockMask mask) {
         for (int i = 1; i < (int)mLocks.size(); ++i) {
             if (mLocks[i].mHandles == mask) return i;
         }
         return -1;
     }
-    int RequireLock(size_t mask) {
+    int RequireLock(LockMask mask) {
         int index = FindLock(mask);
         if (index == -1) {
             for (index = 1; index < (int)mLocks.size(); ++index) if (mLocks[index].mItemCount == 0) break;
@@ -346,7 +416,7 @@ public:
 
     // Find or allocate a constant buffer for the specified material and CB layout
     template<class Allocate, class DataFill, class Found>
-    Item& RequireItem(uint64_t dataHash, uint64_t layoutHash, size_t lockBits, Allocate&& alloc, DataFill&& dataFill, Found&& found) {
+    Item& RequireItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill, Found&& found) {
         // Find if a buffer matching this hash already exists
         auto itemKV = mItemsByHash.find(dataHash);
         // Matching buffer was found, move it to end of queue
@@ -367,7 +437,7 @@ public:
         return AllocateItem(dataHash, layoutHash, lockBits, alloc, dataFill);
     }
     template<class Allocate, class DataFill>
-    Item& AllocateItem(uint64_t dataHash, uint64_t layoutHash, size_t lockBits, Allocate&& alloc, DataFill&& dataFill) {
+    Item& AllocateItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
         Item& item = AllocateItem(layoutHash, alloc);
         // Setup item state
         SetLock(item, RequireLock(lockBits));
@@ -377,7 +447,7 @@ public:
         return item;
     }
 
-    void Unlock(size_t mask) {
+    void Unlock(LockMask mask) {
         int changeCount = 0;
         for (int i = 0; i < (int)mLocks.size(); ++i) {
             if ((mLocks[i].mHandles & mask) != 0) {

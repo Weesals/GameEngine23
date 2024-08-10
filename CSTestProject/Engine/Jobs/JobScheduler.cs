@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Numerics;
 using Weesals.Utility;
 using Weesals.Engine.Profiling;
+using TBatchIndex = System.UInt32;
 
 namespace Weesals.Engine.Jobs {
     /*
@@ -404,7 +405,7 @@ namespace Weesals.Engine.Jobs {
             public object Callback;
             public ushort ContextBegin, ContextCount;
             public JobHandle Dependency;
-            public ushort BatchBegin, BatchCount;
+            public TBatchIndex BatchBegin, BatchCount;
             public uint RunState;
             public int RunCount => (int)(RunState & 0xffff);
             public int CompleteCount => (int)((RunState >> 16) & 0xffff);
@@ -412,8 +413,7 @@ namespace Weesals.Engine.Jobs {
         }
         public struct JobRun {
             public int TaskId;
-            public ushort BatchBegin;
-            public ushort BatchCount;
+            public TBatchIndex BatchBegin, BatchCount;
             public bool IsValid => TaskId >= 0;
             public static readonly JobRun Invalid = new() { TaskId = -1, };
         }
@@ -439,16 +439,16 @@ namespace Weesals.Engine.Jobs {
                 Thread = new Thread(Invoke) { Name = name };
                 Thread.Start();
             }
-            internal static int GetRunCount(int maxCount) {
+            internal static int GetRunCount(TBatchIndex maxCount) {
                 int batchBit = 31 - BitOperations.LeadingZeroCount((uint)maxCount);
                 var shift = Math.Max(batchBit - 4, 0);
-                return (maxCount + (1 << shift) - 1) >> shift;
+                return (int)((maxCount + (1 << shift) - 1) >> shift);
             }
-            internal static void GetRunIndices(int index, JobTask task, out ushort batchBegin, out ushort batchCount) {
+            internal static void GetRunIndices(int index, JobTask task, out TBatchIndex batchBegin, out TBatchIndex batchCount) {
                 int batchBit = 31 - BitOperations.LeadingZeroCount((uint)task.BatchCount);
-                batchBegin = (ushort)(index << Math.Max(batchBit - 4, 0));
+                batchBegin = (TBatchIndex)(index << Math.Max(batchBit - 4, 0));
                 var batchEnd = Math.Min(((index + 1) << Math.Max(batchBit - 4, 0)), task.BatchCount);
-                batchCount = (ushort)(batchEnd - batchBegin);
+                batchCount = (TBatchIndex)(batchEnd - batchBegin);
                 batchBegin += task.BatchBegin;
             }
             private JobRun TryTakeJobRun() {
@@ -631,11 +631,11 @@ namespace Weesals.Engine.Jobs {
 
         public ushort CreateBatchTask(Action<RangeInt> action, int count) {
             if (!EnableThreading) { action(new RangeInt(0, count)); return ushort.MaxValue; }
-            return IntlPushTask(new JobTask() { Callback = action, ContextCount = 0, BatchBegin = 0, BatchCount = (ushort)count, });
+            return IntlPushTask(new JobTask() { Callback = action, ContextCount = 0, BatchBegin = 0, BatchCount = (TBatchIndex)count, });
         }
         public ushort CreateBatchTask(Action<RangeInt> action, RangeInt range) {
             if (!EnableThreading) { action(range); return ushort.MaxValue; }
-            return IntlPushTask(new JobTask() { Callback = action, ContextCount = 0, BatchBegin = (ushort)range.Start, BatchCount = (ushort)range.Length, });
+            return IntlPushTask(new JobTask() { Callback = action, ContextCount = 0, BatchBegin = (TBatchIndex)range.Start, BatchCount = (TBatchIndex)range.Length, });
         }
         public void MarkRunOnMain(ushort job) {
             Debug.Assert(taskArray[job].BatchCount == 0,
@@ -652,7 +652,7 @@ namespace Weesals.Engine.Jobs {
                 return;
             }
             PushJobToThread(taskId);
-            int wakeThreads = Math.Min(jobThreads.Length, taskArray[taskId].BatchCount);
+            int wakeThreads = Math.Min(jobThreads.Length, (int)taskArray[taskId].BatchCount);
             for (int c = 0; c < wakeThreads; ++c) jobThreads[c].RequireWake();
         }
         private bool PushJobToThread(int jobId) {
@@ -708,7 +708,7 @@ namespace Weesals.Engine.Jobs {
         internal void ExecuteRun(JobRun run) {
             ref var task = ref taskArray[run.TaskId];
             if (task.BatchCount > 0) {
-                ((Action<RangeInt>)task.Callback)(new RangeInt(run.BatchBegin, run.BatchCount));
+                ((Action<RangeInt>)task.Callback)(new RangeInt((int)run.BatchBegin, (int)run.BatchCount));
                 var runCount = JobThread.GetRunCount(task.BatchCount);
                 var newState = Interlocked.Add(ref task.RunState, 0x10000);
                 if (((newState >> 16) & 0xffff) >= runCount)

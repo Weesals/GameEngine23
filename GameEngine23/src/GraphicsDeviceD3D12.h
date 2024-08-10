@@ -44,6 +44,7 @@ public:
     D3DResourceCache& GetResourceCache() { return mCache; }
 
     virtual CommandBuffer CreateCommandBuffer() override;
+    virtual std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) override;
 
     virtual CompiledShader CompileShader(const std::wstring_view& path, const std::string_view& entry,
         const std::string_view& profile, std::span<const MacroValue> macros) override;

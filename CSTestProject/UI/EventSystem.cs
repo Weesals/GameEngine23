@@ -267,7 +267,7 @@ namespace Weesals.UI {
         public event Action<ItemReference, bool>? OnEntitySelected;
         public event Action<ICollection<ItemReference>>? OnSelectionChanged;
 
-        private int holdRef;
+        private uint holdRef;
 
         public struct Hold : IDisposable {
             public readonly SelectionManager Manager;
@@ -277,7 +277,7 @@ namespace Weesals.UI {
             }
             public void Dispose() {
                 --Manager.holdRef;
-                if (Manager.holdRef == 0x8000) {
+                if (Manager.holdRef == 0x80000000) {
                     Manager.NotifySelectionChanged();
                 }
             }
@@ -305,20 +305,24 @@ namespace Weesals.UI {
                 // TODO: Consider if something externally adds directly to Manager
                 int keepCount = 0;
                 // Separate into 'keep' and 'deselect' chunks
-                foreach (var item in Manager.selected) {
-                    var index = Array.IndexOf(toDeselect.Data, item, keepCount, toDeselect.Count - keepCount);
-                    // Item was found, push it to 'keep' range
-                    if (index >= 0) toDeselect.Swap(index, keepCount++);
+                for (int index = 0; index < toDeselect.Count; index++) {
+                    // If item exists, push it to 'keep' range
+                    if (Manager.selected.Contains(toDeselect[index]))
+                        toDeselect.Swap(index, keepCount++);
                 }
                 // Deselect items that were not added within scope
-                foreach (var item in toDeselect.Data.AsSpan(keepCount, toDeselect.Count - keepCount)) {
+                foreach (var item in toDeselect.AsSpan(keepCount, toDeselect.Count - keepCount)) {
                     Manager.NotifySelected(item, false);
                 }
                 toDeselect.Count = keepCount;
                 // Select items that were newly added (not in 'keep')
+                using var ignoreSet = new PooledHashSet<ItemReference>(Math.Max(8, (int)BitOperations.RoundUpToPowerOf2((uint)keepCount)));
+                foreach (var item in toDeselect.AsSpan(0, keepCount)) ignoreSet.Add(item);
                 foreach (var item in Manager.selected) {
-                    var index = Array.IndexOf(toDeselect.Data, item, 0, keepCount);
-                    if (index < 0) toDeselect.Add(item);
+                    //var index = Array.IndexOf(toDeselect.Data, item, 0, keepCount);
+                    //if (index < 0)
+                    if (!ignoreSet.Contains(item))
+                        toDeselect.Add(item);
                 }
                 // Notify selection
                 foreach (var item in toDeselect.AsSpan(keepCount)) {
@@ -383,10 +387,11 @@ namespace Weesals.UI {
             NotifySelectionChanged();
         }
         private void NotifySelectionChanged() {
-            if (holdRef == 0x8000) {
+            holdRef |= 0x80000000;
+            if (holdRef == 0x80000000) {
                 holdRef = 0;
                 if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
-            } else holdRef |= 0x8000;
+            }
         }
     }
 

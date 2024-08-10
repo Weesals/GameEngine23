@@ -23,6 +23,8 @@ namespace Weesals.Engine {
         public CSResources GetResources() { return platform.GetResources(); }
         public CSInput CreateInput() { return platform.CreateInput(); }
 
+        public CSGraphics CreateGraphics() { return platform.CreateGraphics(); }
+
         public int MessagePump() {
             return platform.MessagePump();
         }

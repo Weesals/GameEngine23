@@ -117,15 +117,17 @@ namespace Game5.UI.Interaction {
                     if (GetEntitySelectPriority(en.Current) < maxPriority) en.RemoveSelf(ref titems);
                 }
             }
-            // Intersect with the existing items
-            foreach (var item in instance.CurItems) temp.Add(item);
-            foreach (var item in titems) temp.Remove(item);
-            // Add/remove items if they dont/do exist in the current active set
-            foreach (var item in temp) {
-                RemoveEntity(item);
-            }
-            foreach (var item in titems) {
-                AddEntity(item);
+            using (var hold = new SelectionManager.Hold(instance.Selection)) {
+                // Intersect with the existing items
+                foreach (var item in instance.CurItems) temp.Add(item);
+                foreach (var item in titems) temp.Remove(item);
+                // Add/remove items if they dont/do exist in the current active set
+                foreach (var item in temp) {
+                    RemoveEntity(item);
+                }
+                foreach (var item in titems) {
+                    AddEntity(item);
+                }
             }
             titems.Dispose();
             temp.Dispose();
@@ -216,6 +218,7 @@ namespace Game5.UI.Interaction {
         }
         // Modify the actual current selection based on mode changes
         private void ApplyModeDelta(Instance instance, ref EntityCollection items, int delta, SelectionModes modeFlags) {
+            using var hold = new SelectionManager.Hold(instance.Selection);
             if (delta > 0) {
                 foreach (var item in items) instance.Selection.AppendSelected(item);
                 Mode |= modeFlags;

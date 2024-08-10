@@ -212,6 +212,15 @@ public:
 	int mStride;
 	uint8_t mType;
 };
+class DLLCLASS CSInputParameter {
+public:
+	CSIdentifier mName;
+	CSIdentifier mSemantic;
+	int mSemanticIndex;
+	int mRegister;
+	uint8_t mMask;
+	uint8_t mType;
+};
 class DLLCLASS CSPipeline {
 	const NativePipeline* mPipeline;
 public:
@@ -261,11 +270,12 @@ public:
 		int mFlowIC;
 	};
 private:
-	static NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount);
+	static NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount, int ipcount);
 	static void InitializeValues(NativeCompiledShader* shader, int cb, int vcount);
 	static CSSpan GetValues(NativeCompiledShader* shader, int cb);
 	static CSSpan GetConstantBuffers(const NativeCompiledShader* shader);
 	static CSSpan GetResources(const NativeCompiledShader* shader);
+	static CSSpan GetInputParameters(const NativeCompiledShader* shader);
 	static CSSpan GetBinaryData(const NativeCompiledShader* shader);
 	static const ShaderStats& GetStatistics(const NativeCompiledShader* shader);
 };
@@ -329,6 +339,9 @@ private:
 	static void SetViewport(NativeGraphics* graphics, RectInt viewport);
 	static bool IsTombstoned(NativeGraphics* graphics);
 	static uint64_t GetGlobalPSOHash(NativeGraphics* graphics);
+	static uint64_t CreateReadback(NativeGraphics* graphics, NativeRenderTarget* rt);
+	static int GetReadbackResult(NativeGraphics* graphics, uint64_t readback);
+	static int CopyAndDisposeReadback(NativeGraphics* graphics, uint64_t readback, CSSpan data);
 };
 class DLLCLASS CSGraphicsSurface {
 	NativeSurface* mSurface;

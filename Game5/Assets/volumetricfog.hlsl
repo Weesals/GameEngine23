@@ -100,6 +100,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
 
         PrimeClouds(cloudStart, cloudEnd - cloudStart);
         GlobalMipBias = log2(cloudStartDst / 500.0f);
+        GlobalDensityBias += 2 * pow(cloudStartDst / 5000.0f, 4);
     
         float stepLength = min(dot(cloudEnd - cloudStart, viewDir) * (1.0 / cloudSampleCount), 20.0);
         float3 rayStep = viewDir * stepLength;

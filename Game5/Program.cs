@@ -10,6 +10,8 @@ using Weesals.Engine.Profiling;
 using Weesals.ECS;
 using Weesals.Utility;
 using Weesals.Engine.Serialization;
+using Weesals.Impostors;
+using Weesals.UI;
 
 class Program {
 
@@ -148,6 +150,8 @@ class Program {
         bool windowMoved = false;
         primaryWindow.Window.RegisterMovedCallback(() => { windowMoved = true; }, true);
 
+        ImpostorGenerator impostorGenerator = null;
+
         // Loop while the window is valid
         for (int f = 0; ; ++f) {
             if (core.MessagePump() != 0) {
@@ -192,6 +196,41 @@ class Program {
                 previewWindow?.RegisterRootWindow(core.CreateWindow("Particles"));
                 windows.Add(previewWindow);
             }
+            if (Input.GetKeyPressed(KeyCode.F6)) {
+                if (impostorGenerator == null) {
+                    graphics.Reset();
+
+                    var hull = Resources.LoadModel("./Assets/B_Granary1_Hull.fbx", new() { }).Meshes[0];
+                    var hull2 = Resources.LoadModel("./Assets/B_House_Hull.fbx", new() { }).Meshes[0];
+                    var play = root.Play;
+
+                    void AppendImpostor(Mesh mesh, Mesh hull) {
+                        impostorGenerator = new ImpostorGenerator();
+                        impostorGenerator.CreateImpostor(graphics, mesh).ContinueWith(async (task) => {
+                            var material = await task;
+                            var meshInstance = play.Scene.CreateInstance(mesh.BoundingBox);
+                            play.Scene.SetTransform(meshInstance, Matrix4x4.CreateRotationY(3.14f / 4.0f));
+                            play.ScenePasses.SetMeshLOD(mesh, hull, material);
+                        });
+                    }
+                    AppendImpostor(Resources.LoadModel("./Assets/B_Granary1.fbx").Meshes[0], hull);
+                    AppendImpostor(Resources.LoadModel("./Assets/B_Granary2.fbx").Meshes[0], hull2);
+                    AppendImpostor(Resources.LoadModel("./Assets/B_Granary3.fbx").Meshes[0], hull2);
+                    AppendImpostor(Resources.LoadModel("./Assets/SM_House.fbx").Meshes[0], hull2);
+                    AppendImpostor(Resources.LoadModel("./Assets/B_House2.fbx").Meshes[0], hull2);
+                    AppendImpostor(Resources.LoadModel("./Assets/B_House3.fbx").Meshes[0], hull2);
+
+                    //play.ScenePasses.AddInstance(meshInstance, hull, material, RenderTags.Default);
+                    /*var img = new Image();
+                    img.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0.5f, 0f, 1f, 1.0f));
+                    img.AspectMode = Image.AspectModes.PreserveAspectContain;
+                    img.Texture = impostorGenerator.AlbedoTarget;
+                    img.HitTestEnabled = false;
+                    root.Canvas.AppendChild(img);*/
+
+                    graphics.Execute();
+                }
+            }
 
             float renDT;
             {
@@ -223,6 +262,8 @@ class Program {
             } else {
                 if (primaryWindow?.IsRenderable ?? false) {
                     graphics.Reset();
+
+                    CSGraphics.AsyncReadback.Awaiter.InvokeCallbacks(graphics);
                     graphics.SetSurface(primaryWindow.Surface);
 
                     // Render the game world and UI

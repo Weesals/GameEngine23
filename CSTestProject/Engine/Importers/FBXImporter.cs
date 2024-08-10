@@ -14,6 +14,14 @@ using Weesals.Engine.Profiling;
 namespace Weesals.Engine.Importers {
     public class FBXImporter {
 
+        public struct LoadConfig {
+            public bool EnableNormals;
+            public bool EnableTangents;
+            public bool EnableUV;
+            public bool EnableColors;
+            public static readonly LoadConfig Default = new() { EnableNormals = true, EnableTangents = true, EnableUV = true, EnableColors = true, };
+        }
+
         private static Dictionary<string, Model> modelCache = new();
 
         private struct HashApplier {
@@ -205,6 +213,9 @@ namespace Weesals.Engine.Importers {
             return model;
         }
         unsafe public static Model Import(string path, out JobHandle handle) {
+            return Import(path, LoadConfig.Default, out handle);
+        }
+        unsafe public static Model Import(string path, LoadConfig config, out JobHandle handle) {
             handle = default;
             if (modelCache.TryGetValue(path, out var model)) return model;
 
@@ -221,7 +232,7 @@ namespace Weesals.Engine.Importers {
             var deferred = JobHandle.CreateDeferred();
             JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("FBX").Auto();
-                ParseModel(model, path, deferred);
+                ParseModel(model, path, config, deferred);
             });
             handle = deferred;
 
@@ -230,7 +241,7 @@ namespace Weesals.Engine.Importers {
 
             return model;
         }
-        unsafe private static JobHandle ParseModel(Model model, string path, JobHandle deferred) {
+        unsafe private static JobHandle ParseModel(Model model, string path, LoadConfig config, JobHandle deferred) {
             JobHandle handle = default;
             var rootPath = Path.GetDirectoryName(path);
             FBXParser parser;
@@ -553,7 +564,7 @@ namespace Weesals.Engine.Importers {
                                 if (fbxTransform.Contents == fbxMeshRef) { meshTransform = fbxTransform.GetMatrix() * meshTransform; break; }
                             }
                         }
-                        var mesh = GenerateMeshFromFBX(parser, fbxGeo.Node, meshTransform, fbxSkin, fbxObjectMap);
+                        var mesh = GenerateMeshFromFBX(parser, fbxGeo.Node, config, meshTransform, fbxSkin, fbxObjectMap);
                         if (fbxMesh.Material.IsValid) {
                             var fbxMat = fbxObjectMap.Get<Material>(fbxMesh.Material);
                             if (fbxMat != null) mesh.Material.InheritProperties(fbxMat);
@@ -653,16 +664,16 @@ namespace Weesals.Engine.Importers {
             return value0 + (value1 - value0) * ((time - time0) / (time1 - time0));
         }
 
-        private static Mesh GenerateMeshFromFBX(FBXParser parser, FBXParser.FBXNode fbxGeo, Matrix4x4 transform, FBXSkin fbxSkin = default, FBXObjectMap fbxObjectMap = default) {
+        private static Mesh GenerateMeshFromFBX(FBXParser parser, FBXParser.FBXNode fbxGeo, LoadConfig config, Matrix4x4 transform, FBXSkin fbxSkin = default, FBXObjectMap fbxObjectMap = default) {
             var name = parser.GetNodeName(fbxGeo);
 
             var inds = parser.ParseGeometryIndices(fbxGeo);
             var verts = parser.ParseGeometryVertices(fbxGeo);
             var matData = parser.ParseVertexData<int>(fbxGeo, "LayerElementMaterial", "Materials", null);
-            var uvData = parser.ParseVertexData<Vector2>(fbxGeo, "LayerElementUV", "UV", "UVIndex");
-            var normalData = parser.ParseVertexData<Vector3>(fbxGeo, "LayerElementNormal", "Normals", "NormalsIndex");
-            var tangentData = parser.ParseVertexData<Vector3>(fbxGeo, "LayerElementTangents", "Tangents", "TangentsIndex");
-            var colorData = parser.ParseVertexData<Vector4>(fbxGeo, "LayerElementColor", "Colors", "ColorIndex");
+            var uvData = config.EnableUV ? parser.ParseVertexData<Vector2>(fbxGeo, "LayerElementUV", "UV", "UVIndex") : default;
+            var normalData = config.EnableNormals ? parser.ParseVertexData<Vector3>(fbxGeo, "LayerElementNormal", "Normals", "NormalsIndex") : default;
+            var tangentData = config.EnableTangents ? parser.ParseVertexData<Vector3>(fbxGeo, "LayerElementTangents", "Tangents", "TangentsIndex") : default;
+            var colorData = config.EnableColors ? parser.ParseVertexData<Vector4>(fbxGeo, "LayerElementColor", "Colors", "ColorIndex") : default;
 
             var boneIndices = new FBXParser.VertexData<Int4>() { Mapping = FBXParser.VertexData<Int4>.Mappings.Vertex };
             var boneWeights = new FBXParser.VertexData<Vector4>() { Mapping = FBXParser.VertexData<Vector4>.Mappings.Vertex };

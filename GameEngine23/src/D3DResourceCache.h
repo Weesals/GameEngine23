@@ -99,7 +99,11 @@ public:
 
     struct CommandAllocator {
         ComPtr<ID3D12CommandAllocator> mCmdAllocator;
-        uint64_t mFrameLocks = 0;
+        LockMask mFrameLocks = 0;
+        // Fence to wait for frames to render
+        HANDLE mFenceEvent;
+        ComPtr<ID3D12Fence> mFence;
+        int mFenceValue;
     };
 
     // If no texture is specified, use this
@@ -117,6 +121,10 @@ private:
     struct ShaderResourceView : public D3DRenderSurface::SubresourceData {
         ID3D12Resource* mResource;
     };
+    struct D3DReadback {
+        ComPtr<ID3D12Resource> mResource;
+
+    };
     D3DGraphicsDevice& mD3D12;
 
     // Storage for the GPU resources of each application type
@@ -132,6 +140,7 @@ private:
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
     PerFrameItemStore<ShaderResourceView> mResourceViewCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
+    PerFrameItemStoreNoHash<D3DReadback, 2> mReadbackBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
     std::vector<uint8_t> mTempData;
 
@@ -146,21 +155,28 @@ public:
     int RequireFrameHandle(size_t frameHash);
     void AddInFlightSurface(const std::shared_ptr<D3DGraphicsSurface>& surface);
     CommandAllocator* RequireAllocator();
+    void CheckInflightFrames();
     void UnlockFrame(size_t frameHash);
     void ClearDelayedData();
-    ID3D12Resource* AllocateUploadBuffer(size_t size, int lockBits);
-    bool RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin, int lockBits);
+    ID3D12Resource* AllocateUploadBuffer(size_t size, LockMask lockBits);
+    ID3D12Resource* AllocateReadbackBuffer(size_t size, LockMask lockBits);
+    bool RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin, LockMask lockBits);
     D3DResourceCache::D3DBinding* GetBinding(uint64_t bindingIdentifier);
     D3DResourceCache::D3DBinding& RequireBinding(const BufferLayout& buffer);
-    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& buffer, std::span<const RangeInt> ranges);
-    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits, const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length);
+    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, LockMask lockBits, const BufferLayout& buffer, std::span<const RangeInt> ranges);
+    void UpdateBufferData(ID3D12GraphicsCommandList* cmdList, LockMask lockBits, const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length);
+
+    ID3D12Resource* CreateReadback(ID3D12GraphicsCommandList* cmdList, LockMask lockBits, const D3DRenderSurface& surface);
+    D3DReadback* GetReadback(ID3D12Resource* resource, LockMask& outLockHandle);
+    int GetReadbackState(ID3D12Resource* readback);
+    int CopyAndDisposeReadback(ID3D12Resource* resource, std::span<uint8_t> dest);
 
     void ComputeElementLayout(std::span<const BufferLayout*> bindings,
         std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
-    void CopyBufferData(ID3D12GraphicsCommandList* cmdList, int lockBits,
+    void CopyBufferData(ID3D12GraphicsCommandList* cmdList, LockMask lockBits,
         const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize);
     void ComputeElementData(std::span<const BufferLayout*> bindings,
-        ID3D12GraphicsCommandList* cmdList, int lockBits,
+        ID3D12GraphicsCommandList* cmdList, LockMask lockBits,
         std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,
         D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
@@ -174,17 +190,17 @@ public:
         std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
     D3DPipelineState* RequireComputePSO(const CompiledShader& shader);
-    D3DConstantBuffer* RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, int lockBits, std::span<const uint8_t> data, size_t hash);
-    D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, int lockBits);
+    D3DConstantBuffer* RequireConstantBuffer(ID3D12GraphicsCommandList* cmdList, LockMask lockBits, std::span<const uint8_t> data, size_t hash);
+    D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, LockMask lockBits);
 
     D3D12_RESOURCE_DESC GetTextureDesc(const Texture& tex);
-    int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, int lockBits, int mipB = 0, int mipC = -1);
-    int GetBufferSRV(ID3D12Resource* buffer, int offset, int count, int stride, int lockBits);
-    int GetUAV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, int lockBits, int mipB = 0, int mipC = -1);
-    int GetBufferUAV(ID3D12Resource* buffer, int arrayCount, int stride, D3D12_BUFFER_UAV_FLAGS flags, int lockBits);
-    void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
-    D3DTexture* RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, int lockBits);
-    D3DTexture* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, int lockBits);
+    int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, LockMask lockBits, int mipB = 0, int mipC = -1);
+    int GetBufferSRV(ID3D12Resource* buffer, int offset, int count, int stride, LockMask lockBits);
+    int GetUAV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, LockMask lockBits, int mipB = 0, int mipC = -1);
+    int GetBufferUAV(ID3D12Resource* buffer, int arrayCount, int stride, D3D12_BUFFER_UAV_FLAGS flags, LockMask lockBits);
+    void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, ID3D12GraphicsCommandList* cmdList, LockMask lockBits);
+    D3DTexture* RequireDefaultTexture(ID3D12GraphicsCommandList* cmdList, LockMask lockBits);
+    D3DTexture* RequireCurrentTexture(const Texture* tex, ID3D12GraphicsCommandList* cmdList, LockMask lockBits);
 
     void RequireState(D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
     void FlushBarriers(ID3D12GraphicsCommandList* cmdList);

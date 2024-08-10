@@ -5,6 +5,7 @@
 namespace D3D {
 	D3D12_HEAP_PROPERTIES DefaultHeap(D3D12_HEAP_TYPE_DEFAULT);
 	D3D12_HEAP_PROPERTIES UploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+    D3D12_HEAP_PROPERTIES ReadbackHeap(D3D12_HEAP_TYPE_READBACK);
 
     void WriteBufferData(uint8_t* data, const BufferLayout& binding, int itemSize, int byteOffset, int byteSize) {
         // Fast path

@@ -32,6 +32,7 @@ cbuffer ConstantBuffer : register(b1) {
     matrix ModelView;
     matrix InvModelView;
     matrix ModelViewProjection;
+    matrix Projection;
 }
 
 struct VSInput {
@@ -431,7 +432,10 @@ BasePassOutput PSMain(PSInput input, linear centroid noperspective float4 positi
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);
 
-    depth = positionCS.z + (1 - terResult.Height) / (positionCS.w * positionCS.w);
+    float depthOffset = (1 - terResult.Height) * 0.2;
+    depth = (positionCS.z * positionCS.w + depthOffset * Projection._33) / (positionCS.w + depthOffset * Projection._43);
+    //depth = positionCS.z + max(0, depthOffset / (positionCS.w * positionCS.w));
+    //pbrInput.Albedo = frac(depth * 100);
 
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);

@@ -491,6 +491,7 @@ namespace Weesals.Utility {
             var mutation = new Mutation() { OldOffset = leaf.Items.Start, };
             int i = 0;
             for (; i < nodeInstances.Count; i++) if (nodeInstances[i] == instance) break;
+            if (i >= nodeInstances.Count) return Mutation.None;
             nodeInstances.Slice(i + 1).CopyTo(nodeInstances.Slice(i));
             if (instanceMeta != null) {
                 instanceMeta.Stage(leaf.Items.Start + i);
@@ -515,9 +516,8 @@ namespace Weesals.Utility {
             return new(this, frustum);
         }
 
-        public SceneInstance GetInstance(int index) {
-            return instances[index];
-        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public SceneInstance GetInstance(int index) => instances[index];
 
         unsafe public struct FrustumEnumerator {
             public readonly BoundingVolumeHierarchy BVH;

@@ -1,2 +1,5 @@
 //Add sparse components to queries
 //Add sparse listener for CSelectable, use to insert bit mutate listener for tables (if they exist)
+
+Materials constructed with string paths should use VS and PS (and MS) within that shader file
+(currently seems to only use it if no other shaders are specified)

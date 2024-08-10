@@ -172,19 +172,20 @@ float4 PSMain(PSInput input) : SV_Target {
         float3 shadowPos = ViewToShadow(viewPos);
         //shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z);
         shadow = PCFSample2(ShadowMap, ShadowSampler, shadowPos, 512);
-        float3 ssShadPos = viewPos + _ViewSpaceLightDir0 * 0.2;
+        float ssShadThick = depth * 0.01;     //1.08
+        float3 ssShadPos = viewPos + _ViewSpaceLightDir0 * (depth * 0.02);
         float4 ssVPos = mul(Projection, float4(ssShadPos, 1));
         ssVPos.xyz /= ssVPos.w;
         ssVPos.y = -ssVPos.y;
         float jitter = IGN(input.position.xy);
-        const int SampleCount = 2;
+        const int SSShadowCount = 3;
         [unroll]
-        for(int i = 0; i < SampleCount; ++i) {
+        for(int i = 0; i < SSShadowCount; ++i) {
             float3 samplePos = float3(ssVPos.xy * 0.5 + 0.5, ssVPos.z);
-            samplePos = lerp(float3(input.uv, deviceDepth), samplePos, (jitter + i) / SampleCount);
+            samplePos = lerp(float3(input.uv, deviceDepth), samplePos, (jitter + i) / SSShadowCount);
             samplePos.z = DepthToLinear(samplePos.z);
             float newDepth = DepthToLinear(SceneDepth.Sample(PointSampler, samplePos.xy));
-            if (newDepth < samplePos.z && newDepth > samplePos.z - 1.08) {
+            if (newDepth < samplePos.z && newDepth > samplePos.z - ssShadThick) {
                 shadow = 0;
                 //return float4(1, 0, 0, 1) * LuminanceFactor;
                 break;

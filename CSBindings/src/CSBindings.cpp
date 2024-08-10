@@ -217,7 +217,7 @@ void CSPreprocessedShader::Dispose(PreprocessedShader* shader) {
 	if (shader != nullptr) delete shader;
 }
 
-NativeCompiledShader* CSCompiledShader::_Create(CSIdentifier name, int byteSize, int cbcount, int rbcount) {
+NativeCompiledShader* CSCompiledShader::_Create(CSIdentifier name, int byteSize, int cbcount, int rbcount, int ipcount) {
 	static_assert(sizeof(ShaderBase::UniformValue) == 4 * 4);
 	static_assert(sizeof(ShaderBase::ConstantBuffer) == 24);
 	auto* shader = new NativeCompiledShader();
@@ -225,6 +225,7 @@ NativeCompiledShader* CSCompiledShader::_Create(CSIdentifier name, int byteSize,
 	shader->SetName(Identifier(name.mId));
 	shader->GetReflection().mConstantBuffers.resize(cbcount);
 	shader->GetReflection().mResourceBindings.resize(rbcount);
+	shader->GetReflection().mInputParameters.resize(ipcount);
 	return shader;
 }
 void CSCompiledShader::InitializeValues(NativeCompiledShader* shader, int cb, int vcount) {
@@ -238,6 +239,9 @@ CSSpan CSCompiledShader::GetConstantBuffers(const NativeCompiledShader* shader) 
 }
 CSSpan CSCompiledShader::GetResources(const NativeCompiledShader* shader) {
 	return MakeSpan(shader->GetReflection().mResourceBindings);
+}
+CSSpan CSCompiledShader::GetInputParameters(const NativeCompiledShader* shader) {
+	return MakeSpan(shader->GetReflection().mInputParameters);
 }
 CSSpan CSCompiledShader::GetBinaryData(const NativeCompiledShader* shader) {
 	return MakeSpan(shader->GetBinary());
@@ -257,7 +261,7 @@ uint16_t CSGraphics::GetDeviceName(const NativeGraphics* graphics) { return Iden
 CSGraphicsCapabilities CSGraphics::GetCapabilities(const NativeGraphics* graphics) { return (CSGraphicsCapabilities&)graphics->mCmdBuffer.GetGraphics()->mCapabilities; }
 CSRenderStatistics CSGraphics::GetRenderStatistics(const NativeGraphics* graphics) { return (CSRenderStatistics&)graphics->mCmdBuffer.GetGraphics()->mStatistics; }
 NativeSurface* CSGraphics::CreateSurface(NativeGraphics* graphics, NativeWindow* window) {
-	auto surface = graphics->mCmdBuffer.CreateSurface(window);
+	auto surface = graphics->mCmdBuffer.GetGraphics()->CreateSurface(window);
 	increment_shared(surface);
 	return surface.get();
 }
@@ -397,6 +401,17 @@ bool CSGraphics::IsTombstoned(NativeGraphics* graphics) {
 }
 uint64_t CSGraphics::GetGlobalPSOHash(NativeGraphics* graphics) {
 	return graphics->mCmdBuffer.GetGlobalPSOHash();
+}
+uint64_t CSGraphics::CreateReadback(NativeGraphics* graphics, NativeRenderTarget* rt) {
+	auto readback = graphics->mCmdBuffer.CreateReadback(rt);
+	return readback.mHandle;
+}
+int CSGraphics::GetReadbackResult(NativeGraphics* graphics, uint64_t readback) {
+	return graphics->mCmdBuffer.GetReadbackResult(Readback{ readback });
+}
+int CSGraphics::CopyAndDisposeReadback(NativeGraphics* graphics, uint64_t readback, CSSpan data) {
+	Readback rb{ readback };
+	return graphics->mCmdBuffer.CopyAndDisposeReadback(rb, std::span<uint8_t>((uint8_t*)data.mData, data.mSize));
 }
 
 void CSGraphicsSurface::Dispose(NativeSurface* surface) { decrement_shared(surface->This()); }

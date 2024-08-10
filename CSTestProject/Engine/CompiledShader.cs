@@ -46,13 +46,24 @@ namespace Weesals.Engine {
             public ResourceTypes Type;
             public override string ToString() { return $"{Name} @{BindPoint}"; }
         }
+        public partial struct InputParameter {
+            public enum Types : byte { P_Unknown, P_UInt, P_SInt, P_Float, };
+            public CSIdentifier Name;
+            public CSIdentifier Semantic;
+            public int SemanticIndex;
+            public int Register;
+            public byte Mask;
+            public Types Type;
+        }
 
         public ConstantBuffer[] ConstantBuffers;
         public ResourceBinding[] ResourceBindings;
+        public InputParameter[] InputParameters;
 
         public void Serialize(BinaryWriter writer) {
             int cbcount = ConstantBuffers?.Length ?? 0;
             int rbcount = ResourceBindings?.Length ?? 0;
+            int ipcount = InputParameters?.Length ?? 0;
             writer.Write(cbcount);
             for (int i = 0; i < cbcount; i++) {
                 var cbuffer = ConstantBuffers![i];
@@ -81,6 +92,17 @@ namespace Weesals.Engine {
                 writer.Write(rbinding.Stride);
                 writer.Write((byte)rbinding.Type);
             }
+            writer.Write(ipcount);
+            for (int i = 0; i < ipcount; i++) {
+                var param = InputParameters![i];
+                writer.Write(param.Name.ToString());
+                writer.Write(param.Semantic.ToString());
+                writer.Write((int)param.SemanticIndex);
+                writer.Write((int)param.Register);
+                writer.Write((byte)param.Mask);
+                writer.Write((byte)param.Type);
+            }
+            writer.Write("End");
         }
         public void Deserialize(BinaryReader reader) {
             int cbcount = reader.ReadInt32();
@@ -112,6 +134,18 @@ namespace Weesals.Engine {
                 rbinding.Stride = reader.ReadInt32();
                 rbinding.Type = (ResourceTypes)reader.ReadByte();
             }
+            int ipcount = reader.ReadInt32();
+            InputParameters = new InputParameter[ipcount];
+            for (int i = 0; i < ipcount; i++) {
+                ref var param = ref InputParameters[i];
+                param.Name = new(reader.ReadString());
+                param.Semantic = new(reader.ReadString());
+                param.SemanticIndex = reader.ReadInt32();
+                param.Register = reader.ReadInt32();
+                param.Mask = reader.ReadByte();
+                param.Type = (InputParameter.Types)reader.ReadByte();
+            }
+            Trace.Assert(reader.ReadString() == "End");
         }
     }
     public class PreprocessedShader {

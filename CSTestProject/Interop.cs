@@ -456,6 +456,23 @@ namespace Weesals.Engine
         public byte mType;
     }
 
+    public partial struct CSInputParameter
+    {
+        public CSIdentifier mName;
+
+        public CSIdentifier mSemantic;
+
+        public int mSemanticIndex;
+
+        public int mRegister;
+
+        [NativeTypeName("uint8_t")]
+        public byte mMask;
+
+        [NativeTypeName("uint8_t")]
+        public byte mType;
+    }
+
     public unsafe partial struct CSPipeline
     {
         [NativeTypeName("const NativePipeline *")]
@@ -546,8 +563,8 @@ namespace Weesals.Engine
             return mShader;
         }
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSCompiledShader@@CAPEAVCompiledShader@@UCSIdentifier@@HHH@Z", ExactSpelling = true)]
-        private static extern NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount);
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?_Create@CSCompiledShader@@CAPEAVCompiledShader@@UCSIdentifier@@HHHH@Z", ExactSpelling = true)]
+        private static extern NativeCompiledShader* _Create(CSIdentifier name, int byteSize, int cbcount, int rbcount, int ipcount);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?InitializeValues@CSCompiledShader@@CAXPEAVCompiledShader@@HH@Z", ExactSpelling = true)]
         private static extern void InitializeValues(NativeCompiledShader* shader, int cb, int vcount);
@@ -560,6 +577,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetResources@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
         private static extern CSSpan GetResources([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetInputParameters@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
+        private static extern CSSpan GetInputParameters([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetBinaryData@CSCompiledShader@@CA?AUCSSpan@@PEBVCompiledShader@@@Z", ExactSpelling = true)]
         private static extern CSSpan GetBinaryData([NativeTypeName("const NativeCompiledShader *")] NativeCompiledShader* shader);
@@ -751,6 +771,16 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetGlobalPSOHash@CSGraphics@@CA_KPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("uint64_t")]
         private static extern ulong GetGlobalPSOHash(NativeGraphics* graphics);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateReadback@CSGraphics@@CA_KPEAVNativeGraphics@@PEAVRenderTarget2D@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("uint64_t")]
+        private static extern ulong CreateReadback(NativeGraphics* graphics, NativeRenderTarget* rt);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetReadbackResult@CSGraphics@@CAHPEAVNativeGraphics@@_K@Z", ExactSpelling = true)]
+        private static extern int GetReadbackResult(NativeGraphics* graphics, [NativeTypeName("uint64_t")] ulong readback);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyAndDisposeReadback@CSGraphics@@CAHPEAVNativeGraphics@@_KUCSSpan@@@Z", ExactSpelling = true)]
+        private static extern int CopyAndDisposeReadback(NativeGraphics* graphics, [NativeTypeName("uint64_t")] ulong readback, CSSpan data);
     }
 
     public unsafe partial struct CSGraphicsSurface

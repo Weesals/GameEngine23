@@ -150,9 +150,9 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
             window->mInput->GetMutator().ReceiveKeyEvent(extended ? VK_RMENU : VK_LMENU, state);
         }
         window->mInput->GetMutator().ReceiveKeyEvent((int)wParam, state);
-        std::stringstream str;
-        str << wParam << " S " << state << std::endl;
-        OutputDebugStringA(str.str().c_str());
+        //std::stringstream str;
+        //str << wParam << " S " << state << std::endl;
+        //OutputDebugStringA(str.str().c_str());
     };
 
     switch (message) {

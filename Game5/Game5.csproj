@@ -39,7 +39,10 @@
     <None Remove="Assets\Config\TownCentre.json" />
     <None Remove="Assets\Config\Tree.json" />
     <None Remove="Assets\ParticleAtlas.png" />
+    <None Remove="Assets\Shader\DistanceField.hlsl" />
     <None Remove="assets\shader\GTAO.hlsl" />
+    <None Remove="Assets\Shader\impostor.hlsl" />
+    <None Remove="Assets\Shader\ImpostorBaker.hlsl" />
     <None Remove="Assets\Visuals.json" />
     <None Remove="Assets\Visuals.xml" />
   </ItemGroup>
@@ -48,6 +51,11 @@
   </ItemGroup>
   <ItemGroup>
     <Content Update="Assets\Config\House.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Update="Assets\Shader\impostor.hlsl">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

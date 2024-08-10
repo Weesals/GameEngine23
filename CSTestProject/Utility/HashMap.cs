@@ -170,6 +170,11 @@ namespace Weesals.Utility {
         public PooledHashSet(int capacity = 16) { set = new(capacity); }
         public void Dispose() { set.Dispose(); }
 
+        public void CopyFrom(HashSet<TKey> other) {
+            Clear();
+            foreach (var item in other) Add(item);
+        }
+
         // Resize based on hard-coded loading factor 75%
         private void ResizeIfRequired() {
             if (count * 4 >= Capacity * 3) {

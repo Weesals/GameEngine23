@@ -191,8 +191,10 @@ namespace Game5.Game {
                 Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
                     * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),
                 NearPlane = 5.0f,
-                FarPlane = 5000.0f,
+                FarPlane = 10000.0f,
             };
+            //Camera.FOV = 0f;
+            //Camera.OrthoSize = 20f;
 
             using (new ProfilerMarker("UI Play").Auto()) {
                 root.Canvas.AppendChild(playUI = new UIPlay(this));
@@ -299,6 +301,9 @@ namespace Game5.Game {
         }
 
         public void RenderUpdate(CSGraphics graphics, float dt) {
+            if (Input.GetKeyPressed(KeyCode.X)) {
+                //ParticleManager.VelocityBuffer
+            }
             OnRender?.Invoke(graphics, dt);
             particleManager.Update(graphics, dt);
         }
@@ -399,7 +404,7 @@ namespace Game5.Game {
                     var chunkEntities = entityMapSystem.AllEntities.GetChunk(new Int2(x, y));
                     foreach (var entity in chunkEntities) {
                         if (!World.IsValid(entity)) continue;
-                        var protoData = World.GetComponent<PrototypeData>(entity);
+                        if (!World.TryGetComponent<PrototypeData>(entity, out var protoData)) continue;
                         var footprint = protoData.Footprint;
                         var entitySize = new Vector3(
                             (float)footprint.Size.X * SimulationWorld.WorldScale * 0.5f,

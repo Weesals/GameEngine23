@@ -224,11 +224,15 @@ namespace Game5.Game {
 
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Manager);
+#if DEBUG || true
+                const int Count = 20000 * 4;
+#else
                 const int Count = 2000000 * 4;
+#endif
                 var sqrtCount = (int)MathF.Sqrt(Count);
                 int totCount = 0;
                 for (int i = 0; i < Count; i++) {
-                    var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 4000;
+                    var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 6000;
                     if (rand.Next(0, 4) != 0) continue;
                     if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
                     var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);

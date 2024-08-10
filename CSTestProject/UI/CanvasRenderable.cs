@@ -205,7 +205,7 @@ namespace Weesals.UI {
                 if (mChildren != null) MarkChildrenDirty();
                 MarkComposeDirty();
                 NotifyTransformChanged();
-            } else if (!hitBinding.IsValid) {
+            } else if (!hitBinding.IsValid && hitBinding.IsEnabled) {
                 UpdateHitBinding();
             }
         }

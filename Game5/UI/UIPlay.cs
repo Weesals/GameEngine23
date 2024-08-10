@@ -33,6 +33,7 @@ namespace Game5.UI {
         private CSTexture testTexture;
 
         private Int3 cameraMove = Int3.Zero;
+        private Vector3 cameraMoveSmooth;
 
         public string DebugString {
             get => debugTxt.Text;
@@ -165,9 +166,19 @@ namespace Game5.UI {
             var camera = Play.Camera;
             Vector3 pivot = camera.Position;
             if (Play.Landscape.Raycast(ray, out var hit)) pivot = hit.HitPosition;
-            camera.Position +=
-                (cameraMove.X * camRight + cameraMove.Z * camFwd + cameraMove.Y * Vector3.UnitY)
+
+            var cameraMoveDelta = (Vector3)cameraMove - cameraMoveSmooth;
+            var cameraMoveDeltaL = cameraMoveDelta.Length();
+            if (cameraMoveDeltaL > 0f) {
+                cameraMoveSmooth += cameraMoveDelta / cameraMoveDeltaL * Math.Min(dt * 5f, cameraMoveDeltaL);
+            }
+
+            var pos = camera.Position +
+                (cameraMoveSmooth.X * camRight + cameraMoveSmooth.Z * camFwd + cameraMoveSmooth.Y * Vector3.UnitY * 0.5f)
                 * (dt * camera.Position.Y);
+            pos.Y = Math.Min(pos.Y, 3850f);
+            camera.Position = pos;
+
             var delta = (Input.GetKeyDown(KeyCode.Minus) ? -1 : 0)
                 + (Input.GetKeyDown(KeyCode.Plus) ? 1 : 0);
             var rot = Quaternion.CreateFromAxisAngle(Vector3.UnitY, delta * dt);

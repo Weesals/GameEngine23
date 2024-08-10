@@ -209,6 +209,7 @@ namespace Game5.Game {
             if (shadowPass.UpdateShadowFrustum(scenePasses.Frustum, activeArea)) {
                 RenderRevision++;
             }
+            //scenePasses.SetViewProjection(shadowPass.View, shadowPass.Projection);
             if (Play.DrawVisibilityVolume) shadowPass.DrawVolume();
 
             for (int i = 0; i < scenePasses.ScenePasses.Count; i++) {

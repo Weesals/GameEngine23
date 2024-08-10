@@ -216,10 +216,12 @@ namespace Weesals.Editor.Assets {
                             Path.GetFileNameWithoutExtension(key.SourcePath),
                             compiledshader.CompiledBlob.Length,
                             compiledshader.Reflection.ConstantBuffers.Length,
-                            compiledshader.Reflection.ResourceBindings.Length
+                            compiledshader.Reflection.ResourceBindings.Length,
+                            compiledshader.Reflection.InputParameters.Length
                         );
                         var nativeCBs = compiledshader.NativeShader.GetConstantBuffers();
                         var nativeRBs = compiledshader.NativeShader.GetResources();
+                        var nativeIPs = compiledshader.NativeShader.GetInputParameters();
                         for (int i = 0; i < nativeCBs.Length; i++) {
                             ref var nativeCB = ref nativeCBs[i];
                             var cb = compiledshader.Reflection.ConstantBuffers[i];
@@ -243,6 +245,16 @@ namespace Weesals.Editor.Assets {
                             nativeRB.mBindPoint = rb.BindPoint;
                             nativeRB.mStride = rb.Stride;
                             nativeRB.mType = (byte)rb.Type;
+                        }
+                        for (int i = 0; i < nativeIPs.Length; i++) {
+                            ref var nativeIP = ref nativeIPs[i];
+                            var rb = compiledshader.Reflection.InputParameters[i];
+                            nativeIP.mName = rb.Name;
+                            nativeIP.mSemantic = rb.Semantic;
+                            nativeIP.mSemanticIndex = rb.SemanticIndex;
+                            nativeIP.mRegister = rb.Register;
+                            nativeIP.mMask = rb.Mask;
+                            nativeIP.mType = (byte)rb.Type;
                         }
                         Trace.Assert(compiledshader.NativeShader.GetBinaryData().Length
                             == compiledshader.CompiledBlob.Length);
@@ -273,8 +285,10 @@ namespace Weesals.Editor.Assets {
                 compiledshader.Reflection = new ShaderReflection();
                 var nativeCBs = nativeshader.GetConstantBuffers();
                 var nativeRBs = nativeshader.GetResources();
+                var nativeIPs = nativeshader.GetInputParameters();
                 compiledshader.Reflection.ConstantBuffers = new ShaderReflection.ConstantBuffer[nativeCBs.Length];
                 compiledshader.Reflection.ResourceBindings = new ShaderReflection.ResourceBinding[nativeRBs.Length];
+                compiledshader.Reflection.InputParameters = new ShaderReflection.InputParameter[nativeIPs.Length];
                 for (int i = 0; i < nativeCBs.Length; i++) {
                     var nativeCB = nativeCBs[i];
                     var nativeValues = nativeshader.GetValues(i);
@@ -290,7 +304,7 @@ namespace Weesals.Editor.Assets {
                             Flags = nativeValues[v].mFlags,
                         };
                     }
-                    compiledshader.Reflection.ConstantBuffers[i] = new ShaderReflection.ConstantBuffer() {
+                    compiledshader.Reflection.ConstantBuffers[i] = new() {
                         Name = nativeCB.mName,
                         BindPoint = nativeCB.mBindPoint,
                         Size = nativeCB.mSize,
@@ -299,11 +313,22 @@ namespace Weesals.Editor.Assets {
                 }
                 for (int i = 0; i < nativeRBs.Length; i++) {
                     var nativeRB = nativeRBs[i];
-                    compiledshader.Reflection.ResourceBindings[i] = new ShaderReflection.ResourceBinding() {
+                    compiledshader.Reflection.ResourceBindings[i] = new() {
                         Name = nativeRB.mName,
                         BindPoint = nativeRB.mBindPoint,
                         Stride = nativeRB.mStride,
                         Type = (ShaderReflection.ResourceTypes)nativeRB.mType,
+                    };
+                }
+                for (int i = 0; i < nativeIPs.Length; i++) {
+                    var nativeIP = nativeIPs[i];
+                    compiledshader.Reflection.InputParameters[i] = new() {
+                        Name = nativeIP.mName,
+                        Semantic = nativeIP.mSemantic,
+                        SemanticIndex = nativeIP.mSemanticIndex,
+                        Mask = (byte)nativeIP.mMask,
+                        Register = nativeIP.mRegister,
+                        Type = (ShaderReflection.InputParameter.Types)nativeIP.mType,
                     };
                 }
                 compiledshader.NativeShader = nativeshader;

@@ -228,6 +228,13 @@ namespace Weesals.Engine {
                 return new CSRenderTarget(_Create(new CSString(namePtr, name.Length)));
         }
     }
+    unsafe public partial struct CSRenderTargetBinding : IEquatable<CSRenderTargetBinding> {
+        public CSRenderTargetBinding(CSRenderTarget target) : this(target.mRenderTarget) { }
+        public bool Equals(CSRenderTargetBinding other) {
+            return mTarget == other.mTarget && mMip == other.mMip && mSlice == other.mSlice;
+        }
+        public static implicit operator CSRenderTargetBinding(CSRenderTarget target) => new(target);
+    }
     public partial struct CSFont : IEquatable<CSFont> {
         unsafe public bool IsValid => mFont != null;
         unsafe public CSTexture GetTexture() { return new CSTexture(GetTexture(mFont)); }
@@ -398,47 +405,88 @@ namespace Weesals.Engine {
             Trace.Assert(sizeof(CSUniformValue) == 4 * 4);
             Trace.Assert(sizeof(CSConstantBuffer) == 24);
         }
-        unsafe static public CSCompiledShader Create(string name, int byteSize, int cbcount, int rbcount) {
-            return new(_Create(new(name), byteSize, cbcount, rbcount));
+        unsafe static public CSCompiledShader Create(string name, int byteSize, int cbcount, int rbcount, int ipcount) {
+            return new(_Create(new(name), byteSize, cbcount, rbcount, ipcount));
         }
         unsafe public bool IsValid => mShader != null;
         unsafe public void InitializeValues(int cb, int vcount) { InitializeValues(mShader, cb, vcount); }
         unsafe public Span<CSUniformValue> GetValues(int cb) { return GetValues(mShader, cb).AsSpan<CSUniformValue>(); }
         unsafe public Span<CSConstantBuffer> GetConstantBuffers() { return GetConstantBuffers(mShader).AsSpan<CSConstantBuffer>(); }
         unsafe public Span<CSResourceBinding> GetResources() { return GetResources(mShader).AsSpan<CSResourceBinding>(); }
+        unsafe public Span<CSInputParameter> GetInputParameters() { return GetInputParameters(mShader).AsSpan<CSInputParameter>(); }
         unsafe public Span<byte> GetBinaryData() { return GetBinaryData(mShader).AsSpan<byte>(); }
         unsafe public ShaderStats GetStatistics() { return *GetStatistics(mShader); }
     }
-    public partial struct CSGraphics {
-        unsafe public void Dispose() { Dispose(mGraphics); mGraphics = null; }
-        unsafe public CSIdentifier GetDeviceName() { return new CSIdentifier(GetDeviceName(mGraphics)); }
-        unsafe public CSGraphicsCapabilities GetCapabiltiies() { return GetCapabilities(mGraphics); }
-        unsafe public CSRenderStatistics GetRenderStatistics() { return GetRenderStatistics(mGraphics); }
-        unsafe public CSGraphicsSurface CreateSurface(CSWindow window) { return new CSGraphicsSurface(CreateSurface(mGraphics, window.GetNativeWindow())); }
-        unsafe public void SetSurface(CSGraphicsSurface surface) { SetSurface(mGraphics, surface.GetNativeSurface()); }
-        unsafe public CSGraphicsSurface GetSurface() { return new CSGraphicsSurface(GetSurface(mGraphics)); }
-        unsafe public void SetRenderTargets(CSRenderTargetBinding colorTarget, CSRenderTargetBinding depth) {
+    unsafe public partial struct CSGraphics {
+        public struct AsyncReadback {
+            NativeGraphics* mGraphics;
+            nint mReadback;
+            public AsyncReadback(NativeGraphics* graphics, nint readback) {
+                mGraphics = graphics;
+                mReadback = readback;
+            }
+            public bool GetIsDone() => GetReadbackResult(mGraphics, (ulong)mReadback) >= 0;
+            public int GetDataSize() => GetReadbackResult(mGraphics, (ulong)mReadback);
+            public void ReadAndDispose(MemoryBlock<byte> data) => CopyAndDisposeReadback(mGraphics, (ulong)mReadback, new CSSpan(data.Data, data.Length));
+            public void ReadAndDispose(Span<byte> data) {
+                fixed (byte* dataPtr = data) { ReadAndDispose(new MemoryBlock<byte>(dataPtr, data.Length)); }
+            }
+            public struct Awaiter : INotifyCompletion {
+                private AsyncReadback Readback;
+                public bool IsCompleted => Readback.GetIsDone();
+                public AsyncReadback GetResult() => Readback;
+                public Awaiter(AsyncReadback readback) {
+                    Readback = readback;
+                }
+                public void OnCompleted(Action continuation) {
+                    onComplete.Add(Readback.mReadback, continuation);
+                }
+                public static void InvokeCallbacks(CSGraphics graphics) {
+                    using var done = new PooledList<nint>(4);
+                    foreach (var callback in onComplete) {
+                        var readback = new AsyncReadback(graphics.mGraphics, callback.Key);
+                        if (readback.GetIsDone()) done.Add(callback.Key);
+                    }
+                    foreach(var item in done) {
+                        var callback = onComplete[item];
+                        onComplete.Remove(item);
+                        callback();
+                    }
+                }
+                private static Dictionary<nint, Action> onComplete = new();
+            }
+            public Awaiter GetAwaiter() => new(this);
+        }
+
+        public void Dispose() { Dispose(mGraphics); mGraphics = null; }
+        public CSIdentifier GetDeviceName() { return new CSIdentifier(GetDeviceName(mGraphics)); }
+        public CSGraphicsCapabilities GetCapabiltiies() { return GetCapabilities(mGraphics); }
+        public CSRenderStatistics GetRenderStatistics() { return GetRenderStatistics(mGraphics); }
+        public CSGraphicsSurface CreateSurface(CSWindow window) { return new CSGraphicsSurface(CreateSurface(mGraphics, window.GetNativeWindow())); }
+        public void SetSurface(CSGraphicsSurface surface) { SetSurface(mGraphics, surface.GetNativeSurface()); }
+        public CSGraphicsSurface GetSurface() { return new CSGraphicsSurface(GetSurface(mGraphics)); }
+        public void SetRenderTargets(CSRenderTargetBinding colorTarget, CSRenderTargetBinding depth) {
             SetRenderTargets(mGraphics, colorTarget.mTarget != null ? new CSSpan(&colorTarget, 1) : default, depth);
         }
         [SkipLocalsInit]
-        unsafe public void SetRenderTargets(Span<CSRenderTarget> targets, CSRenderTarget depth) {
+        public void SetRenderTargets(Span<CSRenderTarget> targets, CSRenderTarget depth) {
             var nativeTargets = stackalloc CSRenderTargetBinding[targets.Length];
             for (int i = 0; i < targets.Length; ++i) nativeTargets[i] = new CSRenderTargetBinding(targets[i].mRenderTarget);
             SetRenderTargets(mGraphics, new CSSpan(nativeTargets, targets.Length), new CSRenderTargetBinding(depth.mRenderTarget));
         }
-        unsafe public void SetRenderTargets(MemoryBlock<CSRenderTargetBinding> targets, CSRenderTargetBinding depth) {
+        public void SetRenderTargets(MemoryBlock<CSRenderTargetBinding> targets, CSRenderTargetBinding depth) {
             SetRenderTargets(mGraphics, CSSpan.Create(targets), depth);
         }
-        unsafe public bool IsTombstoned() { return IsTombstoned(mGraphics) != 0; }
-        unsafe public void Reset() { Reset(mGraphics); }
-        unsafe public void Clear() { Clear(new(CSClearConfig.GetInvalidColor(), 1f)); }
-        unsafe public void Clear(CSClearConfig clear) { Clear(mGraphics, clear); }
-        unsafe public void SetViewport(RectI viewport) { SetViewport(mGraphics, viewport); }
-        unsafe public void Execute() { Execute(mGraphics); }
-        unsafe public nint RequireConstantBuffer(MemoryBlock<byte> data, ulong hash = 0) {
+        public bool IsTombstoned() { return IsTombstoned(mGraphics) != 0; }
+        public void Reset() { Reset(mGraphics); }
+        public void Clear() { Clear(new(CSClearConfig.GetInvalidColor(), 1f)); }
+        public void Clear(CSClearConfig clear) { Clear(mGraphics, clear); }
+        public void SetViewport(RectI viewport) { SetViewport(mGraphics, viewport); }
+        public void Execute() { Execute(mGraphics); }
+        public nint RequireConstantBuffer(MemoryBlock<byte> data, ulong hash = 0) {
             return (nint)RequireConstantBuffer(mGraphics, CSSpan.Create(data), (nuint)hash);
         }
-        unsafe static public CSPreprocessedShader PreprocessShader(string path, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
+        static public CSPreprocessedShader PreprocessShader(string path, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
             fixed (char* pathPtr = path)
             fixed (KeyValuePair<CSIdentifier, CSIdentifier>* usmacros = macros) {
                 return new CSPreprocessedShader(PreprocessShader(
@@ -447,13 +495,13 @@ namespace Weesals.Engine {
                 ));
             }
         }
-        unsafe public CSCompiledShader CompileShader(CSString8 source, string entry, CSIdentifier profile) {
+        public CSCompiledShader CompileShader(CSString8 source, string entry, CSIdentifier profile) {
             fixed (char* entryPtr = entry) {
                 return new CSCompiledShader(CompileShader(mGraphics, source,
                     new CSString(entryPtr, entry.Length), profile));
             }
         }
-        unsafe public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings,
+        public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings,
             CSCompiledShader vertexShader, CSCompiledShader pixelShader, void* materialState) {
             fixed (CSBufferLayout* usbindings = bindings) {
                 return new CSPipeline(RequirePipeline(
@@ -465,7 +513,7 @@ namespace Weesals.Engine {
                 ));
             }
         }
-        unsafe public CSPipeline RequireMeshPipeline(Span<CSBufferLayout> bindings,
+        public CSPipeline RequireMeshPipeline(Span<CSBufferLayout> bindings,
             CSCompiledShader meshShader, CSCompiledShader pixelShader, void* materialState) {
             fixed (CSBufferLayout* usbindings = bindings) {
                 return new CSPipeline(RequireMeshPipeline(
@@ -477,61 +525,64 @@ namespace Weesals.Engine {
                 ));
             }
         }
-        unsafe public CSPipeline RequireComputePSO(CSCompiledShader computeShader) {
+        public CSPipeline RequireComputePSO(CSCompiledShader computeShader) {
             return new CSPipeline(RequireComputePSO(
                 mGraphics,
                 computeShader.GetNativeShader()
             ));
         }
-        unsafe public void CopyBufferData(CSBufferLayout buffer) {
+        public void CopyBufferData(CSBufferLayout buffer) {
             Span<RangeInt> ranges = stackalloc RangeInt[] { new(-1, buffer.size) };
             CopyBufferData(buffer, ranges);
         }
-        unsafe public void CopyBufferData(CSBufferLayout buffer, RangeInt range) {
+        public void CopyBufferData(CSBufferLayout buffer, RangeInt range) {
             CopyBufferData(buffer, new Span<RangeInt>(ref range));
         }
-        unsafe public void CopyBufferData(CSBufferLayout buffer, List<RangeInt> ranges) {
+        public void CopyBufferData(CSBufferLayout buffer, List<RangeInt> ranges) {
             CopyBufferData(buffer, CollectionsMarshal.AsSpan(ranges));
         }
-        unsafe public void CopyBufferData(CSBufferLayout buffer, Span<RangeInt> ranges) {
+        public void CopyBufferData(CSBufferLayout buffer, Span<RangeInt> ranges) {
             if (ranges.Length == 0) return;
             fixed (RangeInt* rangesPtr = ranges) {
                 CopyBufferData(mGraphics, &buffer, new CSSpan(rangesPtr, ranges.Length));
             }
         }
-        unsafe public void CopyBufferData(CSBufferLayout source, CSBufferLayout dest, RangeInt srcRange, int destOffset) {
+        public void CopyBufferData(CSBufferLayout source, CSBufferLayout dest, RangeInt srcRange, int destOffset) {
             CopyBufferData(mGraphics, &source, &dest, srcRange.Start, destOffset, srcRange.Length);
         }
 
         private static ProfilerMarker ProfileMarker_Draw = new("Draw");
         [SkipLocalsInit]
-        unsafe public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
+        public void Draw(CSPipeline pso, IList<CSBufferLayout> bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
             var usbindings = stackalloc CSBufferLayout[bindings.Count];
             for (int b = 0; b < bindings.Count; ++b) usbindings[b] = bindings[b];
             Draw(pso, new CSSpan(usbindings, bindings.Count), resources, drawConfig, instanceCount);
         }
-        unsafe public void Draw(CSPipeline pso, CSSpan bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
+        public void Draw(CSPipeline pso, CSSpan bindings, CSSpan resources, CSDrawConfig drawConfig, int instanceCount = 1) {
             using (var marker = ProfileMarker_Draw.Auto()) {
                 Draw(mGraphics, pso, bindings, resources, drawConfig, instanceCount);
             }
         }
-        unsafe public void DispatchCompute(CSPipeline pso, CSSpan resources, Int3 groupCount) {
+        public void DispatchCompute(CSPipeline pso, CSSpan resources, Int3 groupCount) {
             Dispatch(mGraphics, pso, resources, groupCount);
         }
-        unsafe public MemoryBlock<T> RequireFrameData<T>(List<T> inData) where T : unmanaged {
+        public MemoryBlock<T> RequireFrameData<T>(List<T> inData) where T : unmanaged {
             return RequireFrameData(CollectionsMarshal.AsSpan(inData));
         }
-        unsafe public MemoryBlock<T> RequireFrameData<T>(Span<T> inData) where T : unmanaged {
+        public MemoryBlock<T> RequireFrameData<T>(Span<T> inData) where T : unmanaged {
             var outData = RequireFrameData<T>(inData.Length);
             for (int i = 0; i < outData.Length; i++) outData[i] = inData[i];
             return outData;
         }
-        unsafe public MemoryBlock<T> RequireFrameData<T>(int count) where T: unmanaged {
+        public MemoryBlock<T> RequireFrameData<T>(int count) where T: unmanaged {
             return new MemoryBlock<T>((T*)RequireFrameData(mGraphics, sizeof(T) * count), count);
         }
-        unsafe public override int GetHashCode() { return (int)(mGraphics) ^ (int)((ulong)mGraphics >> 32); }
-        unsafe public ulong GetGlobalPSOHash() { return GetGlobalPSOHash(mGraphics); }
-        unsafe public static implicit operator NativeGraphics*(CSGraphics g) { return g.mGraphics; }
+        public AsyncReadback CreateReadback(CSRenderTarget target) {
+            return new(mGraphics, (nint)CreateReadback(mGraphics, target.mRenderTarget));
+        }
+        public override int GetHashCode() { return (int)(mGraphics) ^ (int)((ulong)mGraphics >> 32); }
+        public ulong GetGlobalPSOHash() { return GetGlobalPSOHash(mGraphics); }
+        public static implicit operator NativeGraphics*(CSGraphics g) { return g.mGraphics; }
     }
     public partial struct CSInstance {
         public override string ToString() { return GetInstanceId().ToString(); }

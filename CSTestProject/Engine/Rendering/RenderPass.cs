@@ -233,6 +233,8 @@ namespace Weesals.Engine {
         public Action<CSGraphics> OnPrepare;
         public Action<CSGraphics> OnRender;
 
+        public bool Enabled => View.M44 != 0f;
+
         public ScenePass(Scene scene, string name) : base(name) {
             RenderQueue = new();
             RetainedRenderer = new(scene);
@@ -276,9 +278,11 @@ namespace Weesals.Engine {
             RenderScene(graphics, ref context);
         }
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
-            RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
-            Scene.SubmitToGPU(graphics);
-            RenderQueue.Render(graphics);
+            if (Enabled) {
+                RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
+                Scene.SubmitToGPU(graphics);
+                RenderQueue.Render(graphics);
+            }
         }
 
         public bool GetHasSceneChanges() {
@@ -287,6 +291,10 @@ namespace Weesals.Engine {
 
         public void MoveInstance(SceneInstance instance, Int2 oldPos, Int2 newPos) {
             RetainedRenderer.MoveInstance(instance, oldPos, newPos);
+        }
+
+        public void SetMeshLOD(Mesh mesh, Mesh hull, Span<Material> hullMaterials) {
+            RetainedRenderer.SetMeshLOD(mesh, hull, hullMaterials);
         }
     }
 
@@ -307,6 +315,15 @@ namespace Weesals.Engine {
             // Create shadow projection based on frustum near/far corners
             Span<Vector3> corners = stackalloc Vector3[8];
             frustum.GetCorners(corners);
+            var nearD = -frustum.NearPlane.D / frustum.NearPlane.Normal.Length();
+            var farD = frustum.FarPlane.D / frustum.FarPlane.Normal.Length();
+            const float ShadowFarClip = 500f;
+            if (farD > nearD + ShadowFarClip) {
+                float lerp = ShadowFarClip / (farD - nearD);
+                for (int i = 0; i < 4; i++) {
+                    corners[i + 4] = Vector3.Lerp(corners[i], corners[i + 4], lerp);
+                }
+            }
 
             var lightViewMatrix = Matrix4x4.CreateLookAt(-LightDirection, Vector3.Zero, Vector3.UnitY);
             var lightMin = new Vector3(float.MaxValue);
@@ -336,10 +353,12 @@ namespace Weesals.Engine {
             lightMax.Z += 20.0f;
 
             var lightSize = lightMax - lightMin;
+            bool noShadows = lightSize.X < 0f;
             lightSize = Vector3.Max(lightSize, Vector3.One * 10.0f);
 
             lightViewMatrix.Translation = lightViewMatrix.Translation - (lightMin + lightMax) / 2.0f;
             var lightProjMatrix = Matrix4x4.CreateOrthographic(-lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
+            if (noShadows) lightViewMatrix.M44 = 0f;
             return SetViewProjection(
                 lightViewMatrix,
                 lightProjMatrix
@@ -354,8 +373,11 @@ namespace Weesals.Engine {
             activeArea.DrawGizmos();
         }
         public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 5.0f) {
-            var shadowPassViewProj = this.View * this.Projection;
-            Matrix4x4.Invert(this.View, out var shadowPassInvView);
+            bool noShadows = !this.Enabled;
+            var shadowView = this.View;
+            shadowView.M44 = 1.0f;
+            var shadowPassViewProj = noShadows ? Matrix4x4.Identity : shadowView * this.Projection;
+            Matrix4x4.Invert(shadowView, out var shadowPassInvView);
             Matrix4x4.Invert(view, out var basePassInvView);
             basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);
             basePassMat.SetValue("ShadowIVViewProjection", basePassInvView * shadowPassViewProj);
@@ -383,7 +405,7 @@ namespace Weesals.Engine {
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
             graphics.SetViewport(context.Viewport);
-            graphics.Clear(new(CSClearConfig.GetInvalidColor(), 1f) {
+            graphics.Clear(new(Vector4.Zero, 1f) {
                 ClearStencil = 0x0
             });
         }
@@ -909,10 +931,11 @@ namespace Weesals.Engine {
         public void SetupRender(Int2 viewportSize, Vector2 jitter = default, int jitterFrame = default) {
             var jitteredProjection = projection;
             var jitteredPrevProj = previousProj;
-            jitteredProjection.M31 += jitter.X / viewportSize.X;
-            jitteredProjection.M32 += jitter.Y / viewportSize.Y;
-            jitteredPrevProj.M31 += jitter.X / viewportSize.X;
-            jitteredPrevProj.M32 += jitter.Y / viewportSize.Y;
+            var scale = projection.M34;
+            jitteredProjection.M31 += jitter.X / viewportSize.X * scale;
+            jitteredProjection.M32 += jitter.Y / viewportSize.Y * scale;
+            jitteredPrevProj.M31 += jitter.X / viewportSize.X * scale;
+            jitteredPrevProj.M32 += jitter.Y / viewportSize.Y * scale;
             JitteredProjection = jitteredPrevProj;
             var previousVP = previousView * jitteredPrevProj;
             mainSceneMaterial.SetValue("PreviousViewProjection", previousVP);
@@ -958,6 +981,18 @@ namespace Weesals.Engine {
                     var pass = scenePasses[bit];
                     pass.MoveInstance(instance, oldPos, newPos);
                 }
+            }
+        }
+
+        public void SetMeshLOD(Mesh mesh, Mesh hull, Material material) {
+            foreach (var pass in scenePasses) {
+                using var materials = new PooledList<Material>();
+                if (material != null) materials.Add(material);
+                if (mesh.Material != null) materials.Add(mesh.Material);
+                if (pass.OverrideMaterial != null) materials.Add(pass.OverrideMaterial);
+                materials.Add(pass.RetainedRenderer.Scene.RootMaterial);
+
+                pass.SetMeshLOD(mesh, hull, materials);
             }
         }
     }

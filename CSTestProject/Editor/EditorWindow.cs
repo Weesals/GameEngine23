@@ -31,10 +31,10 @@ public static class EntityProxyExt {
         return new(manager, PackEntity(entity));
     }
     public static ulong PackEntity(Entity entity) {
-        return ((ulong)(uint)entity.Index << 32) | (uint)entity.Version;
+        return ((ulong)(uint)entity.Index) | ((ulong)(uint)entity.Version << 32);
     }
     public static Entity UnpackEntity(ulong id) {
-        return new Entity() { Index = (uint)(id >> 32), Version = (uint)id, };
+        return new Entity() { Index = (uint)(id), Version = (uint)(id >> 32), };
     }
 }
 

@@ -14,6 +14,7 @@
 namespace D3D {
     extern D3D12_HEAP_PROPERTIES DefaultHeap;
     extern D3D12_HEAP_PROPERTIES UploadHeap;
+    extern D3D12_HEAP_PROPERTIES ReadbackHeap;
 
     void WriteBufferData(uint8_t* data, const BufferLayout& binding, int itemSize, int byteOffset, int byteSize);
 

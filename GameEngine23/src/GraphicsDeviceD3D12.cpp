@@ -23,7 +23,7 @@ const D3D12_RESOURCE_STATES InitialBufferState = D3D12_RESOURCE_STATE_VERTEX_AND
 class D3DCommandBuffer : public CommandBufferInteropBase {
     GraphicsDeviceD3D12* mDevice;
     D3DGraphicsSurface* mSurface;
-    int mFrameHandle;
+    LockMask mFrameHandle;
     D3DResourceCache::CommandAllocator* mCmdAllocator;
     ComPtr<ID3D12GraphicsCommandList6> mCmdList;
     InplaceVector<D3DResourceCache::D3DRenderSurfaceView, 8> mFrameBuffers;
@@ -73,10 +73,6 @@ public:
         auto srvHeap = mDevice->GetSRVHeap();
         mCmdList->SetDescriptorHeaps(1, &srvHeap);
     }
-    virtual std::shared_ptr<GraphicsSurface> CreateSurface(WindowBase* window) override {
-        auto surface = std::make_shared<D3DGraphicsSurface>(mDevice->GetDevice(), ((WindowWin32*)window)->GetHWND());
-        return surface;
-    }
     virtual void SetSurface(GraphicsSurface* surface) override {
         mSurface = (D3DGraphicsSurface*)surface;
         mFrameHandle = 1ull << mDevice->GetResourceCache().RequireFrameHandle((size_t)mSurface + (mSurface->GetBackFrameIndex() & 31));
@@ -84,11 +80,8 @@ public:
         auto& cache = mDevice->GetResourceCache();
         auto* backBuffer = &*surface->GetBackBuffer();
         auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(backBuffer);
-        /*mSurface->GetFrameBuffer().RequireState(
-            mDevice->GetResourceCache().mBarrierStateManager, D3D12_RESOURCE_STATE_COMMON, 0);*/
         D3DResourceCache::D3DRenderSurfaceView view(&mSurface->GetFrameBuffer());
         cache.RequireTextureRTV(view, mFrameHandle);
-        //*d3dRT = mSurface->GetFrameBuffer();
         cache.SetRenderTargetMapping(backBuffer, mSurface->GetFrameBuffer());
         backBuffer->SetResolution(Int2(d3dRT->mDesc.mWidth, d3dRT->mDesc.mHeight));
         backBuffer->SetFormat((BufferFormat)d3dRT->mFormat);
@@ -168,9 +161,9 @@ public:
     }
     void AllocateRTBuffer(D3DResourceCache::D3DRenderSurface* surface, const D3D12_RESOURCE_DESC& texDesc, const D3D12_CLEAR_VALUE& clearValue) {
         // Create the render target
-        mDevice->GetD3DDevice()->CreateCommittedResource(&D3D::DefaultHeap,
+        ThrowIfFailed(mDevice->GetD3DDevice()->CreateCommittedResource(&D3D::DefaultHeap,
             D3D12_HEAP_FLAG_NONE, &texDesc,
-            D3D12_RESOURCE_STATE_COMMON, &clearValue, IID_PPV_ARGS(&surface->mBuffer));
+            D3D12_RESOURCE_STATE_COMMON, &clearValue, IID_PPV_ARGS(&surface->mBuffer)));
         surface->mBuffer->SetName(L"Texture RT");
         surface->mDesc.mWidth = (uint16_t)texDesc.Width;
         surface->mDesc.mHeight = (uint16_t)texDesc.Height;
@@ -664,25 +657,46 @@ public:
 
         mCmdList->Dispatch(groups.x, groups.y, groups.z);
     }
+    Readback CreateReadback(const RenderTarget2D* rt) {
+        auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(rt);
+        auto readback = mDevice->GetResourceCache().CreateReadback(mCmdList.Get(), (1ull << 63) | mFrameHandle, *d3dRT);
+        return Readback{ (uint64_t)readback };
+    }
+    int GetReadbackResult(const Readback& readback) {
+        return mDevice->GetResourceCache().GetReadbackState((ID3D12Resource*)readback.mHandle);
+    }
+    int CopyAndDisposeReadback(Readback& readback, std::span<uint8_t> dest) {
+        return mDevice->GetResourceCache().CopyAndDisposeReadback((ID3D12Resource*)readback.mHandle, dest);
+    }
     // Send the commands to the GPU
     // TODO: Should this be automatic?
     void Execute() override {
-        auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(&*mSurface->GetBackBuffer());
-        auto& backBuffer = *d3dRT;// mSurface->GetFrameBuffer();
+        D3DResourceCache::D3DRenderSurface* presentSurface = nullptr;
+        if (mSurface != nullptr) {
+            presentSurface = mDevice->GetResourceCache().RequireD3DRT(&*mSurface->GetBackBuffer());
+            //presentSurface = d3dRT;// mSurface->GetFrameBuffer();
+        }
 
         SetD3DRenderTarget({ }, D3DResourceCache::D3DRenderSurfaceView());
 
-        mDevice->GetResourceCache().mBarrierStateManager.SetResourceState(
-            backBuffer.mBuffer.Get(), backBuffer.mHandle, 0,
-            D3D12_RESOURCE_STATE_PRESENT, backBuffer.mDesc);
-        backBuffer.mBuffer.Reset();
+        if (presentSurface != nullptr) {
+            mDevice->GetResourceCache().mBarrierStateManager.SetResourceState(
+                presentSurface->mBuffer.Get(), presentSurface->mHandle, 0,
+                D3D12_RESOURCE_STATE_PRESENT, presentSurface->mDesc);
+            presentSurface->mBuffer.Reset();
+        }
         FlushBarriers();
 
         ThrowIfFailed(mCmdList->Close());
 
+        auto* cmdQueue = mDevice->GetDevice().GetCmdQueue();
+
         ID3D12CommandList* ppCommandLists[] = { mCmdList.Get(), };
-        mDevice->GetDevice().GetCmdQueue()->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+        cmdQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
         //mDevice->GetResourceCache().mBarrierStateManager.Clear();
+        const UINT64 currentFenceValue = mCmdAllocator->mFenceValue;
+        ThrowIfFailed(cmdQueue->Signal(mCmdAllocator->mFence.Get(), currentFenceValue));
+        ++mCmdAllocator->mFenceValue;
     }
 
 };
@@ -754,9 +768,11 @@ std::wstring GraphicsDeviceD3D12::GetDeviceName() const {
     return L"";
 }
 
-CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer()
-{
+CommandBuffer GraphicsDeviceD3D12::CreateCommandBuffer() {
     return CommandBuffer(new D3DCommandBuffer(this));
+}
+std::shared_ptr<GraphicsSurface> GraphicsDeviceD3D12::CreateSurface(WindowBase* window) {
+    return std::make_shared<D3DGraphicsSurface>(GetDevice(), ((WindowWin32*)window)->GetHWND());
 }
 
 CompiledShader GraphicsDeviceD3D12::CompileShader(const std::wstring_view& path, const std::string_view& entry,
