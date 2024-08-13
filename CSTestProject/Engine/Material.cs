@@ -398,9 +398,13 @@ namespace Weesals.Engine {
         }
 
         // Get the binary data for a specific parameter
-        private static MaterialCollector collector = new();
-        public static MaterialGetter BeginGetUniforms(Span<Material> materialStack) { return new MaterialGetter(new MaterialCollectorContext(materialStack, collector)); }
+        [ThreadStatic]private static MaterialCollector collector;
+        public static MaterialGetter BeginGetUniforms(Span<Material> materialStack) {
+            if (collector == null) collector = new();
+            return new MaterialGetter(new MaterialCollectorContext(materialStack, collector));
+        }
         unsafe public static Span<byte> GetUniformBinaryData(CSIdentifier name, Span<Material> materialStack) {
+            if (collector == null) collector = new();
             var context = new MaterialCollectorContext(materialStack, collector);
             var ret = context.GetUniformSource(name);
             collector.Clear();

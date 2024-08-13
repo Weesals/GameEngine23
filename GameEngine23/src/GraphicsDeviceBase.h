@@ -156,6 +156,7 @@ struct DrawConfig {
 };
 
 struct PipelineLayout {
+    Identifier mName;
     size_t mRootHash;       // Persistent
     size_t mPipelineHash;   // Persistent
     std::vector<const ShaderBase::ConstantBuffer*> mConstantBuffers;

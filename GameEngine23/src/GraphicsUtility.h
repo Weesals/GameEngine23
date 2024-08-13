@@ -229,6 +229,12 @@ public:
         dataFill(item);
         return item;
     }
+    bool GetHasAny(LockMask mask, LockMask value) {
+        for (int i = 0; i < (int)mLocks.size(); ++i) {
+            if ((mLocks[i].mHandles & mask) == value && mLocks[i].mItemCount > 0) return true;
+        }
+        return false;
+    }
     uint64_t Unlock(LockMask mask) {
         int changeCount = 0;
         uint64_t lockMask = 0ull;

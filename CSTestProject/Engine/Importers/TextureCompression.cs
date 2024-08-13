@@ -7,9 +7,11 @@ using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 using System.Buffers;
 using System.Diagnostics;
+using Weesals.Engine.Profiling;
 
 namespace Weesals.Engine {
     unsafe static public class TextureCompression {
+        private static ProfilerMarker ProfileMarker_CompressTexture = new("Compress");
         public struct RGBASurface {
             public byte* ptr;
             public int width, height;
@@ -133,6 +135,7 @@ namespace Weesals.Engine {
             compressed.Dispose();
         }
         unsafe public static CSTexture CreateCompressed(this CSTexture other, BufferFormat compressedFormat = BufferFormat.FORMAT_BC1_UNORM) {
+            using var marker = ProfileMarker_CompressTexture.Auto();
             var otherSize = other.GetSize3D();
             var otherFormat = other.Format;
             var otherFormatMeta = BufferFormatType.GetMeta(otherFormat);

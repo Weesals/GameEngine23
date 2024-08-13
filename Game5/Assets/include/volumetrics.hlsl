@@ -71,7 +71,7 @@ void PrimeClouds(float3 worldPos, float3 rayDir) {
     p.x -= Time * 0.002;
     float3 cloud = dot(Noise2D.Sample(BilinearSampler, p.xz).rgb,
         saturate(1.0 - abs(frac(time3) * 3.0 - 1.0)));
-    GlobalDensityBias = lerp(0.5, 6.5, cloud);
+    GlobalDensityBias = lerp(0.5, 6.5, cloud.r);
 }
 
 float MaskClouds(float3 p, float clouds) {

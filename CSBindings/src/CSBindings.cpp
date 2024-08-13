@@ -181,6 +181,9 @@ CSSpan CSConstantBuffer::GetValues(const CSConstantBufferData* cb) {
 	return MakeSpan(constantBuffer->GetValues());
 }
 
+CSIdentifier CSPipeline::GetName(const NativePipeline* pipeline) {
+	return CSIdentifier(pipeline->mName.mId);
+}
 int CSPipeline::GetHasStencilState(const NativePipeline* pipeline) {
 	return pipeline->mMaterialState.mDepthMode.GetStencilEnable();
 }

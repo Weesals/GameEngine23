@@ -3,3 +3,25 @@
 
 Materials constructed with string paths should use VS and PS (and MS) within that shader file
 (currently seems to only use it if no other shaders are specified)
+
+
+
+
+RequireDepth
+-> mBarrierHandle = cache.mResourceCount++;
+-> AllocateRTBuffer()
+
+AllocateRTBuffer
+-> CreateCommittedResource
+
+RequireInitializedRT
+-> RequireD3DRT()
+
+RequireD3DRT
+-> mBarrierHandle = mResourceCount++;
+
+RequireCurrentTexture
+-> UpdateTextureData
+
+UpdateTextureData
+-> CreateCommittedResource

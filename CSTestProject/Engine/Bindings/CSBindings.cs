@@ -363,6 +363,11 @@ namespace Weesals.Engine {
     }
     public partial struct CSPipeline {
         unsafe public bool IsValid => mPipeline != null;
+        unsafe public CSIdentifier Name => GetName(mPipeline);
+        unsafe public bool HasStencilState => GetHasStencilState();
+        unsafe public int BindingCount => GetBindingCount();
+        unsafe public int ConstantBufferCount => GetConstantBufferCount();
+        unsafe public int ResourceCount => GetResourceCount();
         unsafe public bool GetHasStencilState() { return GetHasStencilState(mPipeline) != 0; }
         unsafe public int GetBindingCount() { return GetExpectedBindingCount(mPipeline); }
         unsafe public int GetConstantBufferCount() { return GetExpectedConstantBufferCount(mPipeline); }
@@ -371,6 +376,7 @@ namespace Weesals.Engine {
         unsafe public CSSpanPtr<CSResourceBinding> GetResources() { return new CSSpanPtr<CSResourceBinding>(GetResources(mPipeline)); }
         unsafe public static implicit operator NativePipeline*(CSPipeline p) { return p.mPipeline; }
         public override unsafe int GetHashCode() { return (int)mPipeline ^ (int)((ulong)mPipeline >> 32); }
+        public override string ToString() { return Name.ToString(); }
     }
     public partial struct CSGraphicsSurface {
         unsafe public bool IsValid => mSurface != null;
@@ -445,7 +451,7 @@ namespace Weesals.Engine {
                     using var done = new PooledList<nint>(4);
                     foreach (var callback in onComplete) {
                         var readback = new AsyncReadback(graphics.mGraphics, callback.Key);
-                        if (readback.GetIsDone()) done.Add(callback.Key);
+                        if (readback.GetIsDone()) { done.Add(callback.Key); break; }
                     }
                     foreach(var item in done) {
                         var callback = onComplete[item];

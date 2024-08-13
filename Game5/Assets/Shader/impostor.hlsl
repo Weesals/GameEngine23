@@ -69,11 +69,12 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION)
     camFwd = mul(camFwd, (float3x3)instance.Model);
 
     result.impostor.frame = FrameFromVector(-camFwd);
-    result.impostor.rayPos = mul((worldPos - instance.Model._m03_m13_m23), (float3x3)instance.Model).xyz + Offset;
+    result.impostor.rayPos = mul((worldPos - instance.Model._m03_m13_m23), (float3x3)instance.Model).xyz;
+    result.impostor.rayPos += Offset;
     result.impostor.rayPos *= Scale;
-    float3x3 tform = CreateTransform(FrameToVector(result.impostor.frame));
     result.impostor.rayTan = mul(worldPos - GetCameraPosition(), (float3x3)instance.Model);
 
+    float3x3 tform = CreateTransform(FrameToVector(result.impostor.frame));
     float3 frameCountScalar = float2(1.0 / FrameCount, 1).xyx;
     result.impostor.rayPos = mul(tform, result.impostor.rayPos) * frameCountScalar;
     result.impostor.rayTan = mul(tform, result.impostor.rayTan);
@@ -86,6 +87,8 @@ void PSMain(PSInput input, out BasePassOutput result
     , out float depth : SV_DepthGreaterEqual0
 ) {
     InstanceData instance = instanceData[input.primitiveId];
+
+    ImpostorData impostor = input.impostor;
 
     float3 rayPos = input.impostor.rayPos;
     float3 rayTan = input.impostor.rayTan;

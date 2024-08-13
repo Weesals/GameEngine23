@@ -18,7 +18,7 @@ namespace Weesals.Impostors {
             public Int2 FramesCounts;
             public Int2 AtlasResolution;
             public static readonly ConfigurationData Default =
-                new() { FramesCounts = 8, AtlasResolution = 512 };
+                new() { FramesCounts = 8, AtlasResolution = 1024 };
         }
 
         public ConfigurationData Configuration = ConfigurationData.Default;
@@ -29,6 +29,7 @@ namespace Weesals.Impostors {
 
         private Material distanceFieldMaterial;
         private BufferLayoutPersistent instanceBuffer;
+        private CSRenderTarget tempTarget1, tempTarget2;
 
         private struct InstanceData {
             public Matrix4x4 Model;
@@ -44,6 +45,13 @@ namespace Weesals.Impostors {
             NormalDepthTarget = CSRenderTarget.Create("Impostor NormalDepth");
             AlbedoTarget.SetSize(Configuration.AtlasResolution);
             NormalDepthTarget.SetSize(Configuration.AtlasResolution);
+
+            tempTarget1 = CSRenderTarget.Create("Temp");
+            tempTarget1.SetSize(Configuration.AtlasResolution);
+            tempTarget1.SetFormat(BufferFormat.FORMAT_R16G16_UNORM);
+            tempTarget2 = CSRenderTarget.Create("Temp");
+            tempTarget2.SetSize(Configuration.AtlasResolution);
+            tempTarget2.SetFormat(BufferFormat.FORMAT_R16G16_UNORM);
 
             instanceBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
             instanceBuffer.AppendElement(new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
@@ -95,6 +103,7 @@ namespace Weesals.Impostors {
                 }
             }
 
+            instanceBuffer.NotifyChanged();
             graphics.CopyBufferData(instanceBuffer);
             Span<CSRenderTarget> targets = [AlbedoTarget, NormalDepthTarget];
             graphics.SetRenderTargets(targets, default);
@@ -114,12 +123,6 @@ namespace Weesals.Impostors {
             graphics.Clear(new CSClearConfig(new Vector4(0f, 0f, 0f, 0f), 1f));
             graphics.Draw(pso, buffers, resources, CSDrawConfig.Default, frameCount);
 
-            var tempTarget1 = CSRenderTarget.Create("Temp");
-            tempTarget1.SetSize(Configuration.AtlasResolution);
-            tempTarget1.SetFormat(BufferFormat.FORMAT_R16G16_UNORM);
-            var tempTarget2 = CSRenderTarget.Create("Temp");
-            tempTarget2.SetSize(Configuration.AtlasResolution);
-            tempTarget2.SetFormat(BufferFormat.FORMAT_R16G16_UNORM);
             distanceFieldMaterial.SetPixelShader(Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "PSSeed"));
             BlitQuad(graphics, tempTarget1, AlbedoTarget, distanceFieldMaterial);
             distanceFieldMaterial.SetPixelShader(Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "PSSpread"));
@@ -202,13 +205,12 @@ namespace Weesals.Impostors {
 
         public async Task<Material> CreateImpostor(CSGraphics graphics, Mesh mesh) {
             var scale = mesh.BoundingBox.Size.Length();
-            var offset = mesh.BoundingBox.Centre;
+            var offset = -mesh.BoundingBox.Centre;
             float maxDst2 = 0f;
             foreach (var vert in mesh.GetPositionsV()) {
-                maxDst2 = Math.Max(maxDst2, Vector3.DistanceSquared(vert, offset));
+                maxDst2 = Math.Max(maxDst2, Vector3.DistanceSquared(vert, -offset));
             }
             scale = MathF.Sqrt(maxDst2) * 2f;
-            offset = -offset;
             Generate(graphics, mesh, scale, offset);
             var albedoTex = CSTexture.Create("Albedo");
             var nrmDepthTex = CSTexture.Create("Normal");
@@ -222,8 +224,8 @@ namespace Weesals.Impostors {
             );
             material.SetTexture("Albedo", albedoTex);
             material.SetTexture("Normal", nrmDepthTex);
-            material.SetValue("Offset", -mesh.BoundingBox.Centre);
-            material.SetValue("Scale", 1f / mesh.BoundingBox.Size.Length());
+            material.SetValue("Offset", offset);
+            material.SetValue("Scale", 1f / scale);
             return material;
         }
 

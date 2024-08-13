@@ -489,6 +489,9 @@ namespace Weesals.Engine
             return mPipeline;
         }
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetName@CSPipeline@@CA?AUCSIdentifier@@PEBUPipelineLayout@@@Z", ExactSpelling = true)]
+        private static extern CSIdentifier GetName([NativeTypeName("const NativePipeline *")] NativePipeline* pipeline);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetHasStencilState@CSPipeline@@CAHPEBUPipelineLayout@@@Z", ExactSpelling = true)]
         private static extern int GetHasStencilState([NativeTypeName("const NativePipeline *")] NativePipeline* pipeline);
 
