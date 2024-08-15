@@ -107,7 +107,8 @@ public:
     struct D3DBinding : public D3DBuffer {
         D3D12_GPU_VIRTUAL_ADDRESS mGPUMemory;
         int mSize = -1;
-        int mStride, mCount;
+        int mStride;
+        int mCount;     // -1 for Append/Consume (count prefixed within buffer)
         BufferLayout::Usage mUsage;
         D3D12_RESOURCE_STATES mState;
     };
@@ -157,6 +158,27 @@ private:
         ComPtr<ID3D12Resource> mResource;
 
     };
+    template<class K, class T>
+    class ResourceMap {
+    public:
+        std::mutex mMutex;
+        std::unordered_map<K, std::unique_ptr<T>> mMap;
+        T* GetOrCreate(const K key, bool& wasCreated) {
+            wasCreated = false;
+            std::scoped_lock lock(mMutex);
+            auto i = mMap.find(key);
+            if (i != mMap.end()) return i->second.get();
+            auto newItem = new T();
+            mMap.insert(std::make_pair(key, newItem));
+            wasCreated = true;
+            return newItem;
+        }
+        T* GetOrCreate(const K key) {
+            bool wasCreated;
+            return GetOrCreate(key, wasCreated);
+        }
+    };
+
     D3DGraphicsDevice& mD3D12;
 
     // Storage for the GPU resources of each application type
@@ -164,10 +186,9 @@ private:
     // and clean up GPU resources
     D3DRootSignature mRootSignature;
     D3DRootSignature mComputeRootSignature;
-    std::unordered_map<size_t, std::unique_ptr<D3DPipelineState>> pipelineMapping;
-    std::unordered_map<ShaderKey, std::unique_ptr<D3DShader>> shaderMapping;
-    std::unordered_map<const Texture*, std::unique_ptr<D3DTexture>> textureMapping;
-    std::unordered_map<const RenderTarget2D*, std::unique_ptr<D3DRenderSurface>> rtMapping;
+    ResourceMap<size_t, D3DPipelineState> pipelineMapping;
+    ResourceMap<const Texture*, D3DTexture> textureMapping;
+    ResourceMap<const RenderTarget2D*, D3DRenderSurface> rtMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
     PerFrameItemStore<ShaderResourceView> mResourceViewCache;

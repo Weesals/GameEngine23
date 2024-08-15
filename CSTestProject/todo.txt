@@ -4,7 +4,8 @@
 Materials constructed with string paths should use VS and PS (and MS) within that shader file
 (currently seems to only use it if no other shaders are specified)
 
-
+Dynamic draws should expand HBV (bounds are invalid)
+Drag select is bugged with Inspector change
 
 
 RequireDepth

@@ -131,6 +131,7 @@ namespace Weesals.Engine.Importers {
         public class FBXScene {
             public List<FBXNode> Nodes = new();
             public List<Connection> Connections = new();
+            public Dictionary<string, ulong> NameToId = new();
             //public List<TakeInfo> Takes = new();
             //public Dictionary<ulong, ObjectPair> ObjectMap = new();
             //public List<FBXMesh> Meshes = new();
@@ -138,6 +139,25 @@ namespace Weesals.Engine.Importers {
             public FBXNode? FindNode(string id) {
                 foreach (var child in Nodes) if (child.Id == id) return child;
                 return default;
+            }
+
+            public ulong RequireId(Span<byte> data, Property prop) {
+                if (prop.ValueEquals(data, "Scene"u8)) return 0;
+                if (prop.Type == Property.Types.LONG) return prop.AsU64(data);
+                if (prop.Type == Property.Types.STRING) {
+                    var key = prop.AsString(data);
+                    if (!NameToId.TryGetValue(key, out var id)) {
+                        NameToId.Add(key, id = (ulong)NameToId.Count + 10000000000);
+                    }
+                    return id;
+                    /*var fbxObjects = FindNode("Objects");
+                    foreach (var fbxObj in fbxObjects.Children) {
+                        if (fbxObj.Properties[0].ValueEquals(data, prop.AsSpan(data))) {
+                            return fbxObj.Properties[0].AsU64(data);
+                        }
+                    }*/
+                }
+                return 0;
             }
         }
 
@@ -160,6 +180,33 @@ namespace Weesals.Engine.Importers {
             }
             ParseConnections(scene);
             return scene;
+        }
+        public void Print(FBXScene scene, StringBuilder output) {
+            void WriteNode(FBXNode node, int depth, Span<byte> data) {
+                output.Append(' ', depth);
+                output.Append(node.Id);
+                output.Append(": ");
+                for (int i = 0; i < node.Properties.Count; i++) {
+                    if (i > 0) output.Append(", ");
+                    var prop = node.Properties[i];
+                    switch (prop.Type) {
+                        case Property.Types.INTEGER: output.Append(prop.AsI32(data)); break;
+                        case Property.Types.STRING: output.Append(prop.AsString(data).Replace('\0', ':')); break;
+                        case Property.Types.FLOAT: output.Append(prop.AsFloat(data)); break;
+                        case Property.Types.DOUBLE: output.Append(prop.AsDouble(data)); break;
+                    }
+                }
+                if (node.Properties.Count > 0) output.Append(" ");
+                output.Append("{\n");
+                foreach (var child in node.Children) {
+                    WriteNode(child, depth + 1, data);
+                }
+                output.Append(' ', depth);
+                output.Append("}\n");
+            }
+            foreach (var node in scene.Nodes) {
+                WriteNode(node, 0, Data);
+            }
         }
 
         struct Header {
@@ -429,37 +476,38 @@ namespace Weesals.Engine.Importers {
             var connections = scene.FindNode("Connections");
             if (connections == null) return;
             foreach (var child in connections.Children) {
-                if (!isString(child.Properties[0])
-                    || !isLong(child.Properties[1]) ||
-                    !(isLong(child.Properties[2]) || isString(child.Properties[2]))) {
+                if (!isString(child.Properties[0]) || child.Properties.Count < 3) {
                     throw new Exception("Invalid connection");
                 }
                 Connection c = new();
                 if (child.Properties[0].ValueEquals(Data, "OO"u8)) {
                     c.Type = Connection.Types.OBJECT_OBJECT;
-                    c.From = child.Properties[1].AsU64(Data);
-                    c.To = child.Properties[2].AsU64(Data);
+                    c.From = ToObjectId(scene, child.Properties[1]);
+                    c.To = ToObjectId(scene, child.Properties[2]);
                 } else if (child.Properties[0].ValueEquals(Data, "OP"u8)) {
                     c.Type = Connection.Types.OBJECT_PROPERTY;
-                    c.From = child.Properties[1].AsU64(Data);
-                    c.To = child.Properties[2].AsU64(Data);
+                    c.From = ToObjectId(scene, child.Properties[1]);
+                    c.To = ToObjectId(scene, child.Properties[2]);
                     c.ToProperty = child.Properties[3].Value;
                 } else if (child.Properties[0].ValueEquals(Data, "PO"u8)) {
                     c.Type = Connection.Types.PROPERTY_OBJECT;
-                    c.From = child.Properties[1].AsU64(Data);
+                    c.From = ToObjectId(scene, child.Properties[1]);
                     c.FromProperty = child.Properties[2].Value;
-                    c.To = child.Properties[3].AsU64(Data);
+                    c.To = ToObjectId(scene, child.Properties[3]);
                 } else if (child.Properties[0].ValueEquals(Data, "PP"u8)) {
                     c.Type = Connection.Types.PROPERTY_PROPERTY;
-                    c.From = child.Properties[1].AsU64(Data);
+                    c.From = ToObjectId(scene, child.Properties[1]);
                     c.FromProperty = child.Properties[2].Value;
-                    c.To = child.Properties[3].AsU64(Data);
+                    c.To = ToObjectId(scene, child.Properties[3]);
                     c.ToProperty = child.Properties[4].Value;
                 } else {
                     throw new Exception("Not supported");
                 }
                 scene.Connections.Add(c);
             }
+        }
+        private ulong ToObjectId(FBXScene scene, Property prop) {
+            return scene.RequireId(Data, prop);
         }
         /*private void ParseTakes(FBXScene scene) {
             var takes = scene.FindNode("Takes");
@@ -492,7 +540,9 @@ namespace Weesals.Engine.Importers {
             }
         }*/
         public string GetNodeName(FBXNode node) {
-            return node.Properties.Count >= 2 ? node.Properties[1].AsStringNull(Data) : "";
+            int id = node.Properties.Count >= 1 && node.Properties[0].Type == Property.Types.STRING ? 0
+                : node.Properties.Count >= 2 && node.Properties[1].Type == Property.Types.STRING ? 1 : -1;
+            return id >= 0 ? node.Properties[id].AsStringNull(Data) : "";
         }
         /*private void ParseObjects(FBXScene scene) {
             var fbxObjs = scene.FindNode("Objects");

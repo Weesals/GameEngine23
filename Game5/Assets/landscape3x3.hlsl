@@ -25,6 +25,7 @@ static const bool EnableTriplanar = false;
 static const bool ParallaxTransform = true;
 static const int ParallaxCount = ENABLEPARALLAX ? 1 : 0;
 static const float ParallaxIntensity = 0.3;
+static const float DepthScale = 0.3;
 #define ControlCount 9
 #define SampleCount 6
 
@@ -32,6 +33,7 @@ cbuffer ConstantBuffer : register(b1) {
     matrix ModelView;
     matrix InvModelView;
     matrix ModelViewProjection;
+    matrix InvViewProjection;
     matrix Projection;
 }
 
@@ -47,7 +49,7 @@ struct PSInput {
     half2 dHeightDxz : NORMAL;
 };
 
-PSInput VertMain(VSInput input, out float4 positionCS : SV_POSITION, float heightBias = 0.0) {
+PSInput VertMain(VSInput input, out float4 positionCS : SV_POSITION, float depthBias = 0.0) {
     PSInput result;
 
     float3 worldPos = input.position.xyz;
@@ -56,18 +58,27 @@ PSInput VertMain(VSInput input, out float4 positionCS : SV_POSITION, float heigh
     
     // Sample from the heightmap and offset the vertex
     HeightPoint h = DecodeHeightMap(HeightMap.Load(int3(worldPos.xz, 0), 0));
-    worldPos.y += h.HeightOS + heightBias;
+    worldPos.y += h.HeightOS;
     worldNrm = h.NormalOS;
 
     result.positionOS = worldPos;
     result.dHeightDxz = h.DerivativeOS;//(half2)worldNrm.xz / worldNrm.y;
     positionCS = mul(ModelViewProjection, float4(worldPos, 1.0));
         
+    float4 clipZ = mul(InvViewProjection, float4(positionCS.xy, 0.0, positionCS.w));
+    float4 projZ = transpose(InvViewProjection)[2];
+    float3 dirWS = normalize(projZ.xyz * clipZ.w - clipZ.xyz * projZ.w);
+    float depthOffset = depthBias / dirWS.y;
+    positionCS.z += depthOffset * Projection._33;
+    positionCS.z *= positionCS.w / (positionCS.w + depthOffset * Projection._43);
+
     return result;
 }
 
 PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
-    return VertMain(input, positionCS, 0.1);
+    PSInput output = VertMain(input, positionCS, 0.5 * DepthScale);
+
+    return output;
 }
 
 
@@ -276,16 +287,15 @@ TerrainSample SampleTerrain(SampleContext context, ControlPoints3x3 cp3x3, Contr
         blend.BlendHeight(0, samp0.Height);
 
         materialIds[1] = reducer.TakeItem(0);
-        blend.masks[1] = primaryWeight;
         //blend.masks[1] = cp3x3.GetMask(1, materialIds[1]);
         [unroll]
         for (int i = 2; i < SampleCount; ++i) {
             materialIds[i] = reducer.TakeItem(i - 1);
             //if (id == ControlReducer::InvalidId) break;
             blend.masks[i] = cp3x3.GetMask(i - 1, materialIds[i]);
-            blend.masks[1] += blend.masks[i];
+            primaryWeight += blend.masks[i];
         }
-        blend.masks[1] = 4 * WeightBlend - blend.masks[1];
+        blend.masks[1] = 4 * WeightBlend - primaryWeight;
     }
 
     blend.SetAt(0, samp0);
@@ -432,18 +442,20 @@ BasePassOutput PSMain(PSInput input, linear centroid noperspective float4 positi
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);
 
-    float depthOffset = (1 - terResult.Height) * 0.2;
+    float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
+    float3 viewDir = normalize(viewPos);
+
+    float3 localViewDirY = normalize(mul(InvModelView, float4(0, 0, 0, 1)).xyz - context.WorldPos).y;
+    float depthOffset = (1 - terResult.Height) * (DepthScale / localViewDirY);
     depth = (positionCS.z * positionCS.w + depthOffset * Projection._33) / (positionCS.w + depthOffset * Projection._43);
     //depth = positionCS.z + max(0, depthOffset / (positionCS.w * positionCS.w));
     //pbrInput.Albedo = frac(depth * 100);
 
-    float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
-    float3 viewDir = normalize(viewPos);
     return PBROutput(pbrInput, viewDir);
 }
 
 void ShadowCast_VSMain(VSInput input, out float4 positionCS : SV_POSITION) {
-    VertMain(input, positionCS, -0.1);
+    VertMain(input, positionCS, 0.5 * DepthScale);
 }
 [NumThreads(128, 1, 1)]
 [OutputTopology("triangle")]

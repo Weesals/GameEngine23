@@ -183,8 +183,8 @@ namespace Weesals.Landscape {
             //if (rootMaterial != null) LandMaterial.InheritProperties(rootMaterial);
             var handle = JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Load TerMaps").Auto();
-                runtimeData.BaseTextures = Layers.RequireBaseMaps();
-                runtimeData.BumpTextures = Layers.RequireBumpMaps();
+                runtimeData.BaseTextures = Layers.RequireBaseMaps(true);
+                runtimeData.BumpTextures = Layers.RequireBumpMaps(true);
                 var noise = Resources.LoadTexture("./Assets/Noise.jpg");
                 var foam = Resources.LoadTexture("./Assets/FoamMask.jpg");
                 JobHandle.RunOnMain((_) => {

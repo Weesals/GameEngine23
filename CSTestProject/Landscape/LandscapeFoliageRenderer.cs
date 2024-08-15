@@ -18,43 +18,72 @@ namespace Weesals.Landscape {
 
         public Material FoliageMaterial;
 
-        private MeshDrawIndirect meshDraw;
-        private BufferLayoutPersistent instanceBuffer;
         private BoundingBox visibleBounds = BoundingBox.Invalid;
         private int terrainRevision = 0;
         private Vector4 boundsMinMax;
 
+        public class FoliageInstance {
+            public MeshDrawIndirect MeshDraw;
+            public Material FoliageMaterial;
+            public float Density = 7f;
+            public BufferLayoutPersistent InstanceBuffer;
+        }
+        private List<FoliageInstance> foliageInstances = new();
+
         public LandscapeFoliageRenderer(LandscapeRenderer landscape) {
             LandscapeRenderer = landscape;
 
-            instanceBuffer = new(BufferLayoutPersistent.Usages.Uniform);
-            instanceBuffer.AppendElement(new("INDIRECTINSTANCES", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
-            instanceBuffer.AllocResize(4);
-            instanceBuffer.BufferLayout.mCount = 32 * 1024;
-            instanceBuffer.BufferLayout.SetAllowUnorderedAccess(true);
-            instanceBuffer.BufferLayout.size = instanceBuffer.BufferStride * instanceBuffer.Count;
-            instanceBuffer.BufferLayout.revision = -1;
-            new TypedBufferView<Vector4>(instanceBuffer.Elements[0], 1).Set(Vector4.Zero);
-
             FoliageMaterial = new("./Assets/Shader/FoliageInstance.hlsl", landscape.LandMaterial);
-            FoliageMaterial.SetBuffer("Instances", instanceBuffer);
             FoliageMaterial.SetBlendMode(BlendMode.MakeOpaque());
             FoliageMaterial.SetDepthMode(DepthMode.MakeDefault());
 
             JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Load Foliage").Auto();
+
                 var model = Resources.LoadModel("./Assets/Models/SM_GrassClump.fbx");
                 model.Meshes[0].Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Models/Grass.png"));
+                AppendFoliageMesh(model.Meshes[0]);
 
-                using var materials = new PooledList<Material>();
-                materials.Add(model.Meshes[0].Material);
-                materials.Add(FoliageMaterial);
-                meshDraw = new(model.Meshes[0], materials);
+                var tropPlant = Resources.LoadModel("./Assets/Models/Yughues/Tropical Plants/tropical_plant.FBX");
+                if (tropPlant.Meshes[0] != null) {
+                    tropPlant.Meshes[0].Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Models/Yughues/Tropical Plants/diffuse.png"));
+                    var instance = AppendFoliageMesh(tropPlant.Meshes[0]);
+                    instance.Density = 0.1f;
+                    instance.FoliageMaterial.SetMacro("VWIND", "1");
+                }
             });
         }
 
+        private BufferLayoutPersistent CreateInstanceBuffer() {
+            const int Capacity = 32 * 1024;
+            var instanceBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Uniform);
+            instanceBuffer.AppendElement(new("INDIRECTINSTANCES", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
+            instanceBuffer.AllocResize(4);
+            instanceBuffer.BufferLayout.mCount = -1;
+            instanceBuffer.BufferLayout.SetAllowUnorderedAccess(true);
+            instanceBuffer.BufferLayout.size = instanceBuffer.BufferStride * Capacity;
+            instanceBuffer.BufferLayout.revision = -1;
+            new TypedBufferView<Vector4>(instanceBuffer.Elements[0], 1).Set(Vector4.Zero);
+            return instanceBuffer;
+        }
+        public FoliageInstance AppendFoliageMesh(Mesh mesh) {
+            var instanceMaterial = new Material(FoliageMaterial);
+            var instanceBuffer = CreateInstanceBuffer();
+            instanceMaterial.SetBuffer("Instances", instanceBuffer);
+            using var materials = new PooledList<Material>();
+            materials.Add(instanceMaterial);
+            materials.Add(mesh.Material);
+            FoliageInstance instance = new() {
+                MeshDraw = new(mesh, materials),
+                FoliageMaterial = instanceMaterial,
+                InstanceBuffer = instanceBuffer,
+            };
+            foliageInstances.Add(instance);
+            return instance;
+        }
+
         public void UpdateInstances(CSGraphics graphics, ScenePass pass) {
-            if (meshDraw == null) return;
+            if (foliageInstances.Count == 0) return;
             LandscapeRenderer.ApplyDataChanges();
 
             var newBounds = LandscapeRenderer.GetVisibleBounds(pass.Frustum);
@@ -82,30 +111,36 @@ namespace Weesals.Landscape {
             FoliageMaterial.SetValue("BoundsMin", visibleBounds.Min.toxz());
             FoliageMaterial.SetValue("BoundsMax", visibleBounds.Max.toxz());
 
-            // Should only copy fist-frame, then no-op
-            graphics.CopyBufferData(meshDraw.ArgsBuffer);
-
             var computeShader = Resources.RequireShader(graphics,
                 Resources.LoadShader("./Assets/Shader/GenerateFoliageInstances.hlsl", "CSGenerateFoliage"), "cs_6_2", default, default);
             var computePSO = graphics.RequireComputePSO(computeShader.NativeShader);
-            using var materials = new PooledList<Material>();
-            materials.Add(FoliageMaterial);
-            materials.Add(pass.OverrideMaterial);
-            materials.Add(LandscapeRenderer.LandMaterial);
-            materials.Add(pass.Scene.RootMaterial);
-            var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, materials);
-            // Reset count
-            graphics.CopyBufferData(instanceBuffer, new RangeInt(0, 4));
-            // Dispatch compute
-            graphics.DispatchCompute(computePSO, resources, dispatchCount);
-            // Copy count into instance buffer
-            graphics.CopyBufferData(instanceBuffer, meshDraw.ArgsBuffer, new RangeInt(0, 4), 4);
+
+            foreach (var instance in foliageInstances) {
+                using var materials = new PooledList<Material>();
+                instance.FoliageMaterial.SetBuffer("Instances", instance.InstanceBuffer);
+                instance.FoliageMaterial.SetValue("Density", instance.Density);
+                materials.Add(instance.FoliageMaterial);
+                materials.Add(pass.OverrideMaterial);
+                materials.Add(LandscapeRenderer.LandMaterial);
+                materials.Add(pass.Scene.RootMaterial);
+                var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, materials);
+                // Reset count
+                graphics.CopyBufferData(instance.InstanceBuffer, new RangeInt(0, 4));
+                // Dispatch compute
+                graphics.DispatchCompute(computePSO, resources, dispatchCount);
+                // Should only copy fist-frame, then no-op
+                graphics.CopyBufferData(instance.MeshDraw.ArgsBuffer);
+                // Copy count into instance buffer
+                graphics.CopyBufferData(instance.InstanceBuffer, instance.MeshDraw.ArgsBuffer, new RangeInt(0, 4), 4);
+            }
         }
         unsafe public void RenderInstances(CSGraphics graphics, ref MaterialStack materials, ScenePass pass) {
-            if (meshDraw == null) return;
+            if (foliageInstances.Count == 0) return;
             if (!visibleBounds.IsValid) return;
             if (!pass.TagsToInclude.Has(pass.Scene.TagManager.RequireTag("MainPass"))) return;
-            meshDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
+            foreach (var instance in foliageInstances) {
+                instance.MeshDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
+            }
         }
 
     }

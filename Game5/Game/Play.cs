@@ -132,7 +132,7 @@ namespace Game5.Game {
                 landscape = new LandscapeData();
                 var layers = new LandscapeLayerCollection();
                 layers.TerrainLayers = new[] {
-                    new LandscapeLayer("TL_Grass") { BaseColor = "./Assets/Terrain/T_Grass_BaseColor.png", NormalMap = "./Assets/Terrain/T_Grass_Normal.png", },
+                    new LandscapeLayer("TL_Grass") { BaseColor = "./Assets/Terrain/T_Grass_BaseColor.png", NormalMap = "./Assets/Terrain/T_Grass_Normal.png", Scale = 0.2f, },
                     new LandscapeLayer("TL_Dirt") { BaseColor = "./Assets/Terrain/T_Dirt_BaseColor.png", NormalMap = "./Assets/Terrain/T_Dirt_Normal.png", },
                     new LandscapeLayer("TL_DirtyMoss") { BaseColor = "./Assets/Terrain/T_DirtyMoss_BaseColor.png", NormalMap = "./Assets/Terrain/T_DirtyMoss_Normal.png", },
                     new LandscapeLayer("TL_Moss") { BaseColor = "./Assets/Terrain/T_Moss_BaseColor.png", NormalMap = "./Assets/Terrain/T_Moss_Normal.png", },

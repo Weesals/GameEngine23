@@ -4,6 +4,7 @@
 
 float2 BoundsMin;
 float2 BoundsMax;
+float Density;
 matrix InvView;
 AppendStructuredBuffer<float4> Instances;
 SamplerState BilinearClampedSampler : register(s6);
@@ -59,11 +60,13 @@ void CSGenerateFoliage(uint3 gtid : SV_DispatchThreadID) {
     float3 cameraPos = mul(InvView, float4(0, 0, 0, 1)).xyz;
     float cameraDst = distance(wpos, cameraPos);
     
-    float countScale = min(1, 40 / cameraDst);
+    float countScale = saturate(40 / cameraDst + rnd);
     float scaleModifier = 1.0 / pow(countScale, 0.5);
+
+    rnd = Permute(rnd);
     
     if (c.Layer == 0) {
-        float count = 7 * countScale;
+        float count = ceil(Density - rnd) * countScale;
         for (float i = 0; i < count; ++i) {
             float2 offset = frac(rnd * float2(123, 12345));
             

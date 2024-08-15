@@ -258,6 +258,16 @@ namespace Weesals.Engine.Importers {
                 fbxScene = parser.Parse();
             }
 
+            var version = fbxScene.FindNode("FBXHeaderExtension").FindChild("FBXVersion").Properties[0].AsI32(parser.Data);
+            if (version < 7100) {
+                /*var strBuilder = new StringBuilder();
+                parser.Print(fbxScene, strBuilder);
+                Debug.WriteLine(strBuilder.ToString());*/
+                Debug.WriteLine($"Unsupported FBX version {version}");
+                JobHandle.MarkDeferredComplete(deferred);
+                return default;
+            }
+
             using (new ProfilerMarker("FBX Load").Auto(color).WithText(name)) {
                 var scale = 100.0f;
                 var fwdAxis = Vector3.UnitZ;
@@ -286,7 +296,7 @@ namespace Weesals.Engine.Importers {
 
                 var fbxObjects = fbxScene.FindNode("Objects");
                 foreach (var fbxObj in fbxObjects.Children) {
-                    var id = fbxObj.Properties[0].AsU64(parser.Data);
+                    var id = fbxObj.Properties.Count == 0 ? 0 : fbxScene.RequireId(parser.Data, fbxObj.Properties[0]);
                     if (fbxObj.Id == "Geometry") {
                         var fbxLastProp = fbxObj.Properties[^1];
                         if (fbxLastProp.ValueEquals(parser.Data, "Mesh"u8)) {
@@ -350,7 +360,7 @@ namespace Weesals.Engine.Importers {
                                 var nodeId = fbxNode.Properties[0].AsU64();
                             }*/
                     } else if (fbxObj.Id == "Model") {
-                        var fbxClassProp = fbxObj.Properties[2];
+                        var fbxClassProp = fbxObj.Properties[^1];
                         var fbxModelRef = fbxObjectMap.Append(id, new FBXTransform() { Name = parser.GetNodeName(fbxObj), Scale = Vector3.One, });
                         ref var fbxTransform = ref fbxObjectMap.Get<FBXTransform>(fbxModelRef);
                         if (fbxClassProp.ValueEquals(parser.Data, "Mesh"u8)) {
@@ -359,15 +369,21 @@ namespace Weesals.Engine.Importers {
                             fbxTransform.Contents = fbxObjectMap.Append(new FBXBone());
                         }
                         var fbxProps = fbxObj.FindChild("Properties70");
-                        foreach (var fbxProp in fbxProps.Children) {
-                            if (fbxProp.Properties[0].ValueEquals(parser.Data, "Lcl Translation"u8)) {
-                                fbxTransform.Position = new Vector3((float)fbxProp.Properties[4].AsDouble(parser.Data), (float)fbxProp.Properties[5].AsDouble(parser.Data), (float)fbxProp.Properties[6].AsDouble(parser.Data));
-                            }
-                            if (fbxProp.Properties[0].ValueEquals(parser.Data, "Lcl Rotation"u8)) {
-                                fbxTransform.Rotation = new Vector3((float)fbxProp.Properties[4].AsDouble(parser.Data), (float)fbxProp.Properties[5].AsDouble(parser.Data), (float)fbxProp.Properties[6].AsDouble(parser.Data));
-                            }
-                            if (fbxProp.Properties[0].ValueEquals(parser.Data, "Lcl Scaling"u8)) {
-                                fbxTransform.Scale = new Vector3((float)fbxProp.Properties[4].AsDouble(parser.Data), (float)fbxProp.Properties[5].AsDouble(parser.Data), (float)fbxProp.Properties[6].AsDouble(parser.Data));
+                        if (fbxProps == null) {
+                            fbxProps = fbxObj.FindChild("Properties60");
+                        }
+                        if (fbxProps != null) {
+                            foreach (var fbxProp in fbxProps.Children) {
+                                var index = fbxProp.Properties.Count - 3;
+                                if (fbxProp.Properties[0].ValueEquals(parser.Data, "Lcl Translation"u8)) {
+                                    fbxTransform.Position = new Vector3((float)fbxProp.Properties[index].AsDouble(parser.Data), (float)fbxProp.Properties[index + 1].AsDouble(parser.Data), (float)fbxProp.Properties[index + 2].AsDouble(parser.Data));
+                                }
+                                if (fbxProp.Properties[0].ValueEquals(parser.Data, "Lcl Rotation"u8)) {
+                                    fbxTransform.Rotation = new Vector3((float)fbxProp.Properties[index].AsDouble(parser.Data), (float)fbxProp.Properties[index + 1].AsDouble(parser.Data), (float)fbxProp.Properties[index + 2].AsDouble(parser.Data));
+                                }
+                                if (fbxProp.Properties[0].ValueEquals(parser.Data, "Lcl Scaling"u8)) {
+                                    fbxTransform.Scale = new Vector3((float)fbxProp.Properties[index].AsDouble(parser.Data), (float)fbxProp.Properties[index + 1].AsDouble(parser.Data), (float)fbxProp.Properties[index + 2].AsDouble(parser.Data));
+                                }
                             }
                         }
                     } else if (fbxObj.Id == "AnimationLayer") {
@@ -555,6 +571,7 @@ namespace Weesals.Engine.Importers {
                     var meshJob = JobHandle.Schedule(() => {
                         using var marker = new ProfilerMarker("Parse FBX Mesh").Auto(color).WithText(name);
                         var fbxMesh = allMeshes[m];
+                        if (!fbxMesh.Geometry.IsValid) return;
                         var fbxMeshRef = new FBXObjectRef(FBXObjectTypes.Mesh, m);
                         Matrix4x4 meshTransform = globalTransform;
                         var fbxGeo = fbxObjectMap.Get<FBXGeo>(fbxMesh.Geometry);

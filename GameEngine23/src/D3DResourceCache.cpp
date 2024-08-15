@@ -102,8 +102,11 @@ void ProcessBindings(const BufferLayout& binding, D3DResourceCache::D3DBinding& 
         OnBuffer(binding, d3dBin, itemSize);
         OnVertices(binding, d3dBin, itemSize);
     }
-    d3dBin.mCount = binding.mCount;
-    d3dBin.mStride = itemSize;
+    if (d3dBin.mCount != binding.mCount || d3dBin.mStride != itemSize) {
+        d3dBin.mCount = binding.mCount;
+        d3dBin.mStride = itemSize;
+        d3dBin.mSRVOffset |= 0x80000000;
+    }
 }
 template<class Fn1, class Fn2, class Fn3, class Fn4>
 void ProcessBindings(std::span<const BufferLayout*> bindings, std::map<size_t, std::unique_ptr<D3DResourceCache::D3DBinding>>& bindingMap,
@@ -205,11 +208,11 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     }
 }
 D3DResourceCache::D3DPipelineState* D3DResourceCache::GetOrCreatePipelineState(size_t hash) {
-    return GetOrCreate(pipelineMapping, hash);
+    return pipelineMapping.GetOrCreate(hash);
 }
 D3DResourceCache::D3DRenderSurface* D3DResourceCache::RequireD3DRT(const RenderTarget2D* rt) {
     bool wasCreated;
-    auto* d3dTex = GetOrCreate(rtMapping, rt, wasCreated);
+    auto* d3dTex = rtMapping.GetOrCreate(rt, wasCreated);
     if (wasCreated) RequireBarrierHandle(d3dTex);
     return d3dTex;
 }
@@ -502,10 +505,35 @@ int D3DResourceCache::GetTextureSRV(ID3D12Resource* buffer,
     return result.mData.mRTVOffset;
 }
 int D3DResourceCache::GetBufferSRV(D3DBinding& buffer, int offset, int count, int stride, LockMask lockBits) {
+    auto MakeSRV = [&](int srvOffset) {
+        // Create a shader resource view (SRV) for the texture
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.FirstElement = offset;
+        srvDesc.Buffer.NumElements = count;
+        srvDesc.Buffer.StructureByteStride = stride;
+        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+        assert(srvDesc.Buffer.NumElements < 10000000);
+
+        // Get the CPU handle to the descriptor in the heap
+        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), srvOffset);
+        mD3D12.GetD3DDevice()->CreateShaderResourceView(buffer.mBuffer.Get(), &srvDesc, srvHandle);
+    };
+
     bool isFullRange = offset == 0 && count == buffer.mCount;
     if (isFullRange) {
-        if (buffer.mSRVOffset != -1) return buffer.mSRVOffset;
-        lockBits |= 0x8000000000000000;
+        if (buffer.mSRVOffset >= 0) return buffer.mSRVOffset;
+        if (buffer.mSRVOffset < -1) {
+            buffer.mSRVOffset &= ~0x80000000;
+            auto itemId = mResourceViewCache.Find([&](auto& item) {
+                return item.mData.mRTVOffset == buffer.mSRVOffset;
+            });
+            buffer.mSRVOffset = -1;
+            mResourceViewCache.RemoveLock(itemId, 0x80000000);
+        }
+        lockBits |= 0x80000000;
     }
     size_t hash = (size_t)buffer.mBuffer.Get();
     hash += offset * 123412343 + count * 12341237 + stride * 12345;
@@ -514,22 +542,7 @@ int D3DResourceCache::GetBufferSRV(D3DBinding& buffer, int offset, int count, in
             item.mData.mRTVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
         },
         [&](auto& item) {
-            auto device = mD3D12.GetD3DDevice();
-
-            // Create a shader resource view (SRV) for the texture
-            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-            srvDesc.Buffer.FirstElement = offset;
-            srvDesc.Buffer.NumElements = count;
-            srvDesc.Buffer.StructureByteStride = stride;
-            srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-            assert(srvDesc.Buffer.NumElements < 10000000);
-
-            // Get the CPU handle to the descriptor in the heap
-            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
-            device->CreateShaderResourceView(buffer.mBuffer.Get(), &srvDesc, srvHandle);
+            MakeSRV(item.mData.mRTVOffset);
         }, [&](auto& item) {});
     if (isFullRange) buffer.mSRVOffset = result.mData.mRTVOffset;
     return result.mData.mRTVOffset;
@@ -716,9 +729,8 @@ Texture* D3DResourceCache::RequireDefaultTexture() {
     }
     return mDefaultTexture.get();;
 }
-D3DResourceCache::D3DTexture* D3DResourceCache::RequireCurrentTexture(const Texture* texture, D3DCommandContext& cmdList)
-{
-    auto d3dTex = GetOrCreate(textureMapping, texture);
+D3DResourceCache::D3DTexture* D3DResourceCache::RequireCurrentTexture(const Texture* texture, D3DCommandContext& cmdList) {
+    auto d3dTex = textureMapping.GetOrCreate(texture);
     if (d3dTex->mRevision != texture->GetRevision())
         UpdateTextureData(d3dTex, *texture, cmdList);
     return d3dTex;

@@ -440,7 +440,7 @@ namespace Weesals.Engine {
             while (min < max) {
                 var mid = (min + max) / 2;
                 var batch = drawBatches[mid];
-                if (renderOrder > batch.RenderOrder) min = mid + 1;
+                if (renderOrder >= batch.RenderOrder) min = mid + 1;
                 else max = mid;
             }
             drawBatches.Insert(min, new DrawBatch() {

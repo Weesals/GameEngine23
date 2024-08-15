@@ -582,7 +582,8 @@ namespace Weesals.Utility {
                 ref var existingBounds = ref BVH.branches[stack[stackCount + 1] >> 4].Bounds;
                 Debug.Assert(
                     bounds.Min.X >= existingBounds.Min.X && bounds.Min.Y >= existingBounds.Min.Y && bounds.Min.Z >= existingBounds.Min.Z &&
-                    bounds.Max.X <= existingBounds.Max.X && bounds.Max.Y <= existingBounds.Max.Y && bounds.Max.Z <= existingBounds.Max.Z
+                    bounds.Max.X <= existingBounds.Max.X && bounds.Max.Y <= existingBounds.Max.Y && bounds.Max.Z <= existingBounds.Max.Z,
+                    "Bounds should only shrink during optimization!"
                 );
                 existingBounds = bounds;
             }

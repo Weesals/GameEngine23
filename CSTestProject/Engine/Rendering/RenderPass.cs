@@ -955,8 +955,8 @@ namespace Weesals.Engine {
         }
         public void ClearDynamicDraws() {
             foreach (var instance in dynamicInstances) {
-                Scene.RemoveInstance(instance);
                 RemoveInstance(instance);
+                Scene.RemoveInstance(instance);
             }
             dynamicInstances.Clear();
             dynamicDrawHash = 0;

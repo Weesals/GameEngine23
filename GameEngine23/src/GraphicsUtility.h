@@ -454,14 +454,14 @@ public:
     }
 
     void Unlock(LockMask mask) {
-        int changeCount = 0;
+        bool anyNewEmpty = false;
         for (int i = 0; i < (int)mLocks.size(); ++i) {
-            if ((mLocks[i].mHandles & mask) != 0) {
-                mLocks[i].mHandles &= ~mask;
-                ++changeCount;
-            }
+            if ((mLocks[i].mHandles & mask) == 0) continue;
+            mLocks[i].mHandles &= ~mask;
+            if (mLocks[i].mHandles != 0) continue;
+            anyNewEmpty |= true;
         }
-        if (changeCount > 0) {
+        if (anyNewEmpty) {
             for (auto& block : mBlocks) block.mFirstEmpty = -1;
         }
     }
@@ -476,5 +476,30 @@ public:
         for (int i = 0; i < (int)mLocks.size(); ++i) mLocks[i] = { };
         mLocks[0].mItemCount = -1;
         mItemCount = 0;
+    }
+    template<class Callback>
+    int Find(Callback&& callback) {
+        for (int b = 0; b < (int)mBlocks.size(); ++b) {
+            auto& block = mBlocks[b];
+            for (int i = 0; i < (int)(*block.mItems).size(); ++i) {
+                auto& item = (*block.mItems)[i];
+                if (callback(item)) return (b << BlockShift) + i;
+            }
+        }
+        throw "Not found";
+    }
+    void RemoveLock(int index, LockMask mask) {
+        int b = (index >> BlockShift);
+        int i = (index & BlockMask);
+        auto& block = mBlocks[b];
+        auto& item = block[i];
+        auto oldLock = mLocks[item.mLockId];
+        auto newMask = oldLock.mHandles & ~mask;
+        if (oldLock.mHandles == newMask) return;
+        auto lockId = RequireLock(newMask);
+        SetLock(item, lockId);
+        if (item.mLockId == 0) {
+            block.mFirstEmpty = std::min(block.mFirstEmpty, i);
+        }
     }
 };

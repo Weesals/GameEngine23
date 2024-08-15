@@ -222,6 +222,8 @@ namespace Game5.Game {
                 }
             }
 
+            return;
+
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Manager);
 #if DEBUG || true

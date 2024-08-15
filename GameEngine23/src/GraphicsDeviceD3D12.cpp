@@ -382,11 +382,15 @@ public:
                 auto* rbinding = cache.GetBinding((uint64_t)resource->mBuffer);
                 assert(rbinding != nullptr); // Did you call CopyBufferData on this resource?
                 D3D12_RESOURCE_STATES barrierState = InitialBufferState;
+                int offset = resource->mSubresourceId;
+                // Explicit offset/count or get buffer count
                 int count = rbinding->mCount - resource->mSubresourceId;
                 if (resource->mSubresourceCount != -1) count = (uint16_t)resource->mSubresourceCount;
+                // Buffer has prefixed count; bind full range and offset start
+                if (count == -1) count = rbinding->mSize / rbinding->mStride - (++offset);
                 if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
                     srvOffset = cache.GetBufferSRV(*rbinding,
-                        resource->mSubresourceId, count, rbinding->mStride, mFrameHandle);
+                        offset, count, rbinding->mStride, mFrameHandle);
                 } else if (rb->mType == ShaderBase::ResourceTypes::R_UAVBuffer
                     || rb->mType == ShaderBase::ResourceTypes::R_UAVAppend
                     || rb->mType == ShaderBase::ResourceTypes::R_UAVConsume) {

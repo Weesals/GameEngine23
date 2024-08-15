@@ -148,8 +148,6 @@ void PSMain(PSInput input
     transmittance = 1;
     half3 inscatter = 0;
 
-    half4 color = 0.0;
-    
     /*float near = Projection._34 / Projection._33;
     float far = Projection._34 / (Projection._33 - 1);
     float4 _ZBufferParams = float2(1 - far / near, far / near).xyxy;
@@ -221,19 +219,14 @@ void PSMain(PSInput input
     }
     //inscatter *= SampleMainLightCookie(positionWS);
     
-    //color.rgb = SampleSceneColor(refrUV);
-
-    color.rgb *= transmittance;
-    color.rgb += inscatter * LuminanceFactor;
     scatter = inscatter * LuminanceFactor;
-    
-#if defined(TRANSMITTANCE)
-    return float4(transmittance.rgb, 1.0);
-#elif defined(SCATTER)
-    return float4(color.rgb, 1.0);
-#endif
-    
-    //return float4(color.rgb, 1 - transmittance.g);
+
+    inscatter = 0.5;
+
+    /*half4 color = 0.0;
+    color.rgb = SampleSceneColor(refrUV);
+    color.rgb *= transmittance;
+    color.rgb += scatter;*/
 #endif
 }
 

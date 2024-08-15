@@ -174,7 +174,7 @@ namespace Game5.UI {
             }
 
             var pos = camera.Position +
-                (cameraMoveSmooth.X * camRight + cameraMoveSmooth.Z * camFwd + cameraMoveSmooth.Y * Vector3.UnitY * 0.5f)
+                (cameraMoveSmooth.X * camRight + cameraMoveSmooth.Z * camFwd + cameraMoveSmooth.Y * Vector3.UnitY)
                 * (dt * camera.Position.Y);
             pos.Y = Math.Min(pos.Y, 3850f);
             camera.Position = pos;
