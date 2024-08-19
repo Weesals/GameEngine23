@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
 using Weesals.Engine;
-using Weesals.Utility;
+using Weesals;
 
 namespace Game5.Game {
     using CompletionInstance = OrderSystemBase.CompletionInstance;

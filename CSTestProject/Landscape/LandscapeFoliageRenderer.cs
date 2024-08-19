@@ -127,7 +127,7 @@ namespace Weesals.Landscape {
                 // Reset count
                 graphics.CopyBufferData(instance.InstanceBuffer, new RangeInt(0, 4));
                 // Dispatch compute
-                graphics.DispatchCompute(computePSO, resources, dispatchCount);
+                graphics.DispatchCompute(computePSO, resources.AsCSSpan(), dispatchCount);
                 // Should only copy fist-frame, then no-op
                 graphics.CopyBufferData(instance.MeshDraw.ArgsBuffer);
                 // Copy count into instance buffer

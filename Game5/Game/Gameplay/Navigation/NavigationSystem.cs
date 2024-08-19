@@ -10,6 +10,7 @@ using Weesals.Engine.Profiling;
 using Game5.Game.Gameplay;
 using Weesals.Landscape;
 using Weesals.Utility;
+using Weesals;
 
 namespace Game5.Game {
     using CompletionInstance = OrderSystemBase.CompletionInstance;

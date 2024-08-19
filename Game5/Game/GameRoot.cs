@@ -92,7 +92,7 @@ namespace Game5.Game {
             Canvas.Dispose();
         }
 
-        private async void SetupPasses(ScenePassManager scenePasses) {
+        private void SetupPasses(ScenePassManager scenePasses) {
             using (new ProfilerMarker("Setup Passes").Auto()) {
                 Action updateShadowParameters = () => {
                     basePass.UpdateShadowParameters(shadowPass);

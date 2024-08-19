@@ -85,22 +85,22 @@ namespace Weesals.Engine {
         }
 
         public unsafe static void toxy(this ref Vector3 v, Vector2 set) {
-            fixed (Vector3* w = &v) *(Vector2*)w = set;
+            Unsafe.As<Vector3, Vector2>(ref v) = set;
         }
         public unsafe static void toyz(this ref Vector3 v, Vector2 set) {
-            fixed (Vector3* w = &v) *(Vector2*)&w->Y = set;
+            Unsafe.As<Vector3, Vector2>(ref Unsafe.AddByteOffset(ref v, 4)) = set;
         }
         public unsafe static void toxy(this ref Vector4 v, Vector2 set) {
-            fixed (Vector4* w = &v) *(Vector2*)&w->X = set;
+            Unsafe.As<Vector4, Vector2>(ref v) = set;
         }
         public unsafe static void toyz(this ref Vector4 v, Vector2 set) {
-            fixed (Vector4* w = &v) *(Vector2*)&w->Y = set;
+            Unsafe.As<Vector4, Vector2>(ref Unsafe.AddByteOffset(ref v, 4)) = set;
         }
         public unsafe static void tozw(this ref Vector4 v, Vector2 set) {
-            fixed (Vector4* w = &v) *(Vector2*)&w->Z = set;
+            Unsafe.As<Vector4, Vector2>(ref Unsafe.AddByteOffset(ref v, 8)) = set;
         }
         public unsafe static void toxyz(this ref Vector4 v, Vector3 set) {
-            fixed (Vector4* w = &v) *(Vector3*)&w->X = set;
+            Unsafe.As<Vector4, Vector3>(ref v) = set;
         }
 
         public static Vector4 toxzyw(this Vector4 v) {

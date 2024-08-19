@@ -158,6 +158,9 @@ namespace Weesals.Engine {
         IEnumerator<T> IEnumerable<T>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
+    unsafe public static class CSSpanExt {
+        public static CSSpan AsCSSpan<T>(this MemoryBlock<T> block) where T : unmanaged { return new CSSpan(block.Data, block.Length); }
+    }
     public partial struct CSTexture : IEquatable<CSTexture> {
         unsafe public bool IsValid => mTexture != null;
         public BufferFormat Format => IsValid ? GetFormat() : default;

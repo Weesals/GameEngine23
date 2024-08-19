@@ -121,7 +121,8 @@ namespace Weesals.Impostors {
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
 
             graphics.Clear(new CSClearConfig(new Vector4(0f, 0f, 0f, 0f), 1f));
-            graphics.Draw(pso, buffers, resources, CSDrawConfig.Default, frameCount);
+            graphics.Draw(pso, buffers.AsCSSpan(), resources.AsCSSpan(),
+                CSDrawConfig.Default, frameCount);
 
             distanceFieldMaterial.SetPixelShader(Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "PSSeed"));
             BlitQuad(graphics, tempTarget1, AlbedoTarget, distanceFieldMaterial);
@@ -177,7 +178,8 @@ namespace Weesals.Impostors {
             var pso = MaterialEvaluator.ResolvePipeline(graphics, buffers, materials);
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
             graphics.Clear(new CSClearConfig(new Vector4(0f, 0f, 0f, 0f), 1f));
-            graphics.Draw(pso, buffers, resources, CSDrawConfig.Default);
+            graphics.Draw(pso, buffers.AsCSSpan(), resources.AsCSSpan(),
+                CSDrawConfig.Default);
         }
 
         public static Vector2 VectorToHemiOctahedral(Vector3 v) {

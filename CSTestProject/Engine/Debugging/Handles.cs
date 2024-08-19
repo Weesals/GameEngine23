@@ -41,7 +41,7 @@ namespace Weesals.Engine {
                 }
             }
         }
-        private class LineMeshBuffer : MeshBuffer {
+        private class LineMeshBuffer : MeshBuffer, IDisposable {
             public int PositionElement;
             public int DeltaElement;
             public int ColorElement;
@@ -61,7 +61,7 @@ namespace Weesals.Engine {
                 Span<uint> quadInds = stackalloc uint[] { 0, 1, 3, 0, 3, 2, };
                 Mesh.GetIndicesV().Set(quadInds);
             }
-            public void Dispose() {
+            public new void Dispose() {
                 base.Dispose();
                 InstanceBuffer.Dispose();
             }

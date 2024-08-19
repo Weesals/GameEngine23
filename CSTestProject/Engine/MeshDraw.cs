@@ -84,7 +84,7 @@ namespace Weesals.Engine {
             using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
                 resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
             }
-            graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config);
+            graphics.Draw(passCache.mPipeline, mBufferLayout, resources.AsCSSpan(), config);
         }
     }
 
@@ -161,7 +161,7 @@ namespace Weesals.Engine {
             using (var markerRes = ProfileMarker_ResolveResources.Auto()) {
                 resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, mMaterials);
             }
-            graphics.Draw(passCache.mPipeline, mBufferLayout, resources, config, instanceCount);
+            graphics.Draw(passCache.mPipeline, mBufferLayout, resources.AsCSSpan(), config, instanceCount);
         }
         unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();

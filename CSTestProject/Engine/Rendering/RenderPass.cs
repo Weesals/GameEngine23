@@ -212,7 +212,7 @@ namespace Weesals.Engine {
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
             var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, new Span<Material>(ref material));
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, new Span<Material>(ref material));
-            graphics.Draw(pso, bindings, resources, CSDrawConfig.Default);
+            graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
         }
         public override string ToString() { return Name; }
     }

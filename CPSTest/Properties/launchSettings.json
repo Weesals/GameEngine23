@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CPSTest": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\Users\\weesa\\source\\repos\\Weesals\\GameEngine23\\CPSTest"
+    }
+  }
+}

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 // 2024-05 : Added string equality comparison
 
@@ -105,6 +106,12 @@ public struct SJson : IEnumerable<SJson>, IEquatable<string> {
         var i = 0;
         for (; it.MoveNext(); ++i) if (i >= other.Length || it.Current != other[i]) return false;
         return i == other.Length;
+    }
+    public override bool Equals([NotNullWhen(true)] object? obj) {
+        throw new NotImplementedException();
+    }
+    public override int GetHashCode() {
+        return (Start + End);
     }
     // Remove quotes and special characaters
     public override string ToString() {

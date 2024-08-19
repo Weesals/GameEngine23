@@ -24,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Weesals.Common\Weesals.Common.csproj" />
     <ProjectReference Include="..\Weesals.ECS\Weesals.ECS.csproj" />
   </ItemGroup>
 

@@ -8,6 +8,7 @@ using UnityEngine;
 using Weesals.Engine;
 using Weesals.Engine.Profiling;
 using Weesals.Utility;
+using Weesals;
 using CornerId = System.UInt16;
 using TriangleId = System.UInt16;
 

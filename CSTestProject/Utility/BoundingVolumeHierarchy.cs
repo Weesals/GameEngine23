@@ -542,6 +542,7 @@ namespace Weesals.Utility {
                     var top = stack[stackCount];
                     var parent = BVH.nodes[top >> 4];
                     if (parent.ChildIndex > 0) {
+                        //new Vector<Vector3>()
                         // Iterate past this child
                         var childIndex = (top & 0x03);
                         if (childIndex == 0x03) --stackCount;

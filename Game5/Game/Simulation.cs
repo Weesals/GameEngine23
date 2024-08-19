@@ -222,11 +222,9 @@ namespace Game5.Game {
                 }
             }
 
-            return;
-
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Manager);
-#if DEBUG || true
+#if DEBUG
                 const int Count = 20000 * 4;
 #else
                 const int Count = 2000000 * 4;

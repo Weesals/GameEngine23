@@ -6,7 +6,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
-namespace Weesals.Utility {
+namespace Weesals {
     public struct RangeInt {
         public int Start;
         public int Length;

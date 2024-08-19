@@ -12,6 +12,7 @@ using Weesals.Utility;
 using Weesals.Engine.Serialization;
 using Weesals.Impostors;
 using Weesals.UI;
+using Weesals;
 
 class Program {
 

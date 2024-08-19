@@ -1244,7 +1244,7 @@ namespace Weesals.UI {
 					materials
 				);
                 var drawConfig = new CSDrawConfig(batch.mIndexAlloc.Start, batch.mIndexCount);
-                graphics.Draw(pso, bindings, resources, drawConfig);
+                graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
             }
 	    }
     }

@@ -67,6 +67,7 @@ void CSGenerateFoliage(uint3 gtid : SV_DispatchThreadID) {
     
     if (c.Layer == 0) {
         float count = ceil(Density - rnd) * countScale;
+        //count = max(globalId.x, globalId.y) < 2;
         for (float i = 0; i < count; ++i) {
             float2 offset = frac(rnd * float2(123, 12345));
             

@@ -9,6 +9,7 @@ using Weesals.Utility;
 using Weesals.ECS;
 using Weesals.Engine.Importers;
 using Weesals.Engine.Profiling;
+using Weesals;
 
 namespace Game5.UI {
 
@@ -133,28 +134,6 @@ namespace Game5.UI {
             });
             //AppendChild(new Image(testTexture.Texture));
             Play.OnRender += Play_OnRender;*/
-        }
-
-        private void Play_OnRender(CSGraphics graphics, float dt) {
-            var material = new Material();
-            graphics.CopyBufferData(buffer);
-            material.SetTexture("Texture", testTexture);
-            material.SetBuffer("Instances", buffer);
-            material.SetBuffer("Instances2", buffer);
-            {
-                var computeShader = Resources.RequireShader(graphics,
-                    Resources.LoadShader("./Assets/Shader/ComputeTest.hlsl", "CSMain"), "cs_6_2", default, default);
-                var computePSO = graphics.RequireComputePSO(computeShader.NativeShader);
-                var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, new Span<Material>(ref material));
-                graphics.DispatchCompute(computePSO, resources, new Int3(1, 1, 1));
-            }
-            {
-                var computeShader = Resources.RequireShader(graphics,
-                    Resources.LoadShader("./Assets/Shader/ComputeTest.hlsl", "CSMain2"), "cs_6_2", default, default);
-                var computePSO = graphics.RequireComputePSO(computeShader.NativeShader);
-                var resources = MaterialEvaluator.ResolveResources(graphics, computePSO, new Span<Material>(ref material));
-                graphics.DispatchCompute(computePSO, resources, new Int3(32, 32, 1));
-            }
         }
 
         public void Update(float dt) {

@@ -8,10 +8,9 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
-using Weesals.ECS;
 using Weesals.Engine;
 
-namespace Weesals.Utility {
+namespace Weesals {
     public class ArrayList<T> {
         public T[] Buffer = Array.Empty<T>();
         public int Count;
@@ -27,9 +26,15 @@ namespace Weesals.Utility {
             ++Count;
         }
         public void RemoveAt(int index) {
+            Debug.Assert(index <= Count);
             var toMove = Count - index - 1;
             if (toMove > 0) Array.Copy(Buffer, index + 1, Buffer, index, toMove);
             --Count;
+        }
+        public void RemoveRange(int start, int length) {
+            Debug.Assert(start + length <= Count);
+            Count -= length;
+            if (start > Count) Array.Copy(Buffer, start + length, Buffer, start, length);
         }
         public void Reserve(int count) {
             if (Buffer.Length < count) Array.Resize(ref Buffer, count);
@@ -57,6 +62,8 @@ namespace Weesals.Utility {
         public void CopyTo(T[] destination) {
             Array.Copy(Buffer, destination, Count);
         }
+
+        public static implicit operator Span<T>(ArrayList<T> arr) => arr.AsSpan();
 
         public Span<T>.Enumerator GetEnumerator() { return AsSpan().GetEnumerator(); }
     }
@@ -88,7 +95,6 @@ namespace Weesals.Utility {
         public override string ToString() { return $"<count={Length}>"; }
         public static implicit operator Span<T>(MemoryBlock<T> block) { return block.AsSpan(); }
         public static implicit operator ReadOnlySpan<T>(MemoryBlock<T> block) { return block.AsSpan(); }
-        public static implicit operator CSSpan(MemoryBlock<T> block) { return new CSSpan(block.Data, block.Length); }
         public int GetContentsHash() {
             int hash = 0;
             foreach (var item in AsSpan()) hash = hash * 668265263 + item.GetHashCode();

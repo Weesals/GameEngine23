@@ -11,9 +11,10 @@ using System.Linq;
 using CornerId = System.UInt16;
 using TriangleId = System.UInt16;
 using EdgeAdjacency = Navigation.NavMesh.EdgeAdjacency;
-using Weesals.Engine.Profiling;
+using Weesals;
 using Weesals.Utility;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using System.Diagnostics;
 using System.Numerics;
 

@@ -524,8 +524,8 @@ namespace Weesals.Engine {
                 var pipeline = draw.PipelineLayout;
                 graphics.Draw(
                     pipeline,
-                    draw.BufferLayouts,
-                    draw.Resources,
+                    draw.BufferLayouts.AsCSSpan(),
+                    draw.Resources.AsCSSpan(),
                     config,
                     draw.InstanceCount
                 );
@@ -818,6 +818,7 @@ namespace Weesals.Engine {
             return new(instBegin, queue.Count - instBegin);
         }
 
+        private int frame = 0;
         // Generate a drawlist for rendering currently visible objects
         unsafe public void SubmitToRenderQueue(CSGraphics graphics, RenderQueue queue, in Frustum frustum) {
             using var marker = ProfileMarker_SubmitToRQ.Auto();
@@ -854,6 +855,9 @@ namespace Weesals.Engine {
                 instanceSortKeys[i] = batchIds[i];
             }*/
             // Sort them into batches
+            using (var frustumSort = ProfileMarker_SortInstances.Auto()) {
+                MemoryExtensions.Sort(instanceSortKeys, indices.AsSpan());
+            }
             using (var frustumSort = ProfileMarker_SortInstances.Auto()) {
                 MemoryExtensions.Sort(instanceSortKeys, indices.AsSpan());
             }

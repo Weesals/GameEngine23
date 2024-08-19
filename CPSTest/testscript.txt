@@ -1,0 +1,35 @@
+﻿
+class Entity {
+	HitPoints = 100;
+	LOSRange = 1000;
+}
+
+entity Villager {
+	LOSRange = 6000;
+    abilities := [
+      {
+        :type = "AttackMelee";
+        damage = 3;
+        interval = 1.5;
+      },
+      {
+        :type = "Gather";
+        :resourceType = "Wood";
+        interval = 2.0;
+      }
+    ];
+    builds := [ "House", "Storehouse", "Granary", "Barracks", "ArcheryRange" ];
+}
+
+class Villager2 {
+    if (Team.HasTech("Wheelbarrow")) {
+	    LOSRange = 8000;
+        abilities := [
+          {
+            :type = "Gather";
+            :resourceType = "Wood";
+            capacity *= 2.0;
+          }
+        ];
+    }
+}

@@ -137,32 +137,39 @@ namespace Weesals.Engine {
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetVisibility(Vector3 pos, out bool contained) {
-            Vector4 distances = mFrustum4.GetProjectedDistances(pos);
-            if (distances.cmin() <= 0f) { contained = false; return false; }
-            Vector2 nfdistances = GetProjectedDistancesNearFar(pos);
-            if (nfdistances.cmin() <= 0f) { contained = false; return false; }
-            contained = distances.cmax() >= 0f && nfdistances.cmax() >= 0f;
+            Vector4 d = mFrustum4.GetProjectedDistances(pos);
+            if (d.X <= 0f || d.Y <= 0f || d.Z <= 0f || d.W <= 0f) { contained = false; return false; }
+            Vector2 nfd = GetProjectedDistancesNearFar(pos);
+            if (nfd.X <= 0f || nfd.Y <= 0f) { contained = false; return false; }
+            contained = d.cmax() >= 0f && nfd.cmax() >= 0f;
             return true;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool GetVisibility(BoundingBox box, out bool contained) {
-            var ctr = box.Centre;
-            var ext = box.Extents;
-            var distances = mFrustum4.GetProjectedDistances(ctr);
+        public bool GetVisibility(BoundingBox bounds, out bool contained) {
+            return GetVisibility(bounds.Centre, bounds.Size / 2f, out contained);
+        }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool GetVisibility(Vector3 pos, Vector3 ext, out bool contained) {
+            var d = mFrustum4.GetProjectedDistances(pos);
             var ext4 = Frustum4.dot4(Vector4.Abs(mFrustum4.mPlaneXs), Vector4.Abs(mFrustum4.mPlaneYs), Vector4.Abs(mFrustum4.mPlaneZs), ext.X, ext.Y, ext.Z);
-            if ((distances + ext4).cmin() <= 0f) { contained = false; return false; }
-            var nfdistances = GetProjectedDistancesNearFar(ctr);
+            var dp = d + ext4;
+            if (dp.X <= 0f || dp.Y <= 0f || dp.Z <= 0f || dp.W <= 0f) { contained = false; return false; }
+            var nfd = GetProjectedDistancesNearFar(pos);
             var ext2 = new Vector2(Vector3.Dot(Vector3.Abs(mNearPlane.toxyz()), ext), Vector3.Dot(Vector3.Abs(mFarPlane.toxyz()), ext));
-            if ((nfdistances + ext2).cmin() <= 0f) { contained = false; return false; }
-            contained = (distances - ext4).cmin() >= 0f && (nfdistances - ext2).cmin() >= 0f;
+            var nfdp = nfd + ext2;
+            if (nfdp.X <= 0f || nfdp.Y <= 0f) { contained = false; return false; }
+            var dn = d - ext4;
+            var nfdn = nfd - ext2;
+            contained = dn.X >= 0f && dn.Y >= 0f && dn.Z >= 0f &&
+                dn.W >= 0f && nfdn.X >= 0f && nfdn.Y >= 0f;
             return true;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetIsVisible(Vector3 pos) {
-            Vector4 distances = mFrustum4.GetProjectedDistances(pos);
-            if (distances.cmin() <= 0f) return false;
-            Vector2 nfdistances = GetProjectedDistancesNearFar(pos);
-            return nfdistances.cmin() > 0f;
+            Vector4 d = mFrustum4.GetProjectedDistances(pos);
+            if (d.X <= 0f || d.Y <= 0f || d.Z <= 0f || d.W <= 0f) return false;
+            Vector2 nfd = GetProjectedDistancesNearFar(pos);
+            return nfd.X > 0f || nfd.Y > 0f;
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetIsVisible(BoundingBox bounds) {
@@ -170,12 +177,12 @@ namespace Weesals.Engine {
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool GetIsVisible(Vector3 pos, Vector3 ext) {
-            Vector4 distances = mFrustum4.GetProjectedDistances(pos)
+            Vector4 d = mFrustum4.GetProjectedDistances(pos)
                 + Frustum4.dot4(Vector4.Abs(mFrustum4.mPlaneXs), Vector4.Abs(mFrustum4.mPlaneYs), Vector4.Abs(mFrustum4.mPlaneZs), ext.X, ext.Y, ext.Z);
-            if (distances.cmin() <= 0f) return false;
-            Vector2 nfdistances = GetProjectedDistancesNearFar(pos)
+            if (d.X <= 0f || d.Y <= 0f || d.Z <= 0f || d.W <= 0f) return false;
+            Vector2 nfd = GetProjectedDistancesNearFar(pos)
                 + new Vector2(Vector3.Dot(Vector3.Abs(mNearPlane.toxyz()), ext), Vector3.Dot(Vector3.Abs(mFarPlane.toxyz()), ext));
-            return nfdistances.cmin() > 0f;
+            return nfd.X > 0f || nfd.Y > 0f;
         }
         public void GetCorners(Span<Vector3> corners) {
             var vp = CalculateViewProj();
