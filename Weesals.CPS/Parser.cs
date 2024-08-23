@@ -37,7 +37,7 @@ namespace Weesals.CPS {
         }
         public ReadOnlySpan<char> AsSpan() { return String.AsSpan(I, End - I); }
         public override string ToString() { return AsString(); }
-        public bool Equals(string other) { return other.Length == Length && string.CompareOrdinal(String, I, other, 0, Length) == 0; }
+        public bool Equals(string? other) { return other!.Length == Length && string.CompareOrdinal(String, I, other, 0, Length) == 0; }
         public static implicit operator ReadOnlySpan<char>(Parser p) { return p.AsSpan(); }
 
         public char PeekChar() {

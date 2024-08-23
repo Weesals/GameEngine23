@@ -21,7 +21,7 @@ entity Villager {
     builds := [ "House", "Storehouse", "Granary", "Barracks", "ArcheryRange" ];
 }
 
-class Villager2 {
+class Villager {
     if (Team.HasTech("Wheelbarrow")) {
 	    LOSRange = 8000;
         abilities := [

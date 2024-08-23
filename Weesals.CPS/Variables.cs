@@ -129,7 +129,7 @@ namespace Weesals.CPS {
             }
             return false;
         }
-        public StackItem Copy(SparseArray<byte> srcStore, SparseArray<byte> destStore) {
+        public StackItem Clone(SparseArray<byte> srcStore, SparseArray<byte> destStore) {
             var srcData = srcStore.AsSpan().Slice(Offset);
             var len = StackType.GetDataLength(srcData, TypeId);
             var range = destStore.Allocate(len);
@@ -184,16 +184,5 @@ namespace Weesals.CPS {
 
         public static readonly StackItem Invalid = new StackItem() { TypeId = -1, Offset = -1, };
         public static readonly StackItem None = new StackItem() { TypeId = 0, Offset = -1, };
-    }
-
-    public struct Stack {
-        public List<StackItem> Items;
-        public SparseArray<byte> Data;
-        public Variable GetValue(int index) {
-            var item = Items[index];
-            return item.GetValue(Data.AsSpan());
-        }
-        public void PushValue<T>(T value) where T : unmanaged {
-        }
     }
 }

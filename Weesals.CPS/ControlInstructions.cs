@@ -15,16 +15,15 @@ namespace Weesals.CPS {
                 if (!result.IsValid) context.Compiler.LogError(new Token(items, "Expected boolean expression"));
                 context.InvokeAPI(Singleton<IfInstruction>.Instance, result);
                 var blockIPC = context.ExpressionWriter.programWriter.PushUInt(0);
-                var pc = context.BlockWriter.FlushExpression(ref context.ExpressionWriter);
-                blockIPC += pc.Start;
-                context.BlockWriter.PopBlockScope();
+                var expression = context.BlockWriter.FlushExpression(ref context.ExpressionWriter);
+                blockIPC += expression.Start;
+                context.BlockWriter.WriteInvoke(expression);
                 context.BlockWriter.PushBlockScope();
                 context.CompileBlock(ref code);
                 var blockI = context.BlockWriter.ReconcileToSingleBlock();
                 Unsafe.WriteUnaligned(ref context.BlockWriter.Script.GetProgramBlock(new RangeInt(blockIPC, 4)).AsSpan()[0], (uint)blockI);
                 //context.ExpressionWriter.programWriter.WriteUInt(blockIPC, (uint)blockI);
                 context.BlockWriter.PopBlockScope();
-                context.BlockWriter.PushBlockScope();
                 return CompileResult.Valid;
             }
             return default;
@@ -32,12 +31,12 @@ namespace Weesals.CPS {
 
         public static class Singleton<T> where T : class, new() { public static T Instance = new(); }
 
-        public class IfInstruction : API, IInstructionInvoke2 {
-            public void Invoke(Runtime2.EvaluatorContext context) {
+        public class IfInstruction : API, IInstructionInvoke {
+            public void Invoke(ref EvaluatorContext context) {
                 var dataStore = context.Evaluator.Runtime.GetDataStorage();
                 var nextBlockId = context.ReadProgramData<uint>();
                 for (int g = 0; g < context.Evaluator.EvalGroups.Count; g++) {
-                    var group = context.Evaluator.EvalGroups[g];
+                    ref var group = ref context.Evaluator.EvalGroups[g];
                     group.Execution.PopStack().TryGetAsInt(dataStore, out var condition);
                     if (condition != 0) {
                         group.NextBlockId = (int)nextBlockId;

@@ -4,34 +4,30 @@ using Weesals.CPS;
 namespace Weesals.CPSTest {
     public class Program {
 
-        public class APIGetTeam : API, IInstructionCompiler, IInstructionInvoke2 {
+        public class APIGetTeam : API, IInstructionCompiler, IInstructionInvoke {
             public CompileResult Compile(ref Parser code, ref CompileContext context) {
                 if (code.Match("Team")) {
-                    var apiIndex = context.Compiler.RequireTerm(this);
-                    context.ExpressionWriter.programWriter.PushOp(Operation.Types.InvokeSustained);
-                    context.ExpressionWriter.programWriter.PushConstantObject(apiIndex);
+                    CompileResult result = CompileResult.Valid;
+                    context.InvokeAPI(this, result);
                     if (code.MatchFunction(".HasTech", out var parms)) {
-                        var apiHasTech = context.Compiler.RequireTerm(HasTech.Default);
                         var techName = context.Compiler.RequireTerm(parms.TakeParameter().ToString());
-                        context.ExpressionWriter.programWriter.PushOp(Operation.Types.InvokeSustained);
-                        context.ExpressionWriter.programWriter.PushConstantObject(apiHasTech);
                         context.ExpressionWriter.programWriter.PushConstantObject(techName);
-                        context.ExpressionWriter.programWriter.Pop();
+                        context.InvokeAPI(HasTech.Default, result);
                     }
                     return new CompileResult(1);
                 }
                 return default;
             }
-            public void Invoke(Runtime2.EvaluatorContext context) {
+            public void Invoke(ref EvaluatorContext context) {
                 var dataStore = context.Evaluator.Runtime.GetDataStorage();
                 for (int g = 0; g < context.Evaluator.EvalGroups.Count; g++) {
                     var group = context.Evaluator.EvalGroups[g];
                     group.Execution.PushStack(StackItem.CreateInt(dataStore, 0));
                 }
             }
-            public class HasTech : IInstructionInvoke2 {
+            public class HasTech : API, IInstructionInvoke {
                 private StringBuilder builder = new();
-                public void Invoke(Runtime2.EvaluatorContext context) {
+                public void Invoke(ref EvaluatorContext context) {
                     var dataStore = context.Evaluator.Runtime.GetDataStorage();
                     var terms = context.Evaluator.Runtime.Script.GetTerms();
                     for (int g = 0; g < context.Evaluator.EvalGroups.Count; g++) {
@@ -39,7 +35,7 @@ namespace Weesals.CPSTest {
                         group.Execution.PopStack().TryGetAsInt(dataStore, out var team);
                         builder.Clear();
                         group.Execution.PopStack().TryGetAsString(dataStore, terms, builder);
-                        group.Execution.PushStack(StackItem.CreateInt(dataStore, 0));
+                        group.Execution.PushStack(StackItem.CreateInt(dataStore, 1));
                     }
                 }
                 public static readonly HasTech Default = new();
@@ -63,7 +59,7 @@ namespace Weesals.CPSTest {
             script.LogContents();
             var villagerC = script.GetClassByName("Villager");
 
-            var runtime2 = new Runtime2(script);
+            var runtime2 = new Runtime(script);
             var villagerI2 = runtime2.AllocateObject();
             runtime2.SetObjectPrototypeId(villagerI2, villagerC);
             runtime2.Resolve();

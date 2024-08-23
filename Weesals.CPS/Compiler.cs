@@ -66,7 +66,7 @@ namespace Weesals.CPS {
         public void InvokeAPI(API api, CompileResult result) {
             ExpressionWriter.programWriter.PushOp(Operation.Types.InvokeSustained);
             var apiIndex = Compiler.RequireTerm(api);
-            ExpressionWriter.programWriter.PushConstantObject(apiIndex);
+            ExpressionWriter.programWriter.PushUShort((ushort)apiIndex);
         }
 
         //public int BeginChildBlock(object userData = null) { return Compiler.BeginChildBlock(userData); }
@@ -211,6 +211,7 @@ namespace Weesals.CPS {
         public void Allocate(Script script) {
             Script = script;
             mutations = new();
+            blockOutputs = new();
             dependencies = new();
             outputBlocks = new();
             activeBlocks = new();
@@ -251,11 +252,15 @@ namespace Weesals.CPS {
         public void PushOutputBlockStack() {
             outputBlockStack.Add(outputBlocks.Count);
         }
-        public Span<OutputBlock> GetOutputBlocks() {
+        public Span<OutputBlock> TakeOutputBlocks() {
             var from = outputBlockStack.Count > 0 ? outputBlockStack[^1] : 0;
-            return outputBlocks.AsSpan(from, outputBlocks.Count - from);
+            var span = outputBlocks.AsSpan(from, outputBlocks.Count - from);
+            PruneFrom(outputBlocks, from);
+            return span;
         }
         public void PopOutputBlockStack() {
+            Debug.Assert(outputBlocks.Count == outputBlockStack[^1],
+                "Output blocks were orphaned");
             PruneFrom(outputBlocks, outputBlockStack[^1]);
             outputBlockStack.RemoveAt(outputBlockStack.Count - 1);
         }
@@ -310,7 +315,10 @@ namespace Weesals.CPS {
                 var cur = outputBlocks[i];
                 Script.LinkBlocks(prev.BlockId, cur.BlockId);
             }
-            if (from < outputBlocks.Count) return outputBlocks[from].BlockId;
+            if (from < outputBlocks.Count) {
+                PruneFrom(outputBlocks, from);
+                return outputBlocks[from].BlockId;
+            }
             return -1;
         }
 
@@ -323,14 +331,25 @@ namespace Weesals.CPS {
         private int FlushMutations(RangeInt programI) {
             // TODO: Should this only include deps starting from depstack[^1]?
             var blockI = RequireBlock(programI.Start, dependencies);
+            var blockOutputOffset = Script.AppendOutputs(blockI, blockOutputs);
+            for (int i = 0; i < mutations.Count; i++) {
+                if (mutations[i].OutputId >= 0)
+                    mutations[i].OutputId += blockOutputOffset;
+            }
             Script.AppendMutations(blockI, mutations, programI.Start);
             mutations.Clear();
+            blockOutputs.Clear();
             PruneFrom(dependencies, dependencyStack.Count > 0 ? dependencyStack[^1] : 0);
             return blockI;
         }
         public void WriteStore(Parser propName, RangeInt pc) {
+            var outputId = blockOutputs.Add(new Script.BlockOutput() {
+                Name = propName.AsString(),
+                MutationId = mutations.Count,
+            });
             mutations.Add(new Script.Mutation() {
                 Name = propName.AsString(),
+                OutputId = outputId,
                 ProgramCounter = pc,
             });
             FlushMutations(default);
@@ -338,6 +357,7 @@ namespace Weesals.CPS {
         public void WriteInvoke(RangeInt pc) {
             mutations.Add(new Script.Mutation() {
                 Name = "$Invoke",
+                OutputId = -1,
                 ProgramCounter = pc,
             });
             FlushMutations(default);
@@ -414,7 +434,7 @@ namespace Weesals.CPS {
             var parser = new Parser(code);
             blockWriter.PushBlockScope();
             CompileStatements(ref parser);
-            Script.AppendRootBlocks(blockWriter.GetOutputBlocks());
+            Script.AppendRootBlocks(blockWriter.TakeOutputBlocks());
             blockWriter.PopBlockScope();
         }
         public void CompileStatements(ref Parser code) {

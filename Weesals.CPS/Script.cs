@@ -66,13 +66,13 @@ namespace Weesals.CPS {
         }
         public struct Mutation {
             public string Name;
+            public int OutputId;
             public RangeInt ProgramCounter;
             public override string ToString() { return Name + ": " + ProgramCounter; }
         }
         public struct BlockOutput {
             public string Name;
             public int MutationId;
-            public int StackOffset;
         }
         public struct Block {
             public RangeInt Dependencies;
@@ -149,14 +149,23 @@ namespace Weesals.CPS {
             return programI;
         }
         public void AppendMutations(int blockI, ArrayList<Mutation> newMutations, int programOffset) {
-            var block = blocks[blockI];
+            ref var block = ref blocks[blockI];
             mutations.Reallocate(ref block.Mutations, block.Mutations.Length + newMutations.Count);
             for (int i = 0; i < newMutations.Count; i++) {
                 var mut = newMutations[i];
                 mut.ProgramCounter.Start += programOffset;
                 mutations[block.Mutations.End - newMutations.Count + i] = mut;
             }
-            blocks[blockI] = block;
+        }
+        public int AppendOutputs(int blockI, ArrayList<BlockOutput> newOutputs) {
+            ref var block = ref blocks[blockI];
+            int offset = block.Outputs.Length;
+            blockOutputs.Reallocate(ref block.Outputs, block.Outputs.Length + newOutputs.Count);
+            for (int i = 0; i < newOutputs.Count; i++) {
+                var output = newOutputs[i];
+                blockOutputs[offset + i] = output;
+            }
+            return offset;
         }
         public void AppendRootBlocks(Span<BlockWriter.OutputBlock> outputBlocks) {
             foreach (var blockI in outputBlocks) rootBlocks.Add(blockI.BlockId);
@@ -174,7 +183,7 @@ namespace Weesals.CPS {
                 var muts = "- Mutations: ";
                 var blockMuts = mutations.Slice(block.Mutations);
                 for (int i = 0; i < blockMuts.Count; i++) {
-                    var context = new Runtime2.EvaluatorContext() {
+                    var context = new EvaluatorContext() {
                         ProgramData = GetProgramBlock(blockMuts[i].ProgramCounter),
                         ProgramCounter = 0,
                     };
@@ -183,7 +192,13 @@ namespace Weesals.CPS {
                         case Operation.Types.InvokeBlock: {
                             var classI = context.ReadProgramData<ushort>();
                             var blockI = context.ReadProgramData<ushort>();
-                            muts += $"{blockMuts[i].Name}@{blockMuts[i].ProgramCounter} : {classI}:{blockI},";
+                            muts += $"{blockMuts[i].Name}@{blockMuts[i].ProgramCounter} : Invoke Block : Class #{classI}: Block #{blockI},";
+                        }
+                        break;
+                        case Operation.Types.InvokeSustained: {
+                            var instrObjId = context.ReadProgramData<ushort>();
+                            var instruction = (IInstructionInvoke)GetTerm(instrObjId);
+                            muts += $"{blockMuts[i].Name}@{blockMuts[i].ProgramCounter} : Invoke {instruction},";
                         }
                         break;
                         default: {

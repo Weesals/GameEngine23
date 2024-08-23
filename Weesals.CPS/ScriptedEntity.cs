@@ -49,7 +49,7 @@ namespace Weesals.CPS {
         }
     }
 
-    public class ClassInstruction : API, IInstructionCompiler, IInstructionInvoke2 {
+    public class ClassInstruction : API, IInstructionCompiler, IInstructionInvoke {
         public class ClassParameters {
             public string Name;
             public string[] Extends;
@@ -100,7 +100,7 @@ namespace Weesals.CPS {
             }
             return default;
         }
-        public void Invoke(Runtime2.EvaluatorContext context) {
+        public void Invoke(ref EvaluatorContext context) {
             var classI = context.ReadProgramData<ushort>();
             var blockI = context.ReadProgramData<ushort>();
             var registry = context.GetService<ScriptedRegistry>();

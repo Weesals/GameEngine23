@@ -18,12 +18,13 @@ namespace Weesals {
         public ref T this[int index] => ref Buffer[index];
         public ref T this[Index index] => ref Buffer[index.GetOffset(Count)];
 
-        public void Add(T value) {
+        public int Add(T value) {
             if (Count >= Buffer.Length) {
                 Reserve(Math.Max(Buffer.Length * 2, 16));
             }
-            Buffer[Count] = value;
-            ++Count;
+            var index = Count++;
+            Buffer[index] = value;
+            return index;
         }
         public void RemoveAt(int index) {
             Debug.Assert(index <= Count);
