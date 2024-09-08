@@ -73,18 +73,18 @@ namespace Weesals.Landscape {
                         vuvs[v] = new Vector2((float)x / xcount, (float)y / ycount);
                 }
             }
-            var indices = tileMesh.GetIndicesV();
+            var indices = tileMesh.GetIndicesV<ushort>();
             for (int y = 0; y < ycount; ++y) {
                 for (int x = 0; x < xcount; ++x) {
                     int i = (x + y * xcount) * 6;
-                    uint v0 = (uint)(x + (y + 0) * (xcount + 1));
-                    uint v1 = (uint)(x + (y + 1) * (xcount + 1));
-                    indices[i + 0] = v0;
-                    indices[i + 1] = v1 + 1;
-                    indices[i + 2] = v0 + 1;
-                    indices[i + 3] = v0;
-                    indices[i + 4] = v1;
-                    indices[i + 5] = v1 + 1;
+                    var v0 = (uint)(x + (y + 0) * (xcount + 1));
+                    var v1 = (uint)(x + (y + 1) * (xcount + 1));
+                    indices[i + 0] = (ushort)(v0);
+                    indices[i + 1] = (ushort)(v1 + 1);
+                    indices[i + 2] = (ushort)(v0 + 1);
+                    indices[i + 3] = (ushort)(v0);
+                    indices[i + 4] = (ushort)(v1);
+                    indices[i + 5] = (ushort)(v1 + 1);
                 }
             }
             tileMesh.MarkChanged();

@@ -8,6 +8,8 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Profiling;
+using Weesals.Engine.Serialization;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
@@ -159,6 +161,8 @@ namespace Weesals.Engine {
         }
     }
     public class Material {
+        private static ProfilerMarker ProfileMarker_Serialize = new("Material.Serialize");
+
         public struct StateData : IEquatable<StateData> {
             public enum Flags : byte {
                 RenderPass = 0x01, Blend = 0x02, Raster = 0x04, Depth = 0x08,
@@ -442,6 +446,106 @@ namespace Weesals.Engine {
         public void SetStencilRef(int systemId) {
             RealtimeData.StencilRef = (byte)systemId;
             RealtimeData.Valid |= RealtimeStateData.Flags.StencilRef;
+        }
+
+        public void Serialize(TSONNode sMaterial) {
+            using var marker = ProfileMarker_Serialize.Auto();
+            using (var sInherit = sMaterial.CreateChild("Inherit")) {
+                int count = InheritParameters?.Count ?? 0;
+                sInherit.Serialize(ref count);
+                if (count > 0) {
+                    InheritParameters ??= new();
+                    if (sInherit.IsReading) InheritParameters.Clear();
+                    for (int i = 0; i < count; i++) {
+                        var child = sInherit.IsWriting ? InheritParameters[i] : new();
+                        using (var sChild = sMaterial.CreateChild("Child")) {
+                            child.Serialize(sChild);
+                        }
+                        if (sInherit.IsReading) InheritParameters.Add(child);
+                    }
+                }
+            }
+            Span<byte> tmpData = stackalloc byte[4096];
+            ref var parameters = ref GetParametersRaw();
+            if (sMaterial.IsWriting) {
+                var items = parameters.GetItemsRaw();
+                for (int i = 0; i < items.Length; i++) {
+                    var item = items[i];
+                    var typeName =
+                        item.Type == typeof(float) ? "F1"u8 :
+                        item.Type == typeof(Vector2) ? "F2"u8 :
+                        item.Type == typeof(Vector3) ? "F3"u8 :
+                        item.Type == typeof(Vector4) ? "F4"u8 :
+                        item.Type == typeof(int) ? "I1"u8 :
+                        item.Type == typeof(Int2) ? "I2"u8 :
+                        item.Type == typeof(Int3) ? "I3"u8 :
+                        item.Type == typeof(Int4) ? "I4"u8 :
+                        item.Type == typeof(Matrix4x4) ? "M4"u8 :
+                        item.Type == typeof(CSBufferReference) ? "BR"u8 :
+                        null;
+                    if (typeName == null) continue;
+                    scoped var data = parameters.GetItemData(item);
+                    if (item.Type == typeof(CSBufferReference)) {
+                        var bufferReference = MemoryMarshal.Read<CSBufferReference>(data);
+                        if (bufferReference.mType == CSBufferReference.BufferTypes.Texture) {
+                            var path = Resources.FindAssetPath(bufferReference.AsTexture());
+                            if (string.IsNullOrEmpty(path)) continue;
+                            int len = Encoding.UTF8.GetBytes(path, tmpData);
+                            data = tmpData.Slice(0, len);
+                            typeName = "Te"u8;
+                        } else {
+                            // Ignore item
+                            continue;
+                        }
+                    }
+                    using (var sItem = sMaterial.CreateChild(item.Identifier.ToString())) {
+                        using (var sBin = sItem.CreateRawBinary()) {
+                            sBin.Require(typeName);
+                        }
+                        using (var sBin = sItem.CreateRawBinary()) {
+                            sBin.Serialize(ref data);
+                        }
+                    }
+                }
+            } else {
+                Span<byte> typeName = stackalloc byte[2];
+                while (true) {
+                    using (var sItem = sMaterial.CreateChild(null)) {
+                        if (!sItem.IsValid) break;
+                        var identifier = new CSIdentifier(sItem.Name);
+                        using (var sBin = sItem.CreateRawBinary()) {
+                            sBin.Serialize(typeName);
+                        }
+                        using (var sBin = sItem.CreateRawBinary()) {
+                            var itemData = tmpData;
+                            sBin.Serialize(ref itemData);
+                            if (typeName.SequenceEqual("F1"u8)) {
+                                parameters.SetValue<float>(identifier, MemoryMarshal.Cast<byte, float>(itemData));
+                            } else if (typeName.SequenceEqual("F2"u8)) {
+                                parameters.SetValue<Vector2>(identifier, MemoryMarshal.Cast<byte, Vector2>(itemData));
+                            } else if (typeName.SequenceEqual("F3"u8)) {
+                                parameters.SetValue<Vector3>(identifier, MemoryMarshal.Cast<byte, Vector3>(itemData));
+                            } else if (typeName.SequenceEqual("F4"u8)) {
+                                parameters.SetValue<Vector4>(identifier, MemoryMarshal.Cast<byte, Vector4>(itemData));
+                            } else if (typeName.SequenceEqual("I1"u8)) {
+                                parameters.SetValue<int>(identifier, MemoryMarshal.Cast<byte, int>(itemData));
+                            } else if (typeName.SequenceEqual("I2"u8)) {
+                                parameters.SetValue<Int2>(identifier, MemoryMarshal.Cast<byte, Int2>(itemData));
+                            } else if (typeName.SequenceEqual("I3"u8)) {
+                                parameters.SetValue<Int3>(identifier, MemoryMarshal.Cast<byte, Int3>(itemData));
+                            } else if (typeName.SequenceEqual("I4"u8)) {
+                                parameters.SetValue<Int4>(identifier, MemoryMarshal.Cast<byte, Int4>(itemData));
+                            } else if (typeName.SequenceEqual("M4"u8)) {
+                                parameters.SetValue<Matrix4x4>(identifier, MemoryMarshal.Cast<byte, Matrix4x4>(itemData));
+                            } else if (typeName.SequenceEqual("Te"u8)) {
+                                var path = Encoding.UTF8.GetString(itemData);
+                                var tex = Resources.LoadTexture(path);
+                                SetTexture(identifier, tex);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         public static NullMaterial NullInstance = new();

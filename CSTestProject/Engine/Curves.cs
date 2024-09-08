@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine.Importers;
+using Weesals.Engine.Serialization;
 
 namespace Weesals.Engine {
     public enum CurveInterpolation { Step, Linear, Bezier, }
@@ -22,7 +24,7 @@ namespace Weesals.Engine {
         }
         public override string ToString() { return $"{Time} = {Value}"; }
     }
-    public class CurveBase<T> where T : struct, IEquatable<T> {
+    public class CurveBase<T> where T : unmanaged, IEquatable<T> {
         protected Keyframe<T>[] keyframes = Array.Empty<Keyframe<T>>();
         public Keyframe<T>[] Keyframes => keyframes;
         public float Duration => keyframes.Length > 0 ? keyframes[^1].Time : 0f;
@@ -92,6 +94,14 @@ namespace Weesals.Engine {
                 if (!require) ++offset;
             }
             if (offset != 0) Array.Resize(ref keyframes, Math.Max(keyframes.Length - offset, 1));
+        }
+        public void Serialize<S>(S serializer) where S : IBinarySerializer {
+            int keyframeCount = keyframes?.Length ?? 0;
+            serializer.Serialize(ref keyframeCount);
+            if (keyframeCount != (keyframes?.Length ?? 0)) {
+                keyframes = new Keyframe<T>[keyframeCount];
+            }
+            serializer.Serialize(MemoryMarshal.Cast<Keyframe<T>, byte>(keyframes.AsSpan()));
         }
     }
     public class FloatCurve : CurveBase<float> {

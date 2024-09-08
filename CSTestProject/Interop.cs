@@ -165,6 +165,10 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIdentifier@CSIdentifier@@SAGUCSString@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("uint16_t")]
         public static extern ushort GetIdentifier(CSString str);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIdentifier@CSIdentifier@@SAGUCSString8@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("uint16_t")]
+        public static extern ushort GetIdentifier(CSString8 str);
     }
 
     public unsafe partial struct CSBufferElement
@@ -749,6 +753,9 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyBufferData@CSGraphics@@CAXPEAVNativeGraphics@@PEBUCSBufferLayout@@1HHH@Z", ExactSpelling = true)]
         private static extern void CopyBufferData(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* source, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* dest, int sourceOffset, int destOffset, int length);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CommitTexture@CSGraphics@@CAXPEAVNativeGraphics@@PEBVTexture@@@Z", ExactSpelling = true)]
+        private static extern void CommitTexture(NativeGraphics* graphics, [NativeTypeName("const NativeTexture *")] NativeTexture* texture);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Draw@CSGraphics@@CAXPEAVNativeGraphics@@VCSPipeline@@UCSSpan@@2UCSDrawConfig@@H@Z", ExactSpelling = true)]
         private static extern void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
 
@@ -863,6 +870,9 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetSize@CSWindow@@CAXPEAVWindowBase@@UInt2@@@Z", ExactSpelling = true)]
         private static extern void SetSize([NativeTypeName("NativeWindow *")] WindowBase* window, [NativeTypeName("Int2")] Weesals.Engine.Int2 size);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetVisible@CSWindow@@CAXPEAVWindowBase@@_N@Z", ExactSpelling = true)]
+        private static extern void SetVisible([NativeTypeName("NativeWindow *")] WindowBase* window, [NativeTypeName("bool")] byte visible);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetInput@CSWindow@@CAXPEAVWindowBase@@PEAVInput@@@Z", ExactSpelling = true)]
         private static extern void SetInput([NativeTypeName("NativeWindow *")] WindowBase* window, NativeInput* input);
 
@@ -968,6 +978,9 @@ namespace Weesals.Engine
         {
             mPlatform = platform;
         }
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?InitializeGraphics@Platform@@SAXPEAVNativePlatform@@@Z", ExactSpelling = true)]
+        public static extern void InitializeGraphics(NativePlatform* platform);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateWindow@Platform@@SAPEAVWindowBase@@PEAVNativePlatform@@UCSString@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("NativeWindow *")]

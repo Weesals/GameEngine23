@@ -631,9 +631,9 @@ namespace Weesals.Engine.Importers {
                 meshJobs = JobHandle.Schedule(() => {
                     using var marker = new ProfilerMarker("Push Mesh").Auto(color).WithText(name);
                     foreach (var mesh in outMeshes) model.AppendMesh(mesh);
-                    JobHandle.MarkDeferredComplete(deferred);
                 }, meshJobs);
                 handle = JobHandle.CombineDependencies(handle, meshJobs);
+                JobHandle.ConvertDeferred(deferred, handle);
             }
             return handle;
         }

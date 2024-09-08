@@ -137,6 +137,7 @@ namespace Weesals.Engine {
     }
     public static class Input {
 
+        [ThreadStatic]
         private static CSInput primaryInput;
 
         public static bool IsInitialized => primaryInput.IsValid;
@@ -169,18 +170,18 @@ namespace Weesals.Engine {
 
         // Is the key currently pressed
         public static bool GetKeyDown(KeyCode key) {
-            return primaryInput.GetKeyDown((char)key);
+            return primaryInput.GetKeyDown(key);
         }
         public static float GetSignedAxis(KeyCode negative, KeyCode positive) {
             return (GetKeyDown(negative) ? -1f : 0f) + (GetKeyDown(positive) ? 1f : 0f);
         }
         // Was the key pressed this frame
         public static bool GetKeyPressed(KeyCode key) {
-            return primaryInput.GetKeyPressed((char)key);
+            return primaryInput.GetKeyPressed(key);
         }
         // Was the key released this frame
         public static bool GetKeyReleased(KeyCode key) {
-            return primaryInput.GetKeyReleased((char)key);
+            return primaryInput.GetKeyReleased(key);
         }
 
     }

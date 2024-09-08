@@ -12,11 +12,11 @@ namespace Weesals.Engine.Jobs {
     public readonly struct JobHandle : IEquatable<JobHandle>, IComparable<JobHandle> {
 
         // This value only exists to stop packed ever being 0
-        const int SentinelFlag = 0x10000;
+        const uint SentinelFlag = 0x10000;
 
-        private readonly int packed;
+        internal readonly uint packed;
 
-        public readonly int Id => packed & 0x7fff;
+        public readonly int Id => (int)(packed & 0x7fff);
         public readonly byte Version => (byte)(packed >> 24);
         public readonly bool IsValid => packed != 0;
         public readonly bool IsComplete => JobDependencies.Instance.GetIsComplete(this);
@@ -24,9 +24,12 @@ namespace Weesals.Engine.Jobs {
         // Currently unused
         public readonly byte Flags => (byte)(packed >> 16);
 
-        public JobHandle(int id, byte version) { packed = (id | SentinelFlag) | (version << 24); }
+        internal JobHandle(uint _packed) { packed = _packed; }
+        public JobHandle(int id, byte version) { packed = ((uint)id | SentinelFlag) | ((uint)version << 24); }
         public override string ToString() { return $"<{Id} V={Version}>"; }
-        public override int GetHashCode() { return packed; }
+        public override int GetHashCode() { return (int)packed; }
+        public static bool operator ==(JobHandle h1, JobHandle h2) => h1.packed == h2.packed;
+        public static bool operator !=(JobHandle h1, JobHandle h2) => h1.packed != h2.packed;
         public bool Equals(JobHandle other) { return packed == other.packed; }
         public int CompareTo(JobHandle other) { return packed.CompareTo(other.packed); }
 
@@ -43,6 +46,10 @@ namespace Weesals.Engine.Jobs {
         public static void MarkDeferredComplete(JobHandle handle) {
             deferCmplt++;
             JobDependencies.Instance.MarkComplete(handle);
+        }
+        public static void ConvertDeferred(JobHandle deferred, JobHandle dependency) {
+            var dependencies = JobDependencies.Instance;
+            dependencies.ConvertDeferred(deferred, dependency);
         }
         // A handle that is already complete
         public static JobHandle CreateDummy() {
@@ -90,14 +97,20 @@ namespace Weesals.Engine.Jobs {
             return dependencies.EndJoined(ref joined);
         }
 
-        public static JobHandle Schedule(Action value, JobHandle dependency = default) {
-            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(value), dependency);
+        public static JobHandle Schedule(Action callback, JobHandle dependency = default) {
+            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback), dependency);
         }
-        public static JobHandle Schedule(Action<object?> value, object context, JobHandle dependency = default) {
-            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(value, context), dependency);
+        public static JobHandle Schedule(Action<object?> callback, object context, JobHandle dependency = default) {
+            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback, context), dependency);
         }
-        public static JobHandle Schedule(Action<object?, object?> value, object context1, object context2, JobHandle dependency = default) {
-            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(value, context1, context2), dependency);
+        public static JobHandle Schedule(Action<object?, object?> callback, object context1, object context2, JobHandle dependency = default) {
+            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback, context1, context2), dependency);
+        }
+        public static JobHandle Schedule(Action<uint> callback, uint data, JobHandle dependency = default) {
+            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback, data), dependency);
+        }
+        public static JobHandle Schedule(Action<ulong> callback, ulong data, JobHandle dependency = default) {
+            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback, data), dependency);
         }
 
         public static JobHandle ScheduleBatch(Action<RangeInt> value, int count, JobHandle dependency = default) {
@@ -137,6 +150,12 @@ namespace Weesals.Engine.Jobs {
         public readonly JobHandle Then(Action<object?> action, object context) {
             return JobHandle.Schedule(action, context, this);
         }
+        public readonly JobHandle Then(Action<uint> action, uint data) {
+            return JobHandle.Schedule(action, data, this);
+        }
+        public readonly JobHandle Then(Action<ulong> action, ulong data) {
+            return JobHandle.Schedule(action, data, this);
+        }
 
         public static readonly JobHandle None = new();
         internal static readonly JobHandle Invalid = new(-1, 0);
@@ -153,22 +172,64 @@ namespace Weesals.Engine.Jobs {
         public Awaiter GetAwaiter() { return new(this); }
     }
 
-    public struct JobResult<TResult> {
+    public struct JobResult<TResult> : IDisposable {
+        public class Sentinel {
+            public StackTrace? Stack;
+            ~Sentinel() {
+                if (Stack != null) {
+                    throw new Exception("Complete/Dispose not called for Job at " + Stack);
+                }
+            }
+        }
         public readonly JobHandle Handle;
+#if DEBUG
+        private Sentinel sentinel;
+#endif
+        private JobHandle thenHandles;
         public bool IsComplete => JobDependencies.Instance.GetIsComplete(Handle);
         public JobResult(JobHandle handle) {
             Handle = handle;
+#if DEBUG
+            sentinel = new() { Stack = new(true) };
+#endif
+        }
+        private void Destroy() {
+#if DEBUG
+            sentinel.Stack = null;
+#endif
+            thenHandles = Handle;
+        }
+        public void Dispose() {
+            if (thenHandles == Handle) return;  // Already complete
+            if (!thenHandles.IsValid) thenHandles = Handle;
+            thenHandles.Then(static (handle) => {
+                JobScheduler.Instance.ConsumeResult<TResult>(new JobHandle(handle));
+            }, Handle.packed);
+            Destroy();
         }
         public JobHandle Then(Action<TResult> callback) {
-            var handle = Handle;
-            return JobHandle.Schedule((callback) => {
-                var result = JobScheduler.Instance.ConsumeResult<TResult>(handle);
-                ((Action<TResult>)callback)(result);
-            }, callback, Handle);
+            var task = JobScheduler.Instance.CreateTask(
+                static (obj, callback) => ((Action<TResult>)callback)((TResult)obj),
+                null, callback);
+            var copyHandle = Handle.Then(static (packed) => {
+                JobScheduler.Instance.CopyResult(new JobHandle((uint)(packed >> 32)), (ushort)packed);
+            }, ((ulong)Handle.packed << 32) | task);
+            thenHandles = JobHandle.CombineDependencies(thenHandles, copyHandle);
+            return JobDependencies.Instance.CreateHandle(task, copyHandle);
         }
         public TResult Complete() {
+            Debug.Assert(thenHandles != Handle,
+                "Cannot Complete after Dispose()");
             Handle.Complete();
-            return JobScheduler.Instance.ConsumeResult<TResult>(Handle);
+            TResult result;
+            if (thenHandles.IsValid) {
+                result = JobScheduler.Instance.GetResult<TResult>(Handle);
+                Dispose();
+            } else {
+                result = JobScheduler.Instance.ConsumeResult<TResult>(Handle);
+                Destroy();
+            }
+            return result;
         }
         public JobHandle Join(JobHandle other) { return Handle.Join(other); }
 
@@ -180,6 +241,9 @@ namespace Weesals.Engine.Jobs {
             var handle = JobHandle.CreateDummy();
             JobScheduler.Instance.SetResult(handle, result);
             return new(handle);
+        }
+        public static implicit operator JobHandle(JobResult<TResult> result) {
+            return result.Handle;
         }
 
         public struct Awaiter : INotifyCompletion {

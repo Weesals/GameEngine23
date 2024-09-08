@@ -2,7 +2,11 @@
 using Weesals.CPS;
 
 namespace Weesals.CPSTest {
-    public class Program {
+    public class CPSProgram {
+
+        public async Task TestAsync() {
+            return;
+        }
 
         public class APIGetTeam : API, IInstructionCompiler, IInstructionInvoke {
             public CompileResult Compile(ref Parser code, ref CompileContext context) {
@@ -67,6 +71,8 @@ namespace Weesals.CPSTest {
             var los = runtime2.GetEvaluationVariable(evalStackId, "LOSRange");
             if (los.TryGetAsFloat(runtime2.GetDataStorage(), out var value)) {
                 Console.WriteLine($"Found LOS {value}");
+            } else {
+                Console.WriteLine($"Failed to find LOS! {los}");
             }
 
             /*var runtime = new Runtime(script);

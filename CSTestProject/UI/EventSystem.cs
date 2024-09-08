@@ -580,9 +580,9 @@ namespace Weesals.UI {
 
             if (input.IsValid) {
                 var modifiers = Modifiers.None;
-                if (input.GetKeyDown((char)KeyCode.LeftShift) || input.GetKeyDown((char)KeyCode.RightShift)) modifiers |= Modifiers.Shift;
-                if (input.GetKeyDown((char)KeyCode.LeftControl) || input.GetKeyDown((char)KeyCode.RightControl)) modifiers |= Modifiers.Control;
-                if (input.GetKeyDown((char)KeyCode.LeftAlt) || input.GetKeyDown((char)KeyCode.RightAlt)) modifiers |= Modifiers.Alt;
+                if (input.GetKeyDown(KeyCode.LeftShift) || input.GetKeyDown(KeyCode.RightShift)) modifiers |= Modifiers.Shift;
+                if (input.GetKeyDown(KeyCode.LeftControl) || input.GetKeyDown(KeyCode.RightControl)) modifiers |= Modifiers.Control;
+                if (input.GetKeyDown(KeyCode.LeftAlt) || input.GetKeyDown(KeyCode.RightAlt)) modifiers |= Modifiers.Alt;
 
                 var inputPointers = input.GetPointers();
                 using var pointers = new PooledList<CSPointer>(inputPointers.Length);

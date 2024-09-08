@@ -251,6 +251,7 @@ public:
     void RequireBarrierHandle(D3DTexture* d3dTex);
     void UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, D3DCommandContext& cmdList);
     Texture* RequireDefaultTexture();
+    D3DTexture* RequireTexture(const Texture* tex, D3DCommandContext& cmdList);
     D3DTexture* RequireCurrentTexture(const Texture* tex, D3DCommandContext& cmdList);
 
     void RequireState(D3DCommandContext& cmdList, D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);

@@ -276,19 +276,23 @@ namespace Weesals.Engine {
                 Marshal.FreeHGlobal((nint)BufferLayout.mElements);
             BufferLayout.mElements = null;
         }
-        public int AppendElement(CSBufferElement element, bool allocateData = true) {
-            if (ElementCount + 1 >= mElementAllocCount) {
+        public void SetElementCount(int count) {
+            if (count >= mElementAllocCount) {
                 mElementAllocCount += 4;
                 BufferLayout.mElements = (CSBufferElement*)Marshal.ReAllocHGlobal((nint)BufferLayout.mElements, sizeof(CSBufferElement) * mElementAllocCount);
             }
+            BufferLayout.mElementCount = (byte)count;
+        }
+        public int AppendElement(CSBufferElement element, bool allocateData = true) {
+            var elementId = BufferLayout.mElementCount;
+            SetElementCount(ElementCount + 1);
             if (allocateData && mBufferAllocCount > 0) {
                 element.mData = Marshal.ReAllocHGlobal((nint)element.mData, element.mBufferStride * mBufferAllocCount).ToPointer();
             }
-            BufferLayout.mElements[ElementCount] = element;
-            ++BufferLayout.mElementCount;
+            BufferLayout.mElements[elementId] = element;
             mBufferStride += element.mBufferStride;// BufferFormatType.GetMeta(element.mFormat).GetByteSize();
             CalculateImplicitSize();
-            return ElementCount - 1;
+            return elementId;
         }
         public int FindElement(CSIdentifier bindName) {
             for (int e = 0; e < Elements.Length; ++e) {

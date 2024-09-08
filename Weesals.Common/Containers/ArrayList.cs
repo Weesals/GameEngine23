@@ -1,14 +1,7 @@
 ﻿using System;
 using System.Buffers;
-using System.Collections;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
-using Weesals.Engine;
 
 namespace Weesals {
     public class ArrayList<T> {

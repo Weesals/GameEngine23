@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
+using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Weesals.Geometry;
 using Weesals.Utility;
@@ -212,6 +213,7 @@ namespace Weesals.Engine {
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
             var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, new Span<Material>(ref material));
             var resources = MaterialEvaluator.ResolveResources(graphics, pso, new Span<Material>(ref material));
+            graphics.CommitResources(pso, resources);
             graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
         }
         public override string ToString() { return Name; }
@@ -219,6 +221,7 @@ namespace Weesals.Engine {
     public class ScenePass : RenderPass {
         private static ProfilerMarker ProfileMarker_Prepare = new("Prepare");
         private static ProfilerMarker ProfileMarker_Render = new("Render");
+        private static ProfilerMarker ProfileMarker_CopyQueue = new("CopyQueue");
 
         public readonly RenderQueue RenderQueue;
         public readonly RetainedRenderer RetainedRenderer;
@@ -280,6 +283,20 @@ namespace Weesals.Engine {
         public virtual void RenderScene(CSGraphics graphics, ref Context context) {
             if (Enabled) {
                 RetainedRenderer.SubmitToRenderQueue(graphics, RenderQueue, Frustum);
+                if (RenderQueue.UsedTextures.Count > 0) {
+                    var usedTextures = RenderQueue.UsedTextures;
+                    RenderQueue.UsedTextures = new();
+                    var copyQueue = Core.ActiveInstance.CreateGraphics();
+                    JobHandle.Schedule(() => {
+                        using var marker = ProfileMarker_CopyQueue.Auto();
+                        copyQueue.Reset();
+                        foreach (var tex in usedTextures) {
+                            copyQueue.CommitTexture(tex);
+                        }
+                        copyQueue.Execute();
+                        copyQueue.Dispose();
+                    });
+                }
                 Scene.SubmitToGPU(graphics);
                 RenderQueue.Render(graphics);
             }

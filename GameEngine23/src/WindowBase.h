@@ -22,6 +22,8 @@ public:
 	virtual Int2 GetClientSize() const = 0;
 	virtual void SetClientSize(Int2 size) = 0;
 
+	virtual void SetVisible(bool visible) = 0;
+
 	virtual void SetInput(const std::shared_ptr<Input>& input) { }
 
 	// Evaluate window messages and return non-zero if the window is closed

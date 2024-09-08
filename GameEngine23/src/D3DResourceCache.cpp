@@ -142,6 +142,7 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
         CD3DX12_STATIC_SAMPLER_DESC(4, D3D12_FILTER_MINIMUM_MIN_MAG_LINEAR_MIP_POINT),
         CD3DX12_STATIC_SAMPLER_DESC(5, D3D12_FILTER_MAXIMUM_MIN_MAG_LINEAR_MIP_POINT),
         CD3DX12_STATIC_SAMPLER_DESC(6, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
+        CD3DX12_STATIC_SAMPLER_DESC(7, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
     };
 
     {
@@ -261,7 +262,9 @@ bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3
 }
 // Retrieve a buffer capable of upload/copy that will be vaild until
 // the frame completes rendering
+std::mutex uploadMutex;
 ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(size_t size, LockMask lockBits) {
+    std::scoped_lock lock(uploadMutex);
     size = (size + BufferAlignment) & (~BufferAlignment);
     auto& resultItem = mUploadBufferCache.RequireItem(size, lockBits,
         [&](auto& item) { // Allocate a new item
@@ -606,6 +609,7 @@ void D3DResourceCache::RequireBarrierHandle(D3DTexture* d3dTex) {
     }
 }
 void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex, D3DCommandContext& cmdList) {
+    auto updateTextureZone = SimpleProfilerMarker("Update Texture");
     auto device = mD3D12.GetD3DDevice();
     auto size = tex.GetSize();
 
@@ -715,6 +719,7 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
     );
 
     d3dTex->mRevision = tex.GetRevision();
+    SimpleProfilerMarkerEnd(updateTextureZone);
 }
 Texture* D3DResourceCache::RequireDefaultTexture() {
     if (mDefaultTexture == nullptr) {
@@ -729,8 +734,11 @@ Texture* D3DResourceCache::RequireDefaultTexture() {
     }
     return mDefaultTexture.get();;
 }
+D3DResourceCache::D3DTexture* D3DResourceCache::RequireTexture(const Texture* texture, D3DCommandContext& cmdList) {
+    return textureMapping.GetOrCreate(texture);
+}
 D3DResourceCache::D3DTexture* D3DResourceCache::RequireCurrentTexture(const Texture* texture, D3DCommandContext& cmdList) {
-    auto d3dTex = textureMapping.GetOrCreate(texture);
+    auto d3dTex = RequireTexture(texture, cmdList);
     if (d3dTex->mRevision != texture->GetRevision())
         UpdateTextureData(d3dTex, *texture, cmdList);
     return d3dTex;
@@ -1246,12 +1254,14 @@ D3DGraphicsSurface::D3DGraphicsSurface(D3DGraphicsDevice& device, D3DResourceCac
     swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.SampleDesc = DefaultSampleDesc();
 
+    auto* swapChainMarker = SimpleProfilerMarker("Create SwapChain");
     ComPtr<IDXGISwapChain1> swapChain;
     auto* d3dFactory = device.GetFactory();
     auto* cmdQueue = device.GetCmdQueue();
     ThrowIfFailed(d3dFactory->CreateSwapChainForHwnd(cmdQueue, hWnd, &swapChainDesc, nullptr, nullptr, &swapChain));
     ThrowIfFailed(swapChain.As(&mSwapChain));
     mSwapChain->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+    SimpleProfilerMarkerEnd(swapChainMarker);
 
     // Create fence for frame synchronisation
     mBackBufferIndex = mSwapChain->GetCurrentBackBufferIndex();
@@ -1283,6 +1293,7 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
         ResizeSwapBuffers();
         mBackBufferIndex = mSwapChain->GetCurrentBackBufferIndex();
     }
+    auto* frameBufferMarker = SimpleProfilerMarker("Get Frame Buffers");
     // Create a RTV for each frame.
     for (UINT n = 0; n < FrameCount; n++) {
         auto& frameBuffer = mFrameBuffers[n];
@@ -1298,6 +1309,7 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
             frameBuffer.mBuffer->SetName(name);
         }
     }
+    SimpleProfilerMarkerEnd(frameBufferMarker);
 }
 void D3DGraphicsSurface::ResizeSwapBuffers() {
     //mSwapChain->Present(1, DXGI_PRESENT_RESTART);

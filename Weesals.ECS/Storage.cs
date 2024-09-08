@@ -327,6 +327,7 @@ namespace Weesals.ECS {
         public readonly SparsePages<SparseColumnStorage.Page> SparseStorage;
         public readonly RevisionStorage RevisionStorage;
         public readonly ECSSparseArray<ArchetypeColumn> ArchetypeColumns;
+        public int ColumnRevision;
         private ColumnData[] columns;
         private SparseColumnStorage[] sparseColumns = Array.Empty<SparseColumnStorage>();
         public struct ColumnRange {

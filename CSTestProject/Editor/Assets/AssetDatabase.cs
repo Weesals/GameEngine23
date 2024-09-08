@@ -118,6 +118,7 @@ namespace Weesals.Editor.Assets {
         }
     }
     public class TextureImporter : IAssetImporter<CSTexture> {
+        private static ProfilerMarker ProfileMarker_Serialize = new("Texture Load");
         unsafe public CSTexture LoadAsset(ResourceKey key) {
             return LoadAsset(key, BufferFormat.FORMAT_BC1_UNORM);
         }
@@ -134,7 +135,7 @@ namespace Weesals.Editor.Assets {
                     return texture;
                 }
             }
-            using var marker = new ProfilerMarker("Texture Load").Auto();
+            using var marker = ProfileMarker_Serialize.Auto();
             texture = CSResources.LoadTexture(path);
             if (texture.IsValid) {
                 if (texture.Format != format) {
@@ -205,7 +206,7 @@ namespace Weesals.Editor.Assets {
         unsafe public CompiledShader LoadAsset(ResourceKey key, CSGraphics graphics, Shader shader,
             string profile, CSIdentifier renderPass, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros
         ) {
-            using var marker = new ProfilerMarker("Compile Shader").Auto();
+            using var marker = new ProfilerMarker("Load Shader").Auto();
             CompiledShader compiledshader = default;
             using (var entry = ResourceCacheManager.TryLoad(key)) {
                 if (entry.IsValid) {
@@ -265,6 +266,7 @@ namespace Weesals.Editor.Assets {
                 }
             }
             if (compiledshader == null) {
+                using var compilemarker = new ProfilerMarker("Compile Shader").Auto();
                 compiledshader = new();
                 var entryFn = renderPass.IsValid ? renderPass.GetName() + "_" + shader.Entry : shader.Entry;
                 Debug.WriteLine($"Compiling Shader {shader} : {entryFn}");

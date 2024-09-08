@@ -5,17 +5,19 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals;
 using Weesals.ECS;
 using Weesals.Editor;
 using Weesals.Engine;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
+using Weesals.Impostors;
 using Weesals.Landscape;
 using Weesals.UI;
 using Weesals.Utility;
 
 namespace Game5.Game {
-    public class GameRoot {
+    public class GameRoot : IGameRoot {
 
         private static ProfilerMarker ProfileMarker_Update = new("Update");
         private static ProfilerMarker ProfileMarker_PreRender = new("PreRender");
@@ -31,6 +33,10 @@ namespace Game5.Game {
         public RectI GameViewport { get; private set; }
         public int RenderRevision;
         public int RenderHash => Canvas.Revision + RenderRevision + ScenePasses.GetRenderHash() + Handles.RenderHash;
+
+        int IGameRoot.RenderHash => RenderHash;
+        Camera IGameRoot.Camera => Play.Camera;
+        ScenePassManager IGameRoot.Scene => scenePasses;
 
         public ObservableCollection<object> Editables = new();
 
@@ -58,6 +64,9 @@ namespace Game5.Game {
 
         public Play Play;
 
+        private ParticleDebugWindow? previewWindow;
+        private ProfilerWindow? profilerWindow;
+
         public GameRoot() {
             using (new ProfilerMarker("Create Scene").Auto()) {
                 Scene = new();
@@ -66,11 +75,11 @@ namespace Game5.Game {
                 EventSystem = new(Canvas);
             }
         }
-        public JobHandle Initialise() {
+        public JobHandle Initialise(JobHandle dependency) {
             var playJob = JobResult<Play>.Schedule(() => {
                 using var marker = new ProfilerMarker("Create Play").Auto();
                 return new Play(this);
-            });
+            }, dependency);
             var passesJob = JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Create Passes").Auto();
                 ScenePassManager passes;
@@ -79,7 +88,7 @@ namespace Game5.Game {
                 }
                 SetupPasses(passes);
                 scenePasses = passes;
-            });
+            }, dependency);
             return passesJob.Join(playJob.Handle).Then(() => {
                 using var marker = new ProfilerMarker("Play Init").Auto();
                 Play = playJob.Complete();
@@ -188,6 +197,68 @@ namespace Game5.Game {
             Play.Update(dt);
             PreRender();
 
+            if (Input.GetKeyPressed(KeyCode.F4) && profilerWindow == null) {
+                profilerWindow = new();
+                var window = Core.ActiveInstance.CreateWindow("Profiler");
+                window.SetVisible(true);
+                profilerWindow?.RegisterRootWindow(window);
+                ApplicationWindow.ActiveWindows.Add(profilerWindow);
+            }
+            if (Input.GetKeyPressed(KeyCode.F3) && previewWindow == null) {
+                previewWindow = new(Play.ParticleManager);
+                var window = Core.ActiveInstance.CreateWindow("Particles");
+                window.SetVisible(true);
+                previewWindow?.RegisterRootWindow(window);
+                ApplicationWindow.ActiveWindows.Add(previewWindow);
+            }
+
+            if (Input.GetKeyPressed(KeyCode.F6)) {
+                ImpostorGenerator impostorGenerator = null;
+                if (impostorGenerator == null) {
+                    impostorGenerator = new ImpostorGenerator();
+                    var impostorGraphics = Core.ActiveInstance.CreateGraphics();
+                    impostorGraphics.Reset();
+
+                    JobHandle.Schedule(async () => {
+                        var hull = Resources.LoadModel("./Assets/B_Granary1_Hull.fbx", new() { }).Meshes[0];
+                        var hull2 = Resources.LoadModel("./Assets/B_House_Hull.fbx", new() { }).Meshes[0];
+
+                        using var meshes = new PooledList<(Mesh, Mesh)>(16);
+                        using var tasks = new PooledList<Task<Material>>(16);
+                        meshes.Add((Resources.LoadModel("./Assets/B_Granary1.fbx").Meshes[0], hull2));
+                        meshes.Add((Resources.LoadModel("./Assets/B_Granary2.fbx").Meshes[0], hull2));
+                        meshes.Add((Resources.LoadModel("./Assets/B_Granary3.fbx").Meshes[0], hull2));
+                        meshes.Add((Resources.LoadModel("./Assets/SM_House.fbx").Meshes[0], hull2));
+                        meshes.Add((Resources.LoadModel("./Assets/B_House2.fbx").Meshes[0], hull2));
+                        meshes.Add((Resources.LoadModel("./Assets/B_House3.fbx").Meshes[0], hull2));
+                        for (int i = 0; i < meshes.Count; i++) {
+                            tasks.Add(impostorGenerator.CreateImpostor(impostorGraphics, meshes[i].Item1));
+                        }
+                        await JobHandle.RunOnMain((_) => {
+                            impostorGraphics.Execute();
+                        });
+                        for (int i = 0; i < tasks.Count; i++) {
+                            var mesh = meshes[i];
+                            var material = await tasks[i];
+                            await JobHandle.RunOnMain((_) => {
+                                Play.ScenePasses.SetMeshLOD(mesh.Item1, mesh.Item2, material);
+                            });
+                        }
+                        _ = JobHandle.RunOnMain((_) => {
+                            impostorGraphics.Dispose();
+                        });
+
+                        //play.ScenePasses.AddInstance(meshInstance, hull, material, RenderTags.Default);
+                        /*var img = new Image();
+                        img.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0.5f, 0f, 1f, 1.0f));
+                        img.AspectMode = Image.AspectModes.PreserveAspectContain;
+                        img.Texture = impostorGenerator.AlbedoTarget;
+                        img.HitTestEnabled = false;
+                        root.Canvas.AppendChild(img);*/
+                    });
+                }
+            }
+
             Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
         }
 
@@ -219,7 +290,7 @@ namespace Game5.Game {
 
             Canvas.RequireComposed();
         }
-        public void Render(CSGraphics graphics, float dt) {
+        public void Render(float dt, CSGraphics graphics) {
             scenePasses.CommitMotion();
             using var updateMarker = ProfileMarker_Render.Auto();
             // This requires graphics calls, do it first
@@ -295,9 +366,13 @@ namespace Game5.Game {
         }
 
         public void AttachToEditor(EditorWindow editorWindow) {
-            editorWindow.GameView.EventSystem = this.EventSystem;
-            editorWindow.GameView.Camera = this.Play.Camera;
-            editorWindow.GameView.Scene = this.ScenePasses;
+            editorWindow.OnUpdate += Update;
+            editorWindow.OnRender += Render;
+
+            editorWindow.GameView.GameRoot = this;
+            editorWindow.GameView.EventSystem = EventSystem;
+
+            editorWindow.GameView.OnViewportChanged += SetViewport;
             editorWindow.GameView.OnReceiveDrag += (events, item) => {
                 var name = Path.GetFileNameWithoutExtension(item.FilePath);
                 var mpos = Canvas.GetComputedLayout().InverseTransformPosition2DN(events.CurrentPosition);
@@ -330,29 +405,29 @@ namespace Game5.Game {
                     Play.World.AddComponent<CModel>(entity, new() { Model = Resources.LoadModel(item.FilePath), });
                 }
             };
-            editorWindow.Hierarchy.World = this.Play.World;
+            editorWindow.Hierarchy.World = Play.World;
             // When selecting an entity's UI, select it in Play
             editorWindow.Hierarchy.OnEntitySelected += (entity, selected) => {
-                var item = this.Play.Simulation.EntityProxy.MakeHandle(entity);
-                if (selected) this.Play.SelectionManager.AppendSelected(item);
-                else this.Play.SelectionManager.RemoveSelected(item);
+                var item = Play.Simulation.EntityProxy.MakeHandle(entity);
+                if (selected) Play.SelectionManager.AppendSelected(item);
+                else Play.SelectionManager.RemoveSelected(item);
             };
-            editorWindow.Inspector.AppendEditables(this.Editables);
+            editorWindow.Inspector.AppendEditables(Editables);
             // If Play selection changes, force update project selection
             var editorSelection = editorWindow.Editor.ProjectSelection;
             var hierarchySelection = editorWindow.Hierarchy.SelectionManager;
-            this.Play.SelectionManager.OnEntitySelected += (item, selected) => {
+            Play.SelectionManager.OnEntitySelected += (item, selected) => {
                 if (item.Owner is IEntitySelectable selectable)
                     selectable.NotifySelected(item.Data, selected);
             };
-            this.Play.SelectionManager.OnSelectionChanged += (selection) => {
-                using var scope = new Weesals.UI.SelectionManager.Scope(editorSelection);
+            Play.SelectionManager.OnSelectionChanged += (selection) => {
+                using var scope = new SelectionManager.Scope(editorSelection);
                 foreach (var item in selection) {
                     scope.Append(item);
                 }
             };
             editorSelection.OnSelectionChanged += (selection) => {
-                using var scope = new Weesals.UI.SelectionManager.Scope(hierarchySelection);
+                using var scope = new SelectionManager.Scope(hierarchySelection);
                 foreach (var item in selection) {
                     var view = editorWindow.Hierarchy.GetEntityView(item.GetEntity());
                     if (view != null) { scope.Append(new(view)); continue; }
@@ -360,7 +435,7 @@ namespace Game5.Game {
                 }
             };
             hierarchySelection.OnSelectionChanged += (selection) => {
-                using var scope = new Weesals.UI.SelectionManager.Scope(editorSelection);
+                using var scope = new SelectionManager.Scope(editorSelection);
                 foreach (var item in selection) {
                     if (item.Owner is UIHierarchy.EntityView entityView) {
                         scope.Append(Play.Simulation.EntityProxy.MakeHandle(entityView.Entity)); continue;
@@ -370,7 +445,7 @@ namespace Game5.Game {
             };
 
 
-            editorWindow.EventSystem.KeyboardFilter.Insert(0, this.EventSystem);
+            editorWindow.EventSystem.KeyboardFilter.Insert(0, EventSystem);
         }
     }
 }

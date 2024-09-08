@@ -81,7 +81,13 @@ namespace Weesals.Engine.Serialization {
         void Serialize(ref SerialFormatter.SerialBuffer buffer, ref float value);
         void Serialize(ref SerialFormatter.SerialBuffer buffer, ref double value);
     }
+    public interface IIntegerSerializer {
+        void Serialize(ref long value);
+        void Serialize(ref ulong value);
+    }
     public interface IBinarySerializer {
+        bool IsReading { get; }
+        bool IsWriting { get; }
         void Serialize(ref Span<byte> data);
         void Serialize(scoped Span<byte> data);
     }
@@ -284,6 +290,7 @@ namespace Weesals.Engine.Serialization {
                 if (c == '\\') { c = (char)buffer.ReadByte(); }
                 output.Add(c);
             }
+            if (output.Count == 0) return string.Empty;
             return new string(output.AsSpan());
         }
         private void WriteMatch(ref SerialBuffer buffer, string str) {
@@ -354,10 +361,11 @@ namespace Weesals.Engine.Serialization {
     public class SerialB64Formatter : SerialFormatter, ISerialFormatter {
         public static readonly byte[] Base64Characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"u8.ToArray();
 
-        private ulong bitBuffer;
-        private int bitCount;
+        [ThreadStatic] private static ulong bitBuffer;
+        [ThreadStatic] private static int bitCount;
 
         public override void Begin(ref SerialBuffer buffer) {
+            bitBuffer = 0;
             bitCount = 0;
             base.Begin(ref buffer);
         }
@@ -428,29 +436,42 @@ namespace Weesals.Engine.Serialization {
             if (buffer.IsWriting) WriteBytes(ref buffer, valueBytes);
             else ReadBytes(ref buffer, valueBytes);
         }
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static readonly byte[] B64Lookup = new byte[] {
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, // 00
+            255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, // 16
+            255, 255, 255, 255, 120, 255, 255, 255, 255, 255, 255, 062, 255, 062, 108, 063, // 32
+            052, 053, 054, 055, 056, 057, 058, 059, 060, 061, 255, 255, 255, 255, 255, 255, // 48
+            124, 000, 001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012, 013, 014, // 64
+            015, 016, 017, 018, 019, 020, 021, 022, 023, 024, 025, 255, 255, 255, 110, 063, // 80
+            255, 026, 027, 028, 029, 030, 031, 032, 033, 034, 035, 036, 037, 038, 039, 040, // 96
+            041, 042, 043, 044, 045, 046, 047, 048, 049, 050, 051, 255, 255, 255, 116, 255, // 128
+        };
         unsafe private void ReadBytes(ref SerialBuffer buffer, Span<byte> value) {
             Debug.Assert(buffer.Buffer.Position < buffer.Buffer.DataLen);
-            for (int i = 0; i < value.Length; i++) {
-                while (bitCount < 8) {
+            for (int i = 0; ;) {
+                int reqBits = Math.Min(40, (value.Length - i) << 3);
+                while (bitCount < reqBits) {
                     var b = buffer.TryPeekByte();
-                    if (b == '=' || b == ',' || b == '}') break;
-
-                    buffer.ReadByte();
-                    int zeroBits = b == '@' ? 24 : b == '$' ? 20 : b == '~' ? 16 : b == '^' ? 10 : b == '.' ? 8 : 0;
-                    if (zeroBits > 0) {
+                    var v = B64Lookup[b];
+                    if (v < 100) {
+                        bitBuffer = (bitBuffer << 6) | v;
+                        bitCount += 6;
+                    } else if (v < 255) {
+                        int zeroBits = v - 100;
                         bitBuffer <<= zeroBits;
                         bitCount += zeroBits;
-                    } else {
-                        var c64 = GetBase64Index((char)b);
-                        Debug.Assert(c64 >= 0, "Invalid b64 character");
-                        bitBuffer <<= 6;
-                        bitBuffer |= (ulong)(long)c64;
-                        bitCount += 6;
-                    }
+                    } else break;
+                    buffer.ReadByte();
                 }
-                bitCount = Math.Max(bitCount - 8, 0);
-                value[i] = (byte)(bitBuffer >> bitCount);
+                for (; ; ) {
+                    bitCount -= 8;
+                    value[i++] = (byte)(bitBuffer >> bitCount);
+                    if (i >= value.Length) {
+                        if (bitCount < 0) bitCount = 0;
+                        return;
+                    }
+                    if (bitCount < 8) break;
+                }
             }
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -465,8 +486,11 @@ namespace Weesals.Engine.Serialization {
 
         public static int GetBase64Index(char c) {
             const int AlphabetSize = ('Z' - 'A' + 1);
-            return c >= 'A' && c <= 'Z' ? c - 'A' :
-                c >= 'a' && c <= 'z' ? c - 'a' + AlphabetSize :
+            var v = (c - 'A') & 0xdf;
+            if ((uint)v < AlphabetSize) return v + (c >= 'a' ? AlphabetSize : 0);
+            return
+                //c >= 'A' && c <= 'Z' ? c - 'A' :
+                //c >= 'a' && c <= 'z' ? c - 'a' + AlphabetSize :
                 c >= '0' && c <= '9' ? c - '0' + AlphabetSize * 2 :
                 c == '+' || c == '-' ? AlphabetSize * 2 + 10 :
                 c == '/' || c == '_' ? AlphabetSize * 2 + 11 :
@@ -476,10 +500,12 @@ namespace Weesals.Engine.Serialization {
         public static readonly SerialB64Formatter Default = new();
     }
 
-    public struct TSONNode : IDisposable {
+    public struct TSONNode : IDisposable, IIntegerSerializer {
         public readonly string? Name;
         private SerialFormatter.SerialBuffer buffer;
         private SerialFormatter? formatter;
+
+        public bool IsValid => Name != null;
 
         public bool IsWriting => buffer.IsWriting;
         public bool IsReading => !buffer.IsWriting;
@@ -490,7 +516,7 @@ namespace Weesals.Engine.Serialization {
             this.formatter = default;
         }
         public void Dispose() {
-            if (Name != null) {
+            if (IsValid) {
                 var textFormatter = RequireText();
                 if (!buffer.IsWriting) {
                     while (buffer.TryPeekByte() != '}') buffer.ReadByte();
@@ -498,9 +524,11 @@ namespace Weesals.Engine.Serialization {
                 textFormatter.SerializeMatch(ref buffer, SerialFormatter.SymbolMask.Terminator, "}");
             }
         }
-        public TSONNode CreateChild(string name) {
+        public TSONNode CreateChild(string? name) {
+            if (IsWriting && name == null) return default;
             var textFormatter = RequireText();
             textFormatter.Serialize(ref buffer, ref name);
+            if (string.IsNullOrEmpty(name)) name = null;
             textFormatter.SerializeMatch(ref buffer, SerialFormatter.SymbolMask.Terminator, "{");
             return new(name, buffer);
         }
@@ -540,6 +568,9 @@ namespace Weesals.Engine.Serialization {
         public void Serialize(ref float value) { RequireText().Serialize(ref buffer, ref value); }
         public void Serialize(ref double value) { RequireText().Serialize(ref buffer, ref value); }
 
+        public void Serialize(ref DateTime value) { var ticks = value.Ticks; RequireText().Serialize(ref buffer, ref ticks); value = new(ticks); }
+        public void Serialize(ref TimeSpan value) { var ticks = value.Ticks; RequireText().Serialize(ref buffer, ref ticks); value = new(ticks); }
+
         /*public struct ListSerializer<T> {
             private List<T> items;
             public delegate T Action(ref TSONNode serializer, ListSerializer<T> value);
@@ -561,16 +592,17 @@ namespace Weesals.Engine.Serialization {
         public void Serialize<T>(List<T> items
             , Func<T, string> nameGetter
             , Func<string, T> generator
-            , SerializeHelper<T>.Serialize serializor
+            , SerializeHelper<T>.Serialize serializer
             ) {
             for (int i = 0; ; i++) {
                 if (buffer.IsWriting) {
                     if (i >= items.Count) break;
                     var item = items[i];
                     var sChild = CreateChild(nameGetter(item));
-                    serializor(item, ref sChild);
+                    serializer(item, ref sChild);
                 } else {
                     var sChild = CreateChild(null);
+                    if (string.IsNullOrEmpty(sChild.Name)) break;
                     int i2 = i;
                     for (; i2 < items.Count; i2++) {
                         if (nameGetter(items[i2]) == sChild.Name) break;
@@ -582,9 +614,9 @@ namespace Weesals.Engine.Serialization {
                         i2 = i;
                     }
                     var item = default(T);
-                    if (i2 == i) item = items[i2];
+                    if (i2 == i && i < items.Count) item = items[i2];
                     else items.Insert(i, item = generator(sChild.Name));
-                    serializor(item, ref sChild);
+                    serializer(item, ref sChild);
                 }
             }
         }
@@ -621,6 +653,9 @@ namespace Weesals.Engine.Serialization {
     public struct B64Node : IDisposable, IBinarySerializer {
         private SerialFormatter.SerialBuffer buffer;
 
+        public bool IsReading => !buffer.IsWriting;
+        public bool IsWriting => buffer.IsWriting;
+
         public B64Node(SerialFormatter.SerialBuffer buffer) {
             this.buffer = buffer;
             Require().Begin(ref buffer);
@@ -641,6 +676,9 @@ namespace Weesals.Engine.Serialization {
     }
     public struct BinaryNode : IDisposable, IBinarySerializer {
         private SerialFormatter.SerialBuffer buffer;
+
+        public bool IsReading => !buffer.IsWriting;
+        public bool IsWriting => buffer.IsWriting;
 
         public BinaryNode(SerialFormatter.SerialBuffer buffer) {
             this.buffer = buffer;
@@ -688,7 +726,32 @@ namespace Weesals.Engine.Serialization {
         public static void Serialize<S>(this S serializer, ref TimeSpan value) where S : IBinarySerializer
             => serializer.SerializeUnmanaged(ref value);
 
-        private static void SerializeUnmanaged<S, T>(this S serializer, ref T v) where S : IBinarySerializer where T : unmanaged
+        public static void Serialize<S>(this S serializer, ref CSIdentifier v) where S : IBinarySerializer {
+            var name = v.GetAscii();
+            var length = serializer.SerializeInline((ushort)name.Length);
+            if (serializer.IsWriting) {
+                serializer.Serialize(name);
+            } else {
+                Span<byte> tmpData = stackalloc byte[length];
+                serializer.Serialize(tmpData);
+                v = new(tmpData);
+            }
+        }
+
+        public static bool Require<S>(this S serializer, ReadOnlySpan<byte> data) where S : IBinarySerializer {
+            Span<byte> tmp = stackalloc byte[data.Length];
+            if (serializer.IsWriting) data.CopyTo(tmp);
+            serializer.Serialize(tmp);
+            return serializer.IsWriting || data.SequenceEqual(tmp);
+        }
+
+        public static void SerializeUnmanaged<S, T>(this S serializer, ref T v) where S : IBinarySerializer where T : unmanaged
             => serializer.Serialize(MemoryMarshal.Cast<T, byte>(new Span<T>(ref v)));
+
+        public static T SerializeInline<S, T>(this S serializer, T v) where S : IBinarySerializer where T : unmanaged {
+            serializer.Serialize(MemoryMarshal.Cast<T, byte>(new Span<T>(ref v)));
+            return v;
+        }
+
     }
 }

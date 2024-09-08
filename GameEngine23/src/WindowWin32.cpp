@@ -19,9 +19,13 @@ WindowWin32::WindowWin32(const std::wstring &name)
     RegisterClassW(&wcex);
 
     // Create a standard overlapped window
-    hWnd = CreateWindowW(szWindowClass, name.c_str(), WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+    hWnd = CreateWindowExW(0,
+        szWindowClass, name.c_str(), WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
         nullptr, nullptr, hInstance, nullptr);
+
+    //SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+    //SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
 
     // Focus the window
     //ShowWindow(hWnd, SW_SHOWDEFAULT);
@@ -64,6 +68,11 @@ void WindowWin32::SetClientSize(Int2 size) {
     AdjustWindowRectEx(&rect, GetWindowLong(hWnd, GWL_STYLE), FALSE, GetWindowLong(hWnd, GWL_EXSTYLE));
     SetWindowPos(hwnd, NULL, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
     UpdateWindow(hwnd);
+}
+
+void WindowWin32::SetVisible(bool visible) {
+    auto hwnd = GetHWND();
+    ShowWindow(hwnd, visible ? SW_SHOW : SW_HIDE);
 }
 
 void WindowWin32::RegisterMovedCallback(void (*Callback)(), bool enable) {
@@ -157,9 +166,12 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
 
     switch (message) {
     case WM_PAINT: {
-        //PAINTSTRUCT ps;
-        //HDC hdc = BeginPaint(hWnd, &ps);
-        //EndPaint(hWnd, &ps);
+        /*PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        HBRUSH blackBrush = CreateSolidBrush(RGB(0, 0, 0));
+        FillRect(hdc, &ps.rcPaint, blackBrush);
+        DeleteObject(blackBrush);
+        EndPaint(hWnd, &ps);*/
         ValidateRect(hWnd, nullptr);
     } return 0;
     case WM_SIZE:

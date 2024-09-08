@@ -42,6 +42,8 @@ public:
     Int2 GetClientSize() const override;
     void SetClientSize(Int2 size) override;
 
+    void SetVisible(bool visible) override;
+
     void RegisterMovedCallback(void (*Callback)(), bool enable);
 
     // Process window messages and then return control to the callee

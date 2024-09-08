@@ -183,8 +183,8 @@ namespace Weesals.Landscape {
             //if (rootMaterial != null) LandMaterial.InheritProperties(rootMaterial);
             var handle = JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Load TerMaps").Auto();
-                runtimeData.BaseTextures = Layers.RequireBaseMaps(true);
-                runtimeData.BumpTextures = Layers.RequireBumpMaps(true);
+                runtimeData.BaseTextures = Layers.RequireBaseMaps();
+                runtimeData.BumpTextures = Layers.RequireBumpMaps();
                 var noise = Resources.LoadTexture("./Assets/Noise.jpg");
                 var foam = Resources.LoadTexture("./Assets/FoamMask.jpg");
                 JobHandle.RunOnMain((_) => {
@@ -338,6 +338,7 @@ namespace Weesals.Landscape {
             JobHandle resultDep = default;
             if (changed.HeightMapChanged) {
                 var landDep = JobHandle.ScheduleBatch((range) => {
+                    using var marker = new ProfilerMarker("Ter Maps").Auto();
                     foreach (var cy in range) {
                         for (int cx = chunkMin.X; cx < chunkMax.X; ++cx) {
                             runtimeData.LandscapeChunkMeta[cx + cy * chunkCount.X] =
@@ -352,6 +353,7 @@ namespace Weesals.Landscape {
             }
             if (changed.WaterMapChanged) {
                 var waterDep = JobHandle.ScheduleBatch((range) => {
+                    using var marker = new ProfilerMarker("Ter Water").Auto();
                     foreach (var cy in range) {
                         for (int cx = chunkMin.X; cx < chunkMax.X; ++cx) {
                             runtimeData.WaterChunkMeta[cx + cy * chunkCount.X] =

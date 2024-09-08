@@ -80,6 +80,7 @@ struct DLLCLASS CSIdentifier {
 	static CSString8 GetName(uint16_t id);
 	static CSString GetWName(uint16_t id);
 	static uint16_t GetIdentifier(CSString str);
+	static uint16_t GetIdentifier(CSString8 str);
 };
 
 struct DLLCLASS CSBufferElement {
@@ -332,6 +333,7 @@ private:
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, size_t hash = 0);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* source, const CSBufferLayout* dest, int sourceOffset, int destOffset, int length);
+	static void CommitTexture(NativeGraphics* graphics, const NativeTexture* texture);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
 	static void Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 groupCount);
 	static void Reset(NativeGraphics* graphics);
@@ -374,6 +376,7 @@ private:
 	static int GetStatus(NativeWindow* window);
 	static Int2C GetSize(const NativeWindow* window);
 	static void SetSize(NativeWindow* window, Int2 size);
+	static void SetVisible(NativeWindow* window, bool visible);
 	static void SetInput(NativeWindow* window, NativeInput* input);
 	static CSWindowFrame GetWindowFrame(const NativeWindow* window);
 	static void SetWindowFrame(const NativeWindow* window, const RectInt* frame, bool maximized);
@@ -422,6 +425,8 @@ class DLLCLASS Platform {
 public:
 	Platform(NativePlatform* platform)
 		: mPlatform(platform) { }
+
+	static void InitializeGraphics(NativePlatform* platform);
 
 	static NativeWindow* CreateWindow(NativePlatform* platform, CSString name);
 	static NativeInput* CreateInput(NativePlatform* platform);

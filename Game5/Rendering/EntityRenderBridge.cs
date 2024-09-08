@@ -357,16 +357,10 @@ namespace Weesals.Rendering {
         private void MoveEntityFlags(EntityAddress from, EntityAddress to) {
             ref var fromBining = ref Bindings[from.ArchetypeId];
             ref var toBinding = ref Bindings[to.ArchetypeId];
-            /*if (fromBining.ChangedModels.TryRemove(from.Row)) toBinding.ChangedModels.Add(to.Row);
-            if (fromBining.ChangedTransforms.TryRemove(from.Row)) toBinding.ChangedTransforms.Add(to.Row);
-            if (fromBining.ChangedSelected.TryRemove(from.Row)) toBinding.ChangedSelected.Add(to.Row);*/
             if (fromBining.ValidEntities.TryRemove(from.Row)) toBinding.ValidEntities.Add(to.Row);
         }
         private void RemoveEntityFlags(EntityAddress entityAddr) {
             ref var binding = ref Bindings[entityAddr.ArchetypeId];
-            /*binding.ChangedModels.TryRemove(entityAddr.Row);
-            binding.ChangedTransforms.TryRemove(entityAddr.Row);
-            binding.ChangedSelected.TryRemove(entityAddr.Row);*/
             binding.ValidEntities.TryRemove(entityAddr.Row);
         }
         private void RemoveEntityScene(EntityAddress entityAddr) {
@@ -489,7 +483,6 @@ namespace Weesals.Rendering {
             var model = sceneProxy.Instance.Prefab.Models[0];
             var skinnedMesh = model.Meshes[0] as SkinnedMesh;
             Debug.Assert(skinnedMesh != null, "Attempting to skin a non-skinnable mesh. Probaby remove CAnimation");
-            Span<Matrix4x4> bones = stackalloc Matrix4x4[32];
             var animation = eanim.Animation;
             if (!animation.IsValid) return;
             var time = UnityEngine.Time.time % (float)animation.Duration.TotalSeconds;
@@ -510,21 +503,25 @@ namespace Weesals.Rendering {
                 var changedModels = columnStorage.GetChanges(binding.ChangedModels, ref archetype);
                 var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, ref archetype);
                 var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, ref archetype);
+                binding.ModelLookup.MakeCurrent(World.Manager);
+                binding.TransformLookup.MakeCurrent(World.Manager);
+                binding.SelectedLookup.MakeCurrent(World.Manager);
+                binding.AnimationLookup.MakeCurrent(World.Manager);
                 foreach (var row in changedModels) {
-                    if (!binding.ValidEntities.Contains(row)) continue;
+                    Debug.Assert(binding.ValidEntities.Contains(row));
                     UpdateModel(new EntityAddress(new ArchetypeId(i), row));
                 }
                 foreach (var row in changedTransforms) {
-                    if (!binding.ValidEntities.Contains(row)) continue;
+                    Debug.Assert(binding.ValidEntities.Contains(row));
                     UpdateTransform(new EntityAddress(new ArchetypeId(i), row));
                 }
                 foreach (var row in changedSelected) {
-                    if (!binding.ValidEntities.Contains(row)) continue;
+                    Debug.Assert(binding.ValidEntities.Contains(row));
                     UpdateSelected(new EntityAddress(new ArchetypeId(i), row));
                 }
                 if (binding.AnimationLookup.IsValid) {
                     foreach (var row in binding.ValidEntities) {
-                        if (!binding.ValidEntities.Contains(row)) continue;
+                        Debug.Assert(binding.ValidEntities.Contains(row));
                         UpdateAnimation(new EntityAddress(new ArchetypeId(i), row));
                     }
                 }

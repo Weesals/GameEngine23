@@ -99,8 +99,6 @@ namespace Game5.Game {
         LayeredLandscapeData layeredLandscape;
 
         ParticleSystemManager particleManager;
-        ParticleSystem fireParticles;
-        ParticleSystem.Emitter mouseFire;
         UIPlay playUI;
 
         [EditorField] public bool EnableFog = false;
@@ -159,9 +157,9 @@ namespace Game5.Game {
                 }
             }));
 
+            particleManager = new ParticleSystemManager();
             loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Particles").Auto();
-                particleManager = new ParticleSystemManager();
                 particleManager.Initialise(1024);
             }));
 
@@ -241,11 +239,6 @@ namespace Game5.Game {
 
             var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
             particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
-            if (mouseFire != null) mouseFire.Position = mpos;
-            if (Input.GetMouseButtonDown(0) && fireParticles != null) {
-                fireParticles.CreateEmitter(mpos)
-                    .SetDelayedDeath(2f);
-            }
 
             foreach (var accessor in World.QueryAll<ECTransform, ECParticleBinding>()) {
                 ((ECParticleBinding)accessor).Emitter.Position =

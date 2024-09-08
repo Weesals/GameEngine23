@@ -12,6 +12,7 @@ Texture2D<float4> SceneAttri : register(t2);
 Texture2D<float4> SceneAO : register(t3);
 
 SamplerState MinSampler : register(s4);
+SamplerState PointSamplerClamped : register(s7);
 
 cbuffer DeferredCB : register(b2) {
     float2 ZBufferParams;
@@ -184,7 +185,7 @@ float4 PSMain(PSInput input) : SV_Target {
             float3 samplePos = float3(ssVPos.xy * 0.5 + 0.5, ssVPos.z);
             samplePos = lerp(float3(input.uv, deviceDepth), samplePos, (jitter + i) / SSShadowCount);
             samplePos.z = DepthToLinear(samplePos.z);
-            float newDepth = DepthToLinear(SceneDepth.Sample(PointSampler, samplePos.xy));
+            float newDepth = DepthToLinear(SceneDepth.Sample(PointSamplerClamped, samplePos.xy));
             if (newDepth < samplePos.z && newDepth > samplePos.z - ssShadThick) {
                 shadow = 0;
                 //return float4(1, 0, 0, 1) * LuminanceFactor;

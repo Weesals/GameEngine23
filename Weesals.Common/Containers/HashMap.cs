@@ -3,12 +3,8 @@ using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
-using Weesals.Engine;
 using Index = System.UInt32;
 
 namespace Weesals.Utility {

@@ -87,6 +87,9 @@ std::string AllocString(CSString string) {
 		std::back_inserter(outstr), [=](auto c) { return (char)c; });
 	return outstr;
 }
+std::string_view GetString(CSString8 string) {
+	return std::string_view(string.mBuffer, string.mSize);
+}
 std::wstring_view ToWString(CSString string) {
 	return std::wstring_view(string.mBuffer, string.mSize);
 }
@@ -101,6 +104,9 @@ CSString CSIdentifier::GetWName(uint16_t id) {
 }
 uint16_t CSIdentifier::GetIdentifier(CSString str) {
 	return Identifier::RequireStringId(AllocString(str));
+}
+uint16_t CSIdentifier::GetIdentifier(CSString8 str) {
+	return Identifier::RequireStringId(GetString(str));
 }
 void CSTexture::SetSize(NativeTexture* tex, Int3 size) {
 	tex->SetSize3D(size);
@@ -296,7 +302,7 @@ PreprocessedShader* CSGraphics::PreprocessShader(CSString path, CSSpan macros) {
 }
 const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier profile) {
 	auto compiledShader = graphics->mCmdBuffer.GetGraphics()->CompileShader(
-		std::string_view(source.mBuffer, source.mSize), AllocString(entry),
+		GetString(source), AllocString(entry),
 		Identifier(profile.mId).GetName().c_str());
 	if (compiledShader.GetBinary().empty()) return nullptr;
 	return new NativeCompiledShader(compiledShader);
@@ -356,20 +362,29 @@ void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* 
 void CSGraphics::CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* source, const CSBufferLayout* dest, int sourceOffset, int destOffset, int length) {
 	graphics->mCmdBuffer.CopyBufferData(*(const BufferLayout*)source, *(const BufferLayout*)dest, sourceOffset, destOffset, length);
 }
+void CSGraphics::CommitTexture(NativeGraphics* graphics, const NativeTexture* texture) {
+	graphics->mCmdBuffer.CommitTexture(texture);
+}
 void CSGraphics::Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan bindings, CSSpan resources, CSDrawConfig config, int instanceCount) {
-	InplaceVector<BufferLayout, 8> bindingsData;
+	static_assert(sizeof(BufferLayout) == sizeof(CSBufferLayout));
 	InplaceVector<const BufferLayout*, 8> pobindings;
+	pobindings.resize(bindings.mSize);
+	/*InplaceVector<BufferLayout, 8> bindingsData;
+	bindingsData.resize(bindings.mSize);
 	for (int m = 0; m < bindings.mSize; ++m) {
 		auto& csbuffer = ((CSBufferLayout*)bindings.mData)[m];
-		BufferLayout buffer(
+		bindingsData[m] = BufferLayout(
 			csbuffer.identifier, csbuffer.size,
 			(BufferLayout::Usage)csbuffer.mUsage, csbuffer.mCount);
+		auto& buffer = bindingsData[m];
 		buffer.mRevision = csbuffer.revision;
 		buffer.mOffset = csbuffer.mOffset;
 		buffer.mElements = (BufferLayout::Element*)csbuffer.mElements;
 		buffer.mElementCount = csbuffer.mElementCount;
-		bindingsData.push_back(buffer);
-		pobindings.push_back(&bindingsData.back());
+		pobindings[m] = &buffer;
+	}*/
+	for (int m = 0; m < bindings.mSize; ++m) {
+		pobindings[m] = (const BufferLayout*)bindings.mData + m;
 	}
 	graphics->mCmdBuffer.DrawMesh(
 		pobindings,
@@ -445,6 +460,9 @@ Int2C CSWindow::GetSize(const NativeWindow* window) {
 }
 void CSWindow::SetSize(NativeWindow* window, Int2 size) {
 	window->SetClientSize(size);
+}
+void CSWindow::SetVisible(NativeWindow* window, bool visible) {
+	window->SetVisible(visible);
 }
 void CSWindow::SetInput(NativeWindow* window, NativeInput* input) {
 	window->SetInput(input->This());
@@ -559,7 +577,6 @@ NativeFont* CSResources::LoadFont(CSString path) {
 
 NativePlatform* Platform::Create() {
 	auto* platform = new NativePlatform();
-	platform->Initialize();
 	return platform;
 }
 void Platform::Dispose(NativePlatform* platform) {
@@ -568,6 +585,9 @@ void Platform::Dispose(NativePlatform* platform) {
 	}
 }
 
+void Platform::InitializeGraphics(NativePlatform* platform) {
+	platform->Initialize();
+}
 NativeWindow* Platform::CreateWindow(NativePlatform* platform, CSString name) {
 	auto window = platform->CreateWindow(ToWString(name));
 	increment_shared(window);

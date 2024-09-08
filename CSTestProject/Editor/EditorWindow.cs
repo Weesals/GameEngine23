@@ -11,6 +11,7 @@ using System.Xml.XPath;
 using Weesals.ECS;
 using Weesals.Editor.Assets;
 using Weesals.Engine;
+using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
@@ -119,7 +120,16 @@ namespace Weesals.Editor {
         public Canvas Canvas;
         public AssetDatabase AssetDatabase;
 
+        public Action<float> OnUpdate;
+        public Action<float, CSGraphics> OnRender;
+
         private FlexLayout flex;
+        private bool windowMoved = false;
+
+        public struct Preferences {
+            public RectI WindowFrame;
+            public bool Maximized;
+        }
 
         public bool FullScreen {
             get => flex.Children.Contains(Hierarchy);
@@ -142,7 +152,6 @@ namespace Weesals.Editor {
                 DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf"),
                 AssetDatabase = new(),
             };
-
             Canvas = new();
             EventSystem = new EventSystem(Canvas);
             flex = new FlexLayout();
@@ -186,7 +195,27 @@ namespace Weesals.Editor {
             };
         }
 
+        public Preferences ReadPreferences() {
+            Preferences pref = default;
+            try {
+                var json = new SJson(File.ReadAllText("./Config/window.txt"));
+                pref.WindowFrame = new RectI(json["x"], json["y"], json["w"], json["h"]);
+                pref.Maximized = json["max"];
+            } catch { }
+            return pref;
+        }
+        public void ApplyPreferences(CSWindow window, Preferences pref) {
+            window.SetWindowFrame(pref.WindowFrame, pref.Maximized);
+        }
+        public void SavePreferences(Preferences pref) {
+            Directory.CreateDirectory("./Config/");
+            var frame = pref.WindowFrame;
+            File.WriteAllText("./Config/window.txt", $@"{{ x:{frame.X}, y:{frame.Y}, w:{frame.Width}, h:{frame.Height}, max:{pref.Maximized} }}");
+        }
+
         public override void RegisterRootWindow(CSWindow window) {
+            window.RegisterMovedCallback(() => { windowMoved = true; }, true);
+
             base.RegisterRootWindow(window);
             EventSystem.SetInput(Input);
         }
@@ -214,18 +243,58 @@ namespace Weesals.Editor {
             }
         }
 
-        public void Update(float dt, Int2 size) {
-            if (Input.GetKeyPressed((char)KeyCode.F11) && !Input.GetKeyDown((char)KeyCode.Alt)) FullScreen = !FullScreen;
+        public override void Update(float dt) {
             using var marker = ProfileMarker_Update.Auto();
-            Canvas.SetSize(size);
+            if (windowMoved) {
+                var frame = Window.GetWindowFrame();
+                Debug.WriteLine("Window moved");
+                SavePreferences(new() { WindowFrame = frame.Position, Maximized = frame.Maximized != 0 });
+                windowMoved = false;
+            }
+
+            Weesals.Engine.Input.Initialise(Input);
+            if (Input.GetKeyPressed(KeyCode.F11) && !Input.GetKeyDown(KeyCode.Alt)) FullScreen = !FullScreen;
+
+            Canvas.SetSize(Size);
             EventSystem.Update(dt);
             Canvas.Update(dt);
             Canvas.RequireComposed();
+            OnUpdate?.Invoke(dt);
         }
-        public void Render(float renDT, CSGraphics graphics) {
-            GameView.Update(renDT);
+
+        public override float AdjustRenderDT(float dt, int renderHash, float targetDT) {
+            if (GameView != null) {
+                if (GameView.GameRoot != null) {
+                    renderHash += GameView.GameRoot.RenderHash;
+                }
+                if (GameView.EnableRealtime) targetDT = 0f;
+            }
+            if (FrameThrottler.IsOnBattery) {
+                targetDT = Math.Max(targetDT, 1f / 60f);
+            }
+            renderHash += Canvas.Revision;
+            return base.AdjustRenderDT(dt, renderHash, targetDT);
+        }
+
+        public override void Render(float dt, CSGraphics graphics) {
             using var marker = ProfileMarker_Render.Auto();
+
+            graphics.Reset();
+
+            CSGraphics.AsyncReadback.Awaiter.InvokeCallbacks(graphics);
+            graphics.SetSurface(Surface);
+
+            // Render the game world and UI
+            OnRender?.Invoke(dt, graphics);
+
+            // Render the editor chrome
+            graphics.SetViewport(new RectI(0, Size));
+            GameView.Update(dt);
             Canvas.Render(graphics);
+
+            // Flush render command buffer
+            graphics.Execute();
+            Surface.Present();
         }
 
         public new void Dispose() {

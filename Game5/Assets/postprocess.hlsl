@@ -63,6 +63,30 @@ float3 Tonemap_Uchimura(float3 x) {
     const float b = 0.0;  // pedestal
     return Tonemap_Uchimura(x, P, a, m, l, c, b);
 }
+
+float3 Evaluate(float3 x, float midIn, float midOut, float hdrMax) {
+    float a = 1.2;  // contrast
+    float d = 0.97; // shoulder
+
+    float ad = a * d;
+    float midi_pow_a  = pow(midIn, a);
+    float midi_pow_ad = pow(midIn, ad);
+    float hdrm_pow_a  = pow(hdrMax, a);
+    float hdrm_pow_ad = pow(hdrMax, ad);
+    float u = hdrm_pow_ad * midOut - midi_pow_ad * midOut;
+    float v = midi_pow_ad * midOut;
+
+    float b = -((-midi_pow_a + (midOut * (hdrm_pow_ad * midi_pow_a - hdrm_pow_a * v)) / u) / v);
+    float c = (hdrm_pow_ad * midi_pow_a - hdrm_pow_a * v) / u;
+
+    x = min(x, hdrMax);
+    float3 z = pow(x, a);
+    float3 y = z / (pow(z, d) * b + c);
+
+    return y;
+}
+
+
 float4 PSMain(PSInput input) : SV_TARGET {
     float4 sceneColor = SceneColor.SampleLevel(BilinearSampler, input.uv, 0);
     //return float4(sceneColor.rgb / LuminanceFactor, 1);
@@ -71,7 +95,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
 #if defined(ENABLEBLOOM) && ENABLEBLOOM
     //blur = float4(BloomChain.SampleLevel(BilinearClampedSampler, input.uv, 0.0).rgb, 1.0);
     blur = GaussianSampleLevel<2>(BloomChain, BilinearClampedSampler, input.uv, 1.0 / Resolution, 1.0, 1.0);
-    //blur /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
+    blur /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
 #endif
         
     sceneColor *= 1.0 / LuminanceFactor;
@@ -81,6 +105,7 @@ float4 PSMain(PSInput input) : SV_TARGET {
     //return float4(blur.rgb * 1.0, Intensity);
     sceneColor.rgb += blur.rgb;
     sceneColor.rgb = Tonemap_Uchimura(sceneColor.rgb * 1.2);
+    //sceneColor.rgb = Evaluate(sceneColor.rgb, 0.3, 0.18, 1.0);
     input.uv -= 0.5;
     input.uv *= 2.0;
     //sceneColor.rgb = abs((1 - abs(input.uv.x)) * (1 - abs(input.uv.y)));

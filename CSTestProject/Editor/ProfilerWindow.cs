@@ -136,12 +136,13 @@ namespace Weesals.Editor {
             EventSystem.SetInput(Input);
         }
 
-        public void Update(float dt) {
+        public override void Update(float dt) {
             EventSystem.Update(dt);
         }
 
-        unsafe public void Render(float dt, CSGraphics graphics) {
+        public override void Render(float dt, CSGraphics graphics) {
             profileContent.ForceRedraw();
+
             graphics.Reset();
             graphics.SetSurface(Surface);
             var rt = Surface.GetBackBuffer();

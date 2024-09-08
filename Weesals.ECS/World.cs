@@ -61,12 +61,12 @@ namespace Weesals.ECS {
                     Debug.Assert(id.Index == 0 || id.Index == (int)entity.Index);
                 }
             };*/
-            AddListener(new Query.Builder(this).Build(), new() {
+            /*AddListener(new Query.Builder(this).Build(), new() {
                 OnCreate = (addr) => {
                     var entity = GetEntity(addr);
                     RequireComponent<EntityIdTest>(entity) = new() { Index = (int)entity.Index, };
                 },
-            });
+            });*/
         }
 
         public Entity CreateEntity(string name = "unknown") {
@@ -354,6 +354,8 @@ namespace Weesals.ECS {
                 foreach (var listenerI in BitField.Except(newArchetypeListeners, oldArchetypeListeners))
                     archetypeListeners[listenerI].OnCreate?.Invoke(newData);
             }
+            Debug.Assert(newData.ArchetypeId == EntityStorage.GetEntityDataRef(entity).ArchetypeId,
+                "Entity cannot be moved in a change callback. Add/Remove Sparse components only");
             ColumnStorage.Validate?.Invoke();
         }
         private void RemoveRow(EntityAddress entityData) {
@@ -589,14 +591,18 @@ namespace Weesals.ECS {
             public Archetype CurrentArchetype => Manager.archetypes[Current];
             object IEnumerator.Current => Current;
             private int archetypeIndex;
+            private int columnRevision;
             public ArchetypeQueryEnumerator(EntityManager manager, QueryId queryId) {
                 Manager = manager;
                 QueryId = queryId;
                 archetypeIndex = -1;
+                columnRevision = Manager.ColumnStorage.ColumnRevision;
             }
             public void Dispose() { }
             public void Reset() { archetypeIndex = -1; }
             public bool MoveNext() {
+                Debug.Assert(columnRevision == Manager.ColumnStorage.ColumnRevision,
+                    "Cannot add or remove columns while iterating!");
                 while (++archetypeIndex < QueryCache.MatchingArchetypes.Count) {
                     var query = Manager.queries[QueryId];
                     var archetype = CurrentArchetype;

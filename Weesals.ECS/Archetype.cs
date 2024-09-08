@@ -141,8 +141,10 @@ namespace Weesals.ECS {
         private Range columnRange;
         // Index of the last item
         public int MaxItem = -1;
-        // To ensure structure doesnt change during iterate
+        // To ensure entity structure doesnt change during iterate
         public int Revision = 0;
+        // To ensure (sparse) component structure doesnt change during iterate
+        public int ColumnRevision = 0;
         // Used to track which listeners are active for this archetype
         public BitField ArchetypeListeners;
 
@@ -164,6 +166,7 @@ namespace Weesals.ECS {
                 columns[i] = new ArchetypeColumn(new TypeId(it.Current));
             }
             Trace.Assert(!it.MoveNext());
+            ++columnStorage.ColumnRevision;
         }
         [Conditional("DEBUG")]
         public void SetDebugManager(EntityManager manager) {
@@ -254,6 +257,8 @@ namespace Weesals.ECS {
             for (int i = columns.Length - 1; i > index; --i)
                 columns[i] = columns[i - 1];
             columns[index] = new(typeId);
+            ++ColumnRevision;
+            ++columnStorage.ColumnRevision;
             return index;
         }
         public bool TryGetSparseColumn(TypeId componentTypeId, out int column) {
@@ -360,13 +365,23 @@ namespace Weesals.ECS {
     }
     public struct ArchetypeComponentLookup<T> {
         public readonly ArchetypeId Id;
-        public int ColumnId;
-        public readonly bool IsValid => ColumnId != -1;
+        public readonly int ColumnId;
+        public readonly int ColumnRevision;
+        public bool IsValid => ColumnId != -1;
         public ArchetypeComponentLookup(EntityManager manager, ref Archetype archetype) {
             Id = archetype.Id;
             var typeId = manager.Context.RequireComponentTypeId<T>();
             if (ComponentType<T>.IsSparse) ColumnId = archetype.RequireSparseColumn(typeId, manager);
             else archetype.TryGetColumnId(typeId, out ColumnId);
+            ColumnRevision = archetype.ColumnRevision;
+        }
+
+        // If sparse components are added/removed, ColumnID may be invalid,
+        // recompute it here if the revision doesn't match.
+        public void MakeCurrent(EntityManager manager) {
+            ref var archetype = ref manager.GetArchetype(Id);
+            if (ColumnRevision == archetype.ColumnRevision) return;
+            this = new(manager, ref archetype);
         }
 
         [Conditional("DEBUG")]
@@ -390,6 +405,7 @@ namespace Weesals.ECS {
         }
         public ref readonly T GetValueRO(EntityManager manager, EntityAddress entityAddr) {
             ref var archetype = ref manager.GetArchetype(entityAddr.ArchetypeId);
+            Debug.Assert(ColumnRevision == archetype.ColumnRevision);
             var row = entityAddr.Row;
             if (ComponentType<T>.IsSparse) row = archetype.RequireSparseIndex(ref manager.ColumnStorage, ColumnId, row);
             return ref GetValueRO(ref manager.ColumnStorage, ref archetype, row);

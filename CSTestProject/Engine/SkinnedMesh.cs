@@ -34,16 +34,21 @@ namespace Weesals.Engine {
 
         public SkinnedMesh(string _name) : base(_name) {
         }
+
         public void RequireBoneIndices(BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UINT) {
             RequireVertexElementFormat(ref vertexBoneIndicesId, fmt, "BLENDINDICES");
         }
         public void RequireBoneWeights(BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
             RequireVertexElementFormat(ref vertexBoneWeightsId, fmt, "BLENDWEIGHT");
         }
+        public TypedBufferView<Int4> GetBoneIndicesV(bool require = false)
+            => GetBoneIndicesV<Int4>(require);
         public TypedBufferView<T> GetBoneIndicesV<T>(bool require = false) where T : unmanaged {
             if (vertexBoneIndicesId == -1) { if (require) RequireBoneIndices(); else return default; }
             return new TypedBufferView<T>(vertexBuffer.Elements[vertexBoneIndicesId], vertexBuffer.Count);
         }
+        public TypedBufferView<Vector4> GetBoneWeightsV(bool require = false)
+            => GetBoneWeightsV<Vector4>(require);
         public TypedBufferView<T> GetBoneWeightsV<T>(bool require = false) where T : unmanaged {
             if (vertexBoneWeightsId == -1) { if (require) RequireBoneWeights(); else return default; }
             return new TypedBufferView<T>(vertexBuffer.Elements[vertexBoneWeightsId], vertexBuffer.Count);

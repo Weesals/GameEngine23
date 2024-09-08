@@ -50,8 +50,15 @@ namespace Weesals.Engine {
                 mId = GetIdentifier(new CSString(chrs, str.Length));
             }
         }
+        unsafe public CSIdentifier(Span<byte> str) {
+            if (str == null) { mId = Invalid.mId; return; }
+            fixed (byte* chrs = str) {
+                mId = GetIdentifier(new CSString8((sbyte*)chrs, str.Length));
+            }
+        }
         public int GetId() { return mId; }
         public bool IsValid => mId != 0;
+        public Span<byte> GetAscii() { return GetName(mId).AsSpan(); }
         public string GetName() { return GetName(mId).ToString(); }
         public int GetStableHash() { return (int)GetName(mId).ComputeStringHash(); }
         public bool Equals(CSIdentifier other) { return mId == other.mId; }
@@ -161,43 +168,44 @@ namespace Weesals.Engine {
     unsafe public static class CSSpanExt {
         public static CSSpan AsCSSpan<T>(this MemoryBlock<T> block) where T : unmanaged { return new CSSpan(block.Data, block.Length); }
     }
-    public partial struct CSTexture : IEquatable<CSTexture> {
-        unsafe public bool IsValid => mTexture != null;
+    unsafe public partial struct CSTexture : IEquatable<CSTexture>, IComparable<CSTexture> {
+        public bool IsValid => mTexture != null;
         public BufferFormat Format => IsValid ? GetFormat() : default;
         public Int2 Size => IsValid ? GetSize() : default;
         public int MipCount => IsValid ? GetMipCount() : default;
         public int ArrayCount => IsValid ? GetArrayCount() : default;
-        unsafe public CSTexture SetSize(Int2 size) { SetSize(mTexture, new Int3(size, 1)); return this; }
-        unsafe public CSTexture SetSize3D(Int3 size) { SetSize(mTexture, size); return this; }
-        unsafe public Int2 GetSize() { return GetSize(mTexture).XY; }
-        unsafe public Int3 GetSize3D() { return GetSize(mTexture); }
-        unsafe public CSTexture SetFormat(BufferFormat fmt) { SetFormat(mTexture, fmt); return this; }
-        unsafe public BufferFormat GetFormat() { return GetFormat(mTexture); }
-        unsafe public CSTexture SetMipCount(int count) { SetMipCount(mTexture, count); return this; }
-        unsafe public int GetMipCount() { return GetMipCount(mTexture); }
-        unsafe public CSTexture SetArrayCount(int count) { SetArrayCount(mTexture, count); return this; }
-        unsafe public int GetArrayCount() { return GetArrayCount(mTexture); }
-        unsafe public CSTexture SetAllowUnorderedAccess(bool enable) { SetAllowUnorderedAccess(mTexture, enable); return this; }
-        unsafe public bool GetAllowUnorderedAccess() { return GetAllowUnorderedAccess(mTexture); }
-        unsafe public MemoryBlock<byte> GetTextureData(int mip = 0, int slice = 0) { var data = GetTextureData(mTexture, mip, slice); return new MemoryBlock<byte>((byte*)data.mData, data.mSize); }
-        unsafe public void MarkChanged() { MarkChanged(mTexture); }
-        unsafe public void Swap(CSTexture other) { Swap(mTexture, other.mTexture); }
-        unsafe public void Dispose() { Dispose(mTexture); mTexture = null; }
+        public CSTexture SetSize(Int2 size) { SetSize(mTexture, new Int3(size, 1)); return this; }
+        public CSTexture SetSize3D(Int3 size) { SetSize(mTexture, size); return this; }
+        public Int2 GetSize() { return GetSize(mTexture).XY; }
+        public Int3 GetSize3D() { return GetSize(mTexture); }
+        public CSTexture SetFormat(BufferFormat fmt) { SetFormat(mTexture, fmt); return this; }
+        public BufferFormat GetFormat() { return GetFormat(mTexture); }
+        public CSTexture SetMipCount(int count) { SetMipCount(mTexture, count); return this; }
+        public int GetMipCount() { return GetMipCount(mTexture); }
+        public CSTexture SetArrayCount(int count) { SetArrayCount(mTexture, count); return this; }
+        public int GetArrayCount() { return GetArrayCount(mTexture); }
+        public CSTexture SetAllowUnorderedAccess(bool enable) { SetAllowUnorderedAccess(mTexture, enable); return this; }
+        public bool GetAllowUnorderedAccess() { return GetAllowUnorderedAccess(mTexture); }
+        public MemoryBlock<byte> GetTextureData(int mip = 0, int slice = 0) { var data = GetTextureData(mTexture, mip, slice); return new MemoryBlock<byte>((byte*)data.mData, data.mSize); }
+        public void MarkChanged() { MarkChanged(mTexture); }
+        public void Swap(CSTexture other) { Swap(mTexture, other.mTexture); }
+        public void Dispose() { Dispose(mTexture); mTexture = null; }
 
+        public int CompareTo(CSTexture other) { return ((nint)other.mTexture).CompareTo((nint)other.mTexture); }
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
-        unsafe public bool Equals(CSTexture other) { return mTexture == other.mTexture; }
-        unsafe public override int GetHashCode() { return HashCode.Combine((ulong)mTexture); }
+        public bool Equals(CSTexture other) { return mTexture == other.mTexture; }
+        public override int GetHashCode() { return HashCode.Combine((ulong)mTexture); }
         public override string ToString() { return $"Size<{Size}> Fmt<{Format}>"; }
-        unsafe public static bool operator ==(CSTexture left, CSTexture right) { return left.mTexture == right.mTexture; }
-        unsafe public static bool operator !=(CSTexture left, CSTexture right) { return left.mTexture != right.mTexture; }
+        public static bool operator ==(CSTexture left, CSTexture right) { return left.mTexture == right.mTexture; }
+        public static bool operator !=(CSTexture left, CSTexture right) { return left.mTexture != right.mTexture; }
 
-        unsafe public static implicit operator CSTexture(CSRenderTarget target) { return new CSTexture((NativeTexture*)target.mRenderTarget); }
+        public static implicit operator CSTexture(CSRenderTarget target) { return new CSTexture((NativeTexture*)target.mRenderTarget); }
 
-        unsafe public static CSTexture Create(string name) {
+        public static CSTexture Create(string name) {
             fixed (char* namePtr = name)
                 return new CSTexture(_Create(new CSString(namePtr, name.Length)));
         }
-        unsafe public static CSTexture Create(string name, int sizeX, int sizeY, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
+        public static CSTexture Create(string name, int sizeX, int sizeY, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM) {
             fixed (char* namePtr = name) {
                 var tex = new CSTexture(_Create(new CSString(namePtr, name.Length)));
                 tex.SetSize(new Int2(sizeX, sizeY));
@@ -341,9 +349,9 @@ namespace Weesals.Engine {
     public partial struct CSInput {
         unsafe public bool IsValid => mInput != null;
         unsafe public CSSpanSPtr<CSPointer> GetPointers() { return new CSSpanSPtr<CSPointer>(GetPointers(null, mInput)); }
-        unsafe public bool GetKeyDown(char key) { return GetKeyDown(null, mInput, (byte)key); }
-        unsafe public bool GetKeyPressed(char key) { return GetKeyPressed(null, mInput, (byte)key); }
-        unsafe public bool GetKeyReleased(char key) { return GetKeyReleased(null, mInput, (byte)key); }
+        unsafe public bool GetKeyDown(KeyCode key) { return GetKeyDown(null, mInput, (byte)key); }
+        unsafe public bool GetKeyPressed(KeyCode key) { return GetKeyPressed(null, mInput, (byte)key); }
+        unsafe public bool GetKeyReleased(KeyCode key) { return GetKeyReleased(null, mInput, (byte)key); }
         unsafe public Span<CSKey> GetPressKeys() { return GetPressKeys(null, mInput).AsSpan<CSKey>(); }
         unsafe public Span<CSKey> GetDownKeys() { return GetDownKeys(null, mInput).AsSpan<CSKey>(); }
         unsafe public Span<CSKey> GetReleaseKeys() { return GetReleaseKeys(null, mInput).AsSpan<CSKey>(); }
@@ -559,6 +567,16 @@ namespace Weesals.Engine {
         public void CopyBufferData(CSBufferLayout source, CSBufferLayout dest, RangeInt srcRange, int destOffset) {
             CopyBufferData(mGraphics, &source, &dest, srcRange.Start, destOffset, srcRange.Length);
         }
+        public void CommitTexture(CSTexture texture) {
+            CommitTexture(mGraphics, texture.mTexture);
+        }
+        public void CommitResources(CSPipeline pso, MemoryBlock<nint> resources) {
+            foreach (var resource in resources.Slice(pso.ConstantBufferCount).Reinterpret<CSBufferReference>()) {
+                if (resource.mType == CSBufferReference.BufferTypes.Texture) {
+                    CommitTexture(new((NativeTexture*)resource.mBuffer));
+                }
+            }
+        }
 
         private static ProfilerMarker ProfileMarker_Draw = new("Draw");
         [SkipLocalsInit]
@@ -603,6 +621,7 @@ namespace Weesals.Engine {
         unsafe public void Dispose() { Dispose(mWindow); mWindow = null; }
         unsafe public Int2 GetSize() { return GetSize(mWindow); }
         unsafe public void SetSize(Int2 size) { SetSize(mWindow, size); }
+        unsafe public void SetVisible(bool visible) { SetVisible(mWindow, (byte)(visible ? 1 : 0)); }
         unsafe public void SetInput(CSInput input) { SetInput(mWindow, input.GetNativeInput()); }
         unsafe public CSWindowFrame GetWindowFrame() { return GetWindowFrame(mWindow); }
         unsafe public void SetWindowFrame(RectI frame, bool maximized) { SetWindowFrame(mWindow, &frame, (byte)(maximized ? 1 : 0)); }
@@ -614,6 +633,7 @@ namespace Weesals.Engine {
     }
     public partial struct Platform {
         unsafe public void Dispose() { Dispose(mPlatform); mPlatform = null; }
+        unsafe public void InitializeGraphics() { InitializeGraphics(mPlatform); }
         unsafe public CSWindow CreateWindow(string name) {
             fixed (char* namePtr = name)
                 return new CSWindow(CreateWindow(mPlatform, new CSString(namePtr, name.Length)));

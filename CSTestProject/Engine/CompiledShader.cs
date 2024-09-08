@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Profiling;
 
 namespace Weesals.Engine {
     unsafe public class Shader {
@@ -179,6 +180,7 @@ namespace Weesals.Engine {
             Reflection.Serialize(writer);
         }
         public void Deserialize(BinaryReader reader) {
+            using var marker = new ProfilerMarker("Deserialize").Auto();
             CompiledBlob = new byte[reader.ReadInt32()];
             Trace.Assert(reader.Read(CompiledBlob) == CompiledBlob.Length);
             IncludeFiles = new string[reader.ReadInt32()];

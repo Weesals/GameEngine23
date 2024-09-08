@@ -211,6 +211,7 @@ private:
 
 public:
     PerFrameItemStoreNoHash() {
+        mBlocks.reserve(32);
         mLocks.push_back({ .mItemCount = -1, });
     }
     ~PerFrameItemStoreNoHash() { }

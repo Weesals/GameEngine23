@@ -108,10 +108,12 @@ namespace Weesals.Editor {
         CanvasLayout INestedEventSystem.GetComputedLayout() { return GetContentsLayout(); }
 
         // TODO: Remove these, get them dynamically
-        public Camera? Camera;
-        public ScenePassManager? Scene;
+        public IGameRoot? GameRoot;
+        public Camera? Camera => GameRoot?.Camera;
+        public ScenePassManager? Scene => GameRoot?.Scene;
 
         public Action<PointerEvent, AssetReference> OnReceiveDrag;
+        public Action<RectI> OnViewportChanged;
 
         private ToggleButton realtimeToggle;
         public bool EnableRealtime => realtimeToggle.State;
@@ -145,6 +147,11 @@ namespace Weesals.Editor {
             if (item is UIProjectView.FileGrid.FileView file) {
                 OnReceiveDrag?.Invoke(events, file.GetAsset());
             }
+        }
+
+        protected override void NotifyTransformChanged() {
+            base.NotifyTransformChanged();
+            OnViewportChanged?.Invoke(GetGameViewportRect());
         }
 
         public void Update(float dt) {

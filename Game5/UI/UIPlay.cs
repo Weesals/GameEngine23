@@ -31,7 +31,6 @@ namespace Game5.UI {
         private TextBlock debugTxt;
 
         private BufferLayoutPersistent buffer;
-        private CSTexture testTexture;
 
         private Int3 cameraMove = Int3.Zero;
         private Vector3 cameraMoveSmooth;

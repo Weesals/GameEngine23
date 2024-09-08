@@ -98,9 +98,10 @@ namespace Game5.Game {
         protected override void OnUpdate() {
             // Attempt to begin actions if all required tracks are free
             var trackStates = new OrderSystemBase.TrackStates();
+            var dispatchingActions = new PooledHashMap<Entity, int>(8);
             foreach (var accessor in World.QueryAll<EntityQueue>()) {
                 var entity = accessor.Entity;
-                ref var queue = ref accessor.Component1Ref;
+                var queue = accessor.Component1;
                 if (queue.Queue.Length == 0) {
                     Stage.RemoveComponent<EntityQueue>(entity);
                     continue;
@@ -111,15 +112,22 @@ namespace Game5.Game {
                     var action = actions[queue.Queue.Start + q];
                     action = ActionDispatchSystem.GetActivation(entity, action, trackStates);
                     if (!action.IsValid) continue;
-                    VerifyQueue(queue);
-                    ActionDispatchSystem.BeginOrder(entity, action);
-                    VerifyQueue(queue);
-
-                    actions.Splice(ref queue.Queue, q, 1, 0);
-                    VerifyQueue(queue);
+                    dispatchingActions.Add(entity, q);
                     break;
                 }
             }
+            foreach (var dispatching in dispatchingActions) {
+                var entity = dispatching.Key;
+                ref var queue = ref Stage.GetComponentRef<EntityQueue>(entity);
+                var q = dispatching.Value;
+                var action = actions[queue.Queue.Start + q];
+                trackStates.Clear();
+                ActionDispatchSystem.GetTrackState(entity, ref trackStates);
+                action = ActionDispatchSystem.GetActivation(entity, action, trackStates);
+                ActionDispatchSystem.BeginOrder(entity, action);
+                actions.Splice(ref queue.Queue, q, 1, 0);
+            }
+            dispatchingActions.Dispose();
             trackStates.Dispose();
         }
 

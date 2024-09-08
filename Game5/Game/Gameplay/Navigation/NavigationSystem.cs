@@ -68,13 +68,17 @@ namespace Game5.Game {
             pathCachePoints = new(512);
             moveContract = EntityMapSystem.AllocateContract();
             NavGrid = new NavGrid();
-            NavMesh = new Navigation.NavMesh();
+            NavMesh = new NavMesh();
             NavMeshBaker = new NavMesh2Baker(NavMesh);
             NavMeshBaker.Allocate();
             var query = World.BeginQuery().With<ECObstruction>().Build();
             World.Manager.AddListener(query, new ArchetypeListener() {
-                OnCreate = RegisterEntity,
-                OnDelete = UnregisterEntity,
+                OnCreate = RegisterObstruction,
+                OnDelete = UnregisterObstruction,
+            });
+            var pathingQuery = World.BeginQuery().With<ECActionMove>().Build();
+            World.Manager.AddListener(pathingQuery, new ArchetypeListener() {
+                OnDelete = UnregisterPather,
             });
             mutations = new ComponentMutateListener(World.Manager, query, World.Context.RequireComponentTypeId<ECTransform>());
         }
@@ -391,7 +395,8 @@ namespace Game5.Game {
 
         }
 
-        private void RegisterEntity(EntityAddress entityAddr) {
+        private void RegisterObstruction(EntityAddress entityAddr) {
+            using var marker = new ProfilerMarker("Register Obstruction").Auto();
             if (World.Manager.HasComponent<ECMobile>(entityAddr)) return;
             var entity = World.Manager.GetEntity(entityAddr);
             var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
@@ -400,12 +405,15 @@ namespace Game5.Game {
             obstructionCache.Add(entity, obstruction);
             RegisterObstruction(entity, obstruction, true);
         }
-        private void UnregisterEntity(EntityAddress entityAddr) {
+        private void UnregisterObstruction(EntityAddress entityAddr) {
             if (World.Manager.HasComponent<ECMobile>(entityAddr)) return;
             var entity = World.Manager.GetEntity(entityAddr);
             var obstruction = obstructionCache[entity];
             obstructionCache.Remove(entity);
             RegisterObstruction(entity, obstruction, false);
+        }
+        private void UnregisterPather(EntityAddress entityAddr) {
+            RemoveCache(World.Manager.GetEntity(entityAddr));
         }
         private void UpdateEntity(EntityAddress entityAddr) {
             var entity = World.Manager.GetEntity(entityAddr);

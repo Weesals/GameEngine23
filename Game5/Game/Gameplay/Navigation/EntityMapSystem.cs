@@ -5,6 +5,7 @@ using System.Diagnostics;
 using UnityEngine;
 using Weesals.ECS;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.Utility;
 
@@ -213,6 +214,7 @@ namespace Game5.Game {
             //ValidateEntities();
         }
         private void RegisterEntity(EntityAddress entityAddr) {
+            using var marker = new ProfilerMarker("Register Map").Auto();
             var entity = World.Manager.GetEntity(entityAddr);
             var tform = World.Manager.GetComponent<ECTransform>(entityAddr);
             var chunkId = AllEntities.InsertEntity(tform.Position, entity);

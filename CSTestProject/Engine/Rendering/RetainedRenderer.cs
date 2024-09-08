@@ -153,7 +153,7 @@ namespace Weesals.Engine {
     unsafe public class Scene {
         private static ProfilerMarker ProfileMarker_SubmitToGPU = new("SubmitToGPU");
 
-        const uint DefaultListenerMask = 1;
+        const uint DefaultListenerMask = 1;     // Why is this 1?
         public struct Instance {
             public RangeInt Data;
         }
@@ -299,7 +299,9 @@ namespace Weesals.Engine {
             activeBounds.Min = Vector3.Min(activeBounds.Min, aabb.Min);
             activeBounds.Max = Vector3.Max(activeBounds.Max, aabb.Max);
             instanceVisibility[instanceId] = GenerateCellMask(aabb.Min, aabb.Max);
-            movedInstances.Add(instance);
+            if (instanceListeners[instanceId] != 0) {
+                movedInstances.Add(instance);
+            }
         }
         unsafe public BoundingBox GetInstanceAABB(SceneInstance instance) {
             return TransformBounds(*(Matrix4x4*)GetInstanceData(instance).Data, instanceBounds[instance]);
@@ -393,6 +395,8 @@ namespace Weesals.Engine {
         int drawHash = 0;
         SparseIndices instanceDirty = new();
 
+        public HashSet<CSTexture> UsedTextures = new();
+
         // Passes the typed instance buffer to a CommandList
         public BufferLayoutPersistent InstanceBufferLayout;
         public int InstanceCount => InstanceBufferLayout.Count;
@@ -411,6 +415,17 @@ namespace Weesals.Engine {
             // Clear previous data
             InstanceBufferLayout.Clear();
             drawBatches.Clear();
+            UsedTextures.Clear();
+        }
+        public void AppendUsedTexture(CSTexture texture) {
+            if (texture.IsValid) UsedTextures.Add(texture);
+        }
+        public void AppendUsedTextures(Span<CSBufferReference> resources) {
+            for (int i = 0; i < resources.Length; i++) {
+                if (resources[i].mType == CSBufferReference.BufferTypes.Texture) {
+                    AppendUsedTexture(new CSTexture((NativeTexture*)resources[i].mBuffer));
+                }
+            }
         }
         public MemoryBlock<nint> RequireMaterialResources(CSGraphics graphics, CSPipeline pipeline, Material material) {
             return MaterialEvaluator.ResolveResources(graphics, pipeline, new Span<Material>(ref material));
@@ -542,6 +557,7 @@ namespace Weesals.Engine {
         private static ProfilerMarker ProfileMarker_AppendInstances = new ProfilerMarker("Append");
         private static ProfilerMarker ProfileMarker_FrustumJobCull = new ProfilerMarker("FrustumCullJob");
         private static ProfilerMarker ProfileMarker_Batches = new ProfilerMarker("Compute Batches");
+        private static ProfilerMarker ProfileMarker_EvalBatches = new ProfilerMarker("Eval Batch");
         private static ProfilerMarker ProfileMarker_ComputeResources = new ProfilerMarker("ComputeResources");
         private static ProfilerMarker ProfileMarker_FrustumFast = new ProfilerMarker("Fast");
         private static ProfilerMarker ProfileMarker_FrustumSlow = new ProfilerMarker("Slow");
@@ -800,6 +816,7 @@ namespace Weesals.Engine {
                 var batchArr = batchIds.Data;
                 var batchRange = RangeInt.FromBeginEnd(instBegin, queue.Count);
                 JobHandle.ScheduleBatch((range) => {
+                    using var marker = ProfileMarker_EvalBatches.Auto();
                     int end = range.End;
                     for (int i = range.Start; i < end; i++) {
                         var batchId = instanceMeta[queueArr[i]].BatchIndex;
@@ -920,6 +937,7 @@ namespace Weesals.Engine {
                     if (r > 0) {
                         ref var resCB = ref Scene.ResolvedMaterials.GetResolved(resolved.ResolvedResources);
                         resCB.mEvaluator.EvaluateSafe(resources.Slice(r).Reinterpret<byte>());
+                        queue.AppendUsedTextures(resources.Slice(r).Reinterpret<CSBufferReference>());
                     }
                 }
 

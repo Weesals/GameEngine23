@@ -232,6 +232,7 @@ public:
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash) { return 0; }
     virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
     virtual void CopyBufferData(const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length) { }
+    virtual void CommitTexture(const Texture* texture) { }
     virtual const PipelineLayout* RequirePipeline(
         const ShaderStages& shaders,
         const MaterialState& materialState, std::span<const BufferLayout*> bindings) {
@@ -298,6 +299,9 @@ public:
     }
     void CopyBufferData(const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length) {
         mInterop->CopyBufferData(source, dest, srcOffset, dstOffset, length);
+    }
+    void CommitTexture(const Texture* texture) {
+        mInterop->CommitTexture(texture);
     }
     void DrawMesh(std::span<const BufferLayout*> bindings,
         const PipelineLayout* pso, std::span<const void*> resources,

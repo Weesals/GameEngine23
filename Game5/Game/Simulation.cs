@@ -164,21 +164,16 @@ namespace Game5.Game {
                 tmpEntities.Add(entity1);
             }*/
             var loadMarker = new ProfilerMarker("Loading meshes").Auto();
-            var chickenModel = Resources.LoadModel("./Assets/Models/Ignore/chickenV2.fbx", out var chickenHandle);
             var archerModel = Resources.LoadModel("./Assets/Characters/Character_Archer.fbx", out var archerHandle);
-            var idleAnim = Resources.LoadModel("./Assets/Characters/Animation_Idle.fbx", out var idleAnimHandle);
-            var runAnim = Resources.LoadModel("./Assets/Characters/Animation_Run.fbx", out var runAnimHandle);
 
-            archerHandle = archerHandle.Then(() => {
+            archerHandle.Then(() => {
                 // Character FBX references incorrect texture
                 foreach (var mesh in archerModel.Meshes) {
                     mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Characters/T_CharactersAtlas.png"));
                 }
             });
 
-            var animHandles = JobHandle.CombineDependencies(idleAnimHandle, runAnimHandle);
-            var modelLoadHandle = JobHandle.CombineDependencies(archerHandle, chickenHandle, animHandles);
-            modelLoadHandle.Complete();
+            archerHandle.Complete();
             loadMarker.Dispose();
 
             var prefabMarker = new ProfilerMarker("Creating Prefabs").Auto();
@@ -201,8 +196,8 @@ namespace Game5.Game {
 
             if (true) {
                 using (new ProfilerMarker("Creating Test Entities").Auto()) {
-                    //tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
-                    //World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
+                    tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
+                    World.GetComponentRef<ECTransform>(tcInstance).Position = new Int2(50000, 50000);
 
                     var archerInstance = PrefabRegistry.Instantiate(World, archer.Prefab);
                     World.GetComponentRef<ECTransform>(archerInstance).Position = new Int2(40000, 28000);
@@ -224,8 +219,8 @@ namespace Game5.Game {
 
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Manager);
-#if DEBUG
-                const int Count = 20000 * 4;
+#if DEBUG || true
+                const int Count = 200 * 4;
 #else
                 const int Count = 2000000 * 4;
 #endif

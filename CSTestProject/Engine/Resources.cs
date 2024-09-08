@@ -120,7 +120,11 @@ namespace Weesals.Engine {
 
             public void SetResource(TResource resource) {
                 Resource = resource;
+                MarkLoaded();
+            }
+            public void MarkLoaded() {
                 Loaded = true;
+                LoadHandle = default;
             }
         }
 
@@ -168,12 +172,13 @@ namespace Weesals.Engine {
         static Dictionary<ValueTuple<string, string>, Shader> shaders = new();
         static Dictionary<string, Sprite> loadedSprites = new();
 
-        static Dictionary<ulong, Model> loadedModels = new();
+        //static Dictionary<ulong, Model> loadedModels = new();
         static Dictionary<ulong, PreprocessedShader> preprocessedShader = new();
         static Dictionary<ulong, Material> loadedMaterials = new();
         static Dictionary<ulong, CompiledShader> loadedShaders = new();
         static Dictionary<ulong, CompiledShader> uniqueShaders = new();
         static Dictionary<ulong, Font> loadedFonts = new();
+        static ResourceLoader<Model> loadedModels = new();
         static ResourceLoader<CSTexture> loadedTextures = new();
 
         static Dictionary<ResourceKey, LoadedResource> loadedResources = new();
@@ -200,6 +205,10 @@ namespace Weesals.Engine {
         }
 
         public static void LoadDefaultUIAssets() {
+            using var marker = new ProfilerMarker("Load Default Assets").Auto();
+
+            Resources.LoadFont("./Assets/Roboto-Regular.ttf");
+
             var spriteRenderer = new SpriteRenderer();
 
             var spritePaths = new KeyValuePair<string, string>[] {
@@ -258,38 +267,50 @@ namespace Weesals.Engine {
         public static Model LoadModel(string path, FBXImporter.LoadConfig config, out JobHandle handle) {
             handle = default;
             var pathHash = ResourceKey.GeneratePathHash(path);
-            if (loadedModels.TryGetValue(pathHash, out var model)) return model;
-            lock (loadedModels) {
-                if (loadedModels.TryGetValue(pathHash, out model)) return model;
-                /*var key = ResourceKey.CreateFileKey(path, "model");
-                using (var entry = ResourceCacheManager.TryLoad(key)) {
-                    if (entry.IsValid) {
-                        var data = new byte[entry.FileStream.Length];
-                        entry.FileStream.Read(data);
-                        var buffer = new DataBuffer(data);
-                        using (var serializer = TSONNode.CreateRead(buffer)) {
-                            model = new();
-                            model.Serialize(serializer);
-                            return model;
+            var item = loadedModels.RequireItem(pathHash);
+            if (!item.Loaded) {
+                if (item.Resource == null) {
+                    lock (item) {
+                        if (item.Resource == null) {
+                            var key = ResourceKey.CreateFileKey(path, "model");
+                            using (var entry = ResourceCacheManager.TryLoad(key)) {
+                                if (entry.IsValid) {
+                                    var data = new byte[entry.FileStream.Length];
+                                    entry.FileStream.Read(data);
+                                    item.Resource = new();
+                                    item.LoadHandle = JobHandle.Schedule(() => {
+                                        var buffer = new DataBuffer(data);
+                                        using (var serializer = TSONNode.CreateRead(buffer)) {
+                                            item.Resource.Serialize(serializer);
+                                        }
+                                        item.MarkLoaded();
+                                    });
+                                }
+                            }
+                            if (item.Resource == null) {
+                                item.Resource = FBXImporter.Import(path, config, out item.LoadHandle);
+                                item.LoadHandle.Then((object? modelObj) => {
+                                    lock (loadedModels) {
+                                        using var entry = ResourceCacheManager.TrySave(key);
+                                        if (entry.IsValid) {
+                                            var buffer = new DataBuffer();
+                                            using (var serializer = TSONNode.CreateWrite(buffer)) {
+                                                ((Model)modelObj).Serialize(serializer);
+                                            }
+                                            using (var writer = new BinaryWriter(entry.FileStream)) {
+                                                writer.Write(buffer.AsSpan());
+                                            }
+                                        }
+                                    }
+                                    item.MarkLoaded();
+                                }, item.Resource);
+                            }
                         }
                     }
-                }*/
-                model = FBXImporter.Import(path, config, out handle);
-                /*handle.Then((modelObj) => {
-                    using var entry = ResourceCacheManager.TrySave(key);
-                    if (entry.IsValid) {
-                        var buffer = new DataBuffer();
-                        using (var serializer = TSONNode.CreateWrite(buffer)) {
-                            ((Model)modelObj).Serialize(serializer);
-                        }
-                        using (var writer = new BinaryWriter(entry.FileStream)) {
-                            writer.Write(buffer.AsSpan());
-                        }
-                    }
-                }, model);*/
-                loadedModels.Add(pathHash, model);
+                }
             }
-            return model;
+            handle = item.LoadHandle;
+            return item.Resource;
         }
 
         public static Sprite? TryLoadSprite(string path) {
@@ -321,7 +342,7 @@ namespace Weesals.Engine {
                 item.ConfigHash = (ulong)format;
                 var key = ResourceKey.CreateFileKey(path, $"tex@{format}");
                 item.SetResource(textureImporter.LoadAsset(key, format));
-                RegisterLoadedAsset(key, textureImporter, (ulong)format);
+                RegisterLoadedAsset(key, textureImporter, pathHash);
                 return item.Resource;
             }
         }
@@ -514,6 +535,19 @@ namespace Weesals.Engine {
                 case DefaultTexture.White: return RequireSolidTex(ref defaultTexWhite, "White", 4, Color.White);
                 case DefaultTexture.Black: return RequireSolidTex(ref defaultTexBlack, "Black", 4, Color.Black);
                 case DefaultTexture.Clear: return RequireSolidTex(ref defaultTexClear, "Clear", 4, Color.Clear);
+            }
+            return default;
+        }
+
+        public static string FindAssetPath(CSTexture texture) {
+            foreach (var tex in loadedTextures.loadedItems) {
+                if (tex.Value.Resource != texture) continue;
+                foreach (var resource in loadedResources) {
+                    if (resource.Value.Importer != textureImporter) continue;
+                    if (resource.Value.ResourceId == tex.Key) {
+                        return resource.Key.SourcePath;
+                    }
+                }
             }
             return default;
         }

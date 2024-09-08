@@ -94,7 +94,7 @@ public:
         auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(backBuffer);
         D3DResourceCache::D3DRenderSurfaceView view(&mSurface->GetFrameBuffer());
         cache.RequireTextureRTV(view, mFrameHandle);
-        cache.SetRenderTargetMapping(backBuffer, mSurface->GetFrameBuffer());
+        cache.SetRenderTargetMapping(backBuffer, *view.mSurface);
         backBuffer->SetResolution(Int2(d3dRT->mDesc.mWidth, d3dRT->mDesc.mHeight));
         backBuffer->SetFormat((BufferFormat)d3dRT->mFormat);
         assert(d3dRT->mBarrierHandle >= 0);
@@ -319,6 +319,10 @@ public:
         auto& cache = mDevice->GetResourceCache();
         cache.UpdateBufferData(CreateContext(), source, dest, srcOffset, dstOffset, length);
     }
+    void CommitTexture(const Texture* texture) {
+        auto& cache = mDevice->GetResourceCache();
+        cache.RequireCurrentTexture(texture, CreateContext());
+    }
     void BindPipelineState(const D3DResourceCache::D3DPipelineState* pipelineState) {
         mDevice->CheckDeviceState();
         if (mGraphicsRoot.mLastPipeline == pipelineState) return;
@@ -434,8 +438,9 @@ public:
             else if (resource->mType == BufferReference::BufferTypes::Texture) {
                 auto tex = reinterpret_cast<Texture*>(resource->mBuffer);
                 if (tex == nullptr || tex->GetSize().x == 0) tex = cache.RequireDefaultTexture();
-                auto* d3dTex = cache.RequireCurrentTexture(tex, CreateContext());
-                if (rb->mType == ShaderBase::ResourceTypes::R_UAVBuffer) {
+                auto* d3dTex = cache.RequireTexture(tex, CreateContext());
+                if (d3dTex->mBuffer == nullptr) {
+                } else if (rb->mType == ShaderBase::ResourceTypes::R_UAVBuffer) {
                     cache.RequireBarrierHandle(d3dTex);
                     mBarrierStateManager.SetResourceState(
                         d3dTex->mBuffer.Get(), d3dTex->mBarrierHandle,

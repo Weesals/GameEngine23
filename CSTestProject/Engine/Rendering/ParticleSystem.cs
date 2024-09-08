@@ -858,9 +858,12 @@ namespace Weesals.Engine {
     }
 
     public class ParticleDebugWindow : ApplicationWindow {
+        public readonly ParticleSystemManager ParticleManager;
         private Canvas canvas;
         private Image posImage, velImage;
-        public ParticleDebugWindow() { }
+        public ParticleDebugWindow(ParticleSystemManager particleManager) {
+            ParticleManager = particleManager;
+        }
         public override void RegisterRootWindow(CSWindow window) {
             base.RegisterRootWindow(window);
             Window.SetSize(new Int2(400, 200));
@@ -883,7 +886,9 @@ namespace Weesals.Engine {
             posImage.Texture = particleManager.PositionBuffer;
             velImage.Texture = particleManager.VelocityBuffer;
         }
-        unsafe public void Render(float dt, CSGraphics graphics) {
+        public override void Render(float dt, CSGraphics graphics) {
+            UpdateFrom(ParticleManager);
+
             graphics.Reset();
             graphics.SetSurface(Surface);
             var rt = Surface.GetBackBuffer();

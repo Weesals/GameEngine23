@@ -70,6 +70,10 @@ namespace Weesals.Engine {
         }
 
         protected void RequireVertexElementFormat(ref sbyte elementId, BufferFormat fmt, string semantic) {
+            if (fmt == BufferFormat.FORMAT_UNKNOWN) {
+                Debug.Assert(elementId == -1);
+                return;
+            }
             if (elementId != -1) vertexBuffer.SetElementFormat(elementId, fmt);
             else elementId = (sbyte)vertexBuffer.AppendElement(new CSBufferElement(semantic, fmt));
         }
@@ -112,6 +116,25 @@ namespace Weesals.Engine {
         public void SetIndices(Span<ushort> indices) {
             SetIndexCount(indices.Length);
             GetIndicesV<ushort>().Set(indices);
+        }
+
+        public BufferFormat GetPositionsFormat() {
+            return vertexPositionId >= 0 ? vertexBuffer.Elements[vertexPositionId].mFormat : BufferFormat.FORMAT_UNKNOWN;
+        }
+        public BufferFormat GetNormalsFormat() {
+            return vertexNormalId >= 0 ? vertexBuffer.Elements[vertexNormalId].mFormat : BufferFormat.FORMAT_UNKNOWN;
+        }
+        public BufferFormat GetTangentsFormat() {
+            return vertexTangentId >= 0 ? vertexBuffer.Elements[vertexTangentId].mFormat : BufferFormat.FORMAT_UNKNOWN;
+        }
+        public BufferFormat GetTexcoordFormat(int coord) {
+            return vertexTexCoord0Id >= 0 ? vertexBuffer.Elements[vertexTexCoord0Id].mFormat : BufferFormat.FORMAT_UNKNOWN;
+        }
+        public BufferFormat GetColorsFormat() {
+            return vertexColorId >= 0 ? vertexBuffer.Elements[vertexColorId].mFormat : BufferFormat.FORMAT_UNKNOWN;
+        }
+        public BufferFormat GetIndicesFormat() {
+            return indexBuffer.Elements[0].mFormat;
         }
 
         public TypedBufferView<Vector3> GetPositionsV()

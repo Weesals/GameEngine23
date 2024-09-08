@@ -185,7 +185,7 @@ namespace Weesals.Utility {
 
         private ProfilerMarker ProfileMarker_Add = new("BVH.Add");
         private ProfilerMarker ProfileMarker_Move = new("BVH.Move");
-        private ProfilerMarker ProfileMarker_Remove = new("BVH.Add");
+        private ProfilerMarker ProfileMarker_Remove = new("BVH.Rem");
 
         public Scene Scene;
 
@@ -277,7 +277,6 @@ namespace Weesals.Utility {
 
         unsafe public Mutation Add(Int2 pos, SceneInstance instance) {
             using var marker = ProfileMarker_Add.Auto();
-            int copyDepth = 0;
             if (!HasRoot) {
                 CreateRoot(pos);
                 RequireBranches();
@@ -298,7 +297,7 @@ namespace Weesals.Utility {
                     //Debug.WriteLine($"Expand root to {newAltitude}");
                 } else {
                     var oldRoot = root.Offset;
-                    copyDepth = RequireInRoot(pos);
+                    var copyDepth = RequireInRoot(pos);
                     RequireBranches();
                     var rootAddr = root;
                     for (int i = 0; i < copyDepth; i++) {
@@ -509,7 +508,8 @@ namespace Weesals.Utility {
             var aabb = Scene.GetInstanceAABB(instance);
             for (int i = stackCount - 1; i >= 0; i--) {
                 ref var branch = ref branches[stack[i]];
-                branch.Bounds = BoundingBox.Union(branch.Bounds, aabb);
+                var newBounds = BoundingBox.Union(branch.Bounds, aabb);
+                branch.Bounds = newBounds;
             }
         }
         public FrustumEnumerator CreateFrustumEnumerator(Frustum frustum) {

@@ -185,6 +185,7 @@ namespace Weesals.Engine {
             }
             var buffers = graphics.RequireFrameData(mBufferLayout);
 
+            pass.RenderQueue.AppendUsedTextures(resources.Slice(passCache.mPipeline.ConstantBufferCount).Reinterpret<CSBufferReference>());
             pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount, RenderOrder);
         }
     }
@@ -233,7 +234,7 @@ namespace Weesals.Engine {
                 resources = MaterialEvaluator.ResolveResources(graphics, passCache.mPipeline, materials);
             }
             var buffers = graphics.RequireFrameData(mBufferLayout);
-
+            pass.RenderQueue.AppendUsedTextures(resources.Slice(passCache.mPipeline.ConstantBufferCount).Reinterpret<CSBufferReference>());
             pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, RenderOrder);
         }
     }
