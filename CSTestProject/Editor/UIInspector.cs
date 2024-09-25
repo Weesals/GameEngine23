@@ -103,7 +103,7 @@ namespace Weesals.Editor {
                 } else
                     Text = path.GetValueAs<object>()?.ToString() ?? "null";
             }
-            public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            public override SizingResult GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
                 size.X = sizing.ClampWidth(Math.Max(size.X, 200.0f));
                 return size;
@@ -138,7 +138,7 @@ namespace Weesals.Editor {
                     OnValueChanged?.Invoke();
                 } catch { }
             }
-            public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            public override SizingResult GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
                 size.X = Math.Max(size.X, 100.0f);
                 return size;
@@ -205,7 +205,7 @@ namespace Weesals.Editor {
             }
             public void OnDrag(PointerEvent events) {
             }
-            public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            public override SizingResult GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
                 size = Vector2.Max(size, new Vector2(100f, 100f));
                 size = sizing.ClampSize(size);
@@ -260,7 +260,7 @@ namespace Weesals.Editor {
         }
         private List<Bindables> bindables = new();
         public UIPropertiesList() {
-            Axis = ListLayout.Axes.Vertical;
+            Axis = CanvasAxes.Vertical;
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
@@ -275,7 +275,7 @@ namespace Weesals.Editor {
             bindables.Clear();
         }
         public void AppendProperty(PropertyPath path, Action onChanged = null) {
-            var row = new ListLayout() { Axis = ListLayout.Axes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
+            var row = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
             var label = new PropertyLabel(path) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat, };
             if (onChanged != null) label.OnValueChanged += () => { onChanged(); };
             label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
@@ -301,7 +301,7 @@ namespace Weesals.Editor {
             AppendChild(row);
         }
         public void AppendSelector(PropertyPath dataList, PropertyPath path, Action onChanged = null) {
-            var row = new ListLayout() { Axis = ListLayout.Axes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
+            var row = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
             var label = new PropertyLabel(path) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat, };
             label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
             row.AppendChild(label);
@@ -346,7 +346,7 @@ namespace Weesals.Editor {
     public class UIEntityInspector : CanvasRenderable {
         public ListLayout List;
         public UIEntityInspector() {
-            List = new ListLayout() { Axis = ListLayout.Axes.Vertical, };
+            List = new ListLayout() { Axis = CanvasAxes.Vertical, };
             AppendChild(List);
         }
         public void Initialise(World world, Entity entity) {
@@ -372,6 +372,7 @@ namespace Weesals.Editor {
                             component.NotifyMutation();
                         });
                     }
+                    Debug.Assert(properties.Children.Count > 0);
                     List.AppendChild(properties);
                     var spacer = new CanvasRenderable();
                     spacer.SetTransform(CanvasTransform.MakeDefault().WithOffsets(0f, 0f, 0f, 0f));
@@ -404,7 +405,7 @@ namespace Weesals.Editor {
 
         public ListLayout List;
         public UIEditablesInspector() {
-            List = new ListLayout() { Axis = ListLayout.Axes.Vertical, };
+            List = new ListLayout() { Axis = CanvasAxes.Vertical, };
             AppendChild(List);
         }
 
@@ -414,6 +415,7 @@ namespace Weesals.Editor {
                 List.AppendChild(new TextBlock(editable.GetType().Name) { TextColor = Color.DarkGray, });
                 var properties = new UIPropertiesList() { Name = "Editables Inspector" };
                 properties.AppendPropertiesFrom(editable);
+                Debug.Assert(properties.Children.Count > 0);
                 List.AppendChild(properties);
             }
         }
@@ -421,7 +423,7 @@ namespace Weesals.Editor {
 
     public class UIInspector : TabbedWindow {
         protected readonly ScrollView scrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
-        protected readonly ListLayout content = new() { Name = "Inspector Content", Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
+        protected readonly ListLayout content = new() { Name = "Inspector Content", Axis = CanvasAxes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
         public UILandscapeTools LandscapeTools = new();
         public UIEntityInspector EntityInspector = new();
         public UIEditablesInspector GenericInspector = new();

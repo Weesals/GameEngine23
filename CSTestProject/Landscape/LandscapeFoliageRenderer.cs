@@ -112,7 +112,8 @@ namespace Weesals.Landscape {
             FoliageMaterial.SetValue("BoundsMax", visibleBounds.Max.toxz());
 
             var computeShader = Resources.RequireShader(graphics,
-                Resources.LoadShader("./Assets/Shader/GenerateFoliageInstances.hlsl", "CSGenerateFoliage"), "cs_6_2", default, default);
+                Resources.LoadShader("./Assets/Shader/GenerateFoliageInstances.hlsl", "CSGenerateFoliage"), "cs_6_2", default, default, out var loadHandle);
+            loadHandle.Complete();
             var computePSO = graphics.RequireComputePSO(computeShader.NativeShader);
 
             foreach (var instance in foliageInstances) {

@@ -254,6 +254,7 @@ namespace Weesals.Editor {
 
             Weesals.Engine.Input.Initialise(Input);
             if (Input.GetKeyPressed(KeyCode.F11) && !Input.GetKeyDown(KeyCode.Alt)) FullScreen = !FullScreen;
+            if (Input.GetKeyPressed(KeyCode.D) && Input.GetKeyDown(KeyCode.Control)) EventSystem.EnableDebug ^= true;
 
             Canvas.SetSize(Size);
             EventSystem.Update(dt);

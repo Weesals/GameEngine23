@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
@@ -197,11 +198,14 @@ namespace Weesals.Engine {
             var macros = new Span<KeyValuePair<CSIdentifier, CSIdentifier>>(macrosBuffer, count);
             var materialState = ResolvePipelineState(materials);
 
+            JobHandle meshHandle = default, pixelHandle = default, vertexHandle = default;
+
             var meshShader = materialState.MeshShader == null || !graphics.GetCapabiltiies().mMeshShaders || true ? null :
-                Resources.RequireShader(graphics, materialState.MeshShader, "ms_6_5", macros, materialState.RenderPass);
+                Resources.RequireShader(graphics, materialState.MeshShader, "ms_6_5", macros, materialState.RenderPass, out meshHandle);
             if (meshShader != null) {
                 var pixShader = materialState.PixelShader == null ? null :
-                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_5", macros, materialState.RenderPass);
+                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_5", macros, materialState.RenderPass, out pixelHandle);
+                meshHandle.Join(pixelHandle).Complete();
                 return graphics.RequireMeshPipeline(pbuffLayout,
                     meshShader.NativeShader,
                     pixShader.NativeShader,
@@ -209,9 +213,10 @@ namespace Weesals.Engine {
                 );
             } else {
                 var pixShader = materialState.PixelShader == null ? null :
-                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_5", macros, materialState.RenderPass);
+                    Resources.RequireShader(graphics, materialState.PixelShader, "ps_6_5", macros, materialState.RenderPass, out pixelHandle);
                 var vertShader = materialState.VertexShader == null ? null :
-                    Resources.RequireShader(graphics, materialState.VertexShader, "vs_6_5", macros, materialState.RenderPass);
+                    Resources.RequireShader(graphics, materialState.VertexShader, "vs_6_5", macros, materialState.RenderPass, out vertexHandle);
+                pixelHandle.Join(vertexHandle).Complete();
                 return graphics.RequirePipeline(pbuffLayout,
                     vertShader.NativeShader,
                     pixShader.NativeShader,

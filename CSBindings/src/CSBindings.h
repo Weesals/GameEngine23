@@ -376,6 +376,7 @@ private:
 	static int GetStatus(NativeWindow* window);
 	static Int2C GetSize(const NativeWindow* window);
 	static void SetSize(NativeWindow* window, Int2 size);
+	static void SetStyle(NativeWindow* window, CSString style);
 	static void SetVisible(NativeWindow* window, bool visible);
 	static void SetInput(NativeWindow* window, NativeInput* input);
 	static CSWindowFrame GetWindowFrame(const NativeWindow* window);

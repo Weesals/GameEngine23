@@ -304,7 +304,7 @@ namespace Weesals.UI {
             public float mFontSize;
             public Color mColor;
             public GlyphStyle(float size, Color color) { mFontSize = size; mColor = color; }
-            public static readonly GlyphStyle Default = new GlyphStyle(24, Color.White);
+            public static readonly GlyphStyle Default = new GlyphStyle(16, Color.White);
         };
 		public struct GlyphPlacement {
             public ushort mGlyphId;

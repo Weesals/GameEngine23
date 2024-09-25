@@ -28,7 +28,6 @@ class Program {
         loadJob = JobHandle.CombineDependencies(loadJob, coreJob).Then(() => {
             using (var marker = new ProfilerMarker("Creating Editor").Auto()) {
                 editorWindow = new();
-                ApplicationWindow.ActiveWindows.Add(editorWindow);
             }
         });
 
@@ -71,8 +70,6 @@ class Program {
                 for (int i = ApplicationWindow.ActiveWindows.Count - 1; i >= 0; i--) {
                     var window = ApplicationWindow.ActiveWindows[i];
                     if (window.Window.IsAlive()) continue;
-
-                    ApplicationWindow.ActiveWindows.RemoveAt(i);
                     window.Dispose();
                 }
 

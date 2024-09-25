@@ -461,6 +461,19 @@ Int2C CSWindow::GetSize(const NativeWindow* window) {
 void CSWindow::SetSize(NativeWindow* window, Int2 size) {
 	window->SetClientSize(size);
 }
+void CSWindow::SetStyle(NativeWindow* window, CSString style) {
+	if (auto winwnd = dynamic_cast<WindowWin32*>(window)) {
+		auto styleStr = ToWString(style);
+		auto CompareStr = [&](const std::wstring_view s1, const std::wstring_view s2) {
+			return std::equal(s1.begin(), s1.end(), s2.begin(), s2.end(), [](char c1, char c2) {
+				return std::tolower(c1) == std::tolower(c2);
+			});
+		};
+		if (CompareStr(styleStr, L"borderless")) {
+			SetWindowLong(winwnd->GetHWND(), GWL_STYLE, WS_OVERLAPPED);
+		}
+	}
+}
 void CSWindow::SetVisible(NativeWindow* window, bool visible) {
 	window->SetVisible(visible);
 }

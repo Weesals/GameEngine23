@@ -16,6 +16,8 @@ namespace Weesals.UI {
         public CanvasBinding(CanvasRenderable parent) { mCanvas = parent.Canvas; mParent = parent; }
     }
 
+    public enum CanvasAxes : byte { Horizontal, Vertical, };
+
     public struct SizingParameters {
         public Vector2 MinimumSize;
         public Vector2 PreferredSize;
@@ -32,6 +34,9 @@ namespace Weesals.UI {
         public SizingParameters SetPreferredSize(Vector2 size) {
             PreferredSize = size;
             return this;
+        }
+        public void RequireMinimumSize(Vector2 size) {
+            MinimumSize = Vector2.Max(MinimumSize, size);
         }
 
         public void Unapply(CanvasTransform transform) {
@@ -65,6 +70,28 @@ namespace Weesals.UI {
             size.Y = ClampHeight(size.Y);
             return size;
         }
+
+        public void SetFixedSize(CanvasAxes axis, float itemSize) {
+            switch (axis) {
+                case CanvasAxes.Horizontal: SetFixedXSize(itemSize); break;
+                case CanvasAxes.Vertical: SetFixedYSize(itemSize); break;
+                default: throw new NotImplementedException();
+            }
+        }
+        public void SetClampedPreferredSize(CanvasAxes axis, float size) {
+            size = Math.Clamp(size, MinimumSize[(int)axis], MaximumSize[(int)axis]);
+            PreferredSize[(int)axis] = size;
+        }
+    }
+    public struct SizingResult {
+        public Vector2 Size;
+        public Vector4 Margins;
+        public Vector2 TotalSize => Size + new Vector2(Margins.X + Margins.Z, Margins.Y + Margins.W);
+
+        public float X { get => Size.X; set => Size.X = value; }
+        public float Y { get => Size.Y; set => Size.Y = value; }
+        public static implicit operator SizingResult(Vector2 s) => new() { Size = s, };
+        public static implicit operator Vector2(SizingResult r) => r.Size;
     }
     public interface ICanvasLayout { }
 
@@ -77,7 +104,12 @@ namespace Weesals.UI {
             Children = 4,   // Our children require layout (our mLayoutCache is unchanged)
             Compose = 8,    // We require a compose pass
         };
-        public enum StateFlags : byte { None = 0, HasCullParent = 1, HasCustomTransformApplier = 2, HasLayoutParent = 4, };
+        public enum StateFlags : byte {
+            None = 0,
+            HasCullParent = 1,
+            HasCustomTransformApplier = 2,
+            HasLayoutParent = 4,
+        };
 
         public ref struct TransformerContext {
             public ref CanvasLayout Layout;
@@ -94,14 +126,13 @@ namespace Weesals.UI {
         protected CanvasLayout mLayoutCache;
         protected HittestGrid.Binding hitBinding;
         protected List<CanvasRenderable>? mChildren;
-        protected List<ICustomTransformer>? customTransformers;
         protected byte mDepth;
         protected DirtyFlags dirtyFlags;
         protected StateFlags stateFlags;
 
         public Canvas Canvas => mBinding.mCanvas;
         public CanvasRenderable? Parent => mBinding.mParent;
-        public IReadOnlyList<CanvasRenderable> Children { get { if (mChildren == null) mChildren = new(); return mChildren; } }
+        public IReadOnlyList<CanvasRenderable> Children => mChildren ?? (IReadOnlyList<CanvasRenderable>)Array.Empty<CanvasRenderable>();
         public CanvasTransform Transform {
             get => mTransform;
             set => SetTransform(value);
@@ -157,11 +188,11 @@ namespace Weesals.UI {
             else stateFlags &= ~StateFlags.HasCustomTransformApplier;
         }
         public void AppendChild(CanvasRenderable child) {
-            if (mChildren == null) mChildren = new();
+            mChildren ??= new();
             InsertChild(mChildren.Count, child);
         }
         public virtual void InsertChild(int index, CanvasRenderable child) {
-            if (mChildren == null) mChildren = new();
+            mChildren ??= new();
             if (index == -1) index = mChildren.Count;
             mChildren.Insert(index, child);
             if (mBinding.mCanvas != null && child.Parent == null) {
@@ -299,12 +330,14 @@ namespace Weesals.UI {
             return true;
         }
 
-        public virtual Vector2 GetDesiredSize(SizingParameters sizing) {
+        public virtual SizingResult GetDesiredSize(SizingParameters sizing) {
             var childSizing = sizing;
             childSizing.Unapply(Transform);
             var childSize = Vector2.Zero;
-            for (int i = 0; i < Children.Count; i++) {
-                childSize = Vector2.Max(childSize, Children[i].GetDesiredSize(childSizing));
+            if (mChildren != null) {
+                for (int i = 0; i < mChildren.Count; i++) {
+                    childSize = Vector2.Max(childSize, mChildren[i].GetDesiredSize(childSizing));
+                }
             }
             childSizing.PreferredSize = Vector2.Max(childSizing.PreferredSize, childSize);
             childSizing.Apply(Transform);
@@ -353,7 +386,7 @@ namespace Weesals.UI {
         }
 
         public override string? ToString() {
-            return Name ?? base.ToString();
+            return Name ?? GetType().Name;
         }
 
     }

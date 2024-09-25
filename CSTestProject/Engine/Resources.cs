@@ -175,9 +175,10 @@ namespace Weesals.Engine {
         //static Dictionary<ulong, Model> loadedModels = new();
         static Dictionary<ulong, PreprocessedShader> preprocessedShader = new();
         static Dictionary<ulong, Material> loadedMaterials = new();
-        static Dictionary<ulong, CompiledShader> loadedShaders = new();
+        //static Dictionary<ulong, CompiledShader> loadedShaders = new();
         static Dictionary<ulong, CompiledShader> uniqueShaders = new();
         static Dictionary<ulong, Font> loadedFonts = new();
+        static ResourceLoader<CompiledShader> loadedShaders = new();
         static ResourceLoader<Model> loadedModels = new();
         static ResourceLoader<CSTexture> loadedTextures = new();
 
@@ -442,7 +443,8 @@ namespace Weesals.Engine {
             }
             return preprocessed;
         }
-        unsafe public static CompiledShader RequireShader(CSGraphics graphics, Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass) {
+        unsafe public static CompiledShader RequireShader(CSGraphics graphics, Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass, out JobHandle handle) {
+            handle = default;
             if (shader == null) return null;
 
             // TODO: Cache in 'shader'
@@ -456,25 +458,32 @@ namespace Weesals.Engine {
                 hash += macroHash;
             }
             hash += profile.ComputeStringHash();
-            if (loadedShaders.TryGetValue(hash, out var compiledshader)) return compiledshader;
-            lock (loadedShaders) {
-                if (loadedShaders.TryGetValue(hash, out compiledshader)) return compiledshader;
+            var item = loadedShaders.RequireItem(hash);
+            if (item.Resource == null) {
                 var key = ResourceKey.CreateFileKey(shader.Path, "shader", hash);
-                compiledshader = shaderImporter.LoadAsset(key, graphics, shader, profile, renderPass, macros);
+                lock (item) {
+                    if (item.Resource == null) {
+                        var compiledshader = new CompiledShader();
+                        item.Resource = compiledshader;
+                        var macrosArray = macros;//.ToArray();
+                        //item.LoadHandle = JobHandle.Schedule(() => {
+                            shaderImporter.LoadAsset(item.Resource, key, graphics, shader, profile, renderPass, macrosArray);
+                            // Deduplicate
+                            var compiledHash = (ulong)compiledshader.GetHashCode();
+                            if (!uniqueShaders.TryAdd(compiledHash, compiledshader)) {
+                                compiledshader = uniqueShaders[compiledHash];
+                            }
+                            compiledshader.ReferenceCount++;
+                            item.Resource = compiledshader;
+                            item.MarkLoaded();
+                        //});
 
-                // Deduplicate
-                var compiledHash = (ulong)compiledshader.GetHashCode();
-                if (!uniqueShaders.TryAdd(compiledHash, compiledshader)) {
-                    compiledshader = uniqueShaders[compiledHash];
+                        RegisterLoadedAsset(key, shaderImporter, hash);
+                    }
                 }
-                compiledshader.ReferenceCount++;
-
-                // Register loaded asset
-                loadedShaders.Add(hash, compiledshader);
-
-                RegisterLoadedAsset(key, shaderImporter, hash);
             }
-            return compiledshader;
+            handle = item.LoadHandle;
+            return item.Resource;
         }
 
 
@@ -494,7 +503,7 @@ namespace Weesals.Engine {
                 if (string.IsNullOrEmpty(key.SourcePath)) continue;
                 bool same = (ulong)File.GetLastWriteTimeUtc(key.SourcePath).Ticks == key.SourceHash;
                 if (same && resource.Importer is ShaderImporter shaderImporter) {
-                    var compiledshader = loadedShaders[resource.ResourceId];
+                    var compiledshader = loadedShaders.loadedItems[resource.ResourceId].Resource;
                     if (shaderImporter.GetIncludeHash(compiledshader) != compiledshader.IncludeHash) {
                         same = false;
                     }
@@ -502,11 +511,13 @@ namespace Weesals.Engine {
                 if (same) continue;
                 if (resource.Importer is ShaderImporter) {
                     ResourceCacheManager.DeleteCache(key);
-                    var compiledshader = loadedShaders[resource.ResourceId];
+                    var compiledshader = loadedShaders.loadedItems[resource.ResourceId].Resource;
                     if (--compiledshader.ReferenceCount == 0)
                         uniqueShaders.Remove((ulong)compiledshader.GetHashCode());
 
-                    loadedShaders.Remove(resource.ResourceId);
+                    //loadedShaders.Remove(resource.ResourceId);
+                    loadedShaders.loadedItems[resource.ResourceId].Resource = null;
+                    loadedShaders.loadedItems[resource.ResourceId].Loaded = false;
                     invalidated.Add(key);
                 }
                 if (resource.Importer is TextureImporter) {

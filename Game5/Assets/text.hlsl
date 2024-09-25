@@ -65,7 +65,7 @@ float4 PSMain(PSInput input) : SV_TARGET
 {    
     half density = Texture.Sample(g_sampler, input.uv).a;
     
-    half fringe = 2.0 * (127.0 / 7.0) / 256;// * ddx(input.uv.x);
+    half fringe = (127.0 / 7.0) * ddx(input.uv.x);
     //fringe = max(fwidth(density), 0.00001);
     half bias = 0.5 - _FaceDilate / 2 - fringe * 0.125;
     

@@ -37,9 +37,9 @@ namespace Weesals.Editor {
         private UIPropertiesList toolProps;
 
         public UILandscapeTools() {
-            var list = new ListLayout() { Axis = ListLayout.Axes.Vertical, };
+            var list = new ListLayout() { Axis = CanvasAxes.Vertical, };
 
-            var modes = new ListLayout() { Axis = ListLayout.Axes.Horizontal, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, ItemSize = 1.0f, };
+            var modes = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, ItemSize = 1.0f, };
             list.AppendChild(modes);
 
             HeightButton.OnClick += () => { SetActiveTool(activeTool == CliffTool ? null : CliffTool); };

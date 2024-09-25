@@ -8,11 +8,12 @@ using System.Threading.Tasks;
 using Weesals.Editor.Assets;
 using Weesals.Engine;
 using Weesals.UI;
+using Weesals.UI.Controls;
 
 namespace Weesals.Editor {
     public class UIProjectView : TabbedWindow, ISelectionProxy {
         public class FolderList : CanvasRenderable, ISelectionGroup {
-            public class FolderView : Selectable {
+            public class FolderView : Selectable, IPointerDownHandler {
                 public readonly FolderView? ParentFolder;
                 public readonly string Filename;
                 public TextBlock Text;
@@ -36,16 +37,34 @@ namespace Weesals.Editor {
                     }
                     Text.TextColor = IsSelected ? Color.Orange : Color.DarkGray;
                 }
-                public override Vector2 GetDesiredSize(SizingParameters sizing) {
+                public override SizingResult GetDesiredSize(SizingParameters sizing) {
                     var size = base.GetDesiredSize(sizing);
                     size.Y = 20f;
                     return size;
+                }
+                public new void OnPointerDown(PointerEvent events) {
+                    if (events.HasButton(1)) {
+                        var contextMenu = new ContextMenu();
+                        contextMenu.AppendItem("Select", () => {
+                            FindParent<UIProjectView>()?.SetContentPath(Filename);
+                        });
+                        contextMenu.AppendItem("Explore", () => {
+                            Process process = new Process();
+                            process.StartInfo.FileName = "explorer";
+                            process.StartInfo.Arguments = Path.GetFullPath(Filename);
+                            process.Start();
+                        });
+                        contextMenu.AppendItem("Option3", () => { });
+                        contextMenu.Show();
+                        return;
+                    }
+                    base.OnPointerDown(events);
                 }
             }
 
             FolderView? selectedFolder;
             ScrollView scrollView = new() { ScrollMask = new Vector2(0f, 1f), };
-            ListLayout folderList = new() { Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
+            ListLayout folderList = new() { Axis = CanvasAxes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
 
             public IReadOnlyCollection<ItemReference> Selected => new[] { new ItemReference(selectedFolder) };
 
@@ -169,7 +188,7 @@ namespace Weesals.Editor {
                 }
 
                 public override string ToString() { return Filename; }
-                public override Vector2 GetDesiredSize(SizingParameters sizing) {
+                public override SizingResult GetDesiredSize(SizingParameters sizing) {
                     return new Vector2(80f);
                 }
 

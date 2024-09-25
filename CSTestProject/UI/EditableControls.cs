@@ -68,7 +68,7 @@ namespace Weesals.UI {
             }
             base.Compose(ref composer);
         }
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
             return base.GetDesiredSize(sizing) + new Vector2(8f, 8f);
         }
 

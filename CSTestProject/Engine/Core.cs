@@ -41,13 +41,13 @@ namespace Weesals.Engine {
             return platform.MessagePump();
         }
 
-        public static Core? ActiveInstance;
+        public static Core ActiveInstance;
 
     }
 
     public struct FrameThrottler {
 
-        float timeSinceRender = 0f;
+        float timeSinceRender = float.MaxValue;
         int renderHash = 0;
 
         public bool IsThrottled { get; private set; }
@@ -118,6 +118,7 @@ namespace Weesals.Engine {
                 Surface = core.GetGraphics().CreateSurface(window);
             }
             Window.SetInput(Input);
+            ApplicationWindow.ActiveWindows.Add(this);
         }
 
         public virtual bool Validate() {
@@ -140,6 +141,7 @@ namespace Weesals.Engine {
         }
 
         public virtual void Dispose() {
+            ApplicationWindow.ActiveWindows.Remove(this);
             if (Surface.IsValid) Surface.Dispose();
         }
 

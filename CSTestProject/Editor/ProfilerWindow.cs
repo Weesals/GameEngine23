@@ -145,8 +145,7 @@ namespace Weesals.Editor {
 
             graphics.Reset();
             graphics.SetSurface(Surface);
-            var rt = Surface.GetBackBuffer();
-            graphics.SetRenderTargets(new Span<CSRenderTarget>(ref rt), default);
+            graphics.SetRenderTargets(Surface.GetBackBuffer(), default);
             graphics.Clear();
             Canvas.SetSize(Size);
             Canvas.Update(dt);

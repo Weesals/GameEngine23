@@ -99,7 +99,7 @@ namespace Game5.UI {
             var list = new ListLayout() {
                 Transform = CanvasTransform.MakeAnchored(new Vector2(300, 64), new Vector2(0.0f, 1.0f)),
                 ScaleMode = ListLayout.ScaleModes.StretchOrClamp,
-                Axis = ListLayout.Axes.Horizontal,
+                Axis = CanvasAxes.Horizontal,
             };
             for (int i = 0; i < 5; ++i) {
                 var imgBtn = new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {

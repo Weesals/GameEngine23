@@ -530,6 +530,8 @@ namespace Weesals.UI {
         private bool enableDebug;
         public float DeltaTime => (currTimerUS - prevTimerUS) / (1000.0f * 1000.0f);
 
+        public bool EnableDebug { get => enableDebug; set => enableDebug = value; }
+
         private List<IPointerDownHandler> pointerDownHandlers = new();
         private Dictionary<uint, PointerEvent> pointerEvents = new();
 
@@ -562,14 +564,18 @@ namespace Weesals.UI {
             foreach (var pointer in pointerEvents) {
                 var active = pointer.Value.Targets.Hover;
                 if (active is CanvasRenderable renderable) {
+                    if (input.GetKeyPressed(KeyCode.D)) {
+                        renderable.UpdateChildLayouts();
+                    }
                     var img = context.CreateTransient<CanvasImage>(Canvas);
+                    img.Color = new Color(0, 0, 0, 128);
                     img.UpdateLayout(Canvas, renderable.GetComputedLayout());
                     img.Append(ref context);
                     var txt = context.CreateTransient<CanvasText>(Canvas);
                     txt.Text = active.ToString();
+                    txt.FontSize = 12;
                     txt.UpdateLayout(Canvas, renderable.GetComputedLayout());
                     txt.Append(ref context);
-                    Trace.WriteLine(active.ToString());
                 }
             }
         }

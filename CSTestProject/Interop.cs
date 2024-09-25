@@ -870,6 +870,9 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetSize@CSWindow@@CAXPEAVWindowBase@@UInt2@@@Z", ExactSpelling = true)]
         private static extern void SetSize([NativeTypeName("NativeWindow *")] WindowBase* window, [NativeTypeName("Int2")] Weesals.Engine.Int2 size);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetStyle@CSWindow@@CAXPEAVWindowBase@@UCSString@@@Z", ExactSpelling = true)]
+        private static extern void SetStyle([NativeTypeName("NativeWindow *")] WindowBase* window, CSString style);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetVisible@CSWindow@@CAXPEAVWindowBase@@_N@Z", ExactSpelling = true)]
         private static extern void SetVisible([NativeTypeName("NativeWindow *")] WindowBase* window, [NativeTypeName("bool")] byte visible);
 

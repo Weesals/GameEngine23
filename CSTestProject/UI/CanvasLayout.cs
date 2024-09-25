@@ -15,11 +15,12 @@ namespace Weesals.UI {
         public Vector3 AxisZ;
         public Vector3 Position;
 
-        public Vector2 GetSize() { return new Vector2(AxisX.W, AxisY.W); }
+        public Vector2 GetSize() => new Vector2(AxisX.W, AxisY.W);
+        public float GetSize(CanvasAxes axis) => axis switch { CanvasAxes.Horizontal => AxisX.W, CanvasAxes.Vertical => AxisY.W, _ => throw new(), };
         public void SetSize(Vector2 size) { AxisX.W = size.X; AxisY.W = size.Y; }
-        public float GetWidth() { return AxisX.W; }
+        public float GetWidth() => AxisX.W;
         public void SetWidth(float width) { AxisX.W = width; }
-        public float GetHeight() { return AxisY.W; }
+        public float GetHeight() => AxisY.W;
         public void SetHeight(float height) { AxisY.W = height; }
 
         public Vector3 TransformPosition(Vector3 v) {

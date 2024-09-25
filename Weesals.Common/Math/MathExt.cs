@@ -112,6 +112,9 @@ namespace Weesals.Engine {
         public static Vector4 toyzwx(this Vector4 v) {
             return new Vector4(v.Y, v.Z, v.W, v.X);
         }
+        public static Vector4 toyxwz(this Vector4 v) {
+            return new Vector4(v.Y, v.X, v.W, v.Z);
+        }
         public static Vector4 toxyzw(this Vector4 v) {
             return new Vector4(v.X, v.Y, v.Z, v.W);
         }

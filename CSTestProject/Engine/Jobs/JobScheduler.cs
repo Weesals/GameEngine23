@@ -275,6 +275,7 @@ namespace Weesals.Engine.Jobs {
         public const uint RunState_HasReturn = TBatchIndex.MaxValue - 2;
         public const uint RunState_HasUserData32 = TBatchIndex.MaxValue - 3;
         public const uint RunState_HasUserData64 = TBatchIndex.MaxValue - 4;
+        public const uint RunState_HasUnmanaged = TBatchIndex.MaxValue - 5;
         //public const TBatchIndex BatchBegin_MainThread = TBatchIndex.MaxValue;
         //public const ushort ContextCount_HasReturn = 0x8000;
         //public const ushort ContextCount_ContBegAsUData = 0x8001;
@@ -643,7 +644,6 @@ namespace Weesals.Engine.Jobs {
             if (!EnableThreading) { action(value); return ushort.MaxValue; }
             return IntlPushTask(new JobTask() { Callback = action, DataBegin = (uint)value, DataCount = (uint)(value >> 32), RunState = RunState_HasUserData64, });
         }
-
         public ushort CreateTask<TResult>(Func<TResult> action) {
             var contextI = contextPool.Borrow(1);
             contextPool.Contexts[contextI] = null;
@@ -652,6 +652,25 @@ namespace Weesals.Engine.Jobs {
                 action = null;
             }
             return IntlPushTask(new JobTask() { Callback = action, DataBegin = (ushort)contextI, DataCount = 0, RunState = RunState_HasReturn, });
+        }
+        private class Boxed<T> { public T Value; public static Stack<Boxed<T>> Pool = new(); }
+        public ushort CreateTask<T>(Action<T> action, T value) {
+            if (!EnableThreading) { action(value); return ushort.MaxValue; }
+            if (typeof(T).IsValueType) {
+                var pool = Boxed<T>.Pool;
+                Boxed<T>? boxed = default;
+                lock (pool) { if (pool.Count > 0) boxed = pool.Pop(); }
+                boxed ??= new();
+                boxed.Value = value;
+                return CreateTask(static (callback, bundle) => {
+                    var boxed = ((Boxed<T>)bundle);
+                    ((Action<T>)callback)(boxed.Value);
+                    var pool = Boxed<T>.Pool;
+                    lock (pool) { pool.Push(boxed); }
+                }, boxed);
+            } else {
+                return CreateTask(static (callback, boxed) => { ((Action<T>)callback)((T)boxed); }, (object)value);
+            }
         }
 
         public ushort CreateBatchTask(Action<RangeInt> action, int count) {

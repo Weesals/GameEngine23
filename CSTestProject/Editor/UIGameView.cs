@@ -33,7 +33,7 @@ namespace Weesals.Editor {
                 FindParent<UIHierarchy>()?.NotifyEntitySelected(Entity, IsSelected);
                 Text.TextColor = IsSelected ? Color.Orange : Color.DarkGray;
             }
-            public override Vector2 GetDesiredSize(SizingParameters sizing) {
+            public override SizingResult GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
                 size.Y = 20f;
                 return size;
@@ -41,7 +41,7 @@ namespace Weesals.Editor {
         }
 
         protected readonly ScrollView scrollView = new() { Name = "Inspector Scroll", ScrollMask = new Vector2(0f, 1f), };
-        protected readonly ListLayout list = new() { Name = "Inspector Content", Axis = ListLayout.Axes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
+        protected readonly ListLayout list = new() { Name = "Inspector Content", Axis = CanvasAxes.Vertical, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, };
 
         public World World;
 

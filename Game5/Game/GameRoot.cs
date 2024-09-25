@@ -202,14 +202,12 @@ namespace Game5.Game {
                 var window = Core.ActiveInstance.CreateWindow("Profiler");
                 window.SetVisible(true);
                 profilerWindow?.RegisterRootWindow(window);
-                ApplicationWindow.ActiveWindows.Add(profilerWindow);
             }
             if (Input.GetKeyPressed(KeyCode.F3) && previewWindow == null) {
                 previewWindow = new(Play.ParticleManager);
                 var window = Core.ActiveInstance.CreateWindow("Particles");
                 window.SetVisible(true);
                 previewWindow?.RegisterRootWindow(window);
-                ApplicationWindow.ActiveWindows.Add(previewWindow);
             }
 
             if (Input.GetKeyPressed(KeyCode.F6)) {

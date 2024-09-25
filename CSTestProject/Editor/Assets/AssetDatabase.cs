@@ -203,15 +203,13 @@ namespace Weesals.Editor.Assets {
         unsafe public PreprocessedShader PreprocessShader(string shaderPath, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros) {
             return new PreprocessedShader(CSGraphics.PreprocessShader(shaderPath, macros));
         }
-        unsafe public CompiledShader LoadAsset(ResourceKey key, CSGraphics graphics, Shader shader,
+        unsafe public void LoadAsset(CompiledShader compiledshader, ResourceKey key, CSGraphics graphics, Shader shader,
             string profile, CSIdentifier renderPass, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros
         ) {
             using var marker = new ProfilerMarker("Load Shader").Auto();
-            CompiledShader compiledshader = default;
             using (var entry = ResourceCacheManager.TryLoad(key)) {
                 if (entry.IsValid) {
                     using (var reader = new BinaryReader(entry.FileStream)) {
-                        compiledshader = new();
                         compiledshader.Deserialize(reader);
                         compiledshader.NativeShader = CSCompiledShader.Create(
                             Path.GetFileNameWithoutExtension(key.SourcePath),
@@ -263,11 +261,11 @@ namespace Weesals.Editor.Assets {
                             compiledshader.NativeShader.GetBinaryData()
                         );
                     }
+                    return;
                 }
             }
-            if (compiledshader == null) {
+            {
                 using var compilemarker = new ProfilerMarker("Compile Shader").Auto();
-                compiledshader = new();
                 var entryFn = renderPass.IsValid ? renderPass.GetName() + "_" + shader.Entry : shader.Entry;
                 Debug.WriteLine($"Compiling Shader {shader} : {entryFn}");
 
@@ -344,7 +342,6 @@ namespace Weesals.Editor.Assets {
                 var stats = compiledshader.NativeShader.GetStatistics();
                 Debug.WriteLine($"=> Istr: {stats.mInstructionCount} Tex: {stats.mTexIC}");
             }
-            return compiledshader;
         }
 
         public ulong GetIncludeHash(CompiledShader compiledshader) {

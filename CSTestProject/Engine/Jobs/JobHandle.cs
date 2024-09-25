@@ -112,6 +112,9 @@ namespace Weesals.Engine.Jobs {
         public static JobHandle Schedule(Action<ulong> callback, ulong data, JobHandle dependency = default) {
             return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback, data), dependency);
         }
+        public static JobHandle Schedule<T>(Action<T> callback, T data, JobHandle dependency = default) {
+            return JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(callback, data), dependency);
+        }
 
         public static JobHandle ScheduleBatch(Action<RangeInt> value, int count, JobHandle dependency = default) {
             if (count == 0) return JobHandle.None;
@@ -154,6 +157,9 @@ namespace Weesals.Engine.Jobs {
             return JobHandle.Schedule(action, data, this);
         }
         public readonly JobHandle Then(Action<ulong> action, ulong data) {
+            return JobHandle.Schedule(action, data, this);
+        }
+        public readonly JobHandle Then<T>(Action<T> action, T data) {
             return JobHandle.Schedule(action, data, this);
         }
 

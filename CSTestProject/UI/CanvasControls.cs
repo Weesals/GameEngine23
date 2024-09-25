@@ -87,7 +87,7 @@ namespace Weesals.UI {
             TextElement.Append(ref composer);
             base.Compose(ref composer);
         }
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
             var width = TextElement.GetPreferredWidth();
             var height = TextElement.GetPreferredHeight(width);
             var size = new Vector2(width, height);
@@ -126,13 +126,35 @@ namespace Weesals.UI {
         , IPointerClickHandler
         , ITweenable {
 
-        public static readonly Color NormalColor = new Color(0xff888888);
-        public static readonly Color SelectedColor = new Color(0xffaaaaaa);
-        public static readonly Color HoverColor = new Color(0xffaaaaaa);
-        public static readonly Color PressColor = new Color(0xff777777);
-        public static readonly Color ClickColor = new Color(0xffffffff);
+        public class ButtonStyle {
+            public Sprite? ButtonBG;
+            public Color NormalColor;
+            public Color SelectedColor;
+            public Color HoverColor;
+            public Color PressColor;
+            public Color ClickColor;
+            public Vector4 Margins;
+            public static readonly ButtonStyle SkeuoStyle = new() {
+                ButtonBG = Resources.TryLoadSprite("ButtonBG"),
+                NormalColor = new Color(0xff888888),
+                SelectedColor = new Color(0xffaaaaaa),
+                HoverColor = new Color(0xffaaaaaa),
+                PressColor = new Color(0xff777777),
+                ClickColor = new Color(0xffffffff),
+            };
+            public static readonly ButtonStyle FlatStyle = new() {
+                NormalColor = new Color(0xffaaaaaa),
+                SelectedColor = new Color(0xffeeeeee),
+                HoverColor = new Color(0xffeeeeee),
+                PressColor = new Color(0xff777777),
+                ClickColor = new Color(0xffffffff),
+                Margins = new Vector4(1f, 1f, 1f, 1f),
+            };
+            public static readonly ButtonStyle Default = SkeuoStyle;
+        }
 
         public CanvasImage Background = new();
+        public ButtonStyle Style = ButtonStyle.Default;
 
         [Flags]
         private enum States {
@@ -147,9 +169,9 @@ namespace Weesals.UI {
         public event Action? OnClick;
 
         public Button() {
-            Background.SetSprite(Resources.TryLoadSprite("ButtonBG"));
+            Background.SetSprite(Style.ButtonBG);
             Background.SetBlendMode(CanvasBlending.BlendModes.Overlay);
-            Background.Color = NormalColor;
+            Background.Color = Style.NormalColor;
         }
 
         public override void Initialise(CanvasBinding binding) {
@@ -210,11 +232,11 @@ namespace Weesals.UI {
             var rate = (state & States.Active) != 0 ? 0.01f : 0.1f;
             var ease = Easing.StatefulPowerInOut(rate, 2f).WithDelay(delay);
             Background.Color = Color.Lerp(Background.Color,
-                (state & States.Active) != 0 ? ClickColor :
-                (state & States.Press) != 0 ? PressColor :
-                (state & States.Selected) != 0 ? SelectedColor :
-                (state & States.Hover) != 0 ? HoverColor :
-                NormalColor,
+                (state & States.Active) != 0 ? Style.ClickColor :
+                (state & States.Press) != 0 ? Style.PressColor :
+                (state & States.Selected) != 0 ? Style.SelectedColor :
+                (state & States.Hover) != 0 ? Style.HoverColor :
+                Style.NormalColor,
                 ease.Evaluate(tween)
             );
             var tform = Transform;
@@ -233,6 +255,11 @@ namespace Weesals.UI {
         }
         public override void OnSelected(ISelectionGroup group, bool selected) {
             SetState(States.Selected, selected);
+        }
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            var result = base.GetDesiredSize(sizing);
+            result.Margins = Style.Margins;
+            return result;
         }
     }
     public class TextButton : Button {
@@ -265,7 +292,7 @@ namespace Weesals.UI {
             TextElement.Append(ref composer);
             base.Compose(ref composer);
         }
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
             sizing.PreferredSize.X = sizing.ClampWidth(TextElement.GetPreferredWidth());
             sizing.PreferredSize.Y = sizing.ClampHeight(TextElement.GetPreferredHeight(sizing.PreferredSize.X) + 4);
             return base.GetDesiredSize(sizing);
@@ -342,14 +369,14 @@ namespace Weesals.UI {
             State = (bool)field.GetValue(owner)!;
             OnStateChanged = (newValue) => field.SetValue(owner, newValue);
         }
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
-            return new Vector2(20f, 20f);
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            return sizing.ClampSize(new Vector2(20f, 20f));
         }
     }
     public class FixedGridLayout : CanvasRenderable {
         public Int2 CellCount = new Int2(4, 4);
         public Vector2 Spacing = new Vector2(10f, 10f);
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
             if (mChildren.Count == 0) return Vector2.Zero;
             var childSizing = GetChildSizing(sizing);
             int xCount = Math.Max(1, (int)((sizing.PreferredSize.X + Spacing.X + 0.001f) / (childSizing.PreferredSize.X + Spacing.X)));
@@ -470,6 +497,7 @@ namespace Weesals.UI {
             array[index] = size;
         }
         public override void UpdateChildLayouts() {
+            if (mChildren == null) return;
             if (gridXs == null) ComputeLayout();
             for (int c = 0; c < mChildren.Count; c++) {
                 var child = mChildren[c];
@@ -574,126 +602,114 @@ namespace Weesals.UI {
 
         private Int2 ComputeGridSize() {
             Int2 size = Int2.Zero;
-            for (int i = 0; i < Children.Count; i++) {
-                var el = elementCells[i];
-                size = Int2.Max(size, el.CellEnd);
+            var children = mChildren;
+            if (children != null) {
+                for (int i = 0; i < children.Count; i++) {
+                    var el = elementCells[i];
+                    size = Int2.Max(size, el.CellEnd);
+                }
             }
             return size;
         }
     }
     public class ListLayout : CanvasRenderable, ICanvasLayout {
-        public enum Axes : byte { Horizontal, Vertical, };
         public enum ScaleModes : byte { None, Clamp, StretchOrClamp, };
         public ScaleModes ScaleMode = ScaleModes.Clamp;
-        public Axes Axis = Axes.Vertical;
+        public CanvasAxes Axis = CanvasAxes.Vertical;
         public float ItemSize = 0f;
+        public float Separation = 0f;
 
         // Allow arbitrary insertion as public API for list
         public new void InsertChild(int index, CanvasRenderable child) {
             base.InsertChild(index, child);
         }
 
-        public override void UpdateChildLayouts() {
-            //base.UpdateChildLayouts();
-            var layout = mLayoutCache;
-            Vector2 sizeMasked = default;
-            ref var sizeAxis = ref (Axis == Axes.Horizontal ? ref sizeMasked.X : ref sizeMasked.Y);
-            ref var axisVec4 = ref (Axis == Axes.Horizontal ? ref layout.AxisX : ref layout.AxisY);
-            float sizeScale = 1.0f;
-            Span<float> itemSizes = ScaleMode == ScaleModes.None ? default : stackalloc float[mChildren.Count];
-            float desiredSize = ItemSize * mChildren.Count;
-            if (ItemSize == 0f) {
-                var sizing = SizingParameters.Default;
-                if (Axis == Axes.Horizontal) sizing.SetFixedYSize(layout.GetHeight());
-                else if (Axis == Axes.Vertical) sizing.SetFixedXSize(layout.GetWidth());
-                for (int c = 0; c < mChildren.Count; ++c) {
-                    sizeMasked = mChildren[c].GetDesiredSize(sizing);
-                    itemSizes[c] = sizeAxis;
-                    desiredSize += sizeAxis;
+        public struct ListSizing {
+            public float TotalSize;
+            public float MaximumHeight;
+            public float FlexibleSize;
+        }
+        private ListSizing ComputeDesiredSizing(float height, Span<RectF> localRects, out Vector4 margin) {
+            margin = Vector4.Zero;
+
+            var children = mChildren!;
+            var result = new ListSizing();
+            SizingResult itemSize = default;
+            ref var itemSizeLX = ref (Axis == CanvasAxes.Horizontal ? ref itemSize.Size.X : ref itemSize.Size.Y);
+            ref var itemSizeLY = ref (Axis == CanvasAxes.Horizontal ? ref itemSize.Size.Y : ref itemSize.Size.X);
+            var childSizing = SizingParameters.Default;
+            childSizing.SetFixedSize(1 - Axis, height);
+            if (ItemSize != 0f) childSizing.SetFixedSize(Axis, ItemSize);
+            for (int c = 0; c < children.Count; ++c) {
+                itemSize = children[c].GetDesiredSize(childSizing);
+
+                var localMargin = Axis == CanvasAxes.Horizontal
+                    ? itemSize.Margins : itemSize.Margins.toyxwz();
+
+                if (c == 0) margin.X = localMargin.X;
+                else result.TotalSize += MathF.Max(margin.Z, localMargin.X);
+                margin.Z = MathF.Max(Separation, localMargin.Z);
+                margin.Y = MathF.Max(margin.Y, localMargin.Y);
+                margin.W = MathF.Max(margin.W, localMargin.W);
+
+                localRects[c] = new(result.TotalSize, 0f, itemSizeLX, itemSizeLY);
+                result.TotalSize += itemSizeLX;
+                result.FlexibleSize += itemSizeLX;
+                result.MaximumHeight = MathF.Max(result.MaximumHeight, itemSizeLY);
+            }
+            return result;
+        }
+        private float ComputeScaling(Vector2 size, float flexibleSize) {
+            if (ScaleMode == ScaleModes.None) return 1f;
+            var sizeScale = size[(int)Axis] / flexibleSize;
+            if (ScaleMode == ScaleModes.Clamp) sizeScale = Math.Min(1f, sizeScale);
+            return sizeScale;
+        }
+
+        public ListSizing ComputeSizing(Vector2 size, Span<RectF> localRects, out Vector4 margin) {
+            var listSizing = ComputeDesiredSizing(size[1 - (int)Axis], localRects, out margin);
+            var sizeScale = ComputeScaling(size, listSizing.FlexibleSize);
+            if (sizeScale != 1f) {
+                float offset = 0f;
+                for (int i = 0; i < localRects.Length; i++) {
+                    ref var rect = ref localRects[i];
+                    rect.X += offset;
+                    offset += rect.Width * (sizeScale - 1f);
+                    rect.Width *= sizeScale;
                 }
             }
-            if (ScaleMode != ScaleModes.None) {
-                sizeScale = axisVec4.W / desiredSize;
-                if (ScaleMode == ScaleModes.Clamp) sizeScale = Math.Min(1f, sizeScale);
-            }
+            return listSizing;
+        }
 
+        public override void UpdateChildLayouts() {
+            if (mChildren == null) return;
+            var layout = mLayoutCache;
+            Span<RectF> localRects = stackalloc RectF[mChildren.Count];
+            ComputeSizing(layout.GetSize(), localRects, out var margin);
+            ref var axisVec4 = ref (Axis == CanvasAxes.Horizontal ? ref layout.AxisX : ref layout.AxisY);
             var axisVec = axisVec4.toxyz();
             for (int c = 0; c < mChildren.Count; ++c) {
-                var child = mChildren[c]; 
-                axisVec4.W = (ItemSize == 0f ? itemSizes[c] : ItemSize) * sizeScale;
+                var rect = localRects[c];
+                if (Axis == CanvasAxes.Vertical) {
+                    rect = new(rect.Y, rect.X, rect.Height, rect.Width);
+                }
 
-                child.UpdateLayout(layout);
-                layout.Position += axisVec * axisVec4.W;
+                layout.Position = mLayoutCache.TransformPosition2D(rect.Min);
+                layout.SetSize(rect.Size);
+
+                mChildren[c].UpdateLayout(layout);
             }
         }
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
-            {
-                var axisI = Axis == Axes.Horizontal ? 0 : 1;
-                var childSizing = sizing;
-                if (ItemSize != 0f && ScaleMode != ScaleModes.StretchOrClamp) {
-                    // Fixed size
-                    if (Axis == Axes.Horizontal) childSizing.SetFixedXSize(ItemSize);
-                    else if (Axis == Axes.Vertical) childSizing.SetFixedYSize(ItemSize);
-                }
-                if (ItemSize == 0f) {
-                    // Desire smaller sizes
-                    if (Axis == Axes.Horizontal) childSizing.PreferredSize.X = 20f;
-                    else if (Axis == Axes.Vertical) childSizing.PreferredSize.Y = 20f;
-                }
-                float sizeOMax = 0f, sizeA = 0f, sizeAMax = 0f;
-                foreach (var child in Children) {
-                    var size = child.GetDesiredSize(childSizing);
-                    var itemSizeA = Axis == Axes.Horizontal ? size.X : Axis == Axes.Vertical ? size.Y : 0f;
-                    var itemSizeO = Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f;
-                    sizeOMax = MathF.Max(sizeOMax, itemSizeO);
-                    sizeAMax = MathF.Max(sizeAMax, itemSizeA);
-                    if (ItemSize == 0f) {
-                        sizeA += itemSizeA;
-                    }
-                }
-                if (ItemSize != 0f && ScaleMode == ScaleModes.StretchOrClamp) {
-                    // Enforce uniform sizing (of largest item)
-                    sizeA = sizeAMax * Children.Count;
-                }
-                if (ScaleMode == ScaleModes.Clamp) {
-                    sizeA = Math.Min(sizeA, sizing.MaximumSize[axisI]);
-                }
-                if (ItemSize == 0f) {
-                    // Accumulated size along axis
-                    if (Axis == Axes.Horizontal) sizing.PreferredSize.X = sizing.ClampWidth(sizeA);
-                    else sizing.PreferredSize.Y = sizing.ClampHeight(sizeA);
-                }
-                // Minimum size along other axis
-                if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = sizing.ClampHeight(sizeOMax);
-                else if (Axis == Axes.Vertical) sizing.PreferredSize.X = sizing.ClampWidth(sizeOMax);
-            }
-            /*if (ItemSize != 0f) {
-                if (Axis == Axes.Horizontal) sizing.SetFixedXSize(ItemSize * Children.Count);
-                else if (Axis == Axes.Vertical) sizing.SetFixedYSize(ItemSize * Children.Count);
-            }
-            //sizing.PreferredSize = new Vector2(80f, 80f);
-            float sizeO = 0f, sizeA = 0f;
-            var childSizing = sizing;
-            if (ItemSize == 0f) {
-                if (Axis == Axes.Horizontal) childSizing.PreferredSize.X = 20f;
-                else if (Axis == Axes.Vertical) childSizing.PreferredSize.Y = 20f;
-            }
-            foreach (var child in Children) {
-                var size = child.GetDesiredSize(childSizing);
-                sizeO = MathF.Max(sizeO,
-                    Axis == Axes.Horizontal ? size.Y : Axis == Axes.Vertical ? size.X : 0f);
-                if (ItemSize == 0f) {
-                    sizeA += Axis == Axes.Horizontal ? size.X : Axis == Axes.Vertical ? size.Y : 0f;
-                }
-            }
-            if (ItemSize == 0f) {
-                if (Axis == Axes.Horizontal) sizing.PreferredSize.X = sizing.ClampWidth(sizeA);
-                else sizing.PreferredSize.Y = sizing.ClampHeight(sizeA);
-            }
-            // Set other axis
-            if (Axis == Axes.Horizontal) sizing.PreferredSize.Y = sizeO;
-            else if (Axis == Axes.Vertical) sizing.PreferredSize.X = sizeO;*/
-            return base.GetDesiredSize(sizing);
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            if (mChildren == null || mChildren.Count == 0) return sizing.ClampSize(default);
+
+            Span<RectF> localRects = stackalloc RectF[mChildren.Count];
+            var listSizing = ComputeDesiredSizing(mLayoutCache.GetSize(1 - Axis), localRects, out var margin);
+            sizing.SetClampedPreferredSize(Axis, listSizing.TotalSize);
+            sizing.SetClampedPreferredSize(1 - Axis, listSizing.MaximumHeight);
+            var result = base.GetDesiredSize(sizing);
+            result.Margins = margin;
+            return result;
         }
     }
     public class FlexLayout : CanvasRenderable {
@@ -962,7 +978,7 @@ namespace Weesals.UI {
             if (ScrollMask.X == 0f) sizing.SetFixedXSize(availableSize.X);
             if (ScrollMask.Y == 0f) sizing.SetFixedYSize(availableSize.Y);
             foreach (var child in mChildren) {
-                contentSize = Vector2.Max(contentSize, child.GetDesiredSize(sizing));
+                contentSize = Vector2.Max(contentSize, child.GetDesiredSize(sizing).TotalSize);
             }
             layout.SetSize(contentSize);
             foreach (var child in mChildren) {
@@ -1030,7 +1046,7 @@ namespace Weesals.UI {
         public override void UpdateChildLayouts() {
             //base.UpdateChildLayouts();
         }
-        public override Vector2 GetDesiredSize(SizingParameters sizing) {
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
             //return base.GetDesiredSize(sizing);
             return Vector2.Zero;
         }

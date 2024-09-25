@@ -47,7 +47,7 @@ PSInput VSMain(VSInput input)
     result.velocity = result.position.xyz * (previousVPos.w * invW) - previousVPos.xyz * (result.position.w * invW);
     // Add a slight amount to avoid velocity being 0 (special case)
     result.velocity.x += 0.0000001;
-        
+            
     return result;
 }
 

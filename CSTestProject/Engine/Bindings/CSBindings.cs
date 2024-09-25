@@ -621,6 +621,11 @@ namespace Weesals.Engine {
         unsafe public void Dispose() { Dispose(mWindow); mWindow = null; }
         unsafe public Int2 GetSize() { return GetSize(mWindow); }
         unsafe public void SetSize(Int2 size) { SetSize(mWindow, size); }
+        unsafe public void SetStyle(string style) {
+            fixed (char* str = style) {
+                SetStyle(mWindow, new CSString(str, style.Length));
+            }
+        }
         unsafe public void SetVisible(bool visible) { SetVisible(mWindow, (byte)(visible ? 1 : 0)); }
         unsafe public void SetInput(CSInput input) { SetInput(mWindow, input.GetNativeInput()); }
         unsafe public CSWindowFrame GetWindowFrame() { return GetWindowFrame(mWindow); }
