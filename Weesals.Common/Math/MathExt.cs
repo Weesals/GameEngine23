@@ -330,6 +330,16 @@ namespace Weesals.Engine {
         public static implicit operator Vector4(Int4 v) { return new Vector4((float)v.X, (float)v.Y, (float)v.Z, (float)v.W); }
     }
 
+    public struct Byte4 : IEquatable<Byte4> {
+        public byte X, Y, Z, W;
+        public Byte4(byte x, byte y, byte z, byte w) { X = x; Y = y; Z = z; W = w; }
+        public Byte4(Vector4 v) { X = (byte)v.X; Y = (byte)v.Y; Z = (byte)v.Z; W = (byte)v.W; }
+        public Vector4 ToVector4() { return new Vector4(X, Y, Z, W); }
+        public bool Equals(Byte4 o) { return X == o.X && Y == o.Y && Z == o.Z && W == o.W; }
+        public override string ToString() { return $"<{X}, {Y}, {Z}, {W}>"; }
+        public override int GetHashCode() { return X + (Y << 8) + (Z << 16) + (W << 24); }
+        public static implicit operator Byte4(byte v) { return new Byte4(v, v, v, v); }
+    }
     public struct Short2 : IEquatable<Short2> {
         public short X, Y;
         public Short2(short x, short y) { X = x; Y = y; }

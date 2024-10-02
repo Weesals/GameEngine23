@@ -565,7 +565,6 @@ public:
         if (pipelineState == nullptr) return;
 
         static Identifier indirectArgsName("INDIRECTARGS");
-        static Identifier indirectCountName("INDIRECTINSTANCES");
         if (pipelineState->mType == 1) {
             DispatchMesh(bindings, state, resources, config, instanceCount, name);
             return;

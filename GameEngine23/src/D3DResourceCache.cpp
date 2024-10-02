@@ -923,6 +923,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
     static Identifier indirectCountName("INDIRECTINSTANCES");
     auto useBindings = bindings;
     if (useBindings[0]->mElements[0].mBindName == indirectArgsName) useBindings = useBindings.subspan(1);
+    // TODO: This isnt required? Its bound as a uniform buffer. Could skip any uniform buffers instead?
     if (useBindings[0]->mElements[0].mBindName == indirectCountName) useBindings = useBindings.subspan(1);
     for (auto* binding : useBindings) {
         for (auto& el : binding->GetElements()) {
@@ -1253,6 +1254,7 @@ D3DGraphicsSurface::D3DGraphicsSurface(D3DGraphicsDevice& device, D3DResourceCac
     swapChainDesc.BufferCount = FrameCount;
     swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.SampleDesc = DefaultSampleDesc();
+    //swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
     auto* swapChainMarker = SimpleProfilerMarker("Create SwapChain");
     ComPtr<IDXGISwapChain1> swapChain;
@@ -1370,6 +1372,7 @@ int D3DGraphicsSurface::Present() {
         params.pScrollOffset = nullptr;
         params.pScrollRect = nullptr;
         //mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE | DXGI_PRESENT_TEST : 
+        //DXGI_PRESENT_ALLOW_TEARING
         auto hr = mSwapChain->Present(0, mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE : 0);
         mCache.PushAllocator(allocatorHandle);
 

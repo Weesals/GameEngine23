@@ -3,10 +3,14 @@ using Weesals.Editor;
 using Weesals.Engine;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
-using Weesals.Impostors;
 using Weesals;
 using Game5.Game;
 using Game5;
+
+/*
+ * Mouse scroll to zoom (and pinch?)
+ * Selection reticle system
+ */
 
 class Program {
 

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -152,6 +154,85 @@ namespace Weesals.Engine {
         int RenderHash { get; }
         public Camera Camera { get; }
         public ScenePassManager Scene { get; }
+    }
+
+    public static class Graphics {
+
+        public struct Context {
+            public CSGraphics Graphics;
+            public MaterialStack MaterialStack;
+            public RenderQueue RenderQueue;
+        }
+        [ThreadStatic]
+        private static Context context;
+        [ThreadStatic]
+        private static Material intermediateMaterial;
+
+        public static ref MaterialStack MaterialStack => ref context.MaterialStack;
+
+        public struct Scoped : IDisposable {
+            Context previousContext;
+            public Scoped(CSGraphics _graphics, Material? rootMaterial, RenderQueue queue) {
+                previousContext = context;
+                context = new() {
+                    Graphics = _graphics,
+                    MaterialStack = new(rootMaterial),
+                    RenderQueue = queue,
+                };
+            }
+            public void Dispose() {
+                context.MaterialStack.Dispose();
+                context = previousContext;
+            }
+        }
+
+        public unsafe static void DrawMesh(Mesh mesh, Material material) {
+            var graphics = context.Graphics;
+            ref var materialStack = ref context.MaterialStack;
+
+            using var meshPush = materialStack.Push(mesh.Material);
+            using var matPush = materialStack.Push(material);
+
+            var bindingsPtr = stackalloc CSBufferLayout[2] { mesh.IndexBuffer, mesh.VertexBuffer };
+            var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
+
+            var pipeline = MaterialEvaluator.ResolvePipeline(graphics, bindings, materialStack);
+            var resources = MaterialEvaluator.ResolveResources(graphics, pipeline, materialStack);
+            context.RenderQueue.AppendMesh(mesh.Name, pipeline, bindings, resources);
+        }
+
+        public unsafe static void DrawMesh(Mesh mesh, Matrix4x4 matrix) {
+            var graphics = context.Graphics;
+            ref var materialStack = ref context.MaterialStack;
+
+            intermediateMaterial ??= new();
+            intermediateMaterial.SetValue(RootMaterial.iMMat, matrix);
+
+            using var meshPush = materialStack.Push(mesh.Material);
+            using var matPush = materialStack.Push(intermediateMaterial);
+
+            var bindingsPtr = stackalloc CSBufferLayout[2] { mesh.IndexBuffer, mesh.VertexBuffer };
+            var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
+
+            var pipeline = MaterialEvaluator.ResolvePipeline(graphics, bindings, materialStack);
+            var resources = MaterialEvaluator.ResolveResources(graphics, pipeline, materialStack);
+            context.RenderQueue.AppendMesh(mesh.Name, pipeline, bindings, resources);
+        }
+
+        public unsafe static void DrawMeshNow(Mesh mesh, Material material) {
+            var graphics = context.Graphics;
+            ref var materialStack = ref context.MaterialStack;
+
+            using var meshPush = materialStack.Push(mesh.Material);
+            using var matPush = materialStack.Push(material);
+
+            var bindingsPtr = stackalloc CSBufferLayout[2] { mesh.IndexBuffer, mesh.VertexBuffer };
+            var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
+
+            var pipeline = MaterialEvaluator.ResolvePipeline(graphics, bindings, materialStack);
+            var resources = MaterialEvaluator.ResolveResources(graphics, pipeline, materialStack);
+            graphics.Draw(pipeline, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
+        }
     }
 
 }

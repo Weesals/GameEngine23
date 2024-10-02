@@ -5,8 +5,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Engine.Jobs;
 
 namespace Weesals.Landscape {
+    public class FoliageType {
+        public Mesh Mesh;
+        public JobHandle LoadHandle;
+    }
+    public class LandscapeFoliageType {
+        public FoliageType FoliageType;
+        public float Density;
+    }
     // A PBR texture set that can appear on the terrain, with some metadata
     // associated with game interaction and rendering
     public class LandscapeLayer {
@@ -29,7 +38,7 @@ namespace Weesals.Landscape {
         public AlignmentModes Alignment = AlignmentModes.Clustered;
         public TerrainFlags Flags = TerrainFlags.Ground;
 
-        //public FoliageType[] Foliage;
+        public LandscapeFoliageType[] Foliage;
 
         public LandscapeLayer(string name) { Name = name; }
 

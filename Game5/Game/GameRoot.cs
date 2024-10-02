@@ -289,8 +289,11 @@ namespace Game5.Game {
             Canvas.RequireComposed();
         }
         public void Render(float dt, CSGraphics graphics) {
-            scenePasses.CommitMotion();
             using var updateMarker = ProfileMarker_Render.Auto();
+
+            using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial, null);
+
+            scenePasses.CommitMotion();
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
             Play.RenderUpdate(graphics, dt);

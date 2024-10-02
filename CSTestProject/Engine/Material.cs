@@ -90,6 +90,10 @@ namespace Weesals.Engine {
         public Span<Item> GetItemsRaw() {
             return Items.AsSpan(0, itemCount);
         }
+        public void Clear() {
+            itemCount = 0;
+            dataConsumed = 0;
+        }
         public override int GetHashCode() {
             int hash = 0;
             foreach (var item in Items.AsSpan(0, itemCount)) {
@@ -133,7 +137,7 @@ namespace Weesals.Engine {
         }
         public T GetUniform<T>(CSIdentifier name) where T : unmanaged {
             if (Mode == Modes.Source) {
-                var result = ((MaterialCollectorContext*)Context)->GetUniformSource(name);
+                var result = ((MaterialCollectorContext*)Context)->GetUniform(name);
                 return MemoryMarshal.Read<T>(result);
             } else {
                 return ((MaterialEvaluatorContext*)Context)->GetUniform<T>(name);
@@ -160,7 +164,111 @@ namespace Weesals.Engine {
             MemoryMarshal.Write(output, in value);
         }
     }
-    public class Material {
+    public class MaterialPropertyBlock {
+        // Parameters to be set
+        protected Parameters Parameters = new();
+
+        // Incremented whenever data within this material changes
+        protected int mRevision = 0;
+        protected int hashCache = 0;
+
+        // Whenever a change is made that requires this material to be re-uploaded
+        // (or computed parameters to recompute)
+        protected void MarkChanged() {
+            mRevision++;
+            hashCache = 0;
+        }
+
+        public ref Parameters GetParametersRaw() { return ref Parameters; }
+
+        public Span<byte> SetArrayValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
+            return SetArrayValue(name, (ReadOnlySpan<T>)v);
+        }
+        public Span<byte> SetArrayValue<T>(CSIdentifier name, ReadOnlySpan<T> v) where T : unmanaged {
+            var r = Parameters.SetValue(name, v);
+            MarkChanged();
+            return r;
+        }
+        public T GetValue<T>(CSIdentifier name) where T : unmanaged {
+            return MemoryMarshal.Read<T>(GetUniformBinaryData(name));
+        }
+        public Span<T> GetValueArray<T>(CSIdentifier name) where T : unmanaged {
+            return MemoryMarshal.Cast<byte, T>(GetUniformBinaryData(name));
+        }
+
+        // Set various uniform values
+        unsafe public Span<byte> SetValue<T>(CSIdentifier name, T v) where T : unmanaged {
+#pragma warning disable CS9087 // This returns a parameter by reference but it is not a ref parameter
+            return SetArrayValue(name, new ReadOnlySpan<T>(ref v));
+#pragma warning restore CS9087 // This returns a parameter by reference but it is not a ref parameter
+        }
+        unsafe public Span<byte> SetTexture(CSIdentifier name, CSTexture tex) {
+            return SetValue(name, new CSBufferReference(tex));
+        }
+        unsafe public Span<byte> SetTexture(CSIdentifier name, CSRenderTarget tex) {
+            return SetValue(name, new CSBufferReference(tex));
+        }
+        unsafe public void SetBuffer(CSIdentifier name, CSBufferLayout buffer) {
+            SetValue(name, new CSBufferReference(buffer));
+        }
+        public void ClearValues() {
+            Parameters.Clear();
+        }
+
+        // Get the binary data for a specific parameter
+        public unsafe Span<byte> GetUniformBinaryData(CSIdentifier name) {
+            var self = this;
+#pragma warning disable CS9091 // This returns local by reference but it is not a ref local
+            return GetUniformBinaryData(name, new Span<MaterialPropertyBlock>(ref self));
+#pragma warning restore CS9091 // This returns local by reference but it is not a ref local
+        }
+        unsafe public CSBufferReference GetUniformBuffer(CSIdentifier name) {
+            var self = this;
+            return GetUniformBuffer(name, new Span<MaterialPropertyBlock>(ref self));
+        }
+        unsafe public CSTexture GetUniformTexture(CSIdentifier name) {
+            return GetUniformBuffer(name).AsTexture();
+        }
+        unsafe public CSRenderTarget GetUniformRenderTarget(CSIdentifier name) {
+            return GetUniformBuffer(name).AsRenderTarget();
+        }
+
+        // Get the binary data for a specific parameter
+        [ThreadStatic] private static MaterialCollectorStacked collector;
+        public static MaterialCollectorContext BeginGetUniforms(Span<Material> materials) {
+            collector ??= new();
+            Debug.Assert(collector.IsEmpty);
+            return MaterialCollectorContext.Create(collector, materials);
+        }
+        public static MaterialCollectorContext BeginGetUniforms(Span<MaterialPropertyBlock> properties) {
+            collector ??= new();
+            Debug.Assert(collector.IsEmpty);
+            return MaterialCollectorContext.Create(collector, properties);
+        }
+        unsafe public static Span<byte> GetUniformBinaryData(CSIdentifier name, Span<Material> materialStack) {
+            using var context = BeginGetUniforms(materialStack);
+            return context.GetUniform(name);
+        }
+        unsafe public static Span<byte> GetUniformBinaryData(CSIdentifier name, Span<MaterialPropertyBlock> materialStack) {
+            using var context = BeginGetUniforms(materialStack);
+            return context.GetUniform(name);
+        }
+        unsafe public static CSBufferReference GetUniformBuffer(CSIdentifier name, Span<Material> materialStack) {
+            var data = GetUniformBinaryData(name, materialStack);
+            if (data.Length < sizeof(CSBufferReference)) return default;
+            return MemoryMarshal.Read<CSBufferReference>(data);
+        }
+        unsafe public static CSBufferReference GetUniformBuffer(CSIdentifier name, Span<MaterialPropertyBlock> materialStack) {
+            var data = GetUniformBinaryData(name, materialStack);
+            if (data.Length < sizeof(CSBufferReference)) return default;
+            return MemoryMarshal.Read<CSBufferReference>(data);
+        }
+        public override int GetHashCode() {
+            if (hashCache == 0) hashCache = Parameters.GetHashCode();
+            return hashCache;
+        }
+    }
+    public class Material : MaterialPropertyBlock {
         private static ProfilerMarker ProfileMarker_Serialize = new("Material.Serialize");
 
         public struct StateData : IEquatable<StateData> {
@@ -246,9 +354,7 @@ namespace Weesals.Engine {
         }
         public RealtimeStateData RealtimeData;
 
-        // Parameters to be set
-        Parameters Parameters = new();
-        Parameters Macros = new();
+        protected List<KeyValuePair<CSIdentifier, CSIdentifier>> Macros;
 
         // Parameters are inherited from parent materials
         internal List<Material> InheritParameters;
@@ -257,19 +363,10 @@ namespace Weesals.Engine {
         SortedList<CSIdentifier, ComputedParameterBase> ComputedParameters;
 
         // Incremented whenever data within this material changes
-        int mRevision = 0;
-        int hashCache = 0;
         int mIdentifier;
         static int gIdentifier = 0;
 
-        // Whenever a change is made that requires this material to be re-uploaded
-        // (or computed parameters to recompute)
-        void MarkChanged() {
-            mRevision++;
-            hashCache = 0;
-        }
-
-        int Priority { get; set; }
+        public int Priority { get; set; }
 
         public Material() { mIdentifier = gIdentifier++; }
         public Material(Material parent) : this() {
@@ -286,8 +383,6 @@ namespace Weesals.Engine {
             if (material != null) InheritProperties(material);
             if (parent != null) InheritProperties(parent);
         }
-        public ref Parameters GetParametersRaw() { return ref Parameters; }
-        public ref Parameters GetMacrosRaw() { return ref Macros; }
 
         public void SetRenderPassOverride(CSIdentifier pass) { State.RenderPass = pass; State.SetFlag(StateData.Flags.RenderPass, State.RenderPass.IsValid); }
         public CSIdentifier GetRenderPassOverride() { return State.RenderPass; }
@@ -314,47 +409,30 @@ namespace Weesals.Engine {
         public void SetDepthMode(DepthMode mode) { State.DepthMode = mode; State.Valid |= StateData.Flags.Depth; }
         public DepthMode GetDepthMode() { return State.DepthMode; }
 
+        public List<KeyValuePair<CSIdentifier, CSIdentifier>> GetMacrosRaw() { return Macros; }
+
         // Configure shader feature set
         public void SetMacro(CSIdentifier name, CSIdentifier v) {
-            // TODO: Should memcmp value and avoid MarkChanged?
-            if (v.IsValid) Macros.SetValue(name, new ReadOnlySpan<CSIdentifier>(ref v));
-            else if (!Macros.ClearValue(name)) return;
+            // Invalid v means clear value
+            if (!v.IsValid) { ClearMacro(name); return; }
+
+            Macros ??= new();
+            var index = 0;
+            for (; index < Macros.Count; ++index) if (Macros[index].Key == name) break;
+
+            if (index >= Macros.Count) Macros.Add(new(name, v));
+            else if (Macros[index].Value != v) Macros[index] = new(name, v);
+            else return;
+
             MarkChanged();
         }
         public void ClearMacro(CSIdentifier name) {
-            if (!Macros.ClearValue(name)) return;
+            if (Macros == null) return;
+            var index = 0;
+            for (; index < Macros.Count; ++index) if (Macros[index].Key == name) break;
+            if (index >= Macros.Count) return;
+            Macros.RemoveAtSwapBack(index);
             MarkChanged();
-        }
-
-        public Span<byte> SetArrayValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
-            return SetArrayValue(name, (ReadOnlySpan<T>)v);
-        }
-        public Span<byte> SetArrayValue<T>(CSIdentifier name, ReadOnlySpan<T> v) where T : unmanaged {
-            var r = Parameters.SetValue(name, v);
-            MarkChanged();
-            return r;
-        }
-        public T GetValue<T>(CSIdentifier name) where T : unmanaged {
-            return MemoryMarshal.Read<T>(GetUniformBinaryData(name));
-        }
-        public Span<T> GetValueArray<T>(CSIdentifier name) where T : unmanaged {
-            return MemoryMarshal.Cast<byte, T>(GetUniformBinaryData(name));
-        }
-
-        // Set various uniform values
-        unsafe public Span<byte> SetValue<T>(CSIdentifier name, T v) where T : unmanaged {
-#pragma warning disable CS9087 // This returns a parameter by reference but it is not a ref parameter
-            return SetArrayValue(name, new ReadOnlySpan<T>(ref v));
-#pragma warning restore CS9087 // This returns a parameter by reference but it is not a ref parameter
-        }
-        unsafe public Span<byte> SetTexture(CSIdentifier name, CSTexture tex) {
-            return SetValue(name, new CSBufferReference(tex));
-	    }
-        unsafe public Span<byte> SetTexture(CSIdentifier name, CSRenderTarget tex) {
-            return SetValue(name, new CSBufferReference(tex));
-        }
-        unsafe public void SetBuffer(CSIdentifier name, CSBufferLayout buffer) {
-            SetValue(name, new CSBufferReference(buffer));
         }
 
         public void SetComputedUniform<T>(CSIdentifier name, ComputedParameter<T>.Getter lambda) where T : unmanaged {
@@ -383,43 +461,6 @@ namespace Weesals.Engine {
             MarkChanged();
         }
 
-        // Get the binary data for a specific parameter
-        public unsafe Span<byte> GetUniformBinaryData(CSIdentifier name) {
-            Material self = this;
-#pragma warning disable CS9091 // This returns local by reference but it is not a ref local
-            return GetUniformBinaryData(name, new Span<Material>(ref self));
-#pragma warning restore CS9091 // This returns local by reference but it is not a ref local
-        }
-        unsafe public CSBufferReference GetUniformBuffer(CSIdentifier name) {
-            Material self = this;
-            return GetUniformBuffer(name, new Span<Material>(ref self));
-        }
-        unsafe public CSTexture GetUniformTexture(CSIdentifier name) {
-            return GetUniformBuffer(name).AsTexture();
-        }
-        unsafe public CSRenderTarget GetUniformRenderTarget(CSIdentifier name) {
-            return GetUniformBuffer(name).AsRenderTarget();
-        }
-
-        // Get the binary data for a specific parameter
-        [ThreadStatic]private static MaterialCollector collector;
-        public static MaterialGetter BeginGetUniforms(Span<Material> materialStack) {
-            if (collector == null) collector = new();
-            return new MaterialGetter(new MaterialCollectorContext(materialStack, collector));
-        }
-        unsafe public static Span<byte> GetUniformBinaryData(CSIdentifier name, Span<Material> materialStack) {
-            if (collector == null) collector = new();
-            var context = new MaterialCollectorContext(materialStack, collector);
-            var ret = context.GetUniformSource(name);
-            collector.Clear();
-            return ret;
-        }
-        unsafe public static CSBufferReference GetUniformBuffer(CSIdentifier name, Span<Material> materialStack) {
-            var data = GetUniformBinaryData(name, materialStack);
-            if (data.Length < sizeof(CSBufferReference)) return default;
-            return MemoryMarshal.Read<CSBufferReference>(data);
-        }
-
         public override string ToString() {
             var builder = new StringBuilder();
             builder.Append("Mat");
@@ -439,7 +480,10 @@ namespace Weesals.Engine {
         }
         public int GetIdentifier() { return mIdentifier; }
         public override int GetHashCode() {
-            if (hashCache == 0) hashCache = HashCode.Combine(State.GetHashCode(), Parameters.GetHashCode());
+            if (hashCache == 0) {
+                hashCache = HashCode.Combine(State.GetHashCode(), base.GetHashCode());
+                if (Macros != null) hashCache += Macros.GetHashCode();
+            }
             return hashCache;
         }
 

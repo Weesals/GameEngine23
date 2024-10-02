@@ -7,6 +7,7 @@ float2 BoundsMax;
 float Density;
 matrix InvView;
 AppendStructuredBuffer<float4> Instances;
+StructuredBuffer<uint> TypeData;
 SamplerState BilinearClampedSampler : register(s6);
 //RWTexture2D<float4> Texture : register(u0);
 //RWStructuredBuffer<float4> Instances2;
@@ -65,8 +66,9 @@ void CSGenerateFoliage(uint3 gtid : SV_DispatchThreadID) {
 
     rnd = Permute(rnd);
     
-    if (c.Layer == 0) {
-        float count = ceil(Density - rnd) * countScale;
+    float density = ((float)(TypeData[c.Layer] & 255) / 255) * Density;
+    if (density > 0) {
+        float count = ceil(density - rnd) * countScale;
         //count = max(globalId.x, globalId.y) < 2;
         for (float i = 0; i < count; ++i) {
             float2 offset = frac(rnd * float2(123, 12345));

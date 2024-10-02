@@ -139,6 +139,33 @@ namespace Game5.Game {
                     new LandscapeLayer("TL_Sand") { BaseColor = "./Assets/Terrain/T_Dirt_BaseColor.png", NormalMap = "./Assets/Terrain/T_Dirt_Normal.png", },
                     new LandscapeLayer("TL_Cliff") { BaseColor = "./Assets/Terrain/T_GorgeCliff_BaseColorHeight.png", NormalMap = "./Assets/Terrain/T_GorgeCliff_Normal.png", Alignment = LandscapeLayer.AlignmentModes.WithNormal, Rotation = 90.0f, Flags = LandscapeLayer.TerrainFlags.FlagImpassable, },
                 };
+                var grassFoliage = new FoliageType() { };
+                JobHandle.Schedule(() => {
+                    var grassClump = Resources.LoadModel("./Assets/Models/SM_GrassClump.fbx", out var meshHandle);
+                    grassFoliage.LoadHandle = meshHandle.Then(() => {
+                        grassFoliage.Mesh = grassClump.Meshes[0];
+                        grassFoliage.Mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Models/Grass.png"));
+                    });
+                });
+                var elLeafFoliage = new FoliageType() { };
+                JobHandle.Schedule(() => {
+                    var tropPlant = Resources.LoadModel("./Assets/Models/Yughues/Tropical Plants/tropical_plant.FBX", out var meshHandle);
+                    elLeafFoliage.LoadHandle = meshHandle.Then(() => {
+                        elLeafFoliage.Mesh = tropPlant.Meshes[0];
+                        elLeafFoliage.Mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Models/Yughues/Tropical Plants/diffuse.png"));
+                        elLeafFoliage.Mesh.Material.SetMacro("VWIND", "1");
+                    });
+                });
+                layers.TerrainLayers[0].Foliage = new[] {
+                    new LandscapeFoliageType() { FoliageType = grassFoliage, Density = 7f, },
+                    new LandscapeFoliageType() { FoliageType = elLeafFoliage, Density = 0.1f, }
+                };
+                layers.TerrainLayers[1].Foliage = new[] {
+                    new LandscapeFoliageType() { FoliageType = grassFoliage, Density = 7f, }
+                };
+                layers.TerrainLayers[2].Foliage = new[] {
+                    new LandscapeFoliageType() { FoliageType = grassFoliage, Density = 7f, }
+                };
                 using (new ProfilerMarker("Init").Auto()) {
                     landscape.Initialise(layers);
                 }

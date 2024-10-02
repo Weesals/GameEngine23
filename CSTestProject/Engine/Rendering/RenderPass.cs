@@ -273,6 +273,8 @@ namespace Weesals.Engine {
             }
         }
         public override void Render(CSGraphics graphics, ref Context context) {
+            using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial, RenderQueue);
+
             base.Render(graphics, ref context);
             RenderQueue.Clear();
             using (var marker = ProfileMarker_Render.Auto()) {

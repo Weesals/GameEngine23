@@ -30,6 +30,7 @@ namespace Weesals.Engine.Jobs {
         public override int GetHashCode() { return (int)packed; }
         public static bool operator ==(JobHandle h1, JobHandle h2) => h1.packed == h2.packed;
         public static bool operator !=(JobHandle h1, JobHandle h2) => h1.packed != h2.packed;
+        public override bool Equals(object? obj) => throw new NotImplementedException();
         public bool Equals(JobHandle other) { return packed == other.packed; }
         public int CompareTo(JobHandle other) { return packed.CompareTo(other.packed); }
 

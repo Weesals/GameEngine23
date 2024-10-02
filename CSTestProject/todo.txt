@@ -26,3 +26,5 @@ RequireCurrentTexture
 
 UpdateTextureData
 -> CreateCommittedResource
+
+Warning when binding an int buffer as float

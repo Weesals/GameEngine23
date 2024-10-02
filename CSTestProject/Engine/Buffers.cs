@@ -260,9 +260,24 @@ namespace Weesals.Engine {
         public readonly int BufferStride => mBufferStride;
         public readonly Span<CSBufferElement> Elements => new(BufferLayout.mElements, BufferLayout.mElementCount);
         public readonly bool IsValid => mElementAllocCount > 0;
+        public bool UnorderedAccess { get => BufferLayout.GetAllowUnorderedAccess(); set => BufferLayout.SetAllowUnorderedAccess(value); }
         public BufferLayoutPersistent(Usages usage) {
             BufferLayout.identifier = MakeId();
             BufferLayout.mUsage = (byte)usage;
+        }
+        public BufferLayoutPersistent(Usages usage, int count) : this(usage) {
+            AllocResize(count);
+            SetCount(count);
+        }
+        public void InitializeAppendBuffer(int capacity) {
+            Debug.Assert(ElementCount > 0,
+                "Elements must be added before initializing Append");
+            // Must be big enough to store "count"
+            AllocResize(1);
+            UnorderedAccess = true;
+            BufferLayout.mCount = -1;
+            BufferLayout.size = BufferStride * capacity;
+            BufferLayout.revision = -1;
         }
         public void MarkInvalid() {
             BufferLayout.mCount = -1;
@@ -427,8 +442,10 @@ namespace Weesals.Engine {
             InitializeType<Short2>();
             InitializeType<Color>();
             InitializeType<SColor>();
+            InitializeType<Byte4>();
             InitializeAlias<Short2, UShort2>();
             InitializeAlias<ushort, short>();
+            InitializeAlias<Byte4, Color>();
             ConvertFn<int, float>.mConvert = &ConvertIToF;
             ConvertFn<float, int>.mConvert = &ConvertFToI;
             ConvertFn<uint, float>.mConvert = &ConvertUIToF;

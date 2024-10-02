@@ -62,7 +62,7 @@ namespace Weesals.Engine {
         }
         protected Dictionary<ulong, int> mResolvedByHash = new();
         protected ArrayList<ResolvedMaterialSet> mResolved = new();
-        protected MaterialCollector mMaterialCollector = new();
+        protected MaterialCollectorStacked mMaterialCollector = new();
         unsafe protected ulong GenerateHash(CSGraphics cmdBuffer, ulong valueHash, int matSetId) {
             ulong hash = (ulong)cmdBuffer.GetNativeGraphics();
             // TODO: Find subregions of CBs
@@ -82,9 +82,9 @@ namespace Weesals.Engine {
             if (resolved.mEvaluator == null) {
                 mMaterialCollector.Clear();
                 var materials = mMatCollection.GetMaterials(matSetId);
-                var context = new MaterialCollectorContext(materials, mMaterialCollector);
+                var context = MaterialCollectorContext.Create(mMaterialCollector, materials);
                 for (int v = 0; v < values.Length; ++v)
-                    context.GetUniformSource(values[v].mName);
+                    context.GetUniform(values[v].mName);
 
                 // Force the correct output layout
                 mMaterialCollector.FinalizeAndClearOutputOffsets();
