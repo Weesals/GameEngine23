@@ -19,59 +19,56 @@ struct Pointer
 	float mTotalDrag;
 	unsigned int mCurrentButtonState;
 	unsigned int mPreviousButtonState;
+	int mMouseScroll;
 
 	Pointer(unsigned int deviceId)
 		: mDeviceId(deviceId)
+		, mTotalDrag(0.0f)
 		, mCurrentButtonState(0)
 		, mPreviousButtonState(0)
-		, mTotalDrag(0.0f)
+		, mMouseScroll(0)
 	{
 	}
 
-	Vector2 GetPositionDelta() const
-	{
+	Vector2 GetPositionDelta() const {
 		return mPositionCurrent - mPositionPrevious;
 	}
 	// Is button currently down
-	bool IsButtonDown(int id = -1) const
-	{
+	bool IsButtonDown(int id = -1) const {
 		if (id == -1) return mCurrentButtonState != 0;
 		return (mCurrentButtonState & (1 << id)) != 0;
 	}
 	// Was the button down last frame (might still be down this frame)
-	bool WasButtonDown(int id = -1) const
-	{
+	bool WasButtonDown(int id = -1) const {
 		if (id == -1) return mPreviousButtonState != 0;
 		return (mPreviousButtonState & (1 << id)) != 0;
 	}
 	// Was button pressed this frame
-	bool IsButtonPress(int id = -1) const
-	{
+	bool IsButtonPress(int id = -1) const {
 		if (id == -1) return (mCurrentButtonState & ~mPreviousButtonState) != 0;
 		return (mCurrentButtonState & ~mPreviousButtonState & (1 << id)) != 0;
 	}
 	// Was button released this frame
-	bool IsButtonRelease(int id = -1) const
-	{
+	bool IsButtonRelease(int id = -1) const {
 		if (id == -1) return (~mCurrentButtonState & mPreviousButtonState) != 0;
 		return (~mCurrentButtonState & mPreviousButtonState & (1 << id)) != 0;
 	}
 
 	// Called by the platform bridge code when mouse events are received
-	void ReceiveMoveEvent(const Vector2& position)
-	{
+	void ReceiveMoveEvent(const Vector2& position) {
 		mTotalDrag += Vector2::Distance(position, mPositionCurrent);
 		mPositionCurrent = position;
 	}
-	void ReceiveButtonEvent(int buttonMask, bool state)
-	{
+	void ReceiveMouseScroll(int delta) {
+		mMouseScroll += delta;
+	}
+	void ReceiveButtonEvent(int buttonMask, bool state) {
 		if (state) mCurrentButtonState |= buttonMask;
 		else mCurrentButtonState &= ~buttonMask;
 		if (state) { mPositionDown = mPositionCurrent; mTotalDrag = 0.0f; }
 	}
 	// Called once per frame to migrate current data into previous
-	void ReceiveTickEvent()
-	{
+	void ReceiveTickEvent() {
 		mPositionPrevious = mPositionCurrent;
 		mPreviousButtonState = mCurrentButtonState;
 	}
@@ -83,6 +80,8 @@ class Input : public std::enable_shared_from_this<Input>
 	{
 		unsigned char KeyId;
 		KeyState(unsigned char keyId) { KeyId = keyId; }
+		bool operator ==(KeyState other) const { return other.KeyId == KeyId; }
+		bool operator !=(KeyState other) const { return other.KeyId != KeyId; }
 	};
 
 	std::vector<std::shared_ptr<Pointer>> mPointers;
@@ -148,7 +147,11 @@ public:
 			KeyState key((unsigned char)keyId);
 			if (down) {
 				if (mInput->IsKeyDown(keyId)) return;
-				mInput->mPressKeys.push_back(key);
+				// Does this break typing quickly into input field?
+				//if (std::find(mInput->mPressKeys.begin(), mInput->mPressKeys.end(), key) == mInput->mPressKeys.end())
+				{
+					mInput->mPressKeys.push_back(key);
+				}
 				mInput->mDownKeys.push_back(key);
 			} else {
 				// Key is no longer 'down'

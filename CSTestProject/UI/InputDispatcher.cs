@@ -93,6 +93,7 @@ namespace Weesals.UI {
             if (state.Interaction == null) return false;
             bool forceResolve = state.Score.IsActive
                 || (state.Score.IsReady && state.SatisfiedCount == 1)
+                //|| (state.Contest == 1 && state.PotentialCount >= 1)
                 //|| (state.Score.IsSatisfied && state.Contest == 1)
                 // Force activate something when clicking
                 || (state.Score.IsSatisfied && events.ButtonState == 0 && events.PreviousButtonState != 0)
@@ -100,7 +101,7 @@ namespace Weesals.UI {
                 ;
             return forceResolve;
         }
-        public PointerEvent? RequireDeferred(PointerEvent events) {
+        public PointerEvent RequireDeferred(PointerEvent events) {
             if (!deferredPointers.TryGetValue(events, out var deferred)) {
                 deferred = new(events);
                 deferredPointers.Add(events, deferred);
@@ -147,6 +148,9 @@ namespace Weesals.UI {
             }
             var hitIterator = Canvas.HitTestGrid.BeginHitTest(deferred.CurrentPosition);
             var target = FindTarget(deferred, ref hitIterator);
+            if (!deferred.IsButtonDown && target.State.Score.IsPotential) {
+                deferred.SetHover(target.State.Interaction);
+            }
             if (target.Active != null) {
                 if (target.Owner != null) {
                     events.SetActive(target.Owner);

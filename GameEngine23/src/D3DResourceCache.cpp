@@ -105,7 +105,7 @@ void ProcessBindings(const BufferLayout& binding, D3DResourceCache::D3DBinding& 
     if (d3dBin.mCount != binding.mCount || d3dBin.mStride != itemSize) {
         d3dBin.mCount = binding.mCount;
         d3dBin.mStride = itemSize;
-        d3dBin.mSRVOffset |= 0x80000000;
+        d3dBin.mSRVOffset |= 0x80000000;    // Mark invalid, to be removed later
     }
 }
 template<class Fn1, class Fn2, class Fn3, class Fn4>
@@ -217,18 +217,39 @@ D3DResourceCache::D3DRenderSurface* D3DResourceCache::RequireD3DRT(const RenderT
     if (wasCreated) RequireBarrierHandle(d3dTex);
     return d3dTex;
 }
+void D3DResourceCache::DestroyD3DRT(const RenderTarget2D* rt, LockMask lockBits) {
+    rtMapping.Delete(rt);
+    PurgeSRVs(lockBits);
+}
+void D3DResourceCache::PurgeSRVs(LockMask lockBits) {
+    mResourceViewCache.DetachAll();
+    mTargetViewCache.DetachAll();
+    mResourceViewCache.Substitute(0x80000000, lockBits);
+    mTargetViewCache.Substitute(0x80000000, lockBits);
+    mResourceViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
+    mTargetViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
+    // Must clear SRVs because all RTVs are detached and have persistent lock cleared
+    // (will be reused once other locks clear)
+    for (auto& buffer : depthBufferPool) buffer.second->mSRVOffset = -1;
+    for (auto& buffer : textureMapping.mMap) buffer.second->mSRVOffset = -1;
+    for (auto& buffer : rtMapping.mMap) buffer.second->mSRVOffset = -1;
+    for (auto& buffer : mBindings) buffer.second->mSRVOffset = -1;
+}
 void D3DResourceCache::SetRenderTargetMapping(const RenderTarget2D* rt, const D3DResourceCache::D3DRenderSurface& surface) {
+    assert(surface.mSRVOffset == -1);
     auto* slot = RequireD3DRT(rt);
-    auto handle = slot->mBarrierHandle;
-    *slot = surface;
-    slot->mBarrierHandle = handle;
+    slot->mBuffer = surface.mBuffer;
+    slot->mRevision = surface.mRevision;
+    slot->mSRVOffset = surface.mSRVOffset;
+    slot->mFormat = surface.mFormat;
+    slot->mDesc = surface.mDesc;
 }
 bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin, LockMask lockBits) {
     if (d3dBin.mBuffer != nullptr && d3dBin.mSize >= binding.mSize) return false;
     // Buffer already valid, register buffer to be destroyed in the future
     if (d3dBin.mBuffer != nullptr) {
         // TODO: Remove 0x8000...0 lock from this
-        if (d3dBin.mSRVOffset != -1) d3dBin.mSRVOffset = -1;
+        if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin);
         // TODO: Should use lockbits from previous used frames
         mDelayedRelease.InsertItem(d3dBin.mBuffer, 0, lockBits);
         d3dBin.mBuffer = nullptr;
@@ -469,11 +490,10 @@ D3D12_RESOURCE_DESC D3DResourceCache::GetTextureDesc(const Texture& tex) {
 int D3DResourceCache::GetTextureSRV(ID3D12Resource* buffer,
     DXGI_FORMAT fmt, bool is3D, int arrayCount,
     LockMask lockBits, int mipB, int mipC) {
-    size_t hash = (size_t)buffer;
-    hash += mipB * 12341237 + mipC * 123412343;
+    size_t hash = (size_t)buffer + mipB * 12341237 + mipC * 123412343;
     const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
         [&](auto& item) {
-            item.mData.mRTVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
+            item.mData.mSRVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
         },
         [&](auto& item) {
             auto device = mD3D12.GetD3DDevice();
@@ -499,64 +519,58 @@ int D3DResourceCache::GetTextureSRV(ID3D12Resource* buffer,
                 srvDesc.Texture2D.MipLevels = mipC;
             }
             // Get the CPU handle to the descriptor in the heap
-            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mSRVOffset);
             device->CreateShaderResourceView(buffer, &srvDesc, srvHandle);
             item.mData.mResource = buffer;
+            item.mData.mLastUse = srvDesc;
         }, [&](auto& item) {
             assert(item.mData.mResource == buffer);
         });
-    return result.mData.mRTVOffset;
+    return result.mData.mSRVOffset;
 }
-int D3DResourceCache::GetBufferSRV(D3DBinding& buffer, int offset, int count, int stride, LockMask lockBits) {
-    auto MakeSRV = [&](int srvOffset) {
-        // Create a shader resource view (SRV) for the texture
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Buffer.FirstElement = offset;
-        srvDesc.Buffer.NumElements = count;
-        srvDesc.Buffer.StructureByteStride = stride;
-        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-        assert(srvDesc.Buffer.NumElements < 10000000);
-
-        // Get the CPU handle to the descriptor in the heap
-        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), srvOffset);
-        mD3D12.GetD3DDevice()->CreateShaderResourceView(buffer.mBuffer.Get(), &srvDesc, srvHandle);
-    };
-
-    bool isFullRange = offset == 0 && count == buffer.mCount;
+int D3DResourceCache::GetBufferSRV(D3DBinding& d3dBin, int offset, int count, int stride, LockMask lockBits) {
+    bool isFullRange = offset == 0 && count == d3dBin.mCount;
     if (isFullRange) {
-        if (buffer.mSRVOffset >= 0) return buffer.mSRVOffset;
-        if (buffer.mSRVOffset < -1) {
-            buffer.mSRVOffset &= ~0x80000000;
-            auto itemId = mResourceViewCache.Find([&](auto& item) {
-                return item.mData.mRTVOffset == buffer.mSRVOffset;
-            });
-            buffer.mSRVOffset = -1;
-            mResourceViewCache.RemoveLock(itemId, 0x80000000);
-        }
+        if (d3dBin.mSRVOffset >= 0) return d3dBin.mSRVOffset;
+        if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin);
         lockBits |= 0x80000000;
     }
-    size_t hash = (size_t)buffer.mBuffer.Get();
-    hash += offset * 123412343 + count * 12341237 + stride * 12345;
-    const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
+    auto buffer = d3dBin.mBuffer.Get();
+    size_t hash = (size_t)buffer + offset * 123412343 + count * 12341237 + stride * 12345;
+    const auto& result = mResourceViewCache.RequireItem(hash, 2, lockBits,
         [&](auto& item) {
-            item.mData.mRTVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
+            item.mData.mSRVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
         },
         [&](auto& item) {
-            MakeSRV(item.mData.mRTVOffset);
-        }, [&](auto& item) {});
-    if (isFullRange) buffer.mSRVOffset = result.mData.mRTVOffset;
-    return result.mData.mRTVOffset;
+            // Create a shader resource view (SRV) for the texture
+            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            srvDesc.Buffer.FirstElement = offset;
+            srvDesc.Buffer.NumElements = count;
+            srvDesc.Buffer.StructureByteStride = stride;
+            srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+            assert(srvDesc.Buffer.NumElements < 10000000);
+
+            // Get the CPU handle to the descriptor in the heap
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mSRVOffset);
+            mD3D12.GetD3DDevice()->CreateShaderResourceView(buffer, &srvDesc, srvHandle);
+            item.mData.mResource = buffer;
+            item.mData.mLastUse = srvDesc;
+        }, [&](auto& item) {
+            assert(item.mData.mResource == buffer);
+        });
+    if (isFullRange) d3dBin.mSRVOffset = result.mData.mSRVOffset;
+    return result.mData.mSRVOffset;
 }
 int D3DResourceCache::GetUAV(ID3D12Resource* buffer,
     DXGI_FORMAT fmt, bool is3D, int arrayCount,
     LockMask lockBits, int mipB, int mipC) {
-    size_t hash = (size_t)buffer + mipB * 12341237 + mipC * 123412343 + 13567;
-    const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
+    size_t hash = (size_t)buffer + mipB * 12341237 + mipC * 123412343;
+    const auto& result = mResourceViewCache.RequireItem(hash, 3, lockBits,
         [&](auto& item) {
-            item.mData.mRTVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
+            item.mData.mSRVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
         },
         [&](auto& item) {
             auto device = mD3D12.GetD3DDevice();
@@ -577,16 +591,20 @@ int D3DResourceCache::GetUAV(ID3D12Resource* buffer,
                 uavDesc.Texture2D.PlaneSlice = 0;
             }
             // Get the CPU handle to the descriptor in the heap
-            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mSRVOffset);
             device->CreateUnorderedAccessView(buffer, nullptr, &uavDesc, srvHandle);
-        }, [&](auto& item) {});
-    return result.mData.mRTVOffset;
+            item.mData.mResource = buffer;
+            item.mData.mLastUse = {};
+        }, [&](auto& item) {
+            assert(item.mData.mResource == buffer);
+        });
+    return result.mData.mSRVOffset;
 }
 int D3DResourceCache::GetBufferUAV(ID3D12Resource* buffer, int arrayCount, int stride, D3D12_BUFFER_UAV_FLAGS flags, LockMask lockBits) {
     size_t hash = (size_t)buffer + stride * 12341237 + arrayCount * 123412343 + 18767;
-    const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
+    const auto& result = mResourceViewCache.RequireItem(hash, 4, lockBits,
         [&](auto& item) {
-            item.mData.mRTVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
+            item.mData.mSRVOffset = mCBOffset.fetch_add(mD3D12.GetDescriptorHandleSizeSRV());
         },
         [&](auto& item) {
             auto device = mD3D12.GetD3DDevice();
@@ -598,10 +616,14 @@ int D3DResourceCache::GetBufferUAV(ID3D12Resource* buffer, int arrayCount, int s
             uavDesc.Buffer.FirstElement = 1;
             uavDesc.Buffer.StructureByteStride = stride;
             uavDesc.Buffer.CounterOffsetInBytes = 0;// (stride * arrayCount - 4) & ~(D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT - 1);
-            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset);
+            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mSRVOffset);
             device->CreateUnorderedAccessView(buffer, buffer, &uavDesc, srvHandle);
-        }, [&](auto& item) {});
-    return result.mData.mRTVOffset;
+            item.mData.mResource = buffer;
+            item.mData.mLastUse = {};
+        }, [&](auto& item) {
+            assert(item.mData.mResource == buffer);
+        });
+    return result.mData.mSRVOffset;
 }
 void D3DResourceCache::RequireBarrierHandle(D3DTexture* d3dTex) {
     if (d3dTex->mBarrierHandle == D3D::BarrierHandle::Invalid) {
@@ -632,9 +654,7 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
         ));
         d3dTex->mBuffer->SetName(tex.GetName().c_str());
         d3dTex->mFormat = textureDesc.Format;
-        d3dTex->mSRVOffset = GetTextureSRV(d3dTex->mBuffer.Get(),
-            textureDesc.Format, textureDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D,
-            textureDesc.DepthOrArraySize, 0xffffffff);
+        assert(d3dTex->mSRVOffset == -1);
     } else {
         // Put the texture in write mode
         auto beginWrite = CD3DX12_RESOURCE_BARRIER::Transition(d3dTex->mBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
@@ -758,6 +778,9 @@ void D3DResourceCache::FlushBarriers(D3DCommandContext& cmdList) {
     if (delayedBarriers.empty()) return;
     cmdList->ResourceBarrier((UINT)delayedBarriers.size(), delayedBarriers.data());
     delayedBarriers.clear();
+}
+void D3DResourceCache::DelayResourceDispose(const ComPtr<ID3D12Resource>& resource, LockMask lockBits) {
+    mDelayedRelease.InsertItem(resource, 0, lockBits);
 }
 void D3DResourceCache::CopyBufferData(D3DCommandContext& cmdList, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize) {
     RequireState(cmdList, d3dBin, binding, D3D12_RESOURCE_STATE_COPY_DEST);
@@ -893,6 +916,7 @@ void D3DResourceCache::CheckInflightFrames() {
 void D3DResourceCache::UnlockFrame(size_t frameHandles) {
     mConstantBufferCache.Unlock(frameHandles);
     mResourceViewCache.Unlock(frameHandles);
+    mTargetViewCache.Unlock(frameHandles);
     mUploadBufferCache.Unlock(frameHandles);
     auto readbackMask = mReadbackBufferCache.Unlock(frameHandles);
     for (auto& item : mReadbackBufferCache.GetMaskItemIterator(readbackMask)) {
@@ -903,6 +927,7 @@ void D3DResourceCache::UnlockFrame(size_t frameHandles) {
 void D3DResourceCache::ClearDelayedData() {
     mResourceViewCache.Clear();
     mUploadBufferCache.Clear();
+    mTargetViewCache.Clear();
     mReadbackBufferCache.Clear();
     mDelayedRelease.Clear();
 }
@@ -947,6 +972,7 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
 
         pipelineState->mHash = hash;
         pipelineState->mRootSignature = &mRootSignature;
+        pipelineState->mMaterialState = materialState;
 
 #if _DEBUG
         auto& reflection = shaders.mVertexShader->GetReflection();
@@ -1191,44 +1217,68 @@ D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(D3DCommandContext& cm
     assert(resultItem.mLayoutHash == allocSize);
     return &resultItem.mData;
 }
-D3DResourceCache::D3DRenderSurface::SubresourceData& D3DResourceCache::RequireTextureRTV(
-    D3DResourceCache::D3DRenderSurfaceView& buffer, LockMask lockBits
+D3DResourceCache::RenderTargetView& D3DResourceCache::RequireTextureRTV(
+    D3DResourceCache::D3DRenderSurfaceView& bufferView, LockMask lockBits
 ) {
-    int subresourceId = D3D12CalcSubresource(buffer.mMip, buffer.mSlice, 0,
-        buffer.mSurface->mDesc.mMips, buffer.mSurface->mDesc.mSlices);
-    auto* subresource = const_cast<D3DResourceCache::D3DRenderSurface::SubresourceData*>(
-        &buffer.mSurface->RequireSubResource(subresourceId));
-    if (subresource->mRTVOffset < 0) {
-        if ((subresource->mRTVOffset & 0xf0000000) == 0x80000000) subresource->mRTVOffset &= ~0x80000000;
-        auto* surface = buffer.mSurface;
-        auto isDepth = BufferFormatType::GetIsDepthBuffer((BufferFormat)surface->mFormat);
-        if (isDepth) {
-            if (subresource->mRTVOffset < 0) {
-                subresource->mRTVOffset = mDSOffset.fetch_add(mD3D12.GetDescriptorHandleSizeDSV());
+    int subresourceId = D3D12CalcSubresource(bufferView.mMip, bufferView.mSlice, 0,
+        bufferView.mSurface->mDesc.mMips, bufferView.mSurface->mDesc.mSlices);
+    auto* surface = bufferView.mSurface;
+    auto* buffer = surface->mBuffer.Get();
+    auto isDepth = BufferFormatType::GetIsDepthBuffer((BufferFormat)surface->mFormat);
+    size_t dataHash = (size_t)buffer + subresourceId;
+    auto& item = mTargetViewCache.RequireItem(dataHash, isDepth ? 1 : 0, lockBits,
+        [&](auto& item) {
+            item.mData.mRTVOffset = isDepth
+                ? mDSOffset.fetch_add(mD3D12.GetDescriptorHandleSizeDSV())
+                : mRTOffset.fetch_add(mD3D12.GetDescriptorHandleSizeRTV());
+        }, [&](auto& item) {
+            if (isDepth) {
+                D3D12_DEPTH_STENCIL_VIEW_DESC dsViewDesc = { .Format = surface->mFormat, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D };
+                dsViewDesc.Texture2D.MipSlice = bufferView.mMip;
+                mD3D12.GetD3DDevice()->CreateDepthStencilView(buffer, &dsViewDesc,
+                    CD3DX12_CPU_DESCRIPTOR_HANDLE(mD3D12.GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset));
             }
-            D3D12_DEPTH_STENCIL_VIEW_DESC dsViewDesc = { .Format = surface->mFormat, .ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D };
-            dsViewDesc.Texture2D.MipSlice = buffer.mMip;
-            mD3D12.GetD3DDevice()->CreateDepthStencilView(surface->mBuffer.Get(), &dsViewDesc,
-                CD3DX12_CPU_DESCRIPTOR_HANDLE(mD3D12.GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), subresource->mRTVOffset));
-        }
-        else {
-            if (subresource->mRTVOffset < 0) {
-                subresource->mRTVOffset = mRTOffset.fetch_add(mD3D12.GetDescriptorHandleSizeRTV());
+            else {
+                D3D12_RENDER_TARGET_VIEW_DESC rtvViewDesc = { .Format = surface->mFormat, };
+                if (bufferView.mSlice > 0) {
+                    rtvViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+                    rtvViewDesc.Texture2DArray.MipSlice = bufferView.mMip;
+                    rtvViewDesc.Texture2DArray.ArraySize = bufferView.mSlice;
+                }
+                else {
+                    rtvViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+                    rtvViewDesc.Texture2D.MipSlice = bufferView.mMip;
+                }
+                mD3D12.GetD3DDevice()->CreateRenderTargetView(buffer, &rtvViewDesc,
+                    CD3DX12_CPU_DESCRIPTOR_HANDLE(mD3D12.GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mRTVOffset));
             }
-            D3D12_RENDER_TARGET_VIEW_DESC rtvViewDesc = { .Format = surface->mFormat, };
-            if (buffer.mSlice > 0) {
-                rtvViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-                rtvViewDesc.Texture2DArray.MipSlice = buffer.mMip;
-                rtvViewDesc.Texture2DArray.ArraySize = buffer.mSlice;
-            } else {
-                rtvViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-                rtvViewDesc.Texture2D.MipSlice = buffer.mMip;
-            }
-            mD3D12.GetD3DDevice()->CreateRenderTargetView(surface->mBuffer.Get(), &rtvViewDesc,
-                CD3DX12_CPU_DESCRIPTOR_HANDLE(mD3D12.GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), subresource->mRTVOffset));
-        }
+            item.mData.mResource = buffer;
+        }, [&](auto& item) {
+            assert(item.mData.mResource == buffer);
+        });
+    return item.mData;
+}
+int D3DResourceCache::RequireTextureSRV(D3DResourceCache::D3DTexture& texture, LockMask lockBits) {
+    if (texture.mSRVOffset < 0) {
+        if (texture.mSRVOffset < -1) ClearBufferSRV(texture);
+        auto textureDesc = texture.mBuffer->GetDesc();
+        texture.mSRVOffset = GetTextureSRV(texture.mBuffer.Get(),
+            textureDesc.Format, textureDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+            textureDesc.DepthOrArraySize, 0x80000000);
     }
-    return *subresource;
+    return texture.mSRVOffset;
+}
+void D3DResourceCache::InvalidateBufferSRV(D3DResourceCache::D3DBuffer& buffer) {
+    if (buffer.mSRVOffset >= 0) buffer.mSRVOffset |= 0x80000000;
+}
+void D3DResourceCache::ClearBufferSRV(D3DResourceCache::D3DBuffer& buffer) {
+    assert(buffer.mSRVOffset < -1);
+    buffer.mSRVOffset &= ~0x80000000;
+    auto itemId = mResourceViewCache.Find([&](auto& item) {
+        return item.mData.mSRVOffset == buffer.mSRVOffset;
+    });
+    buffer.mSRVOffset = -1;
+    mResourceViewCache.RemoveLock(itemId, 0x80000000);
 }
 
 
@@ -1279,12 +1329,7 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
     if (mResolution != resolution) {
         WaitForGPU();
         for (UINT n = 0; n < FrameCount; n++) {
-            auto InvalidateRTV = [](int& rtv) {
-                if (rtv >= 0) rtv |= 0x80000000;
-            };
-            InvalidateRTV(mFrameBuffers[n].mSRVOffset);
-            InvalidateRTV(mFrameBuffers[n].mMip0.mRTVOffset);
-            for (auto& mip : mFrameBuffers[n].mMipN) InvalidateRTV(mip.mRTVOffset);
+            mCache.InvalidateBufferSRV(mFrameBuffers[n]);
             mFrameBuffers[n].mBuffer.Reset();
             // Need to reset the allocator too
             mCache.ClearAllocator(mFrameBuffers[n].mAllocatorHandle);
@@ -1314,6 +1359,7 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
     SimpleProfilerMarkerEnd(frameBufferMarker);
 }
 void D3DGraphicsSurface::ResizeSwapBuffers() {
+    mCache.PurgeSRVs(1);
     //mSwapChain->Present(1, DXGI_PRESENT_RESTART);
     auto hr = mSwapChain->ResizeBuffers(0, (UINT)mResolution.x, (UINT)mResolution.y, DXGI_FORMAT_UNKNOWN, 0);
     ThrowIfFailed(hr);
@@ -1373,7 +1419,7 @@ int D3DGraphicsSurface::Present() {
         params.pScrollRect = nullptr;
         //mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE | DXGI_PRESENT_TEST : 
         //DXGI_PRESENT_ALLOW_TEARING
-        auto hr = mSwapChain->Present(0, mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE : 0);
+        auto hr = mSwapChain->Present(1, mDenyPresentRef > 0 ? DXGI_PRESENT_DO_NOT_SEQUENCE : 0);
         mCache.PushAllocator(allocatorHandle);
 
         if ((hr == DXGI_STATUS_OCCLUDED) != mIsOccluded) {

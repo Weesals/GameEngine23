@@ -39,7 +39,7 @@ namespace Weesals.CPS {
                     ref var group = ref context.Evaluator.EvalGroups[g];
                     group.Execution.PopStack().TryGetAsInt(dataStore, out var condition);
                     if (condition != 0) {
-                        group.NextBlockId = (int)nextBlockId;
+                        group.InsertNextBlock((int)nextBlockId);
                     }
                 }
             }

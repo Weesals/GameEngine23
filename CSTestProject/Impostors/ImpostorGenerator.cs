@@ -77,7 +77,7 @@ namespace Weesals.Impostors {
             Material.SetBuffer("instanceData", instanceBuffer);
         }
 
-        unsafe private void Generate(CSGraphics graphics, Mesh mesh, float scale, Vector3 offset) {
+        unsafe private (CSRenderTarget albedo, CSRenderTarget normalDepth) Generate(CSGraphics graphics, Mesh mesh, float scale, Vector3 offset) {
             using var marker = ProfileMarker_GenerateImpostor.Auto();
             var frameCount = Configuration.FramesCounts.X * Configuration.FramesCounts.Y;
 
@@ -135,8 +135,8 @@ namespace Weesals.Impostors {
             distanceFieldMaterial.SetPixelShader(Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "PSApply"));
             distanceFieldMaterial.SetTexture("SDF", tempTarget1);
             distanceFieldMaterial.SetTexture("Mask", AlbedoTarget);
-            var newAlbedoTarget = CSRenderTarget.Create("Impostor Albedo");
-            var newNormalDepthTarget = CSRenderTarget.Create("Impostor NormalDepth");
+            var newAlbedoTarget = CSRenderTarget.Create("Impostor Albedo SDF");
+            var newNormalDepthTarget = CSRenderTarget.Create("Impostor NormalDepth SDF");
             newAlbedoTarget.SetSize(Configuration.AtlasResolution);
             newNormalDepthTarget.SetSize(Configuration.AtlasResolution);
             distanceFieldMaterial.SetMacro("APPLYGRADIENT", "1");
@@ -145,8 +145,7 @@ namespace Weesals.Impostors {
             BlitQuad(graphics, newNormalDepthTarget, NormalDepthTarget, distanceFieldMaterial);
             Swap(ref newAlbedoTarget, ref AlbedoTarget);
             Swap(ref newNormalDepthTarget, ref NormalDepthTarget);
-            newAlbedoTarget.Dispose();
-            newNormalDepthTarget.Dispose();
+            return (newAlbedoTarget, newNormalDepthTarget);
         }
         private void Swap<T>(ref T v1, ref T v2) {
             var t = v1;
@@ -213,13 +212,15 @@ namespace Weesals.Impostors {
                 maxDst2 = Math.Max(maxDst2, Vector3.DistanceSquared(vert, -offset));
             }
             scale = MathF.Sqrt(maxDst2) * 2f;
-            Generate(graphics, mesh, scale, offset);
+            var (albedoTarget, normalDepthTarget) = Generate(graphics, mesh, scale, offset);
             var albedoTex = CSTexture.Create("Albedo");
             var nrmDepthTex = CSTexture.Create("Normal");
             await Task.WhenAll(
-                ReadTexture(graphics, AlbedoTarget, albedoTex, BufferFormat.FORMAT_BC3_UNORM, true),
-                ReadTexture(graphics, NormalDepthTarget, nrmDepthTex, BufferFormat.FORMAT_BC3_UNORM)
+                ReadTexture(graphics, albedoTarget, albedoTex, BufferFormat.FORMAT_BC3_UNORM, true),
+                ReadTexture(graphics, normalDepthTarget, nrmDepthTex, BufferFormat.FORMAT_BC3_UNORM)
             );
+            albedoTarget.Dispose();
+            normalDepthTarget.Dispose();
             var material = new Material(
                 Resources.LoadShader("./Assets/Shader/impostor.hlsl", "VSMain"),
                 Resources.LoadShader("./Assets/Shader/impostor.hlsl", "PSMain")

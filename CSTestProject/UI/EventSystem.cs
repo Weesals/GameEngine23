@@ -28,32 +28,41 @@ namespace Weesals.UI {
         public readonly EventSystem System;
         [Flags]
         public enum States { None = 0, Active = 1, Hover = 2, Press = 4, Drag = 8, ExplicitActive = 16, };
+        public struct StateData {
+            public uint Buttons;
+            public float DragDistance;
+            public Vector2 Position;
+            public Int2 Scroll;
+        }
         public uint DeviceId;
-        public uint ButtonState;
-        public uint PreviousButtonState;
-        public float DragDistance;
-        public float PreviousDragDistance;
-        public Vector2 CurrentPosition;
-        public Vector2 PreviousPosition;
+        public StateData Current;
+        public StateData Previous;
         public EventTargets Targets;
-        public object? Active => Targets.EffectiveActive;
         public States State = States.Active | States.Hover;
         public Modifiers Modifiers = Modifiers.None;
+
+        public uint ButtonState { get => Current.Buttons; set => Current.Buttons = value; }
+        public uint PreviousButtonState { get => Previous.Buttons; set => Previous.Buttons = value; }
+        public float DragDistance { get => Current.DragDistance; set => Current.DragDistance = value; }
+        public float PreviousDragDistance { get => Previous.DragDistance; set => Previous.DragDistance = value; }
+        public Vector2 CurrentPosition { get => Current.Position; set => Current.Position = value; }
+        public Vector2 PreviousPosition { get => Previous.Position; set => Previous.Position = value; }
+        public Int2 ScrollState { get => Current.Scroll; set => Current.Scroll = value; }
+        public Int2 PreviousScrollState { get => Previous.Scroll; set => Previous.Scroll = value; }
+        public object? Active => Targets.EffectiveActive;
 
         public bool IsDrag => DragDistance >= 5f && ButtonState != 0;
         public bool WasDrag => PreviousDragDistance >= 5f && PreviousButtonState != 0;
         public bool IsButtonDown => ButtonState != 0;
+        public Int2 ScrollDelta => ScrollState - PreviousScrollState;
         public PointerEvent(EventSystem system, uint deviceId) {
             System = system;
             DeviceId = deviceId;
         }
         public PointerEvent(PointerEvent other) : this(other.System, other.DeviceId) {
             ButtonState = other.ButtonState;
-            PreviousButtonState = other.PreviousButtonState;
-            CurrentPosition = other.CurrentPosition;
-            PreviousPosition = other.PreviousPosition;
-            DragDistance = other.DragDistance;
-            PreviousDragDistance = other.PreviousDragDistance;
+            Current = other.Current;
+            Previous = other.Previous;
             Modifiers = other.Modifiers;
         }
         public void Dispose() {
@@ -65,14 +74,13 @@ namespace Weesals.UI {
         public bool HasState(States flag) { return (State & flag) != 0; }
 
         internal void Step() {
-            PreviousButtonState = ButtonState;
-            PreviousPosition = CurrentPosition;
-            PreviousDragDistance = DragDistance;
+            Previous = Current;
         }
         internal EventSystem.PointerUpdate StepPre(PointerEvent other) {
             Modifiers = other.Modifiers;
             EventSystem.PointerUpdate update = new(this);
             System.UpdatePointerPre(this, other.CurrentPosition, other.ButtonState, update);
+            Current.Scroll = other.Current.Scroll;
             return update;
         }
         internal void StepPost(PointerEvent other, EventSystem.PointerUpdate update) {
@@ -561,22 +569,44 @@ namespace Weesals.UI {
 
         private void Canvas_Repaint(ref CanvasCompositor.Context context) {
             if (!enableDebug) return;
-            foreach (var pointer in pointerEvents) {
-                var active = pointer.Value.Targets.Hover;
+            int pointerYOffset = 0;
+            void DrawPointer(PointerEvent pointer, ref CanvasCompositor.Context context, int indent = 0) {
+                var active = pointer.Targets.Hover;
                 if (active is CanvasRenderable renderable) {
                     if (input.GetKeyPressed(KeyCode.D)) {
                         renderable.UpdateChildLayouts();
                     }
-                    var img = context.CreateTransient<CanvasImage>(Canvas);
-                    img.Color = new Color(0, 0, 0, 128);
-                    img.UpdateLayout(Canvas, renderable.GetComputedLayout());
-                    img.Append(ref context);
-                    var txt = context.CreateTransient<CanvasText>(Canvas);
-                    txt.Text = active.ToString();
-                    txt.FontSize = 12;
-                    txt.UpdateLayout(Canvas, renderable.GetComputedLayout());
-                    txt.Append(ref context);
+                    var layout = renderable.GetComputedLayout();
+                    Canvas.Box(ref context, layout, new Color(0, 0, 0, 128));
+                    Canvas.Label(ref context, layout, active.ToString(), TextAlignment.Centre);
                 }
+                {
+                    var box = CanvasLayout.MakeBox(new Vector2(400f, 60f), new Vector2(50f + indent, 50f + pointerYOffset));
+                    Canvas.Box(ref context, box, new Color(0, 0, 0, 128));
+                    Canvas.Label(ref context, box, $"A:{pointer.Targets.Active}\nH:{pointer.Targets.Hover}\nP:{pointer.Targets.Press}\n");
+                    pointerYOffset += 61;
+                }
+                if (active is InputDispatcher dispatcher) {
+                    var deferred = dispatcher.RequireDeferred(pointer);
+                    DrawPointer(deferred, ref context, indent + 10);
+                }
+                if (active is INestedEventSystem nested) {
+                    var box = CanvasLayout.MakeBox(new Vector2(400f, 60f), new Vector2(50f + indent, 50f + pointerYOffset));
+                    Canvas.Box(ref context, box, new Color(0, 0, 0, 128));
+                    pointer.System.activeDeferred.TryGetValue(nested, out var nestedPtr);
+                    var txt = $"A:{nested.EventSystem} {nestedPtr?.Count ?? 0}";
+                    Canvas.Label(ref context, box, txt);
+                    pointerYOffset += 61;
+                    if (nestedPtr != null) {
+                        foreach (var ptr in nested.EventSystem.pointerEvents.Values) {
+                            DrawPointer(ptr, ref context, indent + 10);
+                            pointerYOffset += 61;
+                        }
+                    }
+                }
+            }
+            foreach (var pointer in pointerEvents) {
+                DrawPointer(pointer.Value, ref context);
             }
         }
 
@@ -643,6 +673,7 @@ namespace Weesals.UI {
                 events.Modifiers = modifiers;
                 PointerUpdate update = new(events);
                 UpdatePointerPre(events, pointer.mPositionCurrent + pointerOffset, pointer.mCurrentButtonState, update);
+                events.Current.Scroll.Y = pointer.mMouseScroll;
 
                 // Find active element (hover is default state so will always happen at least once)
                 if (!events.IsButtonDown && events.CanYield() && events.PreviousButtonState == 0) {
@@ -665,7 +696,8 @@ namespace Weesals.UI {
                     es.ProcessPointers(CollectionsMarshal.AsSpan(kv.Value), modifiers);
                 for (int i = 0; i < kv.Value.Count; ++i) {
                     var ptr = kv.Value[i];
-                    if (!seenPointers.Contains(ptr.mDeviceId)) kv.Value.RemoveAt(i--);
+                    //if (!seenPointers.Contains(ptr.mDeviceId)) kv.Value.RemoveAt(i--);
+                    if ((kv.Value.ActivePointers & (1ul << i)) == 0) kv.Value.RemoveAt(i--);
                 }
                 if (kv.Value.Count == 0) toRelease.Add(kv.Key);
             }
@@ -701,12 +733,18 @@ namespace Weesals.UI {
                 }
 
                 // Update drag
-                if (events.HasState(PointerEvent.States.Drag) && events.Targets.EffectivePress is IDragHandler dragHandler)
+                if (events.HasState(PointerEvent.States.Drag) && events.Targets.Press is IDragHandler dragHandler)
                     dragHandler.OnDrag(events);
 
                 // Update pointer move
                 if (HierarchyExt.TryGetRecursive(events.Targets.EffectivePress, out IPointerMoveHandler pmove) == true) {
                     pmove.OnPointerMove(events);
+                }
+            }
+
+            if (events.ScrollDelta != default) {
+                if (events.Targets.EffectiveDefer is IScrollHandler scrollHandler) {
+                    scrollHandler.OnScroll(events);
                 }
             }
 
@@ -734,6 +772,7 @@ namespace Weesals.UI {
                 nestedPtr.mDeviceId = events.DeviceId;
                 nestedPtr.mCurrentButtonState = events.ButtonState;
                 nestedPtr.mPositionCurrent = events.CurrentPosition - layout.Position.toxy();
+                nestedPtr.mMouseScroll = events.Current.Scroll.Y;
                 int index = 0;
                 for (; index < list.Count; ++index) if (list[index].mDeviceId == events.DeviceId) break;
                 if (index < list.Count) list[index] = nestedPtr;
@@ -814,10 +853,16 @@ namespace Weesals.UI {
                 return ref targets.Hover;
             }
         }
+        public class EffectivePressPointerEvent<T> : PointerHandler<T> where T : IEventSystemHandler {
+            public EffectivePressPointerEvent(Action<T, PointerEvent> invoker, PointerEvent.States mask, bool sign) : base(invoker, mask, sign) { }
+            public override ref object? GetTarget(ref PointerEvent.EventTargets targets) {
+                return ref targets.Active != null ? ref targets.Active : ref targets.Press;
+            }
+        }
         public class PressPointerEvent<T> : PointerHandler<T> where T : IEventSystemHandler {
             public PressPointerEvent(Action<T, PointerEvent> invoker, PointerEvent.States mask, bool sign) : base(invoker, mask, sign) { }
             public override ref object? GetTarget(ref PointerEvent.EventTargets targets) {
-                return ref targets.Active != null ? ref targets.Active : ref targets.Press;
+                return ref targets.Press;
             }
         }
         public class ActivePointerEvent<T> : PointerHandler<T> where T : IEventSystemHandler {
@@ -828,10 +873,10 @@ namespace Weesals.UI {
         }
         private HoverPointerEvent<IPointerEnterHandler> pEnterHandler = new((item, events) => item.OnPointerEnter(events), PointerEvent.States.Hover, true);
         private HoverPointerEvent<IPointerExitHandler> pExitHandler = new((item, events) => item.OnPointerExit(events), PointerEvent.States.Hover, false);
-        private PressPointerEvent<IPointerDownHandler> pDownHandler = new((item, events) => item.OnPointerDown(events), PointerEvent.States.Press, true);
-        private PressPointerEvent<IPointerUpHandler> pUpHandler = new((item, events) => item.OnPointerUp(events), PointerEvent.States.Press, false);
-        private PressPointerEvent<IBeginDragHandler> bDragHandler = new((item, events) => item.OnBeginDrag(events), PointerEvent.States.Drag, true) { IsTransactional = true, };
-        private PressPointerEvent<IEndDragHandler> eDragHandler = new((item, events) => item.OnEndDrag(events), PointerEvent.States.Drag, false);
+        private EffectivePressPointerEvent<IPointerDownHandler> pDownHandler = new((item, events) => item.OnPointerDown(events), PointerEvent.States.Press, true);
+        private EffectivePressPointerEvent<IPointerUpHandler> pUpHandler = new((item, events) => item.OnPointerUp(events), PointerEvent.States.Press, false);
+        private EffectivePressPointerEvent<IBeginDragHandler> bDragHandler = new((item, events) => item.OnBeginDrag(events), PointerEvent.States.Drag, true) { IsTransactional = true, };
+        private EffectivePressPointerEvent<IEndDragHandler> eDragHandler = new((item, events) => item.OnEndDrag(events), PointerEvent.States.Drag, false);
         private ActivePointerEvent<IBeginInteractionHandler> pBeginIntHandler = new((item, events) => item.OnBeginInteraction(events), PointerEvent.States.Active, true);
         private ActivePointerEvent<IEndInteractionHandler> pEndIntHandler = new((item, events) => item.OnEndInteraction(events), PointerEvent.States.Active, false);
         private bool TryInvoke<T>(PointerEvent events, PointerEvent.States states, object? target, PointerHandler<T> handler, bool allowPropagate = true) where T : IEventSystemHandler {
@@ -862,7 +907,7 @@ namespace Weesals.UI {
                 var newTargets = events.Targets;
                 handler.GetTarget(ref newTargets) = target;
                 SetTargetStates(events, newTargets, events.State);
-                events.State |= handler.StateValue;
+                //events.State |= handler.StateValue;
             }
             /*if (active != events.Active) {
                 target = events.Active;
@@ -972,6 +1017,9 @@ namespace Weesals.UI {
     }
     public interface IEndDragHandler : IEventSystemHandler {
         void OnEndDrag(PointerEvent events);
+    }
+    public interface IScrollHandler : IEventSystemHandler {
+        void OnScroll(PointerEvent events);
     }
 
     public struct KeyEvent {

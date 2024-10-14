@@ -116,7 +116,7 @@ public struct GridThickRayIterator : IEnumerator<Int2> {
         var sstep = Step.X * GridSize;
         var send = sfrom.X + sdir.X;
         if (IsNegated) send = -send;
-        return sstep > send;
+        return sstep > send + Thickness;
     }
     public Int2 GetExtents() {
         var sfrom = IsSwizzled ? From.YX : From;

@@ -10,15 +10,16 @@ using Game5;
 /*
  * Mouse scroll to zoom (and pinch?)
  * Selection reticle system
+ * 
+ * Steven Universe
  */
 
 class Program {
-
     public static void Main() {
-        var coreHandle = JobResult<Core>.Schedule(() => new Core());
-
-        var coreJob = coreHandle.Then((core) => Core.ActiveInstance = core);
-        var grapJob = coreHandle.Then((core) => core.InitializeGraphics());
+        var coreHandle = JobResult<Core>.Schedule(static () => new Core());
+        var coreJob = coreHandle.Then(static (core) => Core.ActiveInstance = core);
+        var grapJob = coreHandle.Then(static (core) => core.InitializeGraphics());
+        coreHandle.Dispose();
 
         var loadJob = JobHandle.Schedule(Resources.LoadDefaultUIAssets);
 
@@ -28,42 +29,43 @@ class Program {
         var rootJob = root.Initialise(loadJob);
 
         // Require UI assets for Editor UI
-        EditorWindow? editorWindow = null;
-        loadJob = JobHandle.CombineDependencies(loadJob, coreJob).Then(() => {
+        var editorWindowHandle = JobResult<EditorWindow>.Schedule(static () => {
             using (var marker = new ProfilerMarker("Creating Editor").Auto()) {
-                editorWindow = new();
+                return new EditorWindow();
             }
-        });
+        }, JobHandle.CombineDependencies(loadJob, coreJob));
 
+        // Auto configure quality level
         grapJob = JobHandle.CombineDependencies(rootJob, grapJob)
             .Then(() => {
-                using (var marker = new ProfilerMarker("Waiting for Root").Auto()) {
-                    // Need a valid Play to bind the editor to
-                    root.Play.SetAutoQuality(Core.ActiveInstance.GetGraphics());
-                }
+                root.Play.SetAutoQuality(Core.ActiveInstance.GetGraphics());
             });
 
+        // Need Core to create window
         coreJob.Complete();
 
-        CSWindow editorWin = Core.ActiveInstance.CreateWindow("Weesals Engine");
+        if (editorWindowHandle.IsValid) {
+            // Window must be made on MainThread
+            CSWindow editorWin = Core.ActiveInstance.CreateWindow("Weesals Engine");
 
-        loadJob.Complete();
-        var editorPref = editorWindow.ReadPreferences();
-        editorWindow.ApplyPreferences(editorWin, editorPref);
+            // Initialize editor
+            EditorWindow? editorWindow = editorWindowHandle.Complete();
+            var editorPref = editorWindow.ReadPreferences();
+            editorWindow.ApplyPreferences(editorWin, editorPref);
 
-        rootJob.Complete();
-
-        using (var marker = new ProfilerMarker("Attach Editor").Auto()) {
-            if (editorWindow != null) {
+            // Wait for game root before binding editor and showing window
+            rootJob.Complete();
+            using (var marker = new ProfilerMarker("Attach Editor").Auto()) {
                 grapJob = grapJob.Then(() => {
                     editorWindow.RegisterRootWindow(editorWin);
                     editorWin.SetVisible(true);
                 });
                 root.AttachToEditor(editorWindow);
                 grapJob.Complete();
-            } else {
-                throw new NotImplementedException("No editor is not supported (yet)");
             }
+        } else {
+            rootJob.Complete();
+            throw new NotImplementedException("No editor is not supported (yet)");
         }
 
         var timer = new FrameTimer(4);

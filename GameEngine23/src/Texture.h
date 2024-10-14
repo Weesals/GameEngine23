@@ -6,17 +6,22 @@
 
 #include "MathTypes.h"
 #include "Buffer.h"
+#include "Delegate.h"
 
-class TextureBase : public std::enable_shared_from_this<TextureBase>
-{
+class TextureBase : public std::enable_shared_from_this<TextureBase> {
 	enum Flags : uint32_t { None = 0x00, AllowUnorderedAccess = 0x01, };
 	std::wstring mName;
 	int mRevision;
 	Flags mFlags = Flags::None;
+
 public:
+	Delegate<>::Container OnDestroy;
+
 	TextureBase() : TextureBase(L"Texture") {}
 	TextureBase(const std::wstring_view& name);
-	virtual ~TextureBase() { }
+	virtual ~TextureBase() {
+		OnDestroy.Invoke();
+	}
 
 	void SetAllowUnorderedAccess(bool value);
 	bool GetAllowUnorderedAccess() const;

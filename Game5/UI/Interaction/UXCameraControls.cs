@@ -9,7 +9,7 @@ using Weesals.Engine;
 using Weesals.UI;
 
 namespace Game5.UI.Interaction {
-    public class UXCameraControls : IInteraction, IBeginDragHandler, IDragHandler, IEndDragHandler {
+    public class UXCameraControls : IInteraction, IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollHandler {
         public readonly UIPlay PlayUI;
         private TimedEvent<Vector2> rubberband;
 
@@ -20,14 +20,14 @@ namespace Game5.UI.Interaction {
         public ActivationScore GetActivation(PointerEvent events) {
             if (PlayUI.Play.Camera == null) return ActivationScore.None;
             if (events.GetIsButtonDown(1) && events.IsDrag) return ActivationScore.Active;
-            if (events.GetIsButtonDown(0) && events.HasModifier(Modifiers.Alt)) return ActivationScore.Active;
+            //if (events.GetIsButtonDown(0) && events.HasModifier(Modifiers.Alt)) return ActivationScore.Active;
             return ActivationScore.Potential;
         }
 
         public void OnBeginDrag(PointerEvent events) {
             if (events.GetIsButtonDown(1)) {
                 // Right-click pan
-            } else if (events.GetIsButtonDown(0) && events.HasModifier(Modifiers.Alt)) {
+            //} else if (events.GetIsButtonDown(0) && events.HasModifier(Modifiers.Alt)) {
                 // Left-click alt drag
             } else {
                 events.Yield();
@@ -81,6 +81,16 @@ namespace Game5.UI.Interaction {
             return d;
         }
         public void OnEndDrag(PointerEvent events) {
+        }
+
+        public void OnScroll(PointerEvent events) {
+            var camera = PlayUI.Play.Camera;
+            var focus = camera.ViewportToRay(new Vector2(0.5f, 0.5f)).ProjectTo(new(Vector3.UnitY, 0f));
+            camera.Position -= focus;
+            var scale = MathF.Pow(0.75f, events.ScrollDelta.Y / 120f);
+            scale = MathF.Min(scale, 3850f / camera.Position.Y);
+            camera.Position *= scale;
+            camera.Position += focus;
         }
     }
 }

@@ -233,6 +233,24 @@ namespace Weesals.Engine {
             var resources = MaterialEvaluator.ResolveResources(graphics, pipeline, materialStack);
             graphics.Draw(pipeline, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
         }
+
+        public unsafe static void DrawMeshInstanced(Mesh mesh, Material material, CSBufferLayout instanceData) {
+            var graphics = context.Graphics;
+            ref var materialStack = ref context.MaterialStack;
+
+            intermediateMaterial ??= new();
+            intermediateMaterial.SetValue("InstanceData", instanceData);
+
+            using var meshPush = materialStack.Push(mesh.Material);
+            using var matPush = materialStack.Push(intermediateMaterial);
+
+            var bindingsPtr = stackalloc CSBufferLayout[2] { mesh.IndexBuffer, mesh.VertexBuffer };
+            var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
+
+            var pipeline = MaterialEvaluator.ResolvePipeline(graphics, bindings, materialStack);
+            var resources = MaterialEvaluator.ResolveResources(graphics, pipeline, materialStack);
+            context.RenderQueue.AppendMesh(mesh.Name, pipeline, bindings, resources, instanceData.mCount);
+        }
     }
 
 }

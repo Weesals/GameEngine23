@@ -286,6 +286,22 @@ namespace Weesals.Engine {
         public void NotifyChanged() {
             BufferLayout.revision++;
         }
+        public unsafe void RevisionFromDataHash() {
+            BufferLayout.revision = 0;
+            ulong binaryHash = 0;
+            foreach (var element in Elements) {
+                var bufferSize = element.mBufferStride * Count;
+                var bufferData = new Span<byte>(element.mData, bufferSize);
+                int i = 0;
+                for (; i < bufferSize - 8; i += 8) {
+                    binaryHash = binaryHash * 1000003 + *(ulong*)((byte*)element.mData + i);
+                }
+                for (; i < bufferSize; ++i) {
+                    binaryHash = binaryHash * 1000003 + *((byte*)element.mData + i);
+                }
+            }
+            BufferLayout.revision = (int)binaryHash ^ (int)(binaryHash >> 32);
+        }
         public void Dispose() {
             if (BufferLayout.mElements != null)
                 Marshal.FreeHGlobal((nint)BufferLayout.mElements);
@@ -657,7 +673,9 @@ namespace Weesals.Engine {
         }
 
         public T this[uint index] {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => this[(int)index];
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set => this[(int)index] = value;
         }
         public T this[int index] {

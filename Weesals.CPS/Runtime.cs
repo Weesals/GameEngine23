@@ -27,15 +27,16 @@ namespace Weesals.CPS {
         // An entity
         public struct Object {
             public int PrototypeId;
-            public int EvalStackId;     // Points to the last eval stack item
-            public override string ToString() { return $"Proto{PrototypeId}<Eval={EvalStackId}>"; }
+            //public int EvalStackId;     // Points to the last eval stack item
+            public int GraphEvalId;     // Points to the last eval stack item
+            public override string ToString() { return $"Proto{PrototypeId}<Eval={GraphEvalId}>"; }
         }
 
 
         public SparseArray<BlockEvaluation> BlockEvaluations = new();
         private SparseArray<Object> Objects = new();
         private SparseArray<EvaluationGroup> EGStorage = new();
-        private SparseArray<EvaluationStack> EvalStacks = new();
+        //public SparseArray<EvaluationStack> EvalStacks = new();
 
         private SparseArray<int> IdStorage = new();
         public SparseArray<byte> DataStorage = new();
@@ -45,6 +46,8 @@ namespace Weesals.CPS {
         private Dictionary<Type, IService> services = new();
         private Evaluation evaluation = new();
 
+        public EvaluationGraph EvaluationGraph = new();
+
         public Runtime(Script script) {
             Script = script;
         }
@@ -52,7 +55,7 @@ namespace Weesals.CPS {
         public int AllocateObject() {
             return Objects.Add(new Object() {
                 PrototypeId = -1,
-                EvalStackId = -1,
+                GraphEvalId = -1,
             });
         }
         public void SetObjectPrototypeId(int objId, int protoId) {
@@ -62,21 +65,25 @@ namespace Weesals.CPS {
             dirtyObjects.Add(objId);
         }
         public int GetObjectEvalStackId(int objId) {
-            return Objects[objId].EvalStackId;
+            return Objects[objId].GraphEvalId;
         }
 
         public StackItem GetEvaluationVariable(int evalStackId, string name) {
-            while (evalStackId >= 0) {
+            var en = new EvaluationGraph.ReadOnlyEnumerator(EvaluationGraph, evalStackId);
+            for (; en.IsValid; en.MoveNext(EvaluationGraph)) {
+                var evalId = en.Index;
+                var blockEval = BlockEvaluations[evalId];
+                /*while (evalStackId >= 0) {
                 var evalStack = EvalStacks[evalStackId];
-                var blockEval = BlockEvaluations[evalStack.EvaluationId];
+                var blockEval = BlockEvaluations[evalStack.EvaluationId];*/
                 var block = Script.GetBlock(blockEval.BlockId);
-                var mutations = Script.GetMutations(block.Mutations);
+                var outputs = Script.GetBlockOutputs(block.Outputs);
                 var variables = VariableStorage.Slice(blockEval.OutputValues);
-                Debug.Assert(mutations.Count == variables.Count);
-                for (int m = 0; m < mutations.Count; ++m) {
-                    if (mutations[m].Name == name) return variables[m];
+                Debug.Assert(outputs.Count == variables.Count);
+                for (int m = 0; m < outputs.Count; ++m) {
+                    if (outputs[m].Name == name) return variables[m];
                 }
-                evalStackId = evalStack.PreviousId;
+                //evalStackId = evalStack.PreviousId;
             }
             return default;
         }
@@ -111,12 +118,12 @@ namespace Weesals.CPS {
                 // (which is -1 if not yet evaluated)
                 foreach (var objId in dirtyObjects) {
                     ref var obj = ref Objects[objId];
-                    ref var range = ref entityGroups[obj.EvalStackId];
+                    ref var range = ref entityGroups[obj.GraphEvalId];
                     if (range.IsFull) {
                         IdStorage.Reallocate(ref range.Range, Math.Max(4, range.Range.Length * 2));
                     }
                     IdStorage[range.ConsumeNext()] = objId;
-                    DerefEvalStack(ref obj.EvalStackId);
+                    DerefEvalStack(ref obj.GraphEvalId);
                 }
                 // Generate EvaluationGroups from the grouped entities
                 foreach (var group in entityGroups) {
@@ -180,61 +187,140 @@ namespace Weesals.CPS {
                 InitOutputs(execBlock, evaluator);
                 evaluation.Evaluate(execBlock, evaluator);
                 Console.WriteLine($"## Invoking Block {execBlockId} {execBlock.Name}");
-                foreach (var groupId in relevantGroupIds) {
-                    ref var group = ref evalGroups[groupId];
-                    var outputs = evaluator.GetVariables(group.Outputs);
-                    ApplyOutputs(ref group, execBlockId, outputs);
-                }
+                FinishEvaluation(evaluator, execBlockId);
                 relevantGroupIds.Dispose();
             }
             foreach (var group in evalGroups) {
                 var entityIds = IdStorage.Slice(group.EntityIds);
                 foreach (var entityId in entityIds) {
                     ref var obj = ref Objects[entityId];
-                    obj.EvalStackId = group.EvalStackId;
-                    AddrefEvalStack(group.EvalStackId);
+                    //obj.EvalStackId = group.EvalStackId;
+                    //AddrefEvalStack(group.EvalStackId);
+                    obj.GraphEvalId = group.GraphEnumerator.GetRootIndex();
                 }
             }
             evalGroups.Dispose();
         }
 
-        private void ApplyOutputs(ref EvaluationGroup group, int blockId, ArraySegment<StackItem> outputs) {
+        // All leaf items can be mutated (promote to node, append EvalI as sibling)
+        // All nodes fully contained can be mutated (append EvalI as sibling)
+        // Any nodes not fully contained must be popped until contained
+        // - If reach root, insert new shared root node
+        // - Can then append EvalI as sibling
+        private void FinishEvaluation(Evaluator evaluator, int blockId) {
+            // Deref top
+            for (int i = 0; i < evaluator.RelevantIds.Count; i++) {
+                var groupId = evaluator.RelevantIds[i];
+                ref var group = ref evaluator.EvalGroups[groupId];
+                if (group.GraphEnumerator.Count < 2) continue;
+                ref var node = ref group.GraphEnumerator.GetAt(EvaluationGraph, ^2);
+                node.UserData--;
+            }
+            static bool GetIsUnique(ref EvaluationGroup group, EvaluationGraph graph) {
+                // We only have leaves
+                if (group.GraphEnumerator.Count <= 1) return false;
+                // This groups parent is entirely contained (not shared)
+                if (group.GraphEnumerator.GetAt(graph, ^2).UserData == 0) return false;
+                return true;
+            }
+            for (bool anyRemain = true; anyRemain;) {
+                anyRemain = false;
+                int depth = -1;
+                for (int i = 0; i < evaluator.RelevantIds.Count; i++) {
+                    var groupId = evaluator.RelevantIds[i];
+                    ref var group = ref evaluator.EvalGroups[groupId];
+                    if (GetIsUnique(ref group, EvaluationGraph)) continue;
+                    depth = Math.Max(depth, group.GraphEnumerator.Count);
+                }
+                if (depth < 2) break;
+                for (int i = 0; i < evaluator.RelevantIds.Count; i++) {
+                    var groupId = evaluator.RelevantIds[i];
+                    ref var group = ref evaluator.EvalGroups[groupId];
+                    // Not a deep group
+                    if (group.GraphEnumerator.Count != depth) continue;
+                    // Already not shared
+                    if (GetIsUnique(ref group, EvaluationGraph)) continue;
+                    Debug.Assert(group.GraphEnumerator.Count > 1, "Leaves shouldnt appear here!");
+                    group.GraphEnumerator.GetAt(EvaluationGraph, ^2).UserData++;
+                    group.GraphEnumerator.Pop(EvaluationGraph);
+                    group.GraphEnumerator.GetAt(EvaluationGraph, ^2).UserData--;
+                }
+            }
+            // Add ref to top
+            for (int i = 0; i < evaluator.RelevantIds.Count; i++) {
+                var groupId = evaluator.RelevantIds[i];
+                ref var group = ref evaluator.EvalGroups[groupId];
+                if (group.GraphEnumerator.Count < 2) continue;
+                ref var node = ref group.GraphEnumerator.GetAt(EvaluationGraph, ^2);
+                node.UserData++;
+            }
+
+            // First item = EvalId to be inserted
+            // Second item = Current Graph node index
+            Span<(int, int)> resolvedEvalIds = stackalloc (int, int)[evaluator.RelevantIds.Count];
+            for (int i = 0; i < evaluator.RelevantIds.Count; i++) {
+                var groupId = evaluator.RelevantIds[i];
+                ref var group = ref evaluator.EvalGroups[groupId];
+                var outputs = evaluator.GetVariables(group.Outputs);
+                int evalI = ApplyOutputs(blockId, outputs);
+                ClearExecution(ref group.Execution);
+                resolvedEvalIds[i] = (evalI, group.GraphEnumerator.GetCurrentIndex());
+                // Iterate forward
+                group.EvalIterator.SetCurrent(this, evalI);
+                // And add this evaluation to the group
+                //AppendEvalStack(ref group.EvalStackId, evalI);
+            }
+            MemoryExtensions.Sort(evaluator.RelevantIds.AsSpan(), resolvedEvalIds);
+            for (int i = 0; i < evaluator.RelevantIds.Count; ) {
+                var evalI = resolvedEvalIds[i];
+                int begin = i;
+                for (++i; i < evaluator.RelevantIds.Count; ++i)
+                    if (resolvedEvalIds[i] != evalI) break;
+                for (int g = begin; g < i; g++) {
+                    var groupId = evaluator.RelevantIds[g];
+                    ref var group = ref evaluator.EvalGroups[groupId];
+                    group.GraphEnumerator.AppendSibling(EvaluationGraph, evalI.Item1);
+                }
+            }
+        }
+
+        private int ApplyOutputs(int blockId, ArraySegment<StackItem> outputs) {
             var evalI = FindEvaluation(blockId, outputs);
             // Already evaluated this, drop outputs (should we overwrite?)
             if (evalI != -1) DeleteParameterData(blockId, outputs);
             else evalI = ConsumeToEvaluation(blockId, outputs);
 
-            // Cleanup evaluation data for this group
-            VariableStorage.Return(ref group.Execution.Parameters);
-            VariableStorage.Return(ref group.Execution.Outputs);
-
-            // Iterate forward
-            group.EvalIterator.SetCurrent(this, evalI);
-            // And add this evaluation to the group
-            AppendEvalStack(ref group.EvalStackId, evalI);
+            return evalI;
+        }
+        // Cleanup evaluation data for this group
+        private void ClearExecution(ref EvaluationGroup.ExecutionData execution) {
+            VariableStorage.Return(ref execution.Parameters);
+            VariableStorage.Return(ref execution.Outputs);
         }
 
         private void AddrefEvalStack(int evalStackId) {
-            EvalStacks[evalStackId].ReferenceCount++;
+            //EvalStacks[evalStackId].ReferenceCount++;
+            EvaluationGraph.AddrefNode(evalStackId);
         }
-        private void AppendEvalStack(ref int evalStackId, int evalId) {
+        /*private void AppendEvalStack(ref int evalStackId, int evalId) {
             if (evalStackId != -1) AddrefEvalStack(evalStackId);
             evalStackId = EvalStacks.Add(new EvaluationStack() {
                 PreviousId = evalStackId,
                 EvaluationId = evalId,
                 ReferenceCount = 0,
             });
-        }
+        }*/
         private void DerefEvalStack(ref int evalStackId) {
             if (evalStackId == -1) return;
-            var item = EvalStacks[evalStackId];
+            EvaluationGraph.DerefNode(evalStackId);
+            /*var item = EvalStacks[evalStackId];
             item.ReferenceCount--;
             if (item.ReferenceCount == 0) {
                 EvalStacks.Return(evalStackId);
                 DerefEvalStack(ref item.PreviousId);
             } else {
                 EvalStacks[evalStackId] = item;
-            }
+            }*/
             evalStackId = -1;
         }
 
@@ -300,7 +386,18 @@ namespace Weesals.CPS {
         }
 
         private void FindValue(ref StackItem variable, EvaluationGroup evalGroup, Script.Dependency dependency) {
-            var evalStackId = evalGroup.EvalStackId;
+            var en = new EvaluationGraph.ReadOnlyEnumerator(EvaluationGraph, evalGroup.GraphEvalId);
+            for (; en.IsValid; en.MoveNext(EvaluationGraph)) {
+                var evalId = en.Index;
+                var blockEval = BlockEvaluations[evalId];
+                if (blockEval.BlockId == -1) continue;
+                var block = Script.GetBlock(blockEval.BlockId);
+                var mutationI = Script.FindMutationIndex(block.Mutations, dependency);
+                if (mutationI == -1) continue;
+                variable = VariableStorage[blockEval.OutputValues.Start + mutationI];
+                break;
+            }
+            /*var evalStackId = evalGroup.EvalStackId;
             while (evalStackId != -1) {
                 var evalStack = EvalStacks[evalStackId];
                 evalStackId = evalStack.PreviousId;
@@ -311,7 +408,7 @@ namespace Weesals.CPS {
                 if (mutationI == -1) continue;
                 variable = VariableStorage[blockEval.OutputValues.Start + mutationI];
                 break;
-            }
+            }*/
         }
 
 

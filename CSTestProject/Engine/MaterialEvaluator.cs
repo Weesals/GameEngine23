@@ -270,6 +270,7 @@ namespace Weesals.Engine {
 
         public void Clear() {
             valueCount = 0;
+            dataSize = 0;
             sources.Clear();
             values.Clear();
             parameterIds.Clear();
@@ -526,6 +527,7 @@ namespace Weesals.Engine {
     public class MaterialCollectorStacked : MaterialCollector {
         public List<MaterialPropertyBlock> PropertyBlocks = new();
         public Span<MaterialPropertyBlock> SetMaterials(Span<Material> materials) {
+            Debug.Assert(IsEmpty);
             PropertyBlocks.Clear();
             foreach (var mat in materials) {
                 PropertyBlocks.Add(mat);

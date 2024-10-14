@@ -68,11 +68,12 @@ namespace Weesals.CPS {
             public string Name;
             public int OutputId;
             public RangeInt ProgramCounter;
-            public override string ToString() { return Name + ": " + ProgramCounter; }
+            public override string ToString() => $"{Name}: {ProgramCounter}";
         }
         public struct BlockOutput {
             public string Name;
             public int MutationId;
+            public override string ToString() => $"{Name} @{MutationId}";
         }
         public struct Block {
             public RangeInt Dependencies;
@@ -159,13 +160,13 @@ namespace Weesals.CPS {
         }
         public int AppendOutputs(int blockI, ArrayList<BlockOutput> newOutputs) {
             ref var block = ref blocks[blockI];
-            int offset = block.Outputs.Length;
+            var oldRange = block.Outputs;
             blockOutputs.Reallocate(ref block.Outputs, block.Outputs.Length + newOutputs.Count);
             for (int i = 0; i < newOutputs.Count; i++) {
                 var output = newOutputs[i];
-                blockOutputs[offset + i] = output;
+                blockOutputs[block.Outputs.Start + oldRange.Length + i] = output;
             }
-            return offset;
+            return oldRange.Length;
         }
         public void AppendRootBlocks(Span<BlockWriter.OutputBlock> outputBlocks) {
             foreach (var blockI in outputBlocks) rootBlocks.Add(blockI.BlockId);

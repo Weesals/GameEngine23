@@ -13,7 +13,7 @@ using Weesals.Utility;
 namespace Weesals.Landscape {
     public class LandscapeFoliageRenderer {
 
-        const int BufferCapacity = 32 * 1024;
+        const int BufferCapacity = 128 * 1024;
 
         public LandscapeRenderer LandscapeRenderer;
         public LandscapeData LandscapeData => LandscapeRenderer.LandscapeData;
@@ -154,13 +154,13 @@ namespace Weesals.Landscape {
                 }
             }
         }
-        unsafe public void RenderInstances(CSGraphics graphics, ref MaterialStack materials, ScenePass pass) {
+        unsafe public void RenderInstances(CSGraphics graphics, ScenePass pass) {
             if (foliageInstances.Count == 0) return;
             if (!visibleBounds.IsValid) return;
             if (!pass.TagsToInclude.Has(pass.Scene.TagManager.RequireTag("MainPass"))) return;
             foreach (var instance in foliageInstances) {
                 if (instance.MeshDraw == null) continue;
-                instance.MeshDraw.Draw(graphics, ref materials, pass, CSDrawConfig.Default);
+                instance.MeshDraw.Draw(graphics, pass, CSDrawConfig.Default);
             }
         }
 

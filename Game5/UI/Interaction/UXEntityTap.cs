@@ -22,7 +22,7 @@ namespace Game5.UI.Interaction {
             //if (!CanInteract(events)) return ActivationScore.None;
             // Need WasDrag because drag might have just ended, and we still need to not use self
             if (events.HasButton(0) && !events.WasDrag) return ActivationScore.Satisfied;
-            return ActivationScore.Potential;
+            return ActivationScore.None;
         }
         public bool CanInteract(PointerEvent events) {
             var target = FindTarget(events);

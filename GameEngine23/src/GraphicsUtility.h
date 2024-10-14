@@ -7,6 +7,7 @@
 #include <numeric>
 #include <span>
 #include <vector>
+#include <atomic>
 
 #include "MathTypes.h"
 
@@ -165,18 +166,33 @@ private:
         return -1;
     }
     int RequireLock(LockMask mask) {
-        int index = FindLock(mask);
-        if (index == -1) {
-            for (index = 1; index < (int)mLocks.size(); ++index) if (mLocks[index].mItemCount == 0) break;
-            if (index >= (int)mLocks.size()) mLocks.push_back({ .mItemCount = 0, });
-            mLocks[index].mHandles = mask;
+        while (true) {
+            int index = -1;
+            for (int i = 1; i < (int)mLocks.size(); ++i) {
+                auto& lock = mLocks[i];
+                // TODO: mHandle could be zeroed immediately after this
+                // Should also add an item
+                if (lock.mHandles == mask) return i;
+                if (lock.mHandles == 0 && lock.mItemCount == 0 && index == -1) index = i;
+            }
+            if (index == -1) { index = (int)mLocks.size(); mLocks.push_back({ .mHandles = 0, .mItemCount = 0, }); }
+            auto zeroLock = (LockMask)0;
+            if (std::atomic_ref<LockMask>(mLocks[index].mHandles).compare_exchange_weak(zeroLock, mask)) return index;
         }
-        return index;
+    }
+    void ChangeLockRef(int oldLockI, int lockI) {
+        std::atomic_ref<int>(mLocks[lockI].mItemCount)++;
+        auto& oldLock = mLocks[oldLockI];
+        if (std::atomic_ref<int>(oldLock.mItemCount)-- == 0) oldLock.mHandles = 0;
+    }
+    bool TrySetLock(Item& item, int oldLockI, int lockI) {
+        if (!std::atomic_ref<int>(item.mLockId).compare_exchange_weak(oldLockI, lockI)) return false;
+        ChangeLockRef(oldLockI, lockI);
+        return true;
     }
     void SetLock(Item& item, int lockI) {
-        mLocks[item.mLockId].mItemCount--;
-        item.mLockId = lockI;
-        mLocks[item.mLockId].mItemCount++;
+        auto oldLockI = std::atomic_ref<int>(item.mLockId).exchange(lockI);
+        ChangeLockRef(oldLockI, lockI);
     }
 
     template<class Allocate>
@@ -184,16 +200,19 @@ private:
         // Try to reuse an existing one (based on age) of the same size
         for (int blockI = 0; blockI < (int)mBlocks.size(); blockI++) {
             Block& block = mBlocks[blockI];
-            if (block.mFirstEmpty == -1) {
-                block.mFirstEmpty = BlockSize;
+            int firstEmpty = block.mFirstEmpty;
+            if (firstEmpty == -1) {
+                firstEmpty = BlockSize;
                 for (int i = BlockSize - 1; i >= 0; --i) {
                     auto& item = block[i];
-                    if (item.mLockId != 0 && mLocks[item.mLockId].mHandles == 0)
-                        SetLock(item, 0);
-                    if (item.mLockId == 0) block.mFirstEmpty = i;
+                    auto oldLock = item.mLockId;
+                    if (oldLock != 0 && mLocks[oldLock].mHandles == 0)
+                        TrySetLock(item, oldLock, 0);
+                    if (item.mLockId == 0) firstEmpty = i;
                 }
+                block.mFirstEmpty = firstEmpty;
             }
-            for (int index = block.mFirstEmpty; index < BlockSize; ++index) {
+            for (int index = firstEmpty; index < BlockSize; ++index) {
                 auto& item = block[index];
                 if (item.mLockId != 0 || item.mLayoutHash != layoutHash) continue;
                 return item;
@@ -212,15 +231,19 @@ private:
 public:
     PerFrameItemStoreNoHash() {
         mBlocks.reserve(32);
+        mLocks.reserve(8);
         mLocks.push_back({ .mItemCount = -1, });
     }
     ~PerFrameItemStoreNoHash() { }
 
     Item& InsertItem(const T& data, size_t layoutHash, LockMask lockBits) {
-        Item& item = AllocateItem(layoutHash, [&](Item& item) { });
-        item.mData = data;
-        SetLock(item, RequireLock(lockBits));
-        return item;
+        auto lockId = RequireLock(lockBits);
+        while (true) {
+            auto& item = AllocateItem(layoutHash, [&](Item& item) {});
+            if (!TrySetLock(item, 0, lockId)) continue;
+            item.mData = data;
+            return item;
+        }
     }
     template<class Allocate, class DataFill>
     Item& RequireItem(uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
@@ -396,7 +419,8 @@ private:
                     if (item.mLockId == 0) block.mFirstEmpty = i;
                 }
             }
-            for (int index = block.mFirstEmpty; index < BlockSize; ++index) {
+            int endIndex = std::min(BlockSize, mItemCount - blockI * BlockSize);
+            for (int index = block.mFirstEmpty; index < endIndex; ++index) {
                 auto& item = block[index];
                 if (item.mLockId != 0 || item.mLayoutHash != layoutHash) continue;
                 mItemsByHash.erase(item.mDataHash);
@@ -424,6 +448,7 @@ public:
     // Find or allocate a constant buffer for the specified material and CB layout
     template<class Allocate, class DataFill, class Found>
     Item& RequireItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill, Found&& found) {
+        assert(lockBits != 0);
         // Find if a buffer matching this hash already exists
         auto itemKV = mItemsByHash.find(dataHash);
         // Matching buffer was found, move it to end of queue
@@ -446,14 +471,21 @@ public:
     template<class Allocate, class DataFill>
     Item& AllocateItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
         Item& item = AllocateItem(layoutHash, alloc);
+        dataFill(item);
         // Setup item state
         SetLock(item, RequireLock(lockBits));
         item.mDataHash = dataHash;
         mItemsByHash.insert({ dataHash, &item, });
-        dataFill(item);
         return item;
     }
 
+    void Substitute(LockMask mask, LockMask newMask) {
+        for (int i = 0; i < (int)mLocks.size(); ++i) {
+            if ((mLocks[i].mHandles & mask) == 0) continue;
+            mLocks[i].mHandles &= ~mask;
+            mLocks[i].mHandles |= newMask;
+        }
+    }
     void Unlock(LockMask mask) {
         bool anyNewEmpty = false;
         for (int i = 0; i < (int)mLocks.size(); ++i) {
@@ -488,6 +520,21 @@ public:
             }
         }
         throw "Not found";
+    }
+    template<class Callback>
+    void ForAll(Callback&& callback) {
+        for (int b = 0; b < (int)mBlocks.size(); ++b) {
+            auto& block = mBlocks[b];
+            for (int i = 0; i < (int)(*block.mItems).size(); ++i) {
+                callback((*block.mItems)[i]);
+            }
+        }
+    }
+    void DetachAll() {
+        ForAll([&](auto& item) {
+            item.mDataHash = 0;
+        });
+        mItemsByHash.clear();
     }
     void RemoveLock(int index, LockMask mask) {
         int b = (index >> BlockShift);

@@ -105,9 +105,9 @@ namespace Weesals.UI {
         private DrawFlags drawFlags = DrawFlags.None;
 
         public CSBufferReference Texture { get; private set; }
-        public RectF UVRect { get => uvrect; set { uvrect = value; dirty |= DirtyFlags.UV; } }
-        public RectF Border { get => border; set { border = value; dirty |= DirtyFlags.UV; } }
-        public Color Color { get => blending.Color; set { blending.Color = value; dirty |= DirtyFlags.Color; } }
+        public RectF UVRect { get => uvrect; set { if (uvrect == value) return; uvrect = value; dirty |= DirtyFlags.UV; } }
+        public RectF Border { get => border; set { if (border == value) return; border = value; dirty |= DirtyFlags.UV; } }
+        public Color Color { get => blending.Color; set { if (blending.Color == value) return; blending.Color = value; dirty |= DirtyFlags.Color; } }
         public bool IsNinePatch => (drawFlags & DrawFlags.NinePatch) != 0;
         public bool IsInitialized => element.IsValid;
         public bool HasDirtyFlags => dirty != DirtyFlags.None;
@@ -300,6 +300,8 @@ namespace Weesals.UI {
     public struct CanvasText : ICanvasElement, ICanvasTransient {
         CanvasElement element = CanvasElement.Invalid;
 
+        public enum DirtyFlags : byte { None = 0, Layout = 1, Composite = 2, All = 0x0f, };
+
         public struct GlyphStyle {
             public float mFontSize;
             public Color mColor;
@@ -308,7 +310,7 @@ namespace Weesals.UI {
         };
 		public struct GlyphPlacement {
             public ushort mGlyphId;
-            public ushort mStyleId;
+            public short mStyleId;
             public float mAdvance;
         }
         public struct GlyphLayout {
@@ -317,10 +319,9 @@ namespace Weesals.UI {
         };
 
         string text = "";
-        public string Text { get => text; set { SetText(value); } }
 
         Font font;
-        bool dirty;
+        DirtyFlags dirty;
         GlyphStyle defaultStyle = GlyphStyle.Default;
         TextAlignment alignment = TextAlignment.Centre;
         PooledList<GlyphStyle> styles;
@@ -330,11 +331,12 @@ namespace Weesals.UI {
 
         public int ComputedGlyphCount => glyphLayout.Count;
 
-        public Color Color { get => defaultStyle.mColor; set { if (defaultStyle.mColor == value) return; defaultStyle.mColor = value; dirty = true; } }
-        public float FontSize { get => defaultStyle.mFontSize; set { if (defaultStyle.mFontSize == value) return; defaultStyle.mFontSize = value; dirty = true; } }
-        public Font Font { get => font; set { SetFont(value); dirty = true; } }
-        public TextAlignment Alignment { get => alignment; set { alignment = value; dirty = true; } }
-        public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty = true; if (element.Material != null) UpdateMaterialProperties(); } }
+        public string Text { get => text; set { if (text != value) SetText(value); } }
+        public Color Color { get => defaultStyle.mColor; set { if (defaultStyle.mColor == value) return; defaultStyle.mColor = value; dirty |= DirtyFlags.Composite; ; } }
+        public float FontSize { get => defaultStyle.mFontSize; set { if (defaultStyle.mFontSize == value) return; defaultStyle.mFontSize = value; dirty |= DirtyFlags.All; } }
+        public Font Font { get => font; set { if (font != value) SetFont(value); } }
+        public TextAlignment Alignment { get => alignment; set { if (alignment == value) return; alignment = value; dirty |= DirtyFlags.Composite; } }
+        public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty |= DirtyFlags.Composite; if (element.Material != null) UpdateMaterialProperties(); } }
 
         public CanvasText() : this("") { }
         public CanvasText(string txt) {
@@ -356,15 +358,15 @@ namespace Weesals.UI {
         public void Reset(Canvas canvas) {
         }
 
-        private void SetText(string value) {
+        public void SetText(string value) {
             text = value;
-            dirty = true;
+            dirty |= DirtyFlags.All;
             glyphPlacements.Clear();
             glyphLayout.Clear();
         }
 		public void SetFont(Font _font) {
             font = _font;
-			dirty = true;
+            dirty |= DirtyFlags.All;
             if (element.Material != null) UpdateMaterialProperties();
         }
         public void SetFont(Font _font, float fontSize) {
@@ -381,10 +383,9 @@ namespace Weesals.UI {
             float lineHeight = (float)font.LineHeight;
             glyphPlacements.Clear();
             styles.Clear();
-            styles.Add(defaultStyle);
             using PooledList<Color> colorStack = new();
             using PooledList<float> sizeStack = new();
-            int activeStyle = 0;
+            int activeStyle = -1;
             for (int c = 0; c < text.Length; ++c) {
                 var chr = text[c];
                 if (chr == '<') {
@@ -405,12 +406,12 @@ namespace Weesals.UI {
                         // If no alpha specified, force full alpha
                         if (count == 3 || count == 6) color |= 0xff000000;
                         colorStack.Add(new Color(color));
-                        activeStyle = -1;
+                        activeStyle = -2;
                         continue;
                     }
                     if (CompareConsume(text, ref c, "</color")) {
                         colorStack.RemoveAt(colorStack.Count - 1);
-                        activeStyle = -1;
+                        activeStyle = -2;
                         continue;
                     }
                     if (CompareConsume(text, ref c, "<size=")) {
@@ -420,20 +421,28 @@ namespace Weesals.UI {
                             for (++c; c < text.Length && char.IsNumber(text[c]); ++c) ;
                         }
                         sizeStack.Add(float.Parse(text.AsSpan().Slice(s, c - s)));
-                        activeStyle = -1;
+                        activeStyle = -2;
                         continue;
                     }
                     if (CompareConsume(text, ref c, "</size")) {
                         sizeStack.RemoveAt(sizeStack.Count - 1);
-                        activeStyle = -1;
+                        activeStyle = -2;
                         continue;
                     }
+                }
+                if (chr == '\n') {
+                    glyphPlacements.Add(new GlyphPlacement {
+                        mGlyphId = (ushort)font.GetGlyphId(' '),
+                        mStyleId = (short)activeStyle,
+                        mAdvance = float.MaxValue,
+                    });
+                    continue;
                 }
                 var glyphId = font.GetGlyphId(chr);
                 var glyph = font.GetGlyph(glyphId);
                 if (glyph.mGlyph != chr) continue;
 
-                if (activeStyle == -1) {
+                if (activeStyle == -2) {
                     var tstyle = defaultStyle;
                     if (colorStack.Count == 0) tstyle.mColor = colorStack[^1];
                     if (sizeStack.Count == 0) tstyle.mFontSize = sizeStack[^1];
@@ -441,7 +450,7 @@ namespace Weesals.UI {
                     if (activeStyle == -1) { activeStyle = styles.Count; styles.Add(tstyle); }
                 }
 
-                var style = styles[activeStyle];
+                var style = GetStyle(activeStyle);
                 var scale = style.mFontSize / lineHeight;
                 float advance = glyph.mAdvance;
                 if (c > 0) advance += font.GetKerning(text[c - 1], (char)glyph.mGlyph);
@@ -449,7 +458,7 @@ namespace Weesals.UI {
 
                 glyphPlacements.Add(new GlyphPlacement {
                     mGlyphId = (ushort)glyphId,
-                    mStyleId = (ushort)activeStyle,
+                    mStyleId = (short)activeStyle,
                     mAdvance = advance,
                 });
             }
@@ -463,11 +472,11 @@ namespace Weesals.UI {
 			for (int c = 0; c < glyphPlacements.Count; ++c) {
 				var placement = glyphPlacements[c];
                 var glyph = font.GetGlyph(placement.mGlyphId);
-				var style = styles[placement.mStyleId];
+				var style = GetStyle(placement.mStyleId);
 				var scale = style.mFontSize / lineHeight;
 				var glyphSize2 = new Vector2(glyph.mSize.X, lineHeight) * scale;
 
-				if (pos.X + glyphSize2.X > layout.AxisX.W + 0.1f) {
+                if (pos.X + glyphSize2.X > layout.AxisX.W + 0.1f) {
 					pos.X = 0;
 					pos.Y += lineHeight * scale;
 					if (pos.Y + glyphSize2.Y > layout.AxisY.W) break;
@@ -478,7 +487,7 @@ namespace Weesals.UI {
 					mLocalPosition = pos + glyphSize2 / 2.0f,
 				});
                 min = Vector2.Min(min, new Vector2(pos.X, pos.Y + (float)(glyph.mOffset.Y) * scale));
-                max = Vector2.Max(max, new Vector2(pos.X + Math.Max(placement.mAdvance, glyphSize2.X), pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
+                max = Vector2.Max(max, new Vector2(pos.X + (glyphSize2.X), pos.Y + (float)(glyph.mOffset.Y + glyph.mSize.Y) * scale));
                 pos.X += placement.mAdvance;
 			}
             var sizeDelta = layout.GetSize() - (max - min);
@@ -505,7 +514,7 @@ namespace Weesals.UI {
             for (; c < glyphPlacements.Count; ++c) {
                 var placement = glyphPlacements[c];
                 var glyph = font.GetGlyph(placement.mGlyphId);
-                var style = styles[placement.mStyleId];
+                var style = GetStyle(placement.mStyleId);
                 var scale = style.mFontSize / lineHeight;
                 posX += Math.Max(placement.mAdvance, glyph.mSize.X * scale);
             }
@@ -521,7 +530,7 @@ namespace Weesals.UI {
                 var placement = glyphPlacements[index];
                 var layout = glyphLayout[index];
                 var glyph = font.GetGlyph(placement.mGlyphId);
-                var style = styles[placement.mStyleId];
+                var style = GetStyle(placement.mStyleId);
                 var scale = style.mFontSize / lineHeight;
                 var rect = new RectF(layout.mLocalPosition, (Vector2)glyph.mSize * scale);
                 rect.X -= rect.Width / 2.0f;
@@ -530,8 +539,9 @@ namespace Weesals.UI {
             }
             return default;
         }
+        private GlyphStyle GetStyle(int styleId) => styleId < 0 ? defaultStyle : styles[styleId];
         public void MarkLayoutDirty() {
-            dirty = true;
+            dirty = DirtyFlags.All;
         }
         public void FillVertexBuffers(in CanvasLayout layout, TypedBufferView<Vector3> positions, TypedBufferView<Vector2> uvs, TypedBufferView<SColor> colors) {
             var atlasTexelSize = 1.0f / font.Texture.GetSize().X;
@@ -542,7 +552,8 @@ namespace Weesals.UI {
                 var gplacement = glyphPlacements[c];
                 var glayout = glyphLayout[c];
                 var glyph = font.GetGlyph(gplacement.mGlyphId);
-                var style = styles[gplacement.mStyleId];
+                if (glyph.mGlyph == ' ') continue;
+                var style = GetStyle(gplacement.mStyleId);
                 var scale = style.mFontSize / lineHeight;
                 glayout.mVertexOffset = vindex;
                 var uv_1 = ((Vector2)glyph.mAtlasOffset - dilate.toxy()) * atlasTexelSize;
@@ -578,7 +589,7 @@ namespace Weesals.UI {
             }
         }
         public RangeInt WriteToMesh(Mesh mesh, in CanvasLayout layout) {
-            if (dirty) {
+            if (dirty != 0) {
                 UpdateGlyphPlacement();
                 UpdateGlyphLayout(layout);
             }
@@ -597,7 +608,7 @@ namespace Weesals.UI {
             return RangeInt.FromBeginEnd(istart, mesh.IndexCount);
         }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
-            if (!dirty) return;
+            if (dirty == 0) return;
             UpdateGlyphPlacement();
 			UpdateGlyphLayout(layout);
 
@@ -623,7 +634,7 @@ namespace Weesals.UI {
             var colors = buffers.GetColors();
             FillVertexBuffers(layout, positions, uvs, colors);
 			buffers.MarkVerticesChanged();
-            dirty = false;
+            dirty = DirtyFlags.None;
 		}
 
         private void UpdateMaterialProperties() {
@@ -739,7 +750,8 @@ namespace Weesals.UI {
             public interface IElementList { void Reset(Canvas canvas); }
             public struct ItemContainer<T> where T : ICanvasTransient, new() {
                 public T Item;
-                public LinkedListNode<Node> Context;
+                public ulong Context;
+                public override string ToString() => $"{Context}: {Item}";
             }
             public class ElementList<T> : ArrayList<ItemContainer<T>>, IElementList where T : ICanvasTransient, new() {
                 public int Iterator;
@@ -750,9 +762,11 @@ namespace Weesals.UI {
                     //this.RemoveRange(Iterator, Count - Iterator);
                     Iterator = 0;
                 }
-                public ref T RequireItem(LinkedListNode<Node> context, Canvas canvas) {
+                public ref T RequireItem(LinkedListNode<Node> owner, Canvas canvas, Func<T>? creator) {
+                    var context = (ulong)owner.GetHashCode();
+                    if (creator != null) context += (ulong)creator.Method.GetHashCode();
                     if (Iterator >= Count) {
-                        var item = new T();
+                        var item = creator != null ? creator() : new T();
                         item.Initialize(canvas);
                         Add(new ItemContainer<T>() { Item = item, Context = context, });
                     } else {
@@ -763,15 +777,14 @@ namespace Weesals.UI {
                         }
                         if (i != end) {
                             if (i != Iterator) {
-                                var t = this[Iterator];
-                                this[Iterator] = this[i];
-                                this[i] = t;
+                                (this[Iterator], this[i]) = (this[i], this[Iterator]);
                             }
                         } else {
                             ref var item = ref this[Iterator];
                             item.Context = context;
                             item.Item.Dispose(canvas);
                             item.Item.Reset(canvas);
+                            if (creator != null) item.Item = creator();
                             item.Item.Initialize(canvas);
                         }
                     }
@@ -1154,8 +1167,8 @@ namespace Weesals.UI {
 				if (mBuilder.mItem != null)
 					mBuilder.ClearChildrenRecursive(mNode);
 			}
-            public ref T CreateTransient<T>(Canvas canvas) where T : ICanvasTransient, new() {
-                return ref mBuilder.mCompositor.RequireTransient<T>(mNode, canvas);
+            public ref T CreateTransient<T>(Canvas canvas, Func<T>? creator = null) where T : ICanvasTransient, new() {
+                return ref mBuilder.mCompositor.RequireTransient<T>(mNode, canvas, creator);
             }
 
             public CanvasCompositor.TransformerRef PushTransformer(Matrix3x2 transform) {
@@ -1169,9 +1182,9 @@ namespace Weesals.UI {
             }
         }
 
-        private ref T RequireTransient<T>(LinkedListNode<Node> context, Canvas canvas) where T : ICanvasTransient, new() {
+        private ref T RequireTransient<T>(LinkedListNode<Node> context, Canvas canvas, Func<T>? creator) where T : ICanvasTransient, new() {
             var list = transientCache.Require<T>();
-            return ref list.RequireItem(context, canvas);
+            return ref list.RequireItem(context, canvas, creator);
         }
 
         public Builder CreateBuilder(Canvas canvas) {
@@ -1248,5 +1261,29 @@ namespace Weesals.UI {
                 graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
             }
 	    }
+    }
+
+    public static class GUIUtility {
+        public static void Box(this Canvas canvas, ref CanvasCompositor.Context context, CanvasLayout layout)
+            => Box(canvas, ref context, layout, Color.White);
+        public static void Box(this Canvas canvas, ref CanvasCompositor.Context context, CanvasLayout layout, Color color) {
+            ref var img = ref context.CreateTransient<CanvasImage>(canvas, static () => new() { });
+            img.Color = new Color(0, 0, 0, 128);
+            img.MarkLayoutDirty();
+            img.UpdateLayout(canvas, layout);
+            img.Append(ref context);
+        }
+        public static void Label(this Canvas canvas, ref CanvasCompositor.Context context, CanvasLayout layout, string text, TextAlignment alignment = TextAlignment.Left)
+            => Label(canvas, ref context, layout, text, Color.White, alignment);
+        public static void Label(this Canvas canvas, ref CanvasCompositor.Context context, CanvasLayout layout, string text, Color color, TextAlignment alignment = TextAlignment.Left) {
+            ref var txt = ref context.CreateTransient<CanvasText>(canvas, static () => new() { FontSize = 12, });
+            txt.Alignment = alignment;
+            txt.Text = text;
+            txt.Color = color;
+            txt.MarkLayoutDirty();
+            txt.UpdateLayout(canvas, layout);
+            txt.Append(ref context);
+        }
+
     }
 }

@@ -165,11 +165,12 @@ namespace Weesals.Engine {
         }
 
         public struct BufferItem {
+            public CSIdentifier Name;
             public TextureDesc Description;
             public bool RequireAttachment;
             public RenderPass.Target Target;
             public override string ToString() {
-                return $"{Target}: {Description}";
+                return $"{Name}: {Target}: {Description}";
             }
         }
         public struct ExecuteItem {
@@ -275,6 +276,7 @@ namespace Weesals.Engine {
                 selfPassData.OutputSize = newSize;
                 for (int i = 0; i < selfOutputs.Length; i++) {
                     ref var buffer = ref buffers[selfOutputs[i].TargetId];
+                    buffer.Name = selfOutputs[i].Output.Name;
                     buffer.Description.Size = selfPassData.OutputSize;
                 }
                 passes[selfExec.PassId] = selfPassData;
@@ -568,14 +570,33 @@ namespace Weesals.Engine {
                     selfPass.PrepareRender(Graphics);
                 }
             }
+            private void ComputeLastUse(Span<ushort> bufferLastUse, Span<RangeInt> bufferLastUseRanges) {
+                Span<ulong> bufferUsedMask = stackalloc ulong[(buffers.MaximumCount + 63) / 64];
+                int lastUseCount = 0;
+                for (int r = 0; r < executeList.Count; ++r) {
+                    int lastUseBegin = lastUseCount;
+                    var selfExec = executeList[r];
+                    var selfPassData = passes[selfExec.PassId];
+                    var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
+                    for (int i = 0; i < selfInputs.Length; ++i) {
+                        var dep = selfInputs[i];
+                        if (dep.OtherPassId < 0) continue;
+                        var otherTarget = outputs.AsSpan().Slice(passes[dep.OtherPassId].OutputsRange)[dep.OtherOutput];
+                        var bufferId = otherTarget.TargetId;
+                        if (buffers[bufferId].Target.IsValid) continue;
+                        if ((bufferUsedMask[bufferId / 64] & (1ul << bufferId)) != 0) continue;
+                        bufferLastUse[lastUseCount++] = (ushort)bufferId;
+                        bufferUsedMask[bufferId / 64] |= (1ul << bufferId);
+                    }
+                    bufferLastUseRanges[r] = new(lastUseBegin, lastUseCount - lastUseBegin);
+                }
+            }
             public void RenderPasses() {
                 using var tempTargets = new PooledList<int>(16);
-                for (var it = buffers.GetEnumerator(); it.MoveNext();) {
-                    ref var buffer = ref it.Current;
-                    if (buffer.Target.IsValid) continue;
-                    if (buffer.RequireAttachment) RequireBuffer(ref tempTargets.AsMutable(), it.Index);
-                }
                 using var targetsSpan = new PooledList<RenderPass.Target>(16);
+                Span<ushort> bufferLastUse = stackalloc ushort[buffers.MaximumCount];
+                Span<RangeInt> bufferLastUseRanges = stackalloc RangeInt[executeList.Count];
+                ComputeLastUse(bufferLastUse, bufferLastUseRanges);
                 // Invoke render passes
                 for (int r = executeList.Count - 1; r >= 0; --r) {
                     var selfExec = executeList[r];
@@ -620,10 +641,18 @@ namespace Weesals.Engine {
                         selfPassData.RenderPass.Render(Graphics, ref context);
                     }
                     targetsSpan.Clear();
+                    var range = bufferLastUseRanges[r];
+                    var passLastUse = bufferLastUse.Slice(range);
+                    foreach (var bufferId in passLastUse) {
+                        ref var buffer = ref buffers[bufferId];
+                        if (!buffer.Target.IsValid) continue;
+                        rtPool.Return(buffer.Target.Texture);
+                        buffer.Target.Texture = default;
+                    }
                 }
                 // Clean up temporary RTs
                 foreach (var item in tempTargets) {
-                    if (buffers[item].Target.IsValid) rtPool.Return(buffers[item].Target.Texture);
+                    Debug.Assert(!buffers[item].Target.IsValid);
                 }
             }
             public void Dispose() {

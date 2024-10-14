@@ -194,6 +194,7 @@ namespace Weesals.Engine.Jobs {
 #endif
         private JobHandle thenHandles;
         public bool IsComplete => JobDependencies.Instance.GetIsComplete(Handle);
+        public bool IsValid => Handle != default && thenHandles != Handle;
         public JobResult(JobHandle handle) {
             Handle = handle;
 #if DEBUG
@@ -206,6 +207,8 @@ namespace Weesals.Engine.Jobs {
 #endif
             thenHandles = Handle;
         }
+        // Does not complete handle, simply detaches it
+        // MUST be called. Is called implicitly by Complete()
         public void Dispose() {
             if (thenHandles == Handle) return;  // Already complete
             if (!thenHandles.IsValid) thenHandles = Handle;
@@ -215,8 +218,9 @@ namespace Weesals.Engine.Jobs {
             Destroy();
         }
         public JobHandle Then(Action<TResult> callback) {
+            Debug.Assert(IsValid, "Handle already disposed");
             var task = JobScheduler.Instance.CreateTask(
-                static (obj, callback) => ((Action<TResult>)callback)((TResult)obj),
+                static (obj, callback) => ((Action<TResult>)callback!)((TResult)obj!),
                 null, callback);
             var copyHandle = Handle.Then(static (packed) => {
                 JobScheduler.Instance.CopyResult(new JobHandle((uint)(packed >> 32)), (ushort)packed);
@@ -225,8 +229,7 @@ namespace Weesals.Engine.Jobs {
             return JobDependencies.Instance.CreateHandle(task, copyHandle);
         }
         public TResult Complete() {
-            Debug.Assert(thenHandles != Handle,
-                "Cannot Complete after Dispose()");
+            Debug.Assert(IsValid, "Cannot Complete after Dispose()");
             Handle.Complete();
             TResult result;
             if (thenHandles.IsValid) {

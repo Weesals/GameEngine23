@@ -37,6 +37,29 @@ namespace Weesals.CPS {
 
     // Iterates evaluator blocks from within the runtime
     // and allows adding/removing the hierarchy of execution blocks
+    /*unsafe public struct EvalEnumerator : IDisposable {
+        private fixed int stack[6];
+        private int count;
+        private int current;
+        public int Current => current;
+        public EvalEnumerator(Runtime runtime, int evalId) {
+            count = 0;
+            stack[count++] = evalId;
+            current = -1;
+        }
+        public void Dispose() {
+        }
+        public bool MoveNext(Runtime runtime) {
+            while (count > 0) {
+                var evalId = stack[count - 1];
+                ref var top = ref runtime.EvalStacks[evalId];
+                if (top.EvaluationId >= 0) --count;
+            }
+            return false;
+        }
+    }*/
+    // Iterates evaluator blocks from within the runtime
+    // and allows adding/removing the hierarchy of execution blocks
     public struct PEvalEnumerator : IDisposable {
         private int rootIterator;
         public int EvalId { get; private set; }
@@ -83,21 +106,20 @@ namespace Weesals.CPS {
             }
         }
         public PEvalEnumerator EvalIterator;
+        public EvaluationGraph.Enumerator GraphEnumerator;
         public RangeInt EntityIds;
         public int NextBlockId;
         public int EvalStackId;
+        public int GraphEvalId;
         public ExecutionData Execution;
 
         public RangeInt Parameters => Execution.Parameters;
         public RangeInt Outputs => Execution.Outputs;
         public int EvalId => EvalIterator.EvalId;
 
-        public bool GetIsNextBlockChild(Runtime runtime) {
-            if (NextBlockId != -1) return true;
-            var evalId = EvalId;
-            var blockId = runtime.BlockEvaluations[evalId].BlockId;
-            if (blockId == -1) return true;
-            return false;
+        public void InsertNextBlock(int nextBlockId) {
+            Debug.Assert(NextBlockId == -1, "Next block set twice");
+            NextBlockId = nextBlockId;
         }
         public int GetNextBlock(Runtime runtime) {
             // Instruction inserted a different blockId
@@ -280,7 +302,7 @@ namespace Weesals.CPS {
                         for (int g = 0; g < evaluator.EvalGroups.Count; ++g) {
                             ref var group = ref evaluator.EvalGroups[g];
                             Debug.Assert(group.NextBlockId == -1, "Next block already set!");
-                            group.NextBlockId = blockI;
+                            group.InsertNextBlock(blockI);
                             evaluator.EvalGroups[g] = group;
                         }
                     }

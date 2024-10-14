@@ -132,9 +132,6 @@ public:
     const D3DResourceCache::D3DRenderSurface* RequireInitializedRT(const RenderTarget2D* target) {
         auto d3dRt = target != nullptr ? mDevice->GetResourceCache().RequireD3DRT(target) : nullptr;
         if (d3dRt != nullptr && d3dRt->mBuffer == nullptr) {
-            auto& cache = mDevice->GetResourceCache();
-            auto d3dDevice = mDevice->GetD3DDevice();
-
             D3D12_RESOURCE_DESC texDesc = { };
             D3D12_CLEAR_VALUE clearValue = { };
             if (BufferFormatType::GetIsDepthBuffer(target->GetFormat())) {
@@ -150,27 +147,22 @@ public:
                 texDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
             }
             AllocateRTBuffer(d3dRt, texDesc, clearValue);
+            OutputDebugStringA("Allocating texture\n");
             d3dRt->mBuffer->SetName(target->GetName().c_str());
-
-            auto viewFmt = (DXGI_FORMAT)target->GetFormat();
-            if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-            if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
-            if (viewFmt == DXGI_FORMAT_D16_UNORM) viewFmt = DXGI_FORMAT_R16_UNORM;
-
-            // Create a shader resource view (SRV) for the texture
-            D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = { .Format = viewFmt, .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D };
-            srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            srvDesc.Texture2D.MipLevels = target->GetMipCount();
-            CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mDevice->GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), cache.mCBOffset);
-            d3dDevice->CreateShaderResourceView(d3dRt->mBuffer.Get(), &srvDesc, srvHandle);
-            d3dRt->mSRVOffset = cache.mCBOffset;
-            cache.mCBOffset += mDevice->GetDevice().GetDescriptorHandleSizeSRV();
-            /*d3dRt->mSRVOffset = cache.GetTextureSRV(d3dRt->mBuffer.Get(),
-                viewFmt, false, target->GetArrayCount(), 0xffffffff);*/
+            d3dRt->mOnDispose = const_cast<RenderTarget2D*>(target)->OnDestroy.Add([=]() {
+                if (d3dRt->mBuffer == nullptr) return;
+                auto& cache = mDevice->GetResourceCache();
+                cache.DelayResourceDispose(d3dRt->mBuffer, mCmdContext.mLockBits);
+                d3dRt->mBuffer = nullptr;
+                d3dRt->mFormat = (DXGI_FORMAT)(-1);
+                OutputDebugStringA("Disposing texture\n");
+                mDevice->GetResourceCache().DestroyD3DRT(target, mCmdContext.mLockBits);
+            });
         }
         return d3dRt;
     }
     void AllocateRTBuffer(D3DResourceCache::D3DRenderSurface* surface, const D3D12_RESOURCE_DESC& texDesc, const D3D12_CLEAR_VALUE& clearValue) {
+        assert(surface->mFormat != (DXGI_FORMAT)(-1));
         // Create the render target
         ThrowIfFailed(mDevice->GetD3DDevice()->CreateCommittedResource(&D3D::DefaultHeap,
             D3D12_HEAP_FLAG_NONE, &texDesc,
@@ -255,6 +247,7 @@ public:
             InplaceVector<D3D12_CPU_DESCRIPTOR_HANDLE, 8> targets;
             for (int i = 0; i < (int)frameBuffers.size(); ++i) {
                 auto& surface = cache.RequireTextureRTV(mFrameBuffers[i], mFrameHandle);
+                assert((uint32_t)surface.mRTVOffset < 4096);
                 targets.push_back(CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), surface.mRTVOffset));
             }
             auto& depthSurface = cache.RequireTextureRTV(mDepthBuffer, mFrameHandle);
@@ -331,6 +324,13 @@ public:
             mGraphicsRoot.mLastRootSig = pipelineState->mRootSignature;
             mCmdList->SetGraphicsRootSignature(mGraphicsRoot.mLastRootSig->mRootSignature.Get());
             mCmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+
+        // Depth buffer might be in Read mode, ensure it is write mode if required
+        if (pipelineState->mMaterialState.mDepthMode.GetDepthWrite()) {
+            mBarrierStateManager.SetResourceState(
+                mDepthBuffer->mBuffer.Get(), mDepthBuffer->mBarrierHandle, mDepthBuffer.GetSubresource(),
+                D3D12_RESOURCE_STATE_DEPTH_WRITE, mDepthBuffer->mDesc);
         }
 
         mGraphicsRoot.mLastPipeline = pipelineState;
@@ -411,6 +411,7 @@ public:
                 auto* surface = RequireInitializedRT(rt);
                 assert(surface->mBuffer != nullptr);
                 assert(surface->mBuffer.Get() != nullptr);
+                assert(surface->mFormat != (DXGI_FORMAT_UNKNOWN)(-1));
                 if (viewFmt == DXGI_FORMAT_UNKNOWN) viewFmt = surface->mFormat;
                 if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
                 if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
@@ -463,12 +464,12 @@ public:
                         mBarrierStateManager.AssertState(d3dTex->mBarrierHandle, D3D12_RESOURCE_STATE_COMMON,
                             resource->mSubresourceId, resource->mSubresourceCount);
                     }
-                    srvOffset = d3dTex->mSRVOffset;
+                    srvOffset = cache.RequireTextureSRV(*d3dTex, mFrameHandle);
                 }
             }
             if (srvOffset == -1 && rb->mType == ShaderBase::ResourceTypes::R_Texture) {
                 auto* d3dTex = cache.RequireCurrentTexture(cache.RequireDefaultTexture(), CreateContext());
-                if (d3dTex != nullptr) srvOffset = d3dTex->mSRVOffset;
+                if (d3dTex != nullptr) srvOffset = cache.RequireTextureSRV(*d3dTex, mFrameHandle);
             }
             if (srvOffset == -1) {
                 std::string str = "Failed to find resource for " + rb->mName.GetName();

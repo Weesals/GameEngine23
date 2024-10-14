@@ -373,7 +373,7 @@ namespace Weesals.UI {
             return sizing.ClampSize(new Vector2(20f, 20f));
         }
     }
-    public class FixedGridLayout : CanvasRenderable {
+    public class FixedGridLayout : CanvasRenderable, ICanvasLayout {
         public Int2 CellCount = new Int2(4, 4);
         public Vector2 Spacing = new Vector2(10f, 10f);
         public override SizingResult GetDesiredSize(SizingParameters sizing) {
@@ -432,7 +432,7 @@ namespace Weesals.UI {
             }
         }
     }
-    public class GridLayout : CanvasRenderable {
+    public class GridLayout : CanvasRenderable, ICanvasLayout {
         public struct ElementCells {
             public Int2 CellBegin;
             public Int2 CellCount;
@@ -614,7 +614,7 @@ namespace Weesals.UI {
     }
     public class ListLayout : CanvasRenderable, ICanvasLayout {
         public enum ScaleModes : byte { None, Clamp, StretchOrClamp, };
-        public ScaleModes ScaleMode = ScaleModes.Clamp;
+        public ScaleModes ScaleMode = ScaleModes.StretchOrClamp;
         public CanvasAxes Axis = CanvasAxes.Vertical;
         public float ItemSize = 0f;
         public float Separation = 0f;
@@ -668,6 +668,17 @@ namespace Weesals.UI {
 
         public ListSizing ComputeSizing(Vector2 size, Span<RectF> localRects, out Vector4 margin) {
             var listSizing = ComputeDesiredSizing(size[1 - (int)Axis], localRects, out margin);
+            if (ScaleMode == ScaleModes.StretchOrClamp && listSizing.FlexibleSize == 0f) {
+                listSizing.TotalSize = size[(int)Axis];
+                listSizing.FlexibleSize = listSizing.TotalSize - Separation * (localRects.Length - 1);
+                var itemFlexSize = listSizing.FlexibleSize / localRects.Length;
+                for (int i = 0; i < localRects.Length; i++) {
+                    ref var rect = ref localRects[i];
+                    rect.X += i * itemFlexSize + Math.Max(i - 1, 0) * Separation;
+                    rect.Width = itemFlexSize;
+                }
+                return listSizing;
+            }
             var sizeScale = ComputeScaling(size, listSizing.FlexibleSize);
             if (sizeScale != 1f) {
                 float offset = 0f;
@@ -712,7 +723,7 @@ namespace Weesals.UI {
             return result;
         }
     }
-    public class FlexLayout : CanvasRenderable {
+    public class FlexLayout : CanvasRenderable, ICanvasLayout {
         public struct Division {
             public float Size;
             public int Children;

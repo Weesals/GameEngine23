@@ -910,6 +910,8 @@ namespace Weesals.Engine
 
         [NativeTypeName("unsigned int")]
         public uint mPreviousButtonState;
+
+        public int mMouseScroll;
     }
 
     public partial struct CSKey
@@ -984,6 +986,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?InitializeGraphics@Platform@@SAXPEAVNativePlatform@@@Z", ExactSpelling = true)]
         public static extern void InitializeGraphics(NativePlatform* platform);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetCoreCount@Platform@@SAHXZ", ExactSpelling = true)]
+        public static extern int GetCoreCount();
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateWindow@Platform@@SAPEAVWindowBase@@PEAVNativePlatform@@UCSString@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("NativeWindow *")]

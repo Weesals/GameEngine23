@@ -549,17 +549,14 @@ namespace Weesals.Engine {
             graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
         }
 
-        public void Draw(CSGraphics graphics, Material passMat, Material sceneRoot) {
-            Draw(graphics, passMat, sceneRoot, RenderTag.Default | RenderTag.Transparent);
+        public void Draw(CSGraphics graphics) {
+            Draw(graphics, RenderTag.Default | RenderTag.Transparent);
         }
-        unsafe public void Draw(CSGraphics graphics, Material passMat, Material sceneRoot, RenderTags tags) {
-            var bindingsPtr = stackalloc CSBufferLayout[2];
+        unsafe public void Draw(CSGraphics graphics, RenderTags tags) {
+            var bindingsPtr = stackalloc CSBufferLayout[1] { updateMesh.IndexBuffer, };
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 1);
-            bindings[0] = updateMesh.IndexBuffer;
-            using var materials = new PooledArray<Material>(4);
-            materials[1] = rootMaterial;
-            materials[2] = passMat;
-            materials[3] = sceneRoot;
+            ref var materials = ref Graphics.MaterialStack;
+            using var push = materials.Push(rootMaterial);
             ActiveBlocks.Clear();
             Span<int> idOffsets = stackalloc int[systems.Count];
             for (int i = 0; i < systems.Count; i++) {
@@ -576,10 +573,15 @@ namespace Weesals.Engine {
                 var from = idOffsets[i];
                 var to = i + 1 >= idOffsets.Length ? ActiveBlocks.Count : idOffsets[i + 1];
                 if (to == from) continue;
-                materials[0] = system.DrawMaterial;
+                using var push2 = materials.Push(system.DrawMaterial);
                 rootMaterial.SetValue("ActiveBlocks", new CSBufferReference(ActiveBlocks, from, to - from));
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                foreach (var resource in resources.Reinterpret<CSBufferReference>()) {
+                    if (resource.mType == CSBufferReference.BufferTypes.Texture) {
+                        graphics.CommitTexture(new CSTexture((NativeTexture*)resource.mBuffer));
+                    }
+                }
                 var drawConfig = CSDrawConfig.Default;
                 drawConfig.mInstanceBase = from * ParticleSystem.AllocGroup.Count;
                 graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig,

@@ -16,7 +16,34 @@ using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
 
+public struct EntityAccessor {
+    public readonly EntityManager Manager;
+    public readonly Entity Entity;
+    public bool IsValid => Manager != null;
+    public EntityAccessor(EntityManager manager, Entity entity) {
+        Manager = manager;
+        Entity = entity;
+    }
+    public T GetComponent<T>() {
+        return Manager.GetComponent<T>(Entity);
+    }
+    public ref T GetComponentRef<T>() {
+        return ref Manager.GetComponentRef<T>(Entity);
+    }
+}
+
 public static class EntityProxyExt {
+    public static EntityAccessor GetAccessor(this ItemReference target) {
+        if (target.Owner is IItemRedirect redirect) target = redirect.GetOwner(target.Data);
+        if (target.Owner is World world) {
+            var entity = UnpackEntity(target.Data);
+            entity.SetDebugManager(world.Manager);
+            return new(world.Manager, entity);
+        }
+        return
+            //target.Owner is EntityProxy ? EntityProxy.UnpackEntity(target.Data) :
+            default;
+    }
     public static Entity GetEntity(this ItemReference target) {
         if (target.Owner is IItemRedirect redirect) target = redirect.GetOwner(target.Data);
         if (target.Owner is World world) {

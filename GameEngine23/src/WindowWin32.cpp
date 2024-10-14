@@ -207,6 +207,15 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         auto pointer = window->RequireMousePointer();
         if (pointer) pointer->ReceiveMoveEvent(Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam)));
     } return 0;
+    case WM_MOUSEWHEEL: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        auto pointer = window->RequireMousePointer();
+        if (pointer) {
+            // This is offset - seems to be in screen space
+            //pointer->ReceiveMoveEvent(Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam)));
+            pointer->ReceiveMouseScroll(GET_WHEEL_DELTA_WPARAM(wParam));
+        }
+    } return 0;
     // Receive key events
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP: {

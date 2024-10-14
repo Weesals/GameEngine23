@@ -272,6 +272,12 @@ namespace Game5.Game {
                 (pos.Y / Separation)
             );
         }
+        public static Int2 ChunkToSim(Int2 pos) {
+            return new Int2(
+                (pos.X * Separation + Separation / 2),
+                (pos.Y * Separation + Separation / 2)
+            );
+        }
         public static uint SimToChunkId(Int2 pos) {
             return ChunkToId(SimToChunk(pos));
         }
