@@ -50,7 +50,7 @@ public:
 
     // Compile shader and reflect uniform values / buffers
     static std::string PreprocessFile(const std::wstring_view& path, std::span<const MacroValue> macros, std::vector<std::string>* includedFiles = nullptr);
-    ComPtr<IDxcResult> CompileFromSource(const std::string_view& source, const std::string_view& entry, const std::string_view& profile);
+    ComPtr<IDxcResult> CompileFromSource(const std::string_view& source, const std::string_view& entry, const std::string_view& profile, const std::wstring_view& dbgFilename);
     void ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderReflection);
     void CompileFromFile(const std::wstring_view& path, const std::string_view& entry, const std::string_view& profile, std::span<const MacroValue> macros);
 };

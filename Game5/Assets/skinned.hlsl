@@ -43,7 +43,7 @@ matrix GetSkinTransform(uint4 boneIds, float4 boneWeights) {
 PSInput VSMain(VSInput input) {
     PSInput result = (PSInput)0;
 
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     result.primitiveId = input.primitiveId;
 
     float3 localPos = input.positionOS.xyz;
@@ -67,7 +67,7 @@ PSInput VSMain(VSInput input) {
 }
 
 void PSMain(PSInput input, out BasePassOutput result) {
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     TemporalAdjust(input.uv);
     
@@ -102,7 +102,7 @@ struct ShadowCast_PSInput {
 
 ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input) {
     ShadowCast_PSInput result = (ShadowCast_PSInput)0;
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     float3 worldPos = input.positionOS.xyz;
     float3 worldNrm = input.normalOS.xyz;
     worldPos = mul(GetSkinTransform(input.boneIds, input.boneWeights), float4(worldPos, 1.0)).xyz;

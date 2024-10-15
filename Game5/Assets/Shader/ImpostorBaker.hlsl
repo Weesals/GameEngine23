@@ -25,7 +25,7 @@ PSInput VSMain(VSInput input)
 {
     PSInput result;
     
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     result.primitiveId = input.primitiveId;
 
@@ -43,7 +43,7 @@ void PSMain(PSInput input
     , out float4 albedo : SV_Target0
     , out float4 normalDepth : SV_Target1
 ) {
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     TemporalAdjust(input.uv);
     

@@ -151,9 +151,12 @@ namespace Game5.Game {
                 JobHandle.Schedule(() => {
                     var tropPlant = Resources.LoadModel("./Assets/Models/Yughues/Tropical Plants/tropical_plant.FBX", out var meshHandle);
                     elLeafFoliage.LoadHandle = meshHandle.Then(() => {
-                        elLeafFoliage.Mesh = tropPlant.Meshes[0];
-                        elLeafFoliage.Mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Models/Yughues/Tropical Plants/diffuse.png"));
-                        elLeafFoliage.Mesh.Material.SetMacro("VWIND", "1");
+                        if (tropPlant.Meshes.Count > 0)
+                        {
+                            elLeafFoliage.Mesh = tropPlant.Meshes[0];
+                            elLeafFoliage.Mesh.Material.SetTexture("Texture", Resources.LoadTexture("./Assets/Models/Yughues/Tropical Plants/diffuse.png"));
+                            elLeafFoliage.Mesh.Material.SetMacro("VWIND", "1");
+                        }
                     });
                 });
                 layers.TerrainLayers[0].Foliage = new[] {
@@ -292,7 +295,7 @@ namespace Game5.Game {
         }
 
         public void SetAutoQuality(CSGraphics graphics) {
-            if (graphics.GetDeviceName().ToString().Contains("nvidia", StringComparison.InvariantCultureIgnoreCase)) {
+            if (!graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase)) {
                 EnableFog = true;
                 EnableAO = true;
                 EnableFoliage = true;

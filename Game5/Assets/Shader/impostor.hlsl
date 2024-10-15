@@ -55,7 +55,7 @@ PSInput VSMain(VSInput input, out float4 positionCS : SV_POSITION)
 
     PSInput result;
     
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     result.primitiveId = input.primitiveId;
 
@@ -86,7 +86,7 @@ void PSMain(PSInput input, out BasePassOutput result
     , linear centroid noperspective float4 positionCS : SV_POSITION
     , out float depth : SV_DepthGreaterEqual0
 ) {
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
 
     ImpostorData impostor = input.impostor;
 

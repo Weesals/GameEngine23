@@ -17,7 +17,7 @@ template<class ModuleBase> struct ModuleRetained : ModuleBase {
         model = GetInstanceData().Model;
     }
     InstanceData GetInstanceData() {
-        InstanceData instance = instanceData[primitiveId];
+        InstanceData instance = GetInstanceData(primitiveId);
         return instance;
     }
     float3 GetWorldPosition() {

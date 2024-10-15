@@ -272,7 +272,7 @@ namespace Weesals.Editor.Assets {
                 CSCompiledShader nativeshader = default;
                 while (true) {
                     var source = CSGraphics.PreprocessShader(shader.Path, macros);
-                    nativeshader = graphics.CompileShader(source.GetSourceRaw(), entryFn, new CSIdentifier(profile));
+                    nativeshader = graphics.CompileShader(source.GetSourceRaw(), entryFn, new CSIdentifier(profile), key.SourcePath);
                     compiledshader.IncludeFiles = new string[source.GetIncludeCount()];
                     for (int i = 0; i < compiledshader.IncludeFiles.Length; i++) {
                         compiledshader.IncludeFiles[i] = source.GetInclude(i);

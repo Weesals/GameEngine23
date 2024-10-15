@@ -784,9 +784,9 @@ CompiledShader GraphicsDeviceD3D12::CompileShader(const std::wstring_view& path,
     return compiled;
 }
 CompiledShader GraphicsDeviceD3D12::CompileShader(const std::string_view& source, const std::string_view& entry,
-    const std::string_view& profile) {
+    const std::string_view& profile, const std::wstring_view& dbgFilename) {
     D3DShader d3dshader;
-    d3dshader.CompileFromSource(source, entry.data(), profile.data());
+    d3dshader.CompileFromSource(source, entry, profile, dbgFilename);
     if (d3dshader.mShader == nullptr) return { };
     CompiledShader compiled;
     int size = (int)d3dshader.mShader->GetBufferSize();
@@ -794,4 +794,13 @@ CompiledShader GraphicsDeviceD3D12::CompileShader(const std::string_view& source
     std::memcpy(blob.data(), d3dshader.mShader->GetBufferPointer(), size);
     compiled.GetReflection() = d3dshader.mReflection;
     return compiled;
+}
+
+void GraphicsDeviceD3D12::WaitForGPU() {
+    auto& cache = GetResourceCache();
+    while (true) {
+        auto handle = cache.GetFirstBusyAllocator();
+        if (handle.mAllocatorId < 0) break;
+        cache.AwaitAllocator(handle);
+    }
 }

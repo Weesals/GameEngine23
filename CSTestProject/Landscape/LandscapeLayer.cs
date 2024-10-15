@@ -86,9 +86,11 @@ namespace Weesals.Landscape {
                     .SetSize(512)
                     .SetArrayCount(LayerCount);
                 for (int i = 0; i < LayerCount; ++i) {
-                    Resources.LoadTexture(this[i].BaseColor, BufferFormat.FORMAT_R8G8B8A8_UNORM)
-                        .GetTextureData()
-                        .CopyTo(baseTextures.GetTextureData(0, i));
+                    var layerTex = Resources.LoadTexture(this[i].BaseColor, BufferFormat.FORMAT_R8G8B8A8_UNORM);
+                    if (layerTex.IsValid) {
+                        layerTex.GetTextureData()
+                            .CopyTo(baseTextures.GetTextureData(0, i));
+                    }
                 }
                 baseTextures.MarkChanged();
                 baseTextures.GenerateMips();
@@ -105,9 +107,11 @@ namespace Weesals.Landscape {
                     .SetSize(256)
                     .SetArrayCount(LayerCount);
                 for (int i = 0; i < LayerCount; ++i) {
-                    Resources.LoadTexture(this[i].NormalMap, BufferFormat.FORMAT_R8G8B8A8_UNORM)
-                        .GetTextureData()
+                    var layerTex = Resources.LoadTexture(this[i].NormalMap, BufferFormat.FORMAT_R8G8B8A8_UNORM);
+                    if (layerTex.IsValid) {
+                        layerTex.GetTextureData()
                         .CopyTo(bumpTextures.GetTextureData(0, i));
+                    }
                 }
                 for (int s = 0; s < bumpTextures.ArrayCount; ++s) {
                     var data = bumpTextures.GetTextureData(0, s).Reinterpret<Color>();

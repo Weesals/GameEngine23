@@ -205,6 +205,7 @@ public:
     void PushAllocator(D3DAllocatorHandle& handle);
     int AwaitAllocator(D3DAllocatorHandle handle);
     void ClearAllocator(D3DAllocatorHandle handle);
+    D3DAllocatorHandle GetFirstBusyAllocator();
     CommandAllocator* RequireAllocator();
     void CheckInflightFrames();
     void UnlockFrame(size_t frameHash);

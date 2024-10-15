@@ -850,6 +850,13 @@ void D3DResourceCache::ClearAllocator(D3DAllocatorHandle handle) {
     if (cmdAllocator.GetHeadFrame() != handle.mFenceValue) return;
     cmdAllocator.mCmdAllocator->Reset();
 }
+D3DAllocatorHandle D3DResourceCache::GetFirstBusyAllocator() {
+    CheckInflightFrames();
+    for (auto& allocator : mCommandAllocators) {
+        if (allocator->HasLockedFrames()) return allocator->CreateWaitHandle();
+    }
+    return D3DAllocatorHandle();
+}
 D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     CheckInflightFrames();
     for (auto& allocator : mCommandAllocators) {
@@ -1148,7 +1155,7 @@ D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(D3DCommandContext& cm
     auto allocSize = (int)(tData.size() + 255) & ~255;
     if (dataHash == 0) dataHash = allocSize + GenericHash(tData.data(), tData.size());
 
-    auto CBState = D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    auto CBState = D3D12_RESOURCE_STATE_COMMON;// D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
 
     auto& resultItem = mConstantBufferCache.RequireItem(dataHash, allocSize, cmdList.mLockBits,
         [&](auto& item) { // Allocate a new item

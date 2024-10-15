@@ -29,7 +29,7 @@ PSInput VSMain(VSInput input)
 {
     PSInput result;
     
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     result.primitiveId = input.primitiveId;
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
@@ -49,7 +49,7 @@ PSInput VSMain(VSInput input)
 float4 PSMain(PSInput input) : SV_TARGET
 {
     return float4(frac(SceneDepth[input.position.xy].rrr * 1000), 1.0);
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     float3 viewDir = normalize(input.viewPos);
     input.normal = normalize(input.normal);

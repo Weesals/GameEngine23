@@ -126,6 +126,9 @@ class Program {
             Tracy.FrameMarkEnd(0);
         }
 
+        // Wait for all inflight operations
+        Core.ActiveInstance.GetGraphics().Wait();
+
         // Clean up
         JobScheduler.Instance.Dispose();
         foreach (var window in ApplicationWindow.ActiveWindows) {

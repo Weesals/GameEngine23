@@ -296,7 +296,7 @@ namespace Game5.Game {
             scenePasses.CommitMotion();
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
-            Play.RenderUpdate(graphics, dt);
+            //Play.RenderUpdate(graphics, dt);
 
             // TODO: Avoid calling this twice when TAA is enabled
             ScenePasses.SetupRender(GameViewport.Size);

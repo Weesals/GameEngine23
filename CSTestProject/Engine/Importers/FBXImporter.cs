@@ -254,8 +254,13 @@ namespace Weesals.Engine.Importers {
             var name = Path.GetFileNameWithoutExtension(path);
 
             using (new ProfilerMarker("FBX Parse").Auto(color).WithText(name)) {
-                parser = new FBXParser(path);
-                fbxScene = parser.Parse();
+                try {
+                    parser = new FBXParser(path);
+                    fbxScene = parser.Parse();
+                } catch {
+                    JobHandle.MarkDeferredComplete(deferred);
+                    return default;
+                }
             }
 
             var version = fbxScene.FindNode("FBXHeaderExtension").FindChild("FBXVersion").Properties[0].AsI32(parser.Data);

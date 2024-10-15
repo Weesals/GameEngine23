@@ -725,9 +725,9 @@ namespace Weesals.Engine
         [return: NativeTypeName("PreprocessedShader *")]
         private static extern NativePreprocessedShader* PreprocessShader(CSString path, CSSpan macros);
 
-        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CompileShader@CSGraphics@@CAPEBVCompiledShader@@PEAVNativeGraphics@@UCSString8@@UCSString@@UCSIdentifier@@@Z", ExactSpelling = true)]
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CompileShader@CSGraphics@@CAPEBVCompiledShader@@PEAVNativeGraphics@@UCSString8@@UCSString@@UCSIdentifier@@2@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativeCompiledShader *")]
-        private static extern NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier);
+        private static extern NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier, CSString dbgFilename);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequirePipeline@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@UCSSpan@@PEAVCompiledShader@@2PEAX@Z", ExactSpelling = true)]
         [return: NativeTypeName("const NativePipeline *")]
@@ -767,6 +767,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Clear@CSGraphics@@CAXPEAVNativeGraphics@@UCSClearConfig@@@Z", ExactSpelling = true)]
         private static extern void Clear(NativeGraphics* graphics, CSClearConfig clear);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Wait@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
+        private static extern void Wait(NativeGraphics* graphics);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Execute@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Execute(NativeGraphics* graphics);

@@ -16,7 +16,7 @@ struct ShadowCast_PSInput
 ShadowCast_PSInput ShadowCast_VSMain(ShadowCast_VSInput input)
 {
     ShadowCast_PSInput result;
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
     result.position = mul(ViewProjection, float4(worldPos, 1.0));
 #if defined(VULKAN)

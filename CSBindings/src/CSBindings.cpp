@@ -300,10 +300,10 @@ PreprocessedShader* CSGraphics::PreprocessShader(CSString path, CSSpan macros) {
 	shader->mIncludedFiles = std::move(includedFiles);
 	return shader;
 }
-const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier profile) {
+const NativeCompiledShader* CSGraphics::CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier profile, CSString dbgFilename) {
 	auto compiledShader = graphics->mCmdBuffer.GetGraphics()->CompileShader(
 		GetString(source), AllocString(entry),
-		Identifier(profile.mId).GetName().c_str());
+		Identifier(profile.mId).GetName().c_str(), ToWString(dbgFilename));
 	if (compiledShader.GetBinary().empty()) return nullptr;
 	return new NativeCompiledShader(compiledShader);
 }
@@ -408,6 +408,9 @@ void CSGraphics::Clear(NativeGraphics* graphics, CSClearConfig clear) {
 	//(Color(0, 0, 0, 0), 1.0f)
 	graphics->mCmdBuffer.ClearRenderTarget((const ClearConfig&)clear);
 }
+void CSGraphics::Wait(NativeGraphics* graphics) {
+	graphics->mCmdBuffer.GetGraphics()->WaitForGPU();
+}
 void CSGraphics::Execute(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Execute();
 }
@@ -465,7 +468,7 @@ void CSWindow::SetStyle(NativeWindow* window, CSString style) {
 	if (auto winwnd = dynamic_cast<WindowWin32*>(window)) {
 		auto styleStr = ToWString(style);
 		auto CompareStr = [&](const std::wstring_view s1, const std::wstring_view s2) {
-			return std::equal(s1.begin(), s1.end(), s2.begin(), s2.end(), [](char c1, char c2) {
+			return std::equal(s1.begin(), s1.end(), s2.begin(), s2.end(), [](auto c1, auto c2) {
 				return std::tolower(c1) == std::tolower(c2);
 			});
 		};

@@ -500,6 +500,7 @@ namespace Weesals.Engine {
         public void Clear(CSClearConfig clear) { Clear(mGraphics, clear); }
         public void SetViewport(RectI viewport) { SetViewport(mGraphics, viewport); }
         public void Execute() { Execute(mGraphics); }
+        public void Wait() { Wait(mGraphics); }
         public nint RequireConstantBuffer(MemoryBlock<byte> data, ulong hash = 0) {
             return (nint)RequireConstantBuffer(mGraphics, CSSpan.Create(data), (nuint)hash);
         }
@@ -512,10 +513,11 @@ namespace Weesals.Engine {
                 ));
             }
         }
-        public CSCompiledShader CompileShader(CSString8 source, string entry, CSIdentifier profile) {
+        public CSCompiledShader CompileShader(CSString8 source, string entry, CSIdentifier profile, string dbgFilename) {
+            fixed (char* dbgFilenamePtr = dbgFilename)
             fixed (char* entryPtr = entry) {
                 return new CSCompiledShader(CompileShader(mGraphics, source,
-                    new CSString(entryPtr, entry.Length), profile));
+                    new CSString(entryPtr, entry.Length), profile, new CSString(dbgFilenamePtr, dbgFilename.Length)));
             }
         }
         public CSPipeline RequirePipeline(Span<CSBufferLayout> bindings,

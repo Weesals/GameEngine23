@@ -29,7 +29,7 @@ PSInput VSMain(VSInput input)
 {
     PSInput result;
     
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     result.primitiveId = input.primitiveId;
 
@@ -52,7 +52,7 @@ PSInput VSMain(VSInput input)
 }
 
 void PSMain(PSInput input, out BasePassOutput result) {
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     TemporalAdjust(input.uv);
     
@@ -89,7 +89,7 @@ struct ShadowCast_PSInput {
 
 void ShadowCast_VSMain(ShadowCast_VSInput input, out float4 positionCS : SV_POSITION) {
     ShadowCast_PSInput result;
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     input.position.xyz += input.normal * -0.02;
     float3 worldPos = mul(instance.Model, float4(input.position.xyz, 1.0)).xyz;
     positionCS = mul(ViewProjection, float4(worldPos, 1.0));

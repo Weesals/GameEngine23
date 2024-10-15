@@ -101,7 +101,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     bool useLowPower = GetSystemPowerStatus(&sps) && (sps.ACLineStatus == 0);
     if ((GetKeyState(VK_CAPITAL) & 0x00ff)) useLowPower = !useLowPower;
 
-    int DeviceId = useLowPower ? 0 : 1;
+    int DeviceId = 0;// useLowPower ? 0 : 1;
     auto result = D3D12CreateDevice(adapters[std::min(DeviceId, (int)adapters.size() - 1)].Get(),
         D3D_FEATURE_LEVEL_11_1, IID_PPV_ARGS(&mD3DDevice));
     ThrowIfFailed(result);

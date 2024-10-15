@@ -162,6 +162,9 @@ namespace Weesals.Engine {
                 dictionaryLock.ExitWriteLock();
             }
         }
+        public ReadLockScope CreateReadLock() {
+            return new(dictionaryLock);
+        }
     }
 
     public class Resources {
@@ -497,36 +500,38 @@ namespace Weesals.Engine {
         }
         public static void ReloadAssets() {
             var invalidated = new PooledList<ResourceKey>();
-            foreach (var kv in loadedResources) {
-                var key = kv.Key;
-                var resource = kv.Value;
-                if (string.IsNullOrEmpty(key.SourcePath)) continue;
-                bool same = (ulong)File.GetLastWriteTimeUtc(key.SourcePath).Ticks == key.SourceHash;
-                if (same && resource.Importer is ShaderImporter shaderImporter) {
-                    var compiledshader = loadedShaders.loadedItems[resource.ResourceId].Resource;
-                    if (shaderImporter.GetIncludeHash(compiledshader) != compiledshader.IncludeHash) {
-                        same = false;
+            lock (loadedResources) {
+                foreach (var kv in loadedResources) {
+                    var key = kv.Key;
+                    var resource = kv.Value;
+                    if (string.IsNullOrEmpty(key.SourcePath)) continue;
+                    bool same = (ulong)File.GetLastWriteTimeUtc(key.SourcePath).Ticks == key.SourceHash;
+                    if (same && resource.Importer is ShaderImporter shaderImporter) {
+                        var compiledshader = loadedShaders.loadedItems[resource.ResourceId].Resource;
+                        if (shaderImporter.GetIncludeHash(compiledshader) != compiledshader.IncludeHash) {
+                            same = false;
+                        }
+                    }
+                    if (same) continue;
+                    if (resource.Importer is ShaderImporter) {
+                        ResourceCacheManager.DeleteCache(key);
+                        var compiledshader = loadedShaders.loadedItems[resource.ResourceId].Resource;
+                        if (--compiledshader.ReferenceCount == 0)
+                            uniqueShaders.Remove((ulong)compiledshader.GetHashCode());
+
+                        //loadedShaders.Remove(resource.ResourceId);
+                        loadedShaders.loadedItems[resource.ResourceId].Resource = null;
+                        loadedShaders.loadedItems[resource.ResourceId].Loaded = false;
+                        invalidated.Add(key);
+                    }
+                    if (resource.Importer is TextureImporter) {
+                        //loadedTextures.Remove(resource.ResourceId);
+                        //invalidated.Add(key);
                     }
                 }
-                if (same) continue;
-                if (resource.Importer is ShaderImporter) {
-                    ResourceCacheManager.DeleteCache(key);
-                    var compiledshader = loadedShaders.loadedItems[resource.ResourceId].Resource;
-                    if (--compiledshader.ReferenceCount == 0)
-                        uniqueShaders.Remove((ulong)compiledshader.GetHashCode());
-
-                    //loadedShaders.Remove(resource.ResourceId);
-                    loadedShaders.loadedItems[resource.ResourceId].Resource = null;
-                    loadedShaders.loadedItems[resource.ResourceId].Loaded = false;
-                    invalidated.Add(key);
+                foreach (var item in invalidated) {
+                    loadedResources.Remove(item);
                 }
-                if (resource.Importer is TextureImporter) {
-                    //loadedTextures.Remove(resource.ResourceId);
-                    //invalidated.Add(key);
-                }
-            }
-            foreach (var item in invalidated) {
-                loadedResources.Remove(item);
             }
             Trace.WriteLine("Reloading " + invalidated.Count + " items");
             if (invalidated.Count > 0) {
@@ -550,12 +555,19 @@ namespace Weesals.Engine {
             return default;
         }
 
-        public static string FindAssetPath(CSTexture texture) {
+        public static ulong GetAssetKey(CSTexture texture) {
+            using var lockScope = loadedTextures.CreateReadLock();
             foreach (var tex in loadedTextures.loadedItems) {
-                if (tex.Value.Resource != texture) continue;
+                if (tex.Value.Resource == texture) return tex.Key;
+            }
+            return ulong.MaxValue;
+        }
+        public static string? FindAssetPath(CSTexture texture) {
+            var key = GetAssetKey(texture);
+            lock (loadedResources) {
                 foreach (var resource in loadedResources) {
                     if (resource.Value.Importer != textureImporter) continue;
-                    if (resource.Value.ResourceId == tex.Key) {
+                    if (resource.Value.ResourceId == key) {
                         return resource.Key.SourcePath;
                     }
                 }

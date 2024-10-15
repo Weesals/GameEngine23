@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
@@ -11,13 +12,16 @@ namespace Weesals.Utility {
         public const int BitShift = 10;
         public const int Amplitude = 1 << BitShift;
         public const int Bitmask = Amplitude - 1;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int2 Floor1024(Int2 pos) {
             return pos >> BitShift;
             //return (pos + new Int2(pos.X < 0 ? -Amplitude + 1 : 0, pos.Y < 0 ? -Amplitude + 1 : 0)) >> BitShift;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int3 Floor1024(Int3 pos) {
             return pos >> BitShift;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int2 PermuteS512(Int2 seed) {
             int seedI = seed.X + (seed.Y << 10);
             seedI *= unchecked((int)0x846ca68bu);
@@ -26,6 +30,7 @@ namespace Weesals.Utility {
             seedI ^= seedI >> 13;
             return new Int2((seedI >> 10) & Bitmask, (seedI >> 0) & Bitmask) - 512;
         }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static Int3 PermuteS512(Int3 seed) {
             int seedI = seed.X + (seed.Y << 10) + (seed.Z << 20);
             seedI *= unchecked((int)0x846ca68bu);
@@ -105,6 +110,7 @@ namespace Weesals.Utility {
             ) / 1024;
             return (r0 * (1024 - l.Z) + r1 * l.Z) >> (BitShift * 2);
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static int GetAt(Int3 from1024, Int3 wrap) {
             var cell = Floor1024(from1024);
             var l = (from1024 & Bitmask);
@@ -135,6 +141,7 @@ namespace Weesals.Utility {
         private static int DotGradient(Int3 from1024, Int3 cell) {
             return Int3.DotI(from1024 - (cell << BitShift), PermuteS512(cell));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static int DotGradient(Int3 from1024, Int3 cell, Int3 wrap) {
             return Int3.DotI(from1024 - (cell << BitShift), PermuteS512(cell & (wrap - 1)));
         }

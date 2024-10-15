@@ -102,12 +102,14 @@ namespace Weesals.Landscape {
                 if (instance.FoliageType.LoadHandle == JobHandle.None) continue;
                 if (!instance.FoliageType.LoadHandle.IsComplete) continue;
                 var mesh = instance.FoliageType.Mesh;
-                using var materials = new PooledList<Material>();
-                materials.Add(instance.FoliageMaterial);
-                materials.Add(mesh.Material);
-                instance.MeshDraw = new(instance.FoliageType.Mesh, materials);
+                if (mesh != null) {
+                    using var materials = new PooledList<Material>();
+                    materials.Add(instance.FoliageMaterial);
+                    materials.Add(mesh.Material);
+                    instance.MeshDraw = new(instance.FoliageType.Mesh, materials);
+                    refresh = true;
+                }
                 instance.FoliageType.LoadHandle = JobHandle.None;
-                refresh = true;
             }
 
             Span<Vector3> corners = stackalloc Vector3[4];

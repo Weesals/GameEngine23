@@ -59,7 +59,7 @@ void PSMain(PSInput input, out BasePassOutput result) {
     ShaderModule module = (ShaderModule)0;
     module.SetupPixelIntermediates(input);
 
-    InstanceData instance = instanceData[input.primitiveId];
+    InstanceData instance = GetInstanceData(input.primitiveId);
     
     TemporalAdjust(input.uv);
     

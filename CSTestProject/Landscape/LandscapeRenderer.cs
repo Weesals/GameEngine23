@@ -628,6 +628,7 @@ namespace Weesals.Landscape {
             return BoundingBox.FromMinMax(min, max);
         }
         unsafe public void Render(CSGraphics graphics, ref MaterialStack materials, ScenePass pass) {
+            //return;
             using var marker = ProfileMarker_Render.Auto();
             //if (!pass.TagsToInclude.Has(pass.RetainedRenderer.Scene.TagManager.RequireTag("Terrain"))) return;
             var localFrustum = pass.Frustum.TransformToLocal(GetWorldMatrix());

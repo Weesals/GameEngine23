@@ -164,7 +164,7 @@ std::string D3DShader::PreprocessFile(const std::wstring_view& path, std::span<c
     }
     return {};
 }
-ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, const std::string_view& entry, const std::string_view& profile) {
+ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, const std::string_view& entry, const std::string_view& profile, const std::wstring_view& dbgFilename) {
     ComPtr<IDxcUtils> dxcUtils;
     DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
 
@@ -194,6 +194,8 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
             //arguments.push_back(L"-Qstrip_reflect");
             arguments.push_back(L"-Zi");
             arguments.push_back(L"-Qembed_debug");
+            auto wFilename = std::wstring(dbgFilename.begin(), dbgFilename.end());
+            arguments.push_back(wFilename.c_str());
             //std::wstring shaderPDBArg = L"-Fd C:\\ShaderPDBs\\";
             //std::hash<std::string_view> hasher;
             //uint64_t hash = hasher(source);
@@ -297,7 +299,7 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
     }
 }
 void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderReflection) {
-    ComPtr<ID3D12LibraryReflection> library;
+    /*ComPtr<ID3D12LibraryReflection> library;
     pShaderReflection->QueryInterface(IID_PPV_ARGS(&library));
     for (int f = 0; f < 100; ++f) {
         auto* fn = library->GetFunctionByIndex(f);
@@ -307,7 +309,7 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
         if (SUCCEEDED(hr)) {
             funcDesc = funcDesc;
         }
-    }
+    }*/
 
     D3D12_SHADER_DESC shaderDesc;
     pShaderReflection->GetDesc(&shaderDesc);
@@ -443,7 +445,7 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
 // Compile shader and reflect uniform values / buffers
 void D3DShader::CompileFromFile(const std::wstring_view& path, const std::string_view& entry, const std::string_view& profile, std::span<const MacroValue> macros) {
     auto source = PreprocessFile(path, macros);
-    CompileFromSource(source, entry, profile);
+    CompileFromSource(source, entry, profile, path);
 }
 #else
 // Represents the D3D12 instance of a shader

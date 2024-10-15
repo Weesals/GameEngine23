@@ -251,9 +251,13 @@ namespace Weesals.Engine {
     }
     public struct Int3 : IEquatable<Int3> {
         public int X, Y, Z;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Int3(int v) : this(v, v, v) { }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Int3(int _x, int _y, int _z) { X = _x; Y = _y; Z = _z; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Int3(Int2 v, int _z) { X = v.X; Y = v.Y; Z = _z; }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Int3(Vector3 o) : this((int)o.X, (int)o.Y, (int)o.Z) { }
         public bool Equals(Int3 o) { return X == o.X && Y == o.Y && Z == o.Z; }
         public override string ToString() { return $"{X},{Y},{Z}"; }

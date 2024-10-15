@@ -323,7 +323,7 @@ private:
 	static NativeSurface* GetSurface(NativeGraphics* graphics);
 	static void SetRenderTargets(NativeGraphics* graphics, CSSpan colorTargets, CSRenderTargetBinding depthTarget);
 	static PreprocessedShader* PreprocessShader(CSString path, CSSpan macros);
-	static const NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier);
+	static const NativeCompiledShader* CompileShader(NativeGraphics* graphics, CSString8 source, CSString entry, CSIdentifier identifier, CSString dbgFilename);
 	static const NativePipeline* RequirePipeline(NativeGraphics* graphics, CSSpan bindings,
 		NativeCompiledShader* vertexShader, NativeCompiledShader* pixelShader, void* materialState);
 	static const NativePipeline* RequireMeshPipeline(NativeGraphics* graphics, CSSpan bindings,
@@ -338,6 +338,7 @@ private:
 	static void Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 groupCount);
 	static void Reset(NativeGraphics* graphics);
 	static void Clear(NativeGraphics* graphics, CSClearConfig clear);
+	static void Wait(NativeGraphics* graphics);
 	static void Execute(NativeGraphics* graphics);
 	static void SetViewport(NativeGraphics* graphics, RectInt viewport);
 	static bool IsTombstoned(NativeGraphics* graphics);
