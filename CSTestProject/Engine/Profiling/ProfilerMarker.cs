@@ -9,6 +9,8 @@ using Weesals.Engine.Jobs;
 namespace Weesals.Engine.Profiling {
     public struct ProfilerMarker {
 
+        public const bool EnableTracy = false;
+
         public struct Snapshot {
             public string Name;
             public string ThreadName;
@@ -33,7 +35,7 @@ namespace Weesals.Engine.Profiling {
 
         public ProfilerMarker(string name, bool enable = true) {
             lock (tracyLocations) {
-                if (!tracyLocations.TryGetValue(name, out tracyLocation)) {
+                if (EnableTracy && !tracyLocations.TryGetValue(name, out tracyLocation)) {
                     tracyLocation = Tracy.CreateLocation(name, name, 0);
                     tracyLocations.Add(name, tracyLocation);
                 }
@@ -47,7 +49,6 @@ namespace Weesals.Engine.Profiling {
         }
 
         public readonly struct Scope : IDisposable {
-            public const bool EnableTracy = true;
             public readonly ProfilerMarker Marker;
             private readonly nuint zone;
             public Scope(ProfilerMarker marker) : this(marker, Color.Clear) { }
@@ -74,7 +75,7 @@ namespace Weesals.Engine.Profiling {
         }
 
         public static void SetValue(string name, int value) {
-            Tracy.TracyPlot(Tracy.CreateString(name), value);
+            if (EnableTracy) Tracy.TracyPlot(Tracy.CreateString(name), value);
         }
 
     }

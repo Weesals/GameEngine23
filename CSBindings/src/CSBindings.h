@@ -393,6 +393,7 @@ struct CSPointer {
 	float mTotalDrag;
 	unsigned int mCurrentButtonState;
 	unsigned int mPreviousButtonState;
+	int mMouseScroll;
 };
 struct CSKey {
 	unsigned char mKeyId;
@@ -429,6 +430,8 @@ public:
 		: mPlatform(platform) { }
 
 	static void InitializeGraphics(NativePlatform* platform);
+
+	static int GetCoreCount();
 
 	static NativeWindow* CreateWindow(NativePlatform* platform, CSString name);
 	static NativeInput* CreateInput(NativePlatform* platform);

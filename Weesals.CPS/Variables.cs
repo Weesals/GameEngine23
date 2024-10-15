@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -54,9 +55,8 @@ namespace Weesals.CPS {
             var meta = (StackType)typeId;
             if (meta.StackSize > 0) {
                 var range = storage.Allocate(meta.StackSize);
-                fixed (byte* sourcePtr = &storage.Items[range.Start]) {
-                    *(T*)sourcePtr = value;
-                }
+                var data = storage.Items.AsSpan(range.Start);
+                MemoryMarshal.Write(data, value);
                 return range.Start;
             }
             throw new NotImplementedException();
@@ -100,33 +100,30 @@ namespace Weesals.CPS {
             };
         }
         public unsafe bool TryGetAsInt(SparseArray<byte> dataStore, out int value) {
-            fixed (byte* data = &dataStore.Items[Offset]) {
-                if (TypeId == StackType.ByteType) { value = *(byte*)data; return true; }
-                if (TypeId == StackType.ShortType) { value = *(short*)data; return true; }
-                if (TypeId == StackType.IntType) { value = *(int*)data; return true; }
-                if (TypeId == StackType.FloatType) { value = (int)*(float*)data; return true; }
-            }
+            var data = dataStore.Items.AsSpan(Offset);
+            if (TypeId == StackType.ByteType) { value = MemoryMarshal.Read<byte>(data); return true; }
+            if (TypeId == StackType.ShortType) { value = MemoryMarshal.Read<short>(data); return true; }
+            if (TypeId == StackType.IntType) { value = MemoryMarshal.Read<int>(data); return true; }
+            if (TypeId == StackType.FloatType) { value = (int)MemoryMarshal.Read<float>(data); return true; }
             value = default;
             return false;
         }
         public unsafe bool TryGetAsFloat(SparseArray<byte> dataStore, out float value) {
-            fixed (byte* data = &dataStore.Items[Offset]) {
-                if (TypeId == StackType.ByteType) { value = *(byte*)data; return true; }
-                if (TypeId == StackType.ShortType) { value = *(short*)data; return true; }
-                if (TypeId == StackType.IntType) { value = *(int*)data; return true; }
-                if (TypeId == StackType.FloatType) { value = *(float*)data; return true; }
-            }
+            var data = dataStore.Items.AsSpan(Offset);
+            if (TypeId == StackType.ByteType) { value = MemoryMarshal.Read<byte>(data); return true; }
+            if (TypeId == StackType.ShortType) { value = MemoryMarshal.Read<short>(data); return true; }
+            if (TypeId == StackType.IntType) { value = MemoryMarshal.Read<int>(data); return true; }
+            if (TypeId == StackType.FloatType) { value = MemoryMarshal.Read<float>(data); return true; }
             value = default;
             return false;
         }
         public unsafe bool TryGetAsString(SparseArray<byte> dataStore, IReadOnlyList<object> terms, StringBuilder builder) {
-            fixed (byte* data = &dataStore.Items[Offset]) {
-                if (TypeId == StackType.ByteType) { builder.Append(*(byte*)data); return true; }
-                if (TypeId == StackType.ShortType) { builder.Append(*(short*)data); return true; }
-                if (TypeId == StackType.IntType) { builder.Append(*(int*)data); return true; }
-                if (TypeId == StackType.FloatType) { builder.Append((int)*(float*)data); return true; }
-                if (TypeId == StackType.ObjectType) { builder.Append(terms[*(short*)data]); return true; }
-            }
+            var data = dataStore.Items.AsSpan(Offset);
+            if (TypeId == StackType.ByteType) { builder.Append(MemoryMarshal.Read<byte>(data)); return true; }
+            if (TypeId == StackType.ShortType) { builder.Append(MemoryMarshal.Read<short>(data)); return true; }
+            if (TypeId == StackType.IntType) { builder.Append(MemoryMarshal.Read<int>(data)); return true; }
+            if (TypeId == StackType.FloatType) { builder.Append((int)MemoryMarshal.Read<float>(data)); return true; }
+            if (TypeId == StackType.ObjectType) { builder.Append(terms[MemoryMarshal.Read<short>(data)]); return true; }
             return false;
         }
         public StackItem Clone(SparseArray<byte> srcStore, SparseArray<byte> destStore) {

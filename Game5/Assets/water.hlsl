@@ -30,7 +30,7 @@ SamplerComparisonState ShadowSampler : register(s3);
 struct VSInput {
     uint instanceId : SV_InstanceID;
     float4 position : POSITION;
-    uint2 offset : INSTANCE;
+    int2 offset : INSTANCE;
 };
 
 struct PSInput {

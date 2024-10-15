@@ -107,14 +107,16 @@ namespace Weesals.Engine {
             return mInstanceBuffer.Count;
         }
         public void SetInstanceCount(int count) {
-            if (mInstanceBuffer.ElementCount == 0) mInstanceBuffer.BufferLayout.mCount = count;
-            else mInstanceBuffer.SetCount(count);
+            mInstanceBuffer.RequireCount(count);
         }
         unsafe public int AddInstanceElement(CSIdentifier name, BufferFormat fmt = BufferFormat.FORMAT_R32_UINT) {
             int id = mInstanceBuffer.AppendElement(new CSBufferElement(name, fmt));
             mPassCache.Clear();
             mBufferLayout.Clear();
             return id;
+        }
+        unsafe public TypedBufferView<T> GetElementData<T>(int elementId) where T : unmanaged {
+            return new(mInstanceBuffer.Elements[elementId], mInstanceBuffer.Count);
         }
         unsafe public void SetInstanceData(void* data, int count, int elementId = 0, bool markDirty = true) {
             if (mInstanceBuffer.Count != count) {
@@ -149,6 +151,14 @@ namespace Weesals.Engine {
                 if (mBufferLayout.Count > 0) mBufferLayout[^1] = mInstanceBuffer.BufferLayout;
             }
         }
+        public void RevisionFromDataHash() {
+            var revision = mInstanceBuffer.Revision;
+            mInstanceBuffer.RevisionFromDataHash();
+            if (revision != mInstanceBuffer.Revision) {
+                InvalidateMesh();
+            }
+        }
+
         new unsafe public void Draw(CSGraphics graphics, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();
             int instanceCount = GetInstanceCount();
@@ -164,6 +174,12 @@ namespace Weesals.Engine {
             graphics.Draw(passCache.mPipeline, mBufferLayout, resources.AsCSSpan(), config, instanceCount);
         }
         unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
+            Draw(graphics, ref materials, pass.RenderQueue, config);
+        }
+        unsafe public void Draw(CSGraphics graphics, RenderQueue queue, CSDrawConfig config) {
+            Draw(graphics, ref Graphics.MaterialStack, queue, config);
+        }
+        unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, RenderQueue queue, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();
             int instanceCount = GetInstanceCount();
             if (instanceCount <= 0) return;
@@ -185,8 +201,8 @@ namespace Weesals.Engine {
             }
             var buffers = graphics.RequireFrameData(mBufferLayout);
 
-            pass.RenderQueue.AppendUsedTextures(resources.Slice(passCache.mPipeline.ConstantBufferCount).Reinterpret<CSBufferReference>());
-            pass.RenderQueue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount, RenderOrder);
+            queue.AppendUsedTextures(resources.Slice(passCache.mPipeline.ConstantBufferCount).Reinterpret<CSBufferReference>());
+            queue.AppendMesh(name, passCache.mPipeline, buffers, resources, instanceCount, RenderOrder);
         }
     }
     public class MeshDrawIndirect : MeshDraw {
@@ -209,6 +225,9 @@ namespace Weesals.Engine {
             indirectArgsData[3] = 0;
             indirectArgsData[4] = 0;
             mInstanceArgs.NotifyChanged();
+        }
+        unsafe public void Draw(CSGraphics graphics, ScenePass pass, CSDrawConfig config) {
+            Draw(graphics, ref Graphics.MaterialStack, pass, config);
         }
         unsafe public void Draw(CSGraphics graphics, ref MaterialStack materials, ScenePass pass, CSDrawConfig config) {
             using var marker = ProfileMarker_MeshDraw.Auto();

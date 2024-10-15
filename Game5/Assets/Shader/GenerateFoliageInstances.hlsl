@@ -50,6 +50,8 @@ void CSGenerateFoliage(uint3 gtid : SV_DispatchThreadID) {
     //IdMap._22 = ControlMap[globalId.xy];
     
     ControlPoint c = DecodeControlMap(IdMap._22);
+    if (c.Layer >= 128) return;
+
     HeightPoint h = DecodeHeightMap(HeightMap.Load(globalId));
     float3 wpos = float3(globalId.x, h.HeightOS, globalId.y);
     float rnd = dot(wpos.xz, float2(1, 1.3763191));

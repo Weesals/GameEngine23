@@ -159,7 +159,11 @@ namespace Weesals.Editor {
             ++ticksSinceFPSUpdate;
             if (Canvas.GetIsComposeDirty() || timeSinceFPSUpdate > 0.125f) {
                 float fps = ticksSinceFPSUpdate / Math.Max(timeSinceFPSUpdate, 0.0001f);
-                Title = $"Game ({(fps):0} fps)";
+                if (UnityEngine.Time.frameCount < 10) {
+                    Title = $"Game (Frame {(UnityEngine.Time.frameCount):0})";
+                } else {
+                    Title = $"Game ({(fps):0} fps)";
+                }
                 timeSinceFPSUpdate = 0f;
                 ticksSinceFPSUpdate = 0;
             }

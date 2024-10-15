@@ -415,7 +415,6 @@ namespace Weesals.Editor {
                 List.AppendChild(new TextBlock(editable.GetType().Name) { TextColor = Color.DarkGray, });
                 var properties = new UIPropertiesList() { Name = "Editables Inspector" };
                 properties.AppendPropertiesFrom(editable);
-                Debug.Assert(properties.Children.Count > 0);
                 List.AppendChild(properties);
             }
         }

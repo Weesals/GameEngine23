@@ -1,0 +1,169 @@
+
+Need to differentiate from uniform and vector variables
+Uniform variables can be stored within the evaluation (as is currently)
+Vector variables are allocated uniquely per object
+Only computations involving vector variables can fork evaluations
+
+
+{	// Fully vector
+	if(Pos.x > 5) {
+	}
+}
+{	// Partially vector
+	if(SpawnTime > 5) {
+	}
+}
+{	// Fully uniform
+	if(Armor > 5) {
+	}
+}
+
+
+class Entity {
+}
+
+Entity Spawn() {
+	var entity = new Entity {
+		while (true) {
+			Position = Random.GetInsideCircle();
+			bool valid = true;
+			with Entity other once {	// 'once' prevents active entities double-processing
+				if (other == this) return;
+				if (other.Overlaps(this)) valid = false;
+			}
+			if (valid) break;
+		}
+	};
+}
+
+GetInsideCircle is vector, forces Position to be vector
+
+Block Executions are either Vector or Scalar
+If scalar, block is executed once for each entity
+Runtime handles enumerating vector variables, invoking block, storing outputs
+Block execution becomes vector if any inputs are vector
+
+Conditions for vector block executions:
+- Any input parameters are vector
+- Any contained APIs are vector
+=> Blocks can be semi-vector; input sets collected into buckets and invoked once per set
+=> Need a way to lookup which bucket each entity belongs to
+
+Each Group has an EvalStackItem
+Matching EvalId will always execute together (matching BlockID)
+Evaluation can split groups
+Groups can NOT be joined - different previous eval sets means different variables
+-> Unless occluded - but that breaks partial evaluation
+All groups need to have NextEvalID pushed to their stack
+- Make unique sets based on NextEvalID (already unique by CurEvalID)
+  - Step up until parent fully contained (or at root)
+  - Append NextEvalID to parent (or root)
+
+a[A]
+
+a[A] b[B]
+a[A] b[C]
+
+a[A] b[B] d[D]
+a[A] c[C] e[D]
+
+a[A] b[B] d[f[D] g[E]]
+a[A] c[C] e[f[D] g[E]]
+
+a[A] b[B] d[f[D] g[E]] h[F]
+a[A] b[B] d[f[D] g[E]] i[G]
+a[A] c[C] e[f[D] g[E]] j[G]
+
+a C[e f g] i k p
+b D[e f g] j k l
+
+
+// #1 Appending to parent (parent must be unshared)
+Aa C[Ec Ed]  =>  Aa C[Ec Fd Ge]
+Bb D[Fc Fd]  =>  Bb D[Ec Fd Ge]
+
+// #2 Promoting a leaf (leaves must be unshared)
+Aa Cc  =>  Aa C[Ec Fd]
+Bb Dc  =>  Bb D[Ec Fd]
+
+// #3 Not unique (B is shared) - append to root
+Aa B[Ec Fd]  =>  Aa B[Ec Fd] Ge
+Aa B[Ec Fd]  =>  Aa B[Ec Fd] Ge
+Aa B[Ec Fd]  (not included)
+
+// #3 Not unique (B is shared) - increase nesting (never useful!)
+Aa B[Ec Fd]  =>  Aa C[B[Ec Fd] Ge]
+Aa B[Ec Fd]  =>  Aa C[B[Ec Fd] Ge]
+Aa B[Ec Fd]  (not included)
+// Increased nesting - more nodes?
+
+If multiple groups have Eval as leaf and do not share branch, promote to branch
+//If multiple groups have same branch, insert in branch
+//If multiple groups have PrevEvalId as leaf, promote to branch
+Otherwise insert in branch
+
+
+Xx Cc		=>		Xx C[Ec Fd]			OR		Xx Cc Fd
+X[Xx Cc]	=>		X[Xx C[Ec Fd]]		OR		X[Xx Cc] Fd
+
+
+Sustained execution
+- NextBlock invalid and is changed externally
+Partial execution
+- Only relevant blocks are reevaluated when API changes
+=> Should "relevant blocks" be predefined
+//{ HP += 5 }
+//{ Armor += 1; }
+  { If (HP > 5) }
+    { HP /= 2; }
+  { HP *= Armor; }
+Runtime branching
+- Need to invoke Begin/End execution for blocks
+- Eacn node knows how a branch change affects things?
+- If -> optionally Insert nodes
+- Scratch space for branching?
+=> How to lookup relevant scratch space from block
+
+Store a mutation list per variable per group?
+- Can cache at any level
+- Lists are unique based on branching only
+
+Health = 100;
+Capacity = 10;
+if (Team.HasTech("Wheelbarrow")) {
+	Capacity += 5;
+}
+if (Team.HasTech("ImprovisedWeapons")) {
+	Capacity += 1;
+	Health += Capacity;
+	Health += Holding;
+}
+if (Team.HasTech("Uber")) {
+	Capacity += 10;
+}
+
+#1 => #3
+- Health_1 = 100
+- Capacity_1 = 10
+- Team.HasTech("Wheelbarrow") { NextBlock = #1 }
+#2
+- Capacity_2 = Capacity_1 + 5
+#3 => #5
+- Team.HasTech("ImprovisedWeapons") { NextBlock = #4 }
+#4
+- Capacity += 1
+- Health += Capacity
+- Health += Holding
+#5 => END
+- Team.HasTech("Uber") { NextBlock = #6 }
+#6
+- Capacity += 10
+
+Team1.Villager #1 #3 #4 #5 #6
+- Health #1 #4
+- Capacity #1 #4 #6
+Team2.Villager #1 #2 #3 #4 #5 #6
+- Health #1 #4
+- Capacity #1 #2 #4
+
+Need to track what Capacity was at #4

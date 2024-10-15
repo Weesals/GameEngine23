@@ -2,12 +2,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
 
 namespace Weesals.Geometry {
     public static class Triangulation {
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool RayTriangleIntersection(Ray ray, Vector3 v0, Vector3 v1, Vector3 v2, out Vector3 bc, out float t) {
             bc = default; t = default;
             Vector3 edge1 = v1 - v0, edge2 = v2 - v0;
@@ -36,6 +38,7 @@ namespace Weesals.Geometry {
 
             return t >= 0.0;
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool RayBoxIntersection(Ray ray, Vector3 pos, Vector3 size, out float t) {
             var minFaces = pos - ray.Origin;
             var maxFaces = minFaces;
@@ -57,6 +60,7 @@ namespace Weesals.Geometry {
             return entry <= exit;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         unsafe private static bool IsPointInsideTriangleSIMD2(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 v0, Vector2 v1, Vector2 v2) {
             var d12 = v1 - v2;
             var d02 = v0 - v2;
@@ -79,6 +83,7 @@ namespace Weesals.Geometry {
                     (tV[0] <= 0 && tV[1] <= 0 && tV[2] <= 0) ||
                     (sV[0] + tV[0] >= sV[3] && sV[1] + tV[1] >= sV[3] && sV[2] + tV[2] >= sV[3]));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         unsafe private static bool IsPointInsideTriangleSIMD(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 v0, Vector2 v1, Vector2 v2) {
             var d12 = v1 - v2;
             var d02 = v0 - v2;
@@ -97,6 +102,7 @@ namespace Weesals.Geometry {
                     (tV.X <= 0 && tV.Y <= 0 && tV.Z <= 0) ||
                     (sV.X + tV.X >= sV.W && sV.Y + tV.Y >= sV.W && sV.Z + tV.Z >= sV.W));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static bool IsPointInsideTrianglePre(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 v0, Vector2 v1, Vector2 v2) {
             v0 = v2 - v0;
             v1 -= v2;
@@ -120,6 +126,7 @@ namespace Weesals.Geometry {
                     (ta >= 0 && tb >= 0 && tc >= 0) ||
                     (sa + ta <= De && sb + tb <= De && sc + tc <= De));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static bool HasNoSeparatingAxis(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 v0, Vector2 v1, Vector2 v2) {
             v0 = v2 - v0;
             v1 -= v2;
@@ -140,6 +147,7 @@ namespace Weesals.Geometry {
                     (ta > 0 || tb > 0 || tc > 0) &&
                     (sa + ta < De || sb + tb < De || sc + tc < De));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static bool HasSeparatingAxis(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 v0, Vector2 v1, Vector2 v2) {
             v0 = v2 - v0;
             v1 -= v2;
@@ -160,11 +168,13 @@ namespace Weesals.Geometry {
                     (ta <= 0 && tb <= 0 && tc <= 0) ||
                     (sa + ta >= De && sb + tb >= De && sc + tc >= De));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool GetTrianglesOverlap(Vector2 t0v0, Vector2 t0v1, Vector2 t0v2, Vector2 t1v0, Vector2 t1v1, Vector2 t1v2) {
             return (HasNoSeparatingAxis(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2) &&
                      HasNoSeparatingAxis(t1v0, t1v1, t1v2, t0v0, t0v1, t0v2));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static bool IsPointInsideTriangleOG(Vector2 pa, Vector2 pb, Vector2 pc, Vector2 p0, Vector2 p1, Vector2 p2) {
             float dXa = pa.X - p2.X;
             float dYa = pa.Y - p2.Y;
@@ -193,6 +203,7 @@ namespace Weesals.Geometry {
                     (ta <= 0 && tb <= 0 && tc <= 0) ||
                     (sa + ta >= D && sb + tb >= D && sc + tc >= D));
         }
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static bool GetTrianglesOverlapOG(Vector2 t0v0, Vector2 t0v1, Vector2 t0v2, Vector2 t1v0, Vector2 t1v1, Vector2 t1v2) {
             return !(IsPointInsideTriangleOG(t0v0, t0v1, t0v2, t1v0, t1v1, t1v2) ||
                      IsPointInsideTriangleOG(t1v0, t1v1, t1v2, t0v0, t0v1, t0v2));

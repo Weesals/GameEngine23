@@ -225,7 +225,7 @@ namespace Weesals.Engine {
         unsafe public BufferFormat GetFormat() { return GetFormat(mRenderTarget); }
         unsafe public void SetMipCount(int count) { SetMipCount(mRenderTarget, count); }
         unsafe public int GetMipCount() { return GetMipCount(mRenderTarget); }
-        unsafe public void Dispose() { Dispose(mRenderTarget); }
+        unsafe public void Dispose() { Dispose(mRenderTarget); mRenderTarget = null; }
 
         public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }

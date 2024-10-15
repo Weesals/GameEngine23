@@ -52,23 +52,11 @@ public:
     struct D3DTexture : public D3DBuffer {
         DXGI_FORMAT mFormat;
         D3D::BarrierHandle mBarrierHandle = D3D::BarrierHandle::Invalid;
+        D3DTexture() : mFormat(DXGI_FORMAT_UNKNOWN) { }
     };
     struct D3DRenderSurface : public D3DTexture {
-        struct SubresourceData {
-            int mRTVOffset = -1;
-        };
-        SubresourceData mMip0;
-        std::vector<SubresourceData> mMipN;
         D3D::TextureDescription mDesc;
-        SubresourceData& RequireSubResource(int subresource) {
-            if (subresource == 0) return mMip0;
-            --subresource;
-            if (subresource >= mMipN.size()) mMipN.resize(subresource + 1);
-            return mMipN[subresource];
-        }
-        const SubresourceData& RequireSubResource(int subresource) const {
-            return const_cast<D3DRenderSurface*>(this)->RequireSubResource(subresource);
-        }
+        Delegate<>::Reference mOnDispose;
     };
     struct D3DRenderSurfaceView {
         const D3DRenderSurface* mSurface;
@@ -103,6 +91,7 @@ public:
         size_t mHash = 0;
         std::unique_ptr<PipelineLayout> mLayout;
         int mType = 0;
+        MaterialState mMaterialState;
     };
     struct D3DBinding : public D3DBuffer {
         D3D12_GPU_VIRTUAL_ADDRESS mGPUMemory;
@@ -151,12 +140,17 @@ public:
     std::atomic<int> mLastBarrierId = 0;
 
 private:
-    struct ShaderResourceView : public D3DRenderSurface::SubresourceData {
-        ID3D12Resource* mResource;
+    struct ShaderResourceView {
+        ID3D12Resource* mResource = nullptr;
+        int mSRVOffset = -1;
+        D3D12_SHADER_RESOURCE_VIEW_DESC mLastUse;
+    };
+    struct RenderTargetView {
+        ID3D12Resource* mResource = nullptr;
+        int mRTVOffset = -1;
     };
     struct D3DReadback {
         ComPtr<ID3D12Resource> mResource;
-
     };
     template<class K, class T>
     class ResourceMap {
@@ -177,6 +171,10 @@ private:
             bool wasCreated;
             return GetOrCreate(key, wasCreated);
         }
+        void Delete(const K key) {
+            std::scoped_lock lock(mMutex);
+            mMap.erase(key);
+        }
     };
 
     D3DGraphicsDevice& mD3D12;
@@ -192,6 +190,7 @@ private:
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
     PerFrameItemStore<ShaderResourceView> mResourceViewCache;
+    PerFrameItemStore<RenderTargetView> mTargetViewCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
     PerFrameItemStoreNoHash<D3DReadback, 2> mReadbackBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
@@ -233,6 +232,8 @@ public:
         D3D12_INDEX_BUFFER_VIEW& indexView, int& indexCount);
 
     D3DRenderSurface* RequireD3DRT(const RenderTarget2D* rt);
+    void DestroyD3DRT(const RenderTarget2D* rt, LockMask lockBits);
+    void PurgeSRVs(LockMask lockBits);
     void SetRenderTargetMapping(const RenderTarget2D* rt, const D3DRenderSurface& surface);
     D3DPipelineState* GetOrCreatePipelineState(size_t hash);
     D3DPipelineState* RequirePipelineState(
@@ -242,7 +243,10 @@ public:
     );
     D3DPipelineState* RequireComputePSO(const CompiledShader& shader);
     D3DConstantBuffer* RequireConstantBuffer(D3DCommandContext& cmdList, std::span<const uint8_t> data, size_t hash);
-    D3DRenderSurface::SubresourceData& RequireTextureRTV(D3DRenderSurfaceView& view, LockMask lockBits);
+    RenderTargetView& RequireTextureRTV(D3DRenderSurfaceView& view, LockMask lockBits);
+    int RequireTextureSRV(D3DTexture& texture, LockMask lockBits);
+    void InvalidateBufferSRV(D3DBuffer& buffer);
+    void ClearBufferSRV(D3DBuffer& buffer);
 
     D3D12_RESOURCE_DESC GetTextureDesc(const Texture& tex);
     int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, LockMask lockBits, int mipB = 0, int mipC = -1);
@@ -257,6 +261,8 @@ public:
 
     void RequireState(D3DCommandContext& cmdList, D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
     void FlushBarriers(D3DCommandContext& cmdList);
+
+    void DelayResourceDispose(const ComPtr<ID3D12Resource>& resource, LockMask lockBits);
 };
 
 

@@ -30,7 +30,7 @@ namespace Game5.UI.Interaction {
 
         public readonly UIPlay PlayUI;
         public Play Play => PlayUI.Play;
-        public Image SelectionBox = new() { Color = new Color(new Vector4(1f, 1f, 1f, 0.3f)) };
+        public Image SelectionBox = new() { Name = "Selection Box", Color = new Color(new Vector4(1f, 1f, 1f, 0.3f)) };
         public SelectionModes Mode { get; private set; }
 
         public class Instance {
@@ -56,7 +56,7 @@ namespace Game5.UI.Interaction {
             instance.PriorItems.AddRange(instance.Selection.Selected);
             Mode = SelectionModes.Union;
             UpdateSelectMode();
-            PlayUI.Canvas.AppendChild(SelectionBox);
+            if (SelectionBox.Canvas == null) PlayUI.Canvas.AppendChild(SelectionBox);
         }
         void IDragHandler.OnDrag(PointerEvent events) {
             // Cancel when the mouse is released

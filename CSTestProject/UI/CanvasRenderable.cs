@@ -108,7 +108,7 @@ namespace Weesals.UI {
             None = 0,
             HasCullParent = 1,
             HasCustomTransformApplier = 2,
-            HasLayoutParent = 4,
+            HasCanvasLayout = 4,
         };
 
         public ref struct TransformerContext {
@@ -150,8 +150,8 @@ namespace Weesals.UI {
                 //if (this is ICustomTransformer) SetCustomTransformEnabled(true);
                 if (Parent != null) {
                     if (FindParent<IHitTestGroup>() != null) stateFlags |= StateFlags.HasCullParent;
-                    if (Parent is ICanvasLayout || Parent.HasStateFlag(StateFlags.HasLayoutParent)) {
-                        stateFlags |= StateFlags.HasLayoutParent;
+                    if (this is ICanvasLayout || Parent.HasStateFlag(StateFlags.HasCanvasLayout)) {
+                        stateFlags |= StateFlags.HasCanvasLayout;
                     }
                 }
                 if (hitBinding.IsEnabled) UpdateHitBinding();
@@ -161,6 +161,7 @@ namespace Weesals.UI {
                 MarkComposeDirty();
             }
             MarkTransformDirty();
+            //MarkSizingDirty();
         }
         public virtual void Uninitialise(CanvasBinding binding) {
             if (mBinding.mCanvas != null) {
@@ -188,6 +189,7 @@ namespace Weesals.UI {
             else stateFlags &= ~StateFlags.HasCustomTransformApplier;
         }
         public void AppendChild(CanvasRenderable child) {
+            Debug.Assert(child.Canvas == null, "Element is already added");
             mChildren ??= new();
             InsertChild(mChildren.Count, child);
         }
@@ -198,7 +200,7 @@ namespace Weesals.UI {
             if (mBinding.mCanvas != null && child.Parent == null) {
                 child.Initialise(new CanvasBinding(this));
             }
-            MarkChildrenDirty();
+            MarkSizingDirty();
         }
         public void ClearChildren() {
             if (mChildren == null) return;
@@ -209,7 +211,7 @@ namespace Weesals.UI {
             if (mBinding.mCanvas != null && child.Parent == this)
                 child.Uninitialise(new CanvasBinding(this));
             mChildren.Remove(child);
-            MarkChildrenDirty();
+            MarkSizingDirty();
         }
         public T? FindParent<T>() {
             for (var parent = Parent; parent != null; parent = parent.Parent) {
@@ -220,9 +222,8 @@ namespace Weesals.UI {
         public void SetTransform(in CanvasTransform transform) {
             mTransform = transform;
             MarkTransformDirty();
-            if (Parent != null) Parent.MarkChildrenDirty();
         }
-        public void UpdateLayout(in CanvasLayout parent) {
+        public bool UpdateLayout(in CanvasLayout parent) {
             ClearDirtyFlag(DirtyFlags.Transform);
             int oldHash = mLayoutCache.GetHashCode();
             mTransform.Apply(parent, out mLayoutCache);
@@ -236,9 +237,12 @@ namespace Weesals.UI {
                 if (mChildren != null) MarkChildrenDirty();
                 MarkComposeDirty();
                 NotifyTransformChanged();
-            } else if (!hitBinding.IsValid && hitBinding.IsEnabled) {
+                return true;
+            }
+            if (!hitBinding.IsValid && hitBinding.IsEnabled) {
                 UpdateHitBinding();
             }
+            return false;
         }
         public void RequireLayout() {
             if (HasDirtyFlag(DirtyFlags.Children)) {
@@ -292,21 +296,30 @@ namespace Weesals.UI {
         protected bool HasStateFlag(StateFlags flag) {
             return (stateFlags & flag) != 0;
         }
+        // Transform has changed, need to 
         protected void MarkTransformDirty() {
             dirtyFlags |= DirtyFlags.Transform;
-            if (Parent != null) Parent.dirtyFlags |= DirtyFlags.Children;
-            if (Canvas != null && Canvas != this) Canvas.MarkChildrenDirty();
+            //if (Parent != null) Parent.dirtyFlags |= DirtyFlags.Children;
+            if (Parent != null) Parent.MarkChildrenDirty();
+            //if (Canvas != null && Canvas != this) Canvas.MarkChildrenDirty();
         }
+        // mLayoutCache has changed, need to update Element layouts and recompose
         protected void MarkLayoutDirty() {
             dirtyFlags |= DirtyFlags.Layout;
             if (Canvas != null && Canvas != this) Canvas.MarkLayoutDirty();
         }
+        // Children need to be rearranged
         protected void MarkChildrenDirty() {
             Debug.Assert(mChildren != null, "Cannot mark children dirty if no children");
             dirtyFlags |= DirtyFlags.Children;
-            if (HasStateFlag(StateFlags.HasLayoutParent))
-                Parent!.MarkChildrenDirty();
             if (Canvas != null && Canvas != this) Canvas.MarkChildrenDirty();
+        }
+        // Our desired size has changed, notify the parent
+        private void MarkSizingDirty() {
+            if (HasStateFlag(StateFlags.HasCanvasLayout)) {
+                MarkChildrenDirty();
+                Parent!.MarkSizingDirty();
+            }
         }
         protected void MarkComposeDirty() {
             dirtyFlags |= DirtyFlags.Compose;

@@ -418,7 +418,6 @@ namespace Weesals.Engine {
                 new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_UNORM, }),
                 new PassOutput("SceneVelId").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_SNORM, }),
                 new PassOutput("SceneAttri").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_UNORM, }),
-                new PassOutput("SceneAO").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R8G8B8A8_UNORM, }),
             };
         }
         public override void Render(CSGraphics graphics, ref Context context) {
@@ -476,7 +475,7 @@ namespace Weesals.Engine {
                 new PassInput("SceneDepth"),
                 new PassInput("SceneColor"),
                 new PassInput("SceneAttri"),
-                new PassInput("SceneAO"),
+                new PassInput("SceneAO", defaultTexture: DefaultTexture.White),
                 new PassInput("ShadowMap"),
             };
             Outputs = new[] {
@@ -569,7 +568,7 @@ namespace Weesals.Engine {
             OverrideMaterial.SetValue("View", ScenePasses.View);
             OverrideMaterial.SetValue("Projection", ScenePasses.Projection);
             var tag = ScenePasses.Scene.TagManager.RequireTag(VolumetricPassName);
-            ParticleSystem.Draw(graphics, OverrideMaterial, ScenePasses.Scene.RootMaterial, tag);
+            ParticleSystem.Draw(graphics, tag);
         }
     }
     public class VolumetricFogPass : RenderPass {
@@ -675,8 +674,10 @@ namespace Weesals.Engine {
         public bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) {
             ++frame;
             int targetId = frame % 2;
-            if (!targets[targetId].IsValid || targets[targetId].GetSize() != context.Viewport.Size) {
-                if (targets[targetId].IsValid) targets[targetId].Dispose();
+            if (targets[targetId].IsValid && targets[targetId].GetSize() != context.Viewport.Size) {
+                for (int i = 0; i < targets.Length; i++) if (targets[i].IsValid) targets[i].Dispose();
+            }
+            if (!targets[targetId].IsValid) {
                 targets[targetId] = CSRenderTarget.Create("Temporal " + targetId);
                 targets[targetId].SetSize(context.Viewport.Size);
                 targets[targetId].SetFormat(BufferFormat.FORMAT_R16G16B16A16_FLOAT);

@@ -46,7 +46,7 @@ namespace Game5.Game {
         public override string ToString() { return $"Selected {Selected}"; }
     }
 
-    public class EntityProxy : IItemPosition, IEntitySelectable, IItemRedirect, IItemStringifier {
+    public class EntityProxy : IItemPosition, IEntitySelectable, IEntityTeam, IItemRedirect, IItemStringifier {
 
         public readonly World World;
         public EntityMapSystem EntityMapSystem;
@@ -72,6 +72,13 @@ namespace Game5.Game {
             moveContract.Clear();
         }
         public void SetRotation(Quaternion rot, ulong id = ulong.MaxValue) {
+        }
+
+        public int GetTeam(ulong id) {
+            var entity = EntityProxyExt.UnpackEntity(id);
+            if (World.IsValid(entity))
+                return World.GetComponent<ECTeam>(entity).SlotId;
+            return -1;
         }
 
         public void NotifySelected(ulong id, bool selected) {
@@ -219,10 +226,10 @@ namespace Game5.Game {
 
             using (new ProfilerMarker("Creating Houses").Auto()) {
                 var command = new EntityCommandBuffer(World.Manager);
-#if DEBUG || true
+#if DEBUG
                 const int Count = 200 * 4;
 #else
-                const int Count = 2000000 * 4;
+                const int Count = 200000 * 4;
 #endif
                 var sqrtCount = (int)MathF.Sqrt(Count);
                 int totCount = 0;
@@ -234,6 +241,9 @@ namespace Game5.Game {
                     command.AddComponent<ECTransform>(newEntity) = new() {
                         Position = pos,
                         Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
+                    };
+                    command.AddComponent<ECTeam>(newEntity) = new() {
+                        SlotId = 1,
                     };
                     command.MutateComponent<CModel>(newEntity).Variant = i;
                     //command.RemoveComponent<ECObstruction>(newEntity);

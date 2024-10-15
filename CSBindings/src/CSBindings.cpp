@@ -160,7 +160,7 @@ NativeRenderTarget* CSRenderTarget::_Create(CSString name) {
 	return create_shared<NativeRenderTarget>(ToWString(name));
 }
 void CSRenderTarget::Dispose(NativeRenderTarget* target) {
-	//delete_shared<Material>(target);
+	delete_shared<NativeRenderTarget>(target);
 	//delete target;
 }
 
@@ -603,6 +603,22 @@ void Platform::Dispose(NativePlatform* platform) {
 
 void Platform::InitializeGraphics(NativePlatform* platform) {
 	platform->Initialize();
+}
+int Platform::GetCoreCount() {
+	std::vector<uint8_t> bufferPtr;
+	DWORD bufferBytes = 0;
+	if (GetLogicalProcessorInformationEx(RelationAll, nullptr, &bufferBytes)) return 0;
+	if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) return 0;
+	bufferPtr.resize(bufferBytes);
+	auto info = (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)bufferPtr.data();
+	if (!GetLogicalProcessorInformationEx(RelationAll, info, &bufferBytes)) return 0;
+	int count = 0;
+	for (; (void*)info < &bufferPtr.back(); *(uint8_t**)&info += info->Size) {
+		if (info->Relationship == RelationProcessorCore) {
+			++count;
+		}
+	}
+	return count;
 }
 NativeWindow* Platform::CreateWindow(NativePlatform* platform, CSString name) {
 	auto window = platform->CreateWindow(ToWString(name));

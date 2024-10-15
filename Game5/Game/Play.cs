@@ -18,56 +18,21 @@ using Weesals.Editor;
 using Weesals.Engine.Particles;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
+using Game5.Rendering;
 
 /*
  * TODO:
- * - Picking
- * - Entity selection compatibility
- * - Compute Shader
+ * x Picking
+ * x Entity selection compatibility
+ * x Compute Shader
  * - GPU Driven Rendering
  * - Animation
  * - Gameplay
- * - Particles
+ * x Particles
  */
 
-namespace Game5.Game {
-
-    /*public class SelectionManager {
-        public Action<ItemReference, bool>? OnEntitySelected;
-        public Action<ICollection<ItemReference>>? OnSelectionChanged;
-        private HashSet<ItemReference> selected = new();
-
-        public IReadOnlyCollection<ItemReference> Selected => selected;
-
-        public void ClearSelected() {
-            using var toDeselect = new PooledList<ItemReference>(selected.Count);
-            foreach (var item in selected) toDeselect.Add(item);
-            selected.Clear();
-            foreach (var item in toDeselect) NotifySelected(item, false);
-        }
-        public void SetSelected(ItemReference newItem) {
-            using var toDeselect = new PooledList<ItemReference>(selected.Count);
-            foreach (var item in selected) if (item != newItem) toDeselect.Add(item);
-            if (selected.Count == toDeselect.Count) selected.Clear();
-            else foreach (var item in toDeselect) selected.Remove(item);
-            foreach (var item in toDeselect) NotifySelected(item, false);
-            if (newItem.IsValid) AppendSelected(newItem);
-        }
-        public void AppendSelected(ItemReference item) {
-            if (selected.Add(item)) NotifySelected(item, true);
-        }
-        public void RemoveSelected(ItemReference item) {
-            if (selected.Remove(item)) NotifySelected(item, false);
-        }
-
-        private void NotifySelected(ItemReference item, bool selected) {
-            if (item.Owner is IEntitySelectable selectable)
-                selectable.NotifySelected(item.Data, selected);
-            if (OnEntitySelected != null) OnEntitySelected(item, selected);
-            if (OnSelectionChanged != null) OnSelectionChanged(this.selected);
-        }
-    }*/
-
+namespace Game5.Game
+{
     public class Play : IDisposable {
 
         private static ProfilerMarker ProfileMarker_PlayUpdate = new ProfilerMarker("Play.Update");
@@ -99,6 +64,9 @@ namespace Game5.Game {
         LayeredLandscapeData layeredLandscape;
 
         ParticleSystemManager particleManager;
+        SelectionRenderer selectionRenderer;
+        PlayerColorManager playerColorManager;
+
         UIPlay playUI;
 
         [EditorField] public bool EnableFog = false;
@@ -117,8 +85,6 @@ namespace Game5.Game {
         [EditorField] public int LoadedTextureCount => Resources.LoadedTextureCount;
 
         float time = 0;
-
-        public event Action<CSGraphics, float> OnRender;
 
         public Play(GameRoot root) {
             GameRoot = root;
@@ -191,6 +157,11 @@ namespace Game5.Game {
             loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
                 using var marker = new ProfilerMarker("Particles").Auto();
                 particleManager.Initialise(1024);
+            }));
+
+            loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
+                playerColorManager = new();
+                selectionRenderer = new(SelectionManager);
             }));
 
             JobHandle visualsJob = default;
@@ -327,7 +298,6 @@ namespace Game5.Game {
             if (Input.GetKeyPressed(KeyCode.X)) {
                 //ParticleManager.VelocityBuffer
             }
-            OnRender?.Invoke(graphics, dt);
             particleManager.Update(graphics, dt);
         }
         public void PrepareBasePass(CSGraphics graphics, ScenePass pass) {
@@ -336,14 +306,16 @@ namespace Game5.Game {
             }
         }
         public void RenderBasePass(CSGraphics graphics, ScenePass pass) {
-            var materialStack = new MaterialStack(Scene.RootMaterial);
-            using var passMat = materialStack.Push(pass.OverrideMaterial);
-            landscapeRenderer.Render(graphics, ref materialStack, pass);
+            using var passMat = Graphics.MaterialStack.Push(pass.GetPassMaterial());
+            using var colMat = Graphics.MaterialStack.Push(playerColorManager.PlayerColorMaterial);
+
+            landscapeRenderer.Render(graphics, ref Graphics.MaterialStack, pass);
             if (pass.TagsToInclude.Has(RenderTag.Default) && EnableFoliage) {
-                foliageRenderer.RenderInstances(graphics, ref materialStack, pass);
+                foliageRenderer.RenderInstances(graphics, pass);
             }
             if (pass.TagsToInclude.Has(RenderTag.Transparent)) {
-                particleManager.Draw(graphics, pass.GetPassMaterial(), Scene.RootMaterial);
+                particleManager.Draw(graphics);
+                selectionRenderer.Draw(graphics, pass.RenderQueue);
             }
         }
 
@@ -362,10 +334,15 @@ namespace Game5.Game {
             float nearestDst2 = float.MaxValue;
             ItemReference entityHit = ItemReference.None;
             var entityMap = World.GetOrCreateSystem<EntityMapSystem>();
-            var chunkBeg = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(ray.Origin).XZ);
-            var chunkEnd = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(ray.ProjectTo(new Plane(Vector3.UnitY, 0f))).XZ);
-            var rayIt = new GridThickRayIterator(chunkBeg, chunkEnd - chunkBeg, 1);
+            var chunkBeg = (SimulationWorld.WorldToSimulation(ray.Origin).XZ);
+            var chunkEnd = (SimulationWorld.WorldToSimulation(ray.ProjectTo(new Plane(Vector3.UnitY, 0f))).XZ);
+            var sign = new Int2(chunkEnd.X > chunkBeg.X ? 1 : -1, chunkEnd.Y > chunkBeg.Y ? 1 : -1);
+            var rayIt = new GridThickRayIterator(chunkBeg, chunkEnd - chunkBeg, 4 * 1024, EntityMapSystem.Separation);
             foreach (var cell in rayIt) {
+                /*Gizmos.DrawWireCube(
+                    SimulationWorld.SimulationToWorld(EntityMapSystem.ChunkToSim(cell)),
+                    Vector3.One * (EntityMapSystem.Separation * SimulationWorld.WorldScale * 0.9f)
+                );*/
                 var entities = entityMap.AllEntities.GetChunk(cell);
                 foreach (var entity in entities) {
                     if (!World.TryGetComponent<ECTransform>(entity, out var epos)) continue;
