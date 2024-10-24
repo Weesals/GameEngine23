@@ -45,11 +45,11 @@ namespace Game5.UI.Interaction {
             if (!entity.IsValid) { events.Yield(); return; }
             var pos = PlayUI.ScreenToRay(events.PreviousPosition)
                 .ProjectTo(new Plane(Vector3.UnitY, 0f));
-            instances.Add(events, new Instance() {
+            instances[events] = new Instance() {
                 Target = entity,
                 DragPlane = new Plane(Vector3.UnitY, pos.Y),
                 DragOffset = entity.GetWorldPosition() - pos,
-            });
+            };
         }
         public void OnDrag(PointerEvent events) {
             if (!instances.TryGetValue(events, out var instance)) return;

@@ -271,7 +271,8 @@ namespace Game5.Game {
             }
 
             var activeArea = Play.LandscapeRenderer.GetVisibleBounds(scenePasses.Frustum);
-            activeArea = BoundingBox.Union(activeArea, Play.Scene.GetActiveBounds());
+            activeArea = BoundingBox.Union(activeArea, shadowPass.RetainedRenderer.BVH.GetActiveBounds(scenePasses.Frustum));
+            //activeArea = BoundingBox.Union(activeArea, Play.Scene.GetActiveBounds());
             if (activeArea.Extents.X <= 0f) {
                 activeArea = new BoundingBox(new Vector3(0f), new Vector3(1f));
             }

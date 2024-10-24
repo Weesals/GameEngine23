@@ -519,6 +519,18 @@ namespace Weesals.Utility {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public SceneInstance GetInstance(int index) => instances[index];
 
+        public BoundingBox GetActiveBounds(Frustum frustum) {
+            Vector3 min = new Vector3(float.MaxValue);
+            Vector3 max = new Vector3(float.MinValue);
+            var en = new FrustumEnumerator(this, frustum);
+            while (en.MoveNext()) {
+                var bounds = en.ActiveBoundingBox;
+                min = Vector3.Min(min, bounds.Min);
+                max = Vector3.Max(max, bounds.Max);
+            }
+            return BoundingBox.FromMinMax(min, max);
+        }
+
         unsafe public struct FrustumEnumerator {
             public readonly BoundingVolumeHierarchy BVH;
             public readonly Frustum Frustum;
