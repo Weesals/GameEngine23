@@ -621,8 +621,7 @@ public:
         D3D12_INDEX_BUFFER_VIEW indexView;
         BindVertexIndexBuffers(bindings, indexView, indexCount);
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
-        static ComPtr<ID3D12CommandSignature> mIndirectSig;
-        if (mIndirectSig == nullptr) {
+        if (cache.mIndirectSig == nullptr) {
             D3D12_INDIRECT_ARGUMENT_DESC argumentDescs[1] = {
                 D3D12_INDIRECT_ARGUMENT_DESC{.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED},
             };
@@ -633,7 +632,7 @@ public:
                 .NodeMask = 0,
             };
             mDevice->GetD3DDevice()->CreateCommandSignature(&sigDesc,
-                nullptr, IID_PPV_ARGS(&mIndirectSig));
+                nullptr, IID_PPV_ARGS(&cache.mIndirectSig));
         }
 
         auto& argsBinding = cache.RequireBinding(argsBuffer);
@@ -645,7 +644,7 @@ public:
         FlushBarriers();
 
         mCmdList->ExecuteIndirect(
-            mIndirectSig.Get(), 1,
+            cache.mIndirectSig.Get(), 1,
             argsBinding.mBuffer.Get(), argsBuffer.mOffset,
             nullptr, 0
         );

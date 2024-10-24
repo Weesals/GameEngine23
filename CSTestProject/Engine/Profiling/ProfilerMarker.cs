@@ -62,11 +62,11 @@ namespace Weesals.Engine.Profiling {
                 }
             }
             public Scope WithText(string text) {
-                Tracy.ZoneText(zone, Tracy.CreateString(text));
+                if (EnableTracy) Tracy.ZoneText(zone, Tracy.CreateString(text));
                 return this;
             }
             public Scope WithValue(ulong value) {
-                Tracy.ZoneValue(zone, value);
+                if (EnableTracy) Tracy.ZoneValue(zone, value);
                 return this;
             }
             public void Dispose() {

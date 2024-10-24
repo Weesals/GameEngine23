@@ -139,6 +139,8 @@ public:
     // Used for generating unique barrier ids
     std::atomic<int> mLastBarrierId = 0;
 
+    ComPtr<ID3D12CommandSignature> mIndirectSig;
+
 private:
     struct ShaderResourceView {
         ID3D12Resource* mResource = nullptr;
