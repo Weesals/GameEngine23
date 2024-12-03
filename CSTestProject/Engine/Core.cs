@@ -161,7 +161,7 @@ namespace Weesals.Engine {
         public struct Context {
             public CSGraphics Graphics;
             public MaterialStack MaterialStack;
-            public RenderQueue RenderQueue;
+            public RenderQueue? RenderQueue;
         }
         [ThreadStatic]
         private static Context context;
@@ -172,7 +172,7 @@ namespace Weesals.Engine {
 
         public struct Scoped : IDisposable {
             Context previousContext;
-            public Scoped(CSGraphics _graphics, Material? rootMaterial, RenderQueue queue) {
+            public Scoped(CSGraphics _graphics, Material? rootMaterial = null, RenderQueue? queue = null) {
                 previousContext = context;
                 context = new() {
                     Graphics = _graphics,

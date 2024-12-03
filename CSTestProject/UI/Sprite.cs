@@ -24,6 +24,7 @@ namespace Weesals.UI {
     }
     public class Sprite {
         public CSTexture Texture;
+        public RectF Margins = new RectF(0f, 0f, 0f, 0f);
         public RectF Borders = RectF.Unit01;
         public RectF UVRect = RectF.Unit01;
         public float Scale = 1.0f;

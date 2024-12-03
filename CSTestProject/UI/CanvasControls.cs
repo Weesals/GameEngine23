@@ -51,7 +51,9 @@ namespace Weesals.UI {
                     Element.PreserveAspect(ref layout, ImageAnchor);
                 }
             }
-            Element.UpdateLayout(Canvas, layout);
+            if (Element.HasDirtyFlags) {
+                Element.UpdateLayout(Canvas, layout);
+            }
             Element.Append(ref composer);
             base.Compose(ref composer);
         }
@@ -99,6 +101,29 @@ namespace Weesals.UI {
         }
         public override string ToString() { return $"Text<{Text}>"; }
     }
+    public class DetachedSized : CanvasRenderable, CanvasRenderable.ICustomTransformer {
+        public CanvasAxes FreeAxes;
+        public DetachedSized() {
+            SetCustomTransformEnabled(true);
+        }
+        public void Apply(CanvasRenderable renderable, ref TransformerContext context) {
+            var sizing = SizingParameters.Default;
+            if ((FreeAxes & CanvasAxes.Horizontal) == 0) sizing.SetFixedXSize(mLayoutCache.GetWidth());
+            if ((FreeAxes & CanvasAxes.Vertical) == 0) sizing.SetFixedYSize(mLayoutCache.GetHeight());
+            var result = base.GetDesiredSize(sizing);
+            if ((FreeAxes & CanvasAxes.Horizontal) != 0) mLayoutCache.SetWidth(result.X);
+            if ((FreeAxes & CanvasAxes.Vertical) != 0) mLayoutCache.SetHeight(result.Y);
+            context.IsComplete = true;
+        }
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            if ((FreeAxes & CanvasAxes.Horizontal) != 0) sizing.CopyAxis(CanvasAxes.Horizontal, SizingParameters.Default);
+            if ((FreeAxes & CanvasAxes.Vertical) != 0) sizing.CopyAxis(CanvasAxes.Vertical, SizingParameters.Default);
+            var result = base.GetDesiredSize(sizing);
+            if ((FreeAxes & CanvasAxes.Horizontal) != 0) result.Size.X = 0f;
+            if ((FreeAxes & CanvasAxes.Vertical) != 0) result.Size.Y = 0f;
+            return result;
+        }
+    }
     public abstract class Selectable : CanvasRenderable, ISelectable {
         protected bool selected;
         public bool IsSelected => selected;
@@ -143,14 +168,15 @@ namespace Weesals.UI {
                 ClickColor = new Color(0xffffffff),
             };
             public static readonly ButtonStyle FlatStyle = new() {
-                NormalColor = new Color(0xffaaaaaa),
-                SelectedColor = new Color(0xffeeeeee),
-                HoverColor = new Color(0xffeeeeee),
-                PressColor = new Color(0xff777777),
-                ClickColor = new Color(0xffffffff),
+                ButtonBG = Resources.TryLoadSprite("RoundedBox4"),
+                NormalColor = new Color(0xff444444),
+                SelectedColor = new Color(0xff666666),
+                HoverColor = new Color(0xff777777),
+                PressColor = new Color(0xff888888),
+                ClickColor = new Color(0xffaaaaaa),
                 Margins = new Vector4(1f, 1f, 1f, 1f),
             };
-            public static readonly ButtonStyle Default = SkeuoStyle;
+            public static readonly ButtonStyle Default = FlatStyle;
         }
 
         public CanvasImage Background = new();
@@ -194,7 +220,7 @@ namespace Weesals.UI {
                 ref var border = ref composer.CreateTransient<CanvasImage>(Canvas);
                 border.SetSprite(Resources.TryLoadSprite("ButtonFrame"));
                 if (HasDirtyFlag(DirtyFlags.Layout)) border.MarkLayoutDirty();
-                border.UpdateLayout(Canvas, mLayoutCache.Inset(-2));
+                if (border.HasDirtyFlags) border.UpdateLayout(Canvas, mLayoutCache.Inset(-2));
                 border.Append(ref composer);
             }
         }
@@ -400,31 +426,27 @@ namespace Weesals.UI {
         }
 
         private CanvasLayout GetSliderLayout() => GetComputedLayout().Inset(10f, 0f, 10f, 0f);
+        private static readonly CanvasTransform BGTransform = CanvasTransform.MakeDefault().WithAnchors(0f, 0.5f, 1f, 0.5f).Inset(-10f);
+        private static readonly CanvasTransform TrackTransform = CanvasTransform.MakeDefault().WithAnchors(0f, 0.35f, 1f, 0.65f).Inset(-2f, 0f);
         public override void Compose(ref CanvasCompositor.Context composer) {
-            var range = MaximumValue - MinimumValue;
-            var valueN = Value / range;
+            var valueN = Value / (MaximumValue - MinimumValue);
             var layout = GetSliderLayout();
-            var newComposeHash = Value.GetHashCode();
-            var valueLayout = layout.MinMaxNormalized(valueN, 0.5f, valueN, 0.5f).Inset(-10f);
-            ref var bg = ref composer.CreateTransient(Canvas, static () => new CanvasImage(Resources.TryLoadSprite("TextBox")) { });
-            ref var bg2 = ref composer.CreateTransient(Canvas, static () => new CanvasImage(Resources.TryLoadSprite("ButtonBG")) { Color = Color.White.WithAlpha(64), });
-            ref var nub = ref composer.CreateTransient(Canvas, static () => new CanvasImage(Resources.TryLoadSprite("ButtonBG")) { Color = Color.White, });
-            ref var txt = ref composer.CreateTransient(Canvas, static () => new CanvasText() { Alignment = TextAlignment.Centre, FontSize = 12, Color = Color.White, });
-            if (composeHash != newComposeHash) {
-                composeHash = newComposeHash;
-                nub.MarkLayoutDirty();
-                txt.MarkLayoutDirty();
-                txt.Text = Value.ToString("0.##");
+            using (var scope = composer.WithScope(this)) {
+                ref var bg = ref scope.CreateTransient(static () => new CanvasImage(Resources.TryLoadSprite("ButtonBG")) { Color = Color.White.WithAlpha(64), });
+                ref var track = ref scope.CreateTransient(static () => new CanvasImage(Resources.TryLoadSprite("TextBox")) { });
+                ref var nub = ref scope.CreateTransient(static () => new CanvasImage(Resources.TryLoadSprite("ButtonBG")) { Color = Color.White, });
+                ref var txt = ref scope.CreateTransient(static () => new CanvasText() { Alignment = TextAlignment.Centre, FontSize = 12, Color = Color.White, });
+                if (scope.WithValueChanged(Value)) {
+                    nub.MarkLayoutDirty();
+                    txt.MarkLayoutDirty();
+                    txt.Text = Value.ToString("0.##");
+                }
+                var valueLayout = layout.MinMaxNormalized(valueN, 0.5f, valueN, 0.5f).Inset(-10f);
+                scope.Append(ref bg, layout, BGTransform);
+                scope.Append(ref track, layout, TrackTransform);
+                scope.Append(ref nub, valueLayout);
+                scope.Append(ref txt, valueLayout);
             }
-            var layoutDirty = HasDirtyFlag(DirtyFlags.Layout);
-            if (layoutDirty || bg2.HasDirtyFlags) bg2.UpdateLayout(Canvas, layout.MinMaxNormalized(0f, 0.5f, 1f, 0.5f).Inset(-10f));
-            if (layoutDirty || bg.HasDirtyFlags) bg.UpdateLayout(Canvas, layout.MinMaxNormalized(0f, 0.35f, 1f, 0.65f).Inset(-2f, 0f));
-            if (layoutDirty || nub.HasDirtyFlags) nub.UpdateLayout(Canvas, valueLayout);
-            if (layoutDirty || txt.HasDirtyFlags) txt.UpdateLayout(Canvas, valueLayout);
-            bg2.Append(ref composer);
-            bg.Append(ref composer);
-            nub.Append(ref composer);
-            txt.Append(ref composer);
             base.Compose(ref composer);
         }
 
@@ -697,7 +719,7 @@ namespace Weesals.UI {
             public float MaximumHeight;
             public float FlexibleSize;
         }
-        private ListSizing ComputeDesiredSizing(float height, Span<RectF> localRects, out Vector4 margin) {
+        private ListSizing ComputeDesiredSizing(SizingParameters childSizing, Span<RectF> localRects, out Vector4 margin) {
             margin = Vector4.Zero;
 
             var children = mChildren!;
@@ -705,10 +727,11 @@ namespace Weesals.UI {
             SizingResult itemSize = default;
             ref var itemSizeLX = ref (Axis == CanvasAxes.Horizontal ? ref itemSize.Size.X : ref itemSize.Size.Y);
             ref var itemSizeLY = ref (Axis == CanvasAxes.Horizontal ? ref itemSize.Size.Y : ref itemSize.Size.X);
-            var childSizing = SizingParameters.Default;
-            childSizing.SetFixedSize(1 - Axis, height);
+            //var childSizing = SizingParameters.Default;
+            //childSizing.SetFixedSize(Axis.OtherAxis(), height);
             if (ItemSize != 0f) childSizing.SetFixedSize(Axis, ItemSize);
             for (int c = 0; c < children.Count; ++c) {
+                if (children[c].IgnoreLayout) continue;
                 itemSize = children[c].GetDesiredSize(childSizing);
 
                 var localMargin = Axis == CanvasAxes.Horizontal
@@ -729,15 +752,17 @@ namespace Weesals.UI {
         }
         private float ComputeScaling(Vector2 size, float flexibleSize) {
             if (ScaleMode == ScaleModes.None) return 1f;
-            var sizeScale = size[(int)Axis] / flexibleSize;
+            var sizeScale = size[Axis.ToVectorComponent()] / flexibleSize;
             if (ScaleMode == ScaleModes.Clamp) sizeScale = Math.Min(1f, sizeScale);
             return sizeScale;
         }
 
         public ListSizing ComputeSizing(Vector2 size, Span<RectF> localRects, out Vector4 margin) {
-            var listSizing = ComputeDesiredSizing(size[1 - (int)Axis], localRects, out margin);
+            var childSizing = SizingParameters.Default;
+            childSizing.SetFixedSize(Axis.OtherAxis(), size[Axis.OtherAxis().ToVectorComponent()]);
+            var listSizing = ComputeDesiredSizing(childSizing, localRects, out margin);
             if (ScaleMode == ScaleModes.StretchOrClamp && listSizing.FlexibleSize == 0f) {
-                listSizing.TotalSize = size[(int)Axis];
+                listSizing.TotalSize = size[Axis.ToVectorComponent()];
                 listSizing.FlexibleSize = listSizing.TotalSize - Separation * (localRects.Length - 1);
                 var itemFlexSize = listSizing.FlexibleSize / localRects.Length;
                 for (int i = 0; i < localRects.Length; i++) {
@@ -783,10 +808,15 @@ namespace Weesals.UI {
             if (mChildren == null || mChildren.Count == 0) return sizing.ClampSize(default);
 
             Span<RectF> localRects = stackalloc RectF[mChildren.Count];
-            var listSizing = ComputeDesiredSizing(mLayoutCache.GetSize(1 - Axis), localRects, out var margin);
-            sizing.SetClampedPreferredSize(Axis, listSizing.TotalSize);
-            sizing.SetClampedPreferredSize(1 - Axis, listSizing.MaximumHeight);
-            var result = base.GetDesiredSize(sizing);
+            var resultSizing = sizing;
+            resultSizing.Unapply(Transform);
+            var childSizing = SizingParameters.Default;
+            childSizing.CopyAxis(Axis.OtherAxis(), resultSizing);
+            var listSizing = ComputeDesiredSizing(childSizing, localRects, out var margin);
+            resultSizing.SetClampedPreferredSize(Axis, listSizing.TotalSize);
+            resultSizing.SetClampedPreferredSize(Axis.OtherAxis(), listSizing.MaximumHeight);
+            resultSizing.Apply(Transform);
+            var result = (SizingResult)Vector2.Clamp(resultSizing.PreferredSize, resultSizing.MinimumSize, resultSizing.MaximumSize);
             result.Margins = margin;
             return result;
         }
@@ -1011,7 +1041,7 @@ namespace Weesals.UI {
             }
         }
     }
-    public class ScrollView : CanvasRenderable, ICanvasLayout, IBeginDragHandler, IDragHandler, IEndDragHandler, ITweenable, IHitTestGroup {
+    public class ScrollView : CanvasRenderable, ICanvasLayout, IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollHandler, ITweenable, IHitTestGroup {
         protected enum Flags { None = 0, Dragging = 1, }
         public Vector2 ScrollMask = new Vector2(1f, 1f);
         public RectF Margins = new RectF(0f, 0f, 0f, 0f);
@@ -1046,6 +1076,11 @@ namespace Weesals.UI {
         private void SetScroll(Vector2 value) {
             scroll = value;
             MarkChildrenDirty();
+        }
+
+        public void OnScroll(PointerEvent events) {
+            SetScroll(scroll - (Vector2)events.ScrollDelta / 2f);
+            Canvas.Tweens.RegisterTweenable(this);
         }
 
         public override void UpdateChildLayouts() {

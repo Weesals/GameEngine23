@@ -326,6 +326,7 @@ const NativePipeline* RequirePipelineFromStages(NativeGraphics* graphics, CSSpan
 		stages, *(MaterialState*)materialState,
 		pobindings
 	);
+	assert(pipeline != nullptr);
 	return pipeline;
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,

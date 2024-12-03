@@ -80,8 +80,10 @@ namespace Weesals.UI {
     }
 
     public interface ICanvasElement {
+        bool HasDirtyFlags { get => false; }
         void Initialize(Canvas canvas);
         void Dispose(Canvas canvas);
+        void MarkLayoutDirty() { }
         void UpdateLayout(Canvas canvas, in CanvasLayout layout);
         void Append(ref CanvasCompositor.Context compositor);
     }
@@ -100,6 +102,7 @@ namespace Weesals.UI {
         private CanvasBlending blending;
         private RectF uvrect;
         private RectF border = new RectF(0f, 0f, 0f, 0f);
+        private RectF margins = new RectF(0f, 0f, 0f, 0f);
         private float spriteScale = 1.0f;
         private DirtyFlags dirty = DirtyFlags.None;
         private DrawFlags drawFlags = DrawFlags.None;
@@ -135,6 +138,7 @@ namespace Weesals.UI {
             Texture = default;
             blending = CanvasBlending.Default;
             border = default;
+            margins = default;
             uvrect = new(0f, 0f, 1f, 1f);
         }
         public void SetTexture(CSBufferReference texture) {
@@ -147,16 +151,21 @@ namespace Weesals.UI {
         public void SetSprite(Sprite? sprite) {
             SetTexture(sprite?.Texture ?? default);
             var wasDirty = dirty & DirtyFlags.UV;
-            var hash = UVRect.GetHashCode() + Border.GetHashCode();
+            var posHash = margins.GetHashCode() + spriteScale.GetHashCode();
+            var uvHash = UVRect.GetHashCode() + Border.GetHashCode();
             UVRect = sprite?.UVRect ?? new RectF(0f, 0f, 1f, 1f);
             Border = sprite?.Borders ?? new RectF(0f, 0f, 0f, 0f);
+            margins = sprite?.Margins ?? default;
             spriteScale = sprite?.Scale ?? 1.0f;
             bool wasNine = IsNinePatch;
             if (Border != new RectF(0f, 0f, 1f, 1f)) drawFlags |= DrawFlags.NinePatch;
             else drawFlags &= ~DrawFlags.NinePatch;
             if (wasNine != IsNinePatch) dirty |= DirtyFlags.Indices;
-            if (UVRect.GetHashCode() + Border.GetHashCode() == hash) {
+            if (uvHash == UVRect.GetHashCode() + Border.GetHashCode()) {
                 dirty = (dirty & ~DirtyFlags.UV) | wasDirty;
+            }
+            if (posHash != margins.GetHashCode() + spriteScale.GetHashCode()) {
+                dirty |= DirtyFlags.Position;
             }
         }
         public void SetBlendMode(CanvasBlending.BlendModes mode) {
@@ -182,6 +191,7 @@ namespace Weesals.UI {
             dirty |= DirtyFlags.Position;
         }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
+            if (dirty == 0) return;
             var elementId = element.ElementId;
             if (UnmarkDirty(DirtyFlags.Indices)) {
                 if (IsNinePatch
@@ -218,8 +228,13 @@ namespace Weesals.UI {
                     : stackalloc Vector2[] { new Vector2(0, 0), layout.GetSize(), };
                 if (IsNinePatch && Texture.IsValid) {
                     var spriteSize = (Vector2)Texture.GetTextureResolution() * UVRect.Size * spriteScale;
-                    p[1] = Border.Min * spriteSize;
+                    p[0] += margins.Min * spriteSize;
+                    p[3] += margins.Max * spriteSize;
+                    p[1] = p[0] + Border.Min * spriteSize;
                     p[2] = p[3] - (Vector2.One - Border.Max) * spriteSize;
+                } else {
+                    p[0] += margins.Min * p[1];
+                    p[1] += margins.Max * p[1];
                 }
                 var positions = buffers.GetPositions();
                 for (int y = 0; y < p.Length; ++y) {
@@ -688,6 +703,7 @@ namespace Weesals.UI {
         }
         public void MarkLayoutDirty() { frame.MarkLayoutDirty(); IsDirty = true; }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
+            if (!IsDirty) return;
             var tlayout = layout;
             var tsince = DateTime.UtcNow - beginTime;
             var scale = Easing.BubbleIn(0.3f).WithFromTo(0.5f, 1.0f).Evaluate((float)tsince.TotalSeconds);
@@ -743,6 +759,7 @@ namespace Weesals.UI {
             }
             vertices.MarkVerticesChanged();
         }
+        public void MarkLayoutDirty() { }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) { }
         public void Append(ref CanvasCompositor.Context compositor) {
             compositor.Append(element);
@@ -787,8 +804,8 @@ namespace Weesals.UI {
                             ref var item = ref this[Iterator];
                             item.Context = context;
                             item.Item.Dispose(canvas);
-                            item.Item.Reset(canvas);
                             if (creator != null) item.Item = creator();
+                            else item.Item.Reset(canvas);
                             item.Item.Initialize(canvas);
                         }
                     }
@@ -827,6 +844,7 @@ namespace Weesals.UI {
             public RangeInt mIndexAlloc;
             public RangeInt ElementRange;
             public RectF MeshBounds;
+            public int ZIndex;
             public RangeInt IndexRange => new RangeInt(mIndexAlloc.Start, mIndexCount);
         };
         public struct ClippingRect {
@@ -847,6 +865,12 @@ namespace Weesals.UI {
             public MaterialRef(CanvasCompositor _compositor) { compositor = _compositor; }
             public void Dispose() { compositor.materialStack.RemoveAt(compositor.materialStack.Count - 1); compositor.RecomputeMaterialStackHash(); }
         }
+        public struct ZIndexRef : IDisposable {
+            private readonly CanvasCompositor compositor;
+            private readonly int previousZIndex;
+            public ZIndexRef(CanvasCompositor _compositor) { compositor = _compositor; previousZIndex = _compositor.zindex; }
+            public void Dispose() { compositor.zindex = previousZIndex; }
+        }
         LinkedList<Node> mNodes = new();
         LinkedList<Item> mItems = new();
         SparseArray<BatchElement> batchElements = new();
@@ -855,6 +879,7 @@ namespace Weesals.UI {
         ArrayList<ClippingRect> clippingRects = new();
         ArrayList<Material> materialStack = new();
         int matStackHash = 0;
+        int zindex = 0;
         BufferLayoutPersistent mIndices;
         SparseIndices mUnusedIndices = new();
         TransientElementCache transientCache = new();
@@ -885,6 +910,11 @@ namespace Weesals.UI {
             materialStack.Add(material);
             RecomputeMaterialStackHash();
             return new MaterialRef(this);
+        }
+        private ZIndexRef PushZIndex(int _zindex) {
+            var zref = new ZIndexRef(this);
+            zindex += _zindex;
+            return zref;
         }
         private void RecomputeMaterialStackHash() {
             matStackHash = 0;
@@ -939,8 +969,11 @@ namespace Weesals.UI {
             const int MaxOverlapSize = 5 * 1024 * 3;
             var matHash = (material?.GetHashCode() ?? 0);
             matHash += matStackHash;
-            for (int batchId = mBatches.Count - 1; batchId >= 0; --batchId) {
+            int lastZId = mBatches.Count - 1;
+            for (; lastZId >= 0; --lastZId) if (mBatches[lastZId].ZIndex <= zindex) break;
+            for (var batchId = lastZId; batchId >= 0; --batchId) {
                 var batch = mBatches[batchId];
+                if (batch.ZIndex != zindex) break;
                 // If materials match, use this batch
                 if (batch.MaterialHash == matHash) {
                     // Avoid huge batches (expensive to reallocate)
@@ -956,13 +989,13 @@ namespace Weesals.UI {
             var materials = new Material[(material != null ? 1 : 0) + materialStack.Count];
             materialStack.CopyTo(materials);
             if (material != null) materials[^1] = material;
-            mBatches.Add(new Batch {
+            return mBatches.Insert(lastZId + 1, new Batch {
                 Materials = materials,
                 MaterialHash = matHash,
+                ZIndex = zindex,
                 mIndexAlloc = default,
                 MeshBounds = bounds,
             });
-            return mBatches.Count - 1;
         }
         public void AppendElementData(int elementId, Material material) {
 			var verts = mBuilder.MapVertices(elementId);
@@ -1094,6 +1127,7 @@ namespace Weesals.UI {
 			public CanvasCompositor mCompositor;
             public LinkedListNode<Node>? mChildBefore;
             public LinkedListNode<Item>? mItem;
+            public int ZIndex;
             public Builder(CanvasCompositor compositor, LinkedListNode<Node>? childBefore, LinkedListNode<Item>? item) {
 				mCompositor = compositor;
                 mChildBefore = childBefore;
@@ -1118,7 +1152,7 @@ namespace Weesals.UI {
 				}
 		        mCompositor.AppendElementData(element.ElementId, element.Material);
 			}
-            public LinkedListNode<Node> InsertChild(LinkedListNode<Node> parent, object context) {
+            public LinkedListNode<Node> InsertChild(LinkedListNode<Node> parent, CanvasRenderable context) {
 				var next = mChildBefore; next = next!.Next;
 				if (next != null && next.ValueRef.mContext == context) {
 					next.ValueRef.mParent = parent;
@@ -1164,7 +1198,7 @@ namespace Weesals.UI {
             public void Append(CanvasElement element) {
 				mBuilder.AppendItem(mNode, element);
             }
-            public Context InsertChild(object element) {
+            public Context InsertChild(CanvasRenderable element) {
 				return new Context(ref mBuilder, mBuilder.InsertChild(mNode, element));
 			}
             public void ClearRemainder() {
@@ -1183,6 +1217,9 @@ namespace Weesals.UI {
             }
             public CanvasCompositor.MaterialRef PushMaterial(Material material) {
                 return mBuilder.mCompositor.PushMaterial(material);
+            }
+            public CanvasCompositor.ZIndexRef PushZIndex(int zindex) {
+                return mBuilder.mCompositor.PushZIndex(zindex);
             }
         }
 
@@ -1267,12 +1304,61 @@ namespace Weesals.UI {
 	    }
     }
 
+    public static class ContextHelper {
+        public ref struct Scope {
+            public CanvasCompositor.Context Composer;
+            public CanvasRenderable Renderable;
+
+            private struct TransientValue : ICanvasTransient {
+                public int ValueHash;
+                public void Dispose(Canvas canvas) { }
+                public void Initialize(Canvas canvas) { ValueHash = -1; }
+                public void Reset(Canvas canvas) { }
+            }
+
+            public Scope(ref CanvasCompositor.Context composer, CanvasRenderable renderable) {
+                Composer = composer;
+                Renderable = renderable;
+            }
+            public void Dispose() { }
+            public ref T CreateTransient<T>(Func<T>? creator = null) where T : ICanvasElement, ICanvasTransient, new() {
+                ref var element = ref Composer.CreateTransient<T>(Renderable.Canvas, creator);
+                if (Renderable.HasDirtyFlag(CanvasRenderable.DirtyFlags.Layout)) element.MarkLayoutDirty();
+                return ref element;
+            }
+            public bool WithValueChanged<T>(T value) where T : struct {
+                ref var transient = ref Composer.CreateTransient<TransientValue>(Renderable.Canvas);
+                var valueHash = value.GetHashCode();
+                if (transient.ValueHash != -1 && transient.ValueHash == valueHash) return false;
+                transient.ValueHash = valueHash;
+                return true;
+            }
+            public void Append<T>(ref T element) where T : ICanvasElement {
+                element.Append(ref Composer);
+            }
+            public void Append<T>(ref T element, in CanvasLayout layout) where T : ICanvasElement {
+                if (element.HasDirtyFlags) element.UpdateLayout(Renderable.Canvas, layout);
+                element.Append(ref Composer);
+            }
+            public void Append<T>(ref T element, in CanvasLayout layout, in CanvasTransform transform) where T : ICanvasElement {
+                if (element.HasDirtyFlags) {
+                    transform.Apply(layout, out var localLayout);
+                    element.UpdateLayout(Renderable.Canvas, localLayout);
+                }
+                element.Append(ref Composer);
+            }
+        }
+        public static Scope WithScope(this ref CanvasCompositor.Context composer, CanvasRenderable renderable) {
+            return new(ref composer, renderable);
+        }
+    }
+
     public static class GUIUtility {
         public static void Box(this Canvas canvas, ref CanvasCompositor.Context context, CanvasLayout layout)
             => Box(canvas, ref context, layout, Color.White);
         public static void Box(this Canvas canvas, ref CanvasCompositor.Context context, CanvasLayout layout, Color color) {
             ref var img = ref context.CreateTransient<CanvasImage>(canvas, static () => new() { });
-            img.Color = new Color(0, 0, 0, 128);
+            img.Color = color;
             img.MarkLayoutDirty();
             img.UpdateLayout(canvas, layout);
             img.Append(ref context);

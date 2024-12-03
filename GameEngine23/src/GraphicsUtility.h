@@ -133,6 +133,7 @@ protected:
     std::vector<LockBundle> mLocks;
 
     int RequireLock(LockMask mask) {
+        assert(mask != 0);  // mask of 0 should use lock 0
         while (true) {
             int index = -1;
             for (int i = 1; i < (int)mLocks.size(); ++i) {
@@ -451,11 +452,12 @@ private:
                 return item;
             }
         }
-        if (mItemCount >> BlockShift >= (int)mBlocks.size()) {
+        std::atomic_ref<int> itemCount(mItemCount);
+        int itemIndex = itemCount++;
+        if (itemIndex >> BlockShift >= (int)mBlocks.size()) {
             mBlocks.emplace_back();
         }
-        Item& item = mBlocks[mItemCount >> BlockShift][mItemCount & BlockMask];
-        ++mItemCount;
+        Item& item = mBlocks[itemIndex >> BlockShift][itemIndex & BlockMask];
         item = Item{ .mLayoutHash = layoutHash, };
         alloc(item);
         return item;
@@ -515,7 +517,7 @@ public:
     void Substitute(LockMask mask, LockMask newMask) {
         for (int i = 0; i < (int)mLocks.size(); ++i) {
             if ((mLocks[i].mHandles & mask) == 0) continue;
-            std::atomic<size_t> handles(mLocks[i].mHandles);
+            std::atomic_ref<size_t> handles(mLocks[i].mHandles);
             handles |= newMask;
             handles &= (~mask | newMask);   // In case any bits are common in both mask and newMask
         }
@@ -560,6 +562,19 @@ public:
             }
         }
     }
+    template<class Callback>
+    void RemoveIf(Callback&& callback, LockMask newMask) {
+        for (int b = 0; b < (int)mBlocks.size(); ++b) {
+            auto& block = mBlocks[b];
+            for (int i = 0; i < (int)(*block.mItems).size(); ++i) {
+                auto& item = (*block.mItems)[i];
+                if (callback(item)) {
+                    mItemsByHash.erase(item.mDataHash);
+                    TrySetLock(item.mLockId, item.mLockId, RequireLock(newMask));
+                }
+            }
+        }
+    }
     void DetachAll() {
         /*ForAll([&](auto& item) {
             item.mDataHash = 0;
@@ -575,7 +590,7 @@ public:
         auto oldLock = mLocks[item.mLockId];
         auto newMask = oldLock.mHandles & ~mask;
         if (oldLock.mHandles == newMask) return;
-        auto lockId = RequireLock(newMask);
+        auto lockId = newMask == 0 ? 0 : RequireLock(newMask);
         SetLock(item, lockId);
         if (item.mLockId == 0) {
             block.mFirstEmpty = std::min(block.mFirstEmpty, i);

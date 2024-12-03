@@ -316,11 +316,11 @@ namespace Game5.Game {
         public void Render(float dt, CSGraphics graphics) {
             using var updateMarker = ProfileMarker_Render.Auto();
 
-            using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial, null);
+            using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial);
 
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
-            //Play.RenderUpdate(graphics, dt);
+            Play.RenderUpdate(graphics, dt);
 
             // TODO: Avoid calling this twice when TAA is enabled
             ScenePasses.SetupRender(GameViewport.Size);

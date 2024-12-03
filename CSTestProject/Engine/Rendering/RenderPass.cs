@@ -326,7 +326,7 @@ namespace Weesals.Engine {
         private ConvexHull activeArea = new();
         public Material ShadowReceiverMaterial;
 
-        public float ShadowPerspective = 0.35f;
+        public float ShadowPerspective = 0.5f;
 
         public ShadowPass(Scene scene) : base(scene, "Shadows") {
             Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 512, Format = BufferFormat.FORMAT_D16_UNORM, }) };

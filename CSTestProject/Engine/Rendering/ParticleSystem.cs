@@ -522,10 +522,8 @@ namespace Weesals.Engine {
 
         unsafe private void PruneOld(CSGraphics graphics) {
             SetTargets(graphics);
-            var bindingsPtr = stackalloc CSBufferLayout[2];
+            var bindingsPtr = stackalloc CSBufferLayout[2] { updateMesh.IndexBuffer, updateMesh.VertexBuffer };
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
-            bindings[0] = updateMesh.IndexBuffer;
-            bindings[1] = updateMesh.VertexBuffer;
             using var materials = new PooledArray<Material>(2);
             materials[1] = rootMaterial;
             materials[0] = rebaseMaterial;
@@ -536,10 +534,8 @@ namespace Weesals.Engine {
         }
         unsafe private void Rebase(CSGraphics graphics) {
             SetTargets(graphics);
-            var bindingsPtr = stackalloc CSBufferLayout[2];
+            var bindingsPtr = stackalloc CSBufferLayout[2] { updateMesh.IndexBuffer, updateMesh.VertexBuffer };
             var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
-            bindings[0] = updateMesh.IndexBuffer;
-            bindings[1] = updateMesh.VertexBuffer;
             using var materials = new PooledArray<Material>(2);
             materials[1] = rootMaterial;
             materials[0] = rebaseMaterial;

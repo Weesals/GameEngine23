@@ -218,8 +218,22 @@ D3DResourceCache::D3DRenderSurface* D3DResourceCache::RequireD3DRT(const RenderT
     return d3dTex;
 }
 void D3DResourceCache::DestroyD3DRT(const RenderTarget2D* rt, LockMask lockBits) {
+    auto* d3drt = rtMapping.mMap.find(rt)->second.get();
+    auto* d3dBuffer = d3drt->mBuffer.Get();
+    LockMask inflightFrames = lockBits;
+    inflightFrames |= CheckInflightFrames();
+    mResourceViewCache.RemoveIf([=](auto& item) {
+        return item.mData.mResource == d3dBuffer;
+    }, inflightFrames);
+    mTargetViewCache.RemoveIf([=](auto& item) {
+        return item.mData.mResource == d3dBuffer;
+    }, inflightFrames);
+    d3drt->mSRVOffset = -1;
+    DelayResourceDispose(d3drt->mBuffer, inflightFrames);
+    d3drt->mBuffer = nullptr;
+    d3drt->mFormat = (DXGI_FORMAT)(-1);
     rtMapping.Delete(rt);
-    PurgeSRVs(lockBits);
+    //PurgeSRVs(lockBits);
 }
 void D3DResourceCache::PurgeSRVs(LockMask lockBits) {
     {
@@ -255,6 +269,7 @@ bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3
     // Buffer already valid, register buffer to be destroyed in the future
     if (d3dBin.mBuffer != nullptr) {
         // TODO: Remove 0x8000...0 lock from this
+        if (d3dBin.mSRVOffset >= 0) d3dBin.mSRVOffset |= 0x80000000;
         if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin);
         // TODO: Should use lockbits from previous used frames
         mDelayedRelease.InsertItem(d3dBin.mBuffer, 0, lockBits);
@@ -327,6 +342,7 @@ ID3D12Resource* D3DResourceCache::AllocateReadbackBuffer(size_t size, LockMask l
         },
         [&](auto& item) {}
     );
+    assert(resultItem.mData.mResource.Get() != nullptr);
     return resultItem.mData.mResource.Get();
 }
 D3DResourceCache::D3DBinding* D3DResourceCache::GetBinding(uint64_t bindingIdentifier) {
@@ -897,7 +913,12 @@ D3DAllocatorHandle D3DResourceCache::GetFirstBusyAllocator() {
 D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     CheckInflightFrames();
     for (auto& allocator : mCommandAllocators) {
-        if (!allocator->HasLockedFrames()) return allocator.get();
+        auto* allocatorPtr = allocator.get();
+        if (allocator->HasLockedFrames()) continue;
+        auto oldFenceValue = allocatorPtr->mLockFrame;
+        std::atomic_ref<UINT64> fenceValue(allocatorPtr->mFenceValue);
+        if (!fenceValue.compare_exchange_strong(oldFenceValue, oldFenceValue + 1)) continue;
+        return allocatorPtr;
     }
     if (mCommandAllocators.size() >= 64) {
         throw "Too many allocators!";
@@ -907,10 +928,10 @@ D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     allocator->mId = (int)mCommandAllocators.size();
     char name[32]; sprintf_s(name, "CmdAl %d", (int)allocator->mId);
     allocator->mCmdAllocator->SetPrivateData(WKPDID_D3DDebugObjectName, (UINT)strlen(name), name);
-    allocator->mFenceValue = 0;
+    allocator->mFenceValue = 1;
     allocator->mLockFrame = 0;
     // Create fence for frame synchronisation
-    ThrowIfFailed(mD3D12.GetD3DDevice()->CreateFence(allocator->GetHeadFrame(), D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&allocator->mFence)));
+    ThrowIfFailed(mD3D12.GetD3DDevice()->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&allocator->mFence)));
     allocator->mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (allocator->mFenceEvent == nullptr) ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
 
@@ -1279,7 +1300,7 @@ D3DResourceCache::RenderTargetView& D3DResourceCache::RequireTextureRTV(
         }, [&](auto& item) {
             assert(item.mDataHash == dataHash);
             assert(item.mData.mResource == buffer);
-            });
+        });
     return item.mData;
 }
 int D3DResourceCache::RequireTextureSRV(D3DResourceCache::D3DTexture& texture, LockMask lockBits) {

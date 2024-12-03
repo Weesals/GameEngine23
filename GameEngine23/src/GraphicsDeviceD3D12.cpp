@@ -58,7 +58,6 @@ public:
     // Get this command buffer ready to begin rendering
     virtual void Reset() override {
         mCmdAllocator = mDevice->GetResourceCache().RequireAllocator();
-        ++mCmdAllocator->mFenceValue;
         mFrameHandle = 1ull << mCmdAllocator->mId;
         if (mCmdList == nullptr) {
             ThrowIfFailed(GetD3DDevice()
@@ -152,9 +151,6 @@ public:
             d3dRt->mOnDispose = const_cast<RenderTarget2D*>(target)->OnDestroy.Add([=]() {
                 if (d3dRt->mBuffer == nullptr) return;
                 auto& cache = mDevice->GetResourceCache();
-                cache.DelayResourceDispose(d3dRt->mBuffer, mCmdContext.mLockBits);
-                d3dRt->mBuffer = nullptr;
-                d3dRt->mFormat = (DXGI_FORMAT)(-1);
                 OutputDebugStringA("Disposing texture\n");
                 mDevice->GetResourceCache().DestroyD3DRT(target, mCmdContext.mLockBits);
             });

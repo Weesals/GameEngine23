@@ -19,6 +19,15 @@ namespace Weesals {
             Buffer[index] = value;
             return index;
         }
+        public int Insert(int index, T value) {
+            if (Count >= Buffer.Length) {
+                Reserve(Math.Max(Buffer.Length * 2, 16));
+            }
+            Buffer.AsSpan(index, Count - index).CopyTo(Buffer.AsSpan(index + 1));
+            Count++;
+            Buffer[index] = value;
+            return index;
+        }
         public void RemoveAt(int index) {
             Debug.Assert(index <= Count);
             var toMove = Count - index - 1;

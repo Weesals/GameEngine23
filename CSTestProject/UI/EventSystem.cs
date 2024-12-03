@@ -743,7 +743,7 @@ namespace Weesals.UI {
             }
 
             if (events.ScrollDelta != default) {
-                if (events.Targets.EffectiveDefer is IScrollHandler scrollHandler) {
+                if (HierarchyExt.TryGetRecursive(events.Targets.EffectiveDefer, out IScrollHandler scrollHandler)) {
                     scrollHandler.OnScroll(events);
                 }
             }
@@ -801,6 +801,7 @@ namespace Weesals.UI {
             PointerEvent.States cmn = events.State;
             if (events.Targets.EffectiveHover != targets.EffectiveHover) {
                 cmn &= ~(PointerEvent.States.Hover);
+                Debug.WriteLine($"Changing hover from {events.Targets.EffectiveHover} to {targets.EffectiveHover}");
             }
             if (events.Targets.EffectivePress != targets.EffectivePress) {
                 cmn &= ~(PointerEvent.States.Press | PointerEvent.States.Drag);
@@ -819,6 +820,12 @@ namespace Weesals.UI {
             SetStates(events, state);
         }
         internal void SetStates(PointerEvent events, PointerEvent.States state) {
+            /// When changing hover
+            /// - Find first potential target
+            /// - If potential target has changed
+            ///   - Send pointer up, change target, pointer down
+            /// - otherwise
+            ///   - Ignore, keep using current target
             PointerEvent.EventTargets targets = events.Targets;
             TryInvoke(events, state, targets, eDragHandler, false);
             TryInvoke(events, state, targets, pUpHandler, false);

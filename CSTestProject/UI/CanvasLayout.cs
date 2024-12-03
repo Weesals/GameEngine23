@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
@@ -177,19 +178,23 @@ namespace Weesals.UI {
         public Vector2 OffsetMin { get => Offsets.toxy(); set => Offsets.toxy(value); }
         public Vector2 OffsetMax { get => Offsets.tozw(); set => Offsets.tozw(value); }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Apply(in CanvasLayout parent, out CanvasLayout layout) {
             layout = parent;
-            layout.AxisX.W = parent.AxisX.W * (AnchorMax.X - AnchorMin.X) + (OffsetMax.X - OffsetMin.X);
-            layout.AxisY.W = parent.AxisY.W * (AnchorMax.Y - AnchorMin.Y) + (OffsetMax.Y - OffsetMin.Y);
-            layout.Position += parent.AxisX.toxyz() * (AnchorMin.X * parent.AxisX.W + OffsetMin.X);
-            layout.Position += parent.AxisY.toxyz() * (AnchorMin.Y * parent.AxisY.W + OffsetMin.Y);
-            if (Scale != Vector3.One) {
-                var size = layout.GetSize();
-                var delta = new Vector2(size.X * (Scale.X - 1f), size.Y * (Scale.Y - 1f));
-                layout.Position = layout.TransformPosition2D(delta * -0.5f);
-                layout.AxisX.toxyz(layout.AxisX.toxyz() * Scale.X);
-                layout.AxisY.toxyz(layout.AxisY.toxyz() * Scale.Y);
+            ApplyAnchorOffset(ref layout);
+            if (Scale.X != 1f || Scale.Y != 1f || Scale.Z != 1f) {
+                ApplyScale(ref layout);
             }
+        }
+        public void ApplyAnchorOffset(ref CanvasLayout layout) {
+            layout.Position = layout.TransformPosition2D(AnchorMin * layout.GetSize() + OffsetMin);
+            layout.AxisX.W = layout.AxisX.W * (AnchorMax.X - AnchorMin.X) + (OffsetMax.X - OffsetMin.X);
+            layout.AxisY.W = layout.AxisY.W * (AnchorMax.Y - AnchorMin.Y) + (OffsetMax.Y - OffsetMin.Y);
+        }
+        public void ApplyScale(ref CanvasLayout layout) {
+            layout.Position = layout.TransformPosition2D(layout.GetSize() * (new Vector2(0.5f, 0.5f) - 0.5f * new Vector2(Scale.X, Scale.Y)));
+            layout.AxisX.toxyz(layout.AxisX.toxyz() * Scale.X);
+            layout.AxisY.toxyz(layout.AxisY.toxyz() * Scale.Y);
         }
 
         public static CanvasTransform MakeDefault() {
@@ -219,6 +224,10 @@ namespace Weesals.UI {
 
         public CanvasTransform Inset(float px) {
             Inset(px, px, px, px);
+            return this;
+        }
+        public CanvasTransform Inset(float horizontal, float vertical) {
+            Inset(horizontal, vertical, horizontal, vertical);
             return this;
         }
         public CanvasTransform Inset(float left, float top, float right, float bot) {

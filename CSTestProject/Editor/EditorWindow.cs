@@ -68,8 +68,8 @@ public static class EntityProxyExt {
 
 namespace Weesals.Editor {
     public class Editor {
-        public Font DefaultFont;
-        public AssetDatabase AssetDatabase;
+        public Font DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf");
+        public AssetDatabase AssetDatabase = new();
         public SelectionManager ProjectSelection = new(null);
     }
     public class TabbedWindow : CanvasRenderable {
@@ -175,10 +175,7 @@ namespace Weesals.Editor {
         }
 
         public EditorWindow() {
-            Editor = new() {
-                DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf"),
-                AssetDatabase = new(),
-            };
+            Editor = new();
             Canvas = new();
             EventSystem = new EventSystem(Canvas);
             flex = new FlexLayout();

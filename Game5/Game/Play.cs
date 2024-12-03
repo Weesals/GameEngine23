@@ -212,7 +212,7 @@ namespace Game5.Game
             visualsJob.Complete();
 
             var img = new Image(new CSBufferReference(GameRoot.ShadowPass.shadowBuffer)) {
-                Transform = CanvasTransform.MakeAnchored(new Vector2(256, 256), new Vector2(0f, 0f)),
+                Transform = CanvasTransform.MakeAnchored(new Vector2(512, 512), new Vector2(0f, 0f)),
             };
             root.Canvas.AppendChild(img);
 
@@ -279,7 +279,7 @@ namespace Game5.Game
         }
 
         public void SetAutoQuality(CSGraphics graphics) {
-            if (false && !graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase)) {
+            if (!graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase)) {
                 EnableFog = true;
                 EnableAO = true;
                 EnableFoliage = true;

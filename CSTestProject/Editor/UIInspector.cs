@@ -217,7 +217,8 @@ namespace Weesals.Editor {
             public PropertyPath DataList;
             public PropertyPath Property;
             public ListLayout ItemsContainer;
-            public bool IsOpen => ItemsContainer != null && Children.Contains(ItemsContainer);
+            private DetachedSized detached;
+            public bool IsOpen => detached != null && detached.IsInCanvas;
             public DropDownSelector(PropertyPath dataList, PropertyPath property) {
                 DataList = dataList;
                 Property = property;
@@ -233,7 +234,11 @@ namespace Weesals.Editor {
             }
             public void Open() {
                 var items = DataList.GetValueAs<IReadOnlyList<object>>();
-                if (ItemsContainer == null) ItemsContainer = new();
+                if (ItemsContainer == null) {
+                    detached = new() { FreeAxes = CanvasAxes.Vertical, ZIndex = 1, };
+                    ItemsContainer = new() { };
+                    detached.AppendChild(ItemsContainer);
+                }
                 ItemsContainer.ClearChildren();
                 foreach (var iter in items) {
                     var item = iter;
@@ -245,10 +250,13 @@ namespace Weesals.Editor {
                     };
                     ItemsContainer.AppendChild(btn);
                 }
-                AppendChild(ItemsContainer);
+                AppendChild(detached);
             }
             public void Close() {
-                RemoveChild(ItemsContainer);
+                RemoveChild(detached);
+            }
+            public override SizingResult GetDesiredSize(SizingParameters sizing) {
+                return base.GetDesiredSize(sizing);
             }
         }
         public struct Bindables {

@@ -228,6 +228,7 @@ namespace Weesals.Engine {
                 new("Tick", "./Assets/ui/T_Tick.png"),
                 new("HeaderBG", "./Assets/ui/T_HeaderBG.png"),
                 new("PanelBG", "./Assets/ui/T_PanelBG.png"),
+                new("RoundedBox4", "./Assets/ui/RoundedBox4.png")
             };
             var originalSprites = new CSTexture[spritePaths.Length];
             for (int i = 0; i < spritePaths.Length; i++) {
@@ -243,6 +244,8 @@ namespace Weesals.Engine {
             atlas.Sprites[11].Borders = RectF.Unit01.Inset(0.2f);
             atlas.Sprites[10].Scale = 0.5f;
             atlas.Sprites[11].Scale = 0.5f;
+            atlas.Sprites[12].Borders = RectF.Unit01.Inset(0.4f);
+            atlas.Sprites[12].Margins = RectF.FromMinMax(-1f / 16, -1f / 16, 1f / 16, 1f / 16);
             for (int i = 0; i < atlas.Sprites.Length; i++) {
                 loadedSprites.Add(spritePaths[i].Key, atlas.Sprites[i]);
             }

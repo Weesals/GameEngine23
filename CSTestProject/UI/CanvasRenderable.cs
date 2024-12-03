@@ -16,7 +16,11 @@ namespace Weesals.UI {
         public CanvasBinding(CanvasRenderable parent) { mCanvas = parent.Canvas; mParent = parent; }
     }
 
-    public enum CanvasAxes : byte { Horizontal, Vertical, };
+    public enum CanvasAxes : byte { None = 0x0, Horizontal = 0x1, Vertical = 0x2, };
+    public static class CanvasAxesExt {
+        public static CanvasAxes OtherAxis(this CanvasAxes axis) => 3 - axis;
+        public static int ToVectorComponent(this CanvasAxes axis) => (int)axis - 1;
+    }
 
     public struct SizingParameters {
         public Vector2 MinimumSize;
@@ -79,8 +83,14 @@ namespace Weesals.UI {
             }
         }
         public void SetClampedPreferredSize(CanvasAxes axis, float size) {
-            size = Math.Clamp(size, MinimumSize[(int)axis], MaximumSize[(int)axis]);
-            PreferredSize[(int)axis] = size;
+            size = Math.Clamp(size, MinimumSize[axis.ToVectorComponent()], MaximumSize[axis.ToVectorComponent()]);
+            PreferredSize[axis.ToVectorComponent()] = size;
+        }
+
+        public void CopyAxis(CanvasAxes axis, SizingParameters from) {
+            MinimumSize[axis.ToVectorComponent()] = from.MinimumSize[axis.ToVectorComponent()];
+            PreferredSize[axis.ToVectorComponent()] = from.PreferredSize[axis.ToVectorComponent()];
+            MaximumSize[axis.ToVectorComponent()] = from.MaximumSize[axis.ToVectorComponent()];
         }
     }
     public struct SizingResult {
@@ -107,8 +117,12 @@ namespace Weesals.UI {
         public enum StateFlags : byte {
             None = 0,
             HasCullParent = 1,
+            HasCanvasLayout = 2,
+        };
+        public enum FeatureFlags : byte {
+            None = 0,
+            IgnoreLayout = 1,
             HasCustomTransformApplier = 2,
-            HasCanvasLayout = 4,
         };
 
         public ref struct TransformerContext {
@@ -120,6 +134,7 @@ namespace Weesals.UI {
             void Apply(CanvasRenderable renderable, ref TransformerContext context);
         }
         public string? Name { get; set; }
+        public int ZIndex = 0;
 
         protected CanvasBinding mBinding;
         protected CanvasTransform mTransform = CanvasTransform.MakeDefault();
@@ -129,10 +144,12 @@ namespace Weesals.UI {
         protected byte mDepth;
         protected DirtyFlags dirtyFlags;
         protected StateFlags stateFlags;
+        protected FeatureFlags featureFlags;
 
         public Canvas Canvas => mBinding.mCanvas;
         public CanvasRenderable? Parent => mBinding.mParent;
         public IReadOnlyList<CanvasRenderable> Children => mChildren ?? (IReadOnlyList<CanvasRenderable>)Array.Empty<CanvasRenderable>();
+        public bool IsInCanvas => Canvas != null;
         public CanvasTransform Transform {
             get => mTransform;
             set => SetTransform(value);
@@ -140,6 +157,10 @@ namespace Weesals.UI {
         public bool HitTestEnabled {
             get => hitBinding.IsEnabled;
             set => SetHitTestEnabled(value);
+        }
+        public bool IgnoreLayout {
+            get => (featureFlags & FeatureFlags.IgnoreLayout) != 0;
+            set => featureFlags = (featureFlags & ~FeatureFlags.IgnoreLayout) | (value ? FeatureFlags.IgnoreLayout : 0);
         }
         public virtual void Initialise(CanvasBinding binding) {
             mBinding = binding;
@@ -185,11 +206,11 @@ namespace Weesals.UI {
             }
         }
         public void SetCustomTransformEnabled(bool enable) {
-            if (enable && this is ICustomTransformer) stateFlags |= StateFlags.HasCustomTransformApplier;
-            else stateFlags &= ~StateFlags.HasCustomTransformApplier;
+            if (enable && this is ICustomTransformer) featureFlags |= FeatureFlags.HasCustomTransformApplier;
+            else featureFlags &= ~FeatureFlags.HasCustomTransformApplier;
         }
         public void AppendChild(CanvasRenderable child) {
-            Debug.Assert(child.Canvas == null, "Element is already added");
+            //Debug.Assert(!child.IsInCanvas, "Element is already added");
             mChildren ??= new();
             InsertChild(mChildren.Count, child);
         }
@@ -227,7 +248,7 @@ namespace Weesals.UI {
             ClearDirtyFlag(DirtyFlags.Transform);
             int oldHash = mLayoutCache.GetHashCode();
             mTransform.Apply(parent, out mLayoutCache);
-            if ((stateFlags & StateFlags.HasCustomTransformApplier) != 0) {
+            if ((featureFlags & FeatureFlags.HasCustomTransformApplier) != 0) {
                 TransformerContext context = new(ref mLayoutCache);
                 ((ICustomTransformer)this).Apply(this, ref context);
                 if (!context.IsComplete) MarkTransformDirty();
@@ -256,10 +277,17 @@ namespace Weesals.UI {
         public virtual void UpdateChildLayouts() {
             //if (!hitBinding.IsValid) UpdateHitBinding();
             if (mChildren != null) {
-                foreach (var child in mChildren) child.UpdateLayout(mLayoutCache);
+                foreach (var child in mChildren) {
+                    var childLayout = mLayoutCache;
+                    if (child.IgnoreLayout) {
+                        childLayout.SetSize(child.GetDesiredSize(SizingParameters.Default));
+                    }
+                    child.UpdateLayout(childLayout);
+                }
             }
         }
         public virtual void Compose(ref CanvasCompositor.Context composer) {
+            using var zindex = composer.PushZIndex(ZIndex);
             ClearDirtyFlag(DirtyFlags.Compose | DirtyFlags.Layout);
             if (mChildren != null) {
                 foreach (var child in mChildren) {
@@ -325,7 +353,7 @@ namespace Weesals.UI {
             dirtyFlags |= DirtyFlags.Compose;
             if (Canvas != null && Canvas != this) Canvas.MarkComposeDirty();
         }
-        protected bool HasDirtyFlag(DirtyFlags flag) {
+        internal bool HasDirtyFlag(DirtyFlags flag) {
             return (dirtyFlags & flag) != 0;
         }
         protected void ClearDirtyFlag(DirtyFlags flag) {
@@ -344,11 +372,13 @@ namespace Weesals.UI {
         }
 
         public virtual SizingResult GetDesiredSize(SizingParameters sizing) {
+            if (IgnoreLayout) sizing = SizingParameters.Default;
             var childSizing = sizing;
             childSizing.Unapply(Transform);
             var childSize = Vector2.Zero;
             if (mChildren != null) {
                 for (int i = 0; i < mChildren.Count; i++) {
+                    if (mChildren[i].IgnoreLayout) continue;
                     childSize = Vector2.Max(childSize, mChildren[i].GetDesiredSize(childSizing));
                 }
             }
@@ -382,20 +412,27 @@ namespace Weesals.UI {
         }
         public static int GetGlobalOrder(CanvasRenderable item1, CanvasRenderable item2) {
             if (item1 == item2) return 0;
-            while (item1.mDepth > item2.mDepth) item1 = item1.Parent!;
-            if (item1 == item2) return -1;
-            while (item2.mDepth > item1.mDepth) item2 = item2.Parent!;
-            if (item1 == item2) return 1;
-            while (item1 != null && item1 != item2) {
+            var depthDelta = item1.mDepth - item2.mDepth;
+            int zindexDelta = 0;
+            while (item1.mDepth > item2.mDepth) { zindexDelta -= item1.ZIndex; item1 = item1.Parent!; }
+            while (item2.mDepth > item1.mDepth) { zindexDelta += item2.ZIndex; item2 = item2.Parent!; }
+            if (item1 == item2) {
+                if (zindexDelta != 0) return zindexDelta;
+                return depthDelta < 0 ? 1 : -1;
+            }
+            while (item1 != item2) {
+                if (item1 == null) return -1;
                 if (item2 == null) return 1;
+                zindexDelta += item2.ZIndex - item1.ZIndex;
                 if (item1.Parent == item2.Parent) {
+                    if (zindexDelta != 0) return zindexDelta;
                     var parent = item1.Parent!;
                     return parent.mChildren!.IndexOf(item2).CompareTo(parent.mChildren.IndexOf(item1));
                 }
                 item1 = item1.Parent!;
                 item2 = item2.Parent!;
             }
-            return -1;
+            return zindexDelta;
         }
 
         public override string? ToString() {
