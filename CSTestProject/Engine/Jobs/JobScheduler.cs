@@ -428,6 +428,9 @@ namespace Weesals.Engine.Jobs {
             public int RunCount => (int)(RunState & 0xffff);
             public int CompleteCount => (int)((RunState >> 16) & 0xffff);
             public bool IsMainThread => RunState == RunState_MainThread;
+            public bool IsBasic => RunState == RunState_Basic;
+            public bool DataIsContext => RunState >= RunState_Basic;
+            public bool IsReturn => RunState == RunState_HasReturn;
         }
         public struct JobRun {
             public int TaskId;
@@ -658,20 +661,26 @@ namespace Weesals.Engine.Jobs {
         public ushort CreateTask<T>(Action<T> action, T value) {
             if (!EnableThreading) { action(value); return ushort.MaxValue; }
             if (typeof(T).IsValueType) {
-                var pool = Boxed<T>.Pool;
-                Boxed<T>? boxed = default;
-                lock (pool) { if (pool.Count > 0) boxed = pool.Pop(); }
-                boxed ??= new();
-                boxed.Value = value;
                 return CreateTask(static (callback, bundle) => {
                     var boxed = ((Boxed<T>)bundle);
                     ((Action<T>)callback)(boxed.Value);
-                    var pool = Boxed<T>.Pool;
-                    lock (pool) { pool.Push(boxed); }
-                }, boxed);
+                    ReturnBoxed<T>(boxed);
+                }, AllocateBoxed(value));
             } else {
                 return CreateTask(static (callback, boxed) => { ((Action<T>)callback)((T)boxed); }, (object)value);
             }
+        }
+        private static Boxed<T> AllocateBoxed<T>(T data) {
+            var pool = Boxed<T>.Pool;
+            Boxed<T>? boxed = default;
+            lock (pool) { if (pool.Count > 0) boxed = pool.Pop(); }
+            boxed ??= new();
+            boxed.Value = data;
+            return boxed;
+        }
+        private static void ReturnBoxed<T>(Boxed<T> boxed) {
+            var pool = Boxed<T>.Pool;
+            lock (pool) { pool.Push(boxed); }
         }
 
         public ushort CreateBatchTask(Action<RangeInt> action, int count) {
@@ -682,7 +691,7 @@ namespace Weesals.Engine.Jobs {
             return IntlPushTask(new JobTask() { Callback = action, DataBegin = (TBatchIndex)range.Start, DataCount = (TBatchIndex)range.Length, RunState = 0, });
         }
         public void MarkRunOnMain(ushort job) {
-            Debug.Assert(taskArray[job].RunState == RunState_Basic,
+            Debug.Assert(taskArray[job].IsBasic,
                 "Batch jobs cannot run on main");
             taskArray[job].RunState = RunState_MainThread;
         }
@@ -751,7 +760,7 @@ namespace Weesals.Engine.Jobs {
         // Called by job threads on the thread
         internal void ExecuteRun(JobRun run) {
             ref var task = ref taskArray[run.TaskId];
-            if (task.RunState == RunState_Basic || task.RunState == RunState_MainThread) {
+            if (task.DataIsContext) {
                 if (task.DataCount == 0) {
                     ((Action)task.Callback)();
                     MarkComplete(ref task);
@@ -767,7 +776,7 @@ namespace Weesals.Engine.Jobs {
                     );
                     MarkComplete(ref task);
                 }
-            } else if (task.RunState == RunState_HasReturn) {
+            } else if (task.IsReturn) {
                 var resultSlot = task.DataBegin;
                 if (task.Callback != null)
                     contextPool.Contexts[resultSlot] = ((Func<object>)task.Callback)();
@@ -792,7 +801,7 @@ namespace Weesals.Engine.Jobs {
         }
         internal void MarkComplete(ref JobTask task) {
             var dep = task.Dependency;
-            if (task.RunState == RunState_Basic) {
+            if (task.DataIsContext) {
                 if (task.DataCount > 0)
                     contextPool.Return((int)task.DataBegin, (int)task.DataCount);
             }

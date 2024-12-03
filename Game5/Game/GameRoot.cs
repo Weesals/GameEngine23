@@ -58,6 +58,7 @@ namespace Game5.Game {
 
         RenderGraph renderGraph = new();
         ScenePassManager scenePasses;
+        public ShadowPass ShadowPass => shadowPass;
         public ScenePassManager ScenePasses => scenePasses;
 
         public TemporalJitter TemporalPass => temporalJitter;
@@ -260,25 +261,48 @@ namespace Game5.Game {
             Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
         }
 
+        Camera tCamera = new Camera() {
+            FOV = 3.14f * 0.15f,
+                /*Position = new Vector3(-0f, 25f, -0f),
+                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
+                    * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),*/
+                Position = new Vector3(12f, 7f, 25f),
+                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.45f)
+                    * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.10f),
+                NearPlane = 5.0f,
+                FarPlane = 10000.0f,
+            };
+
         public void PreRender() {
             using var updateMarker = ProfileMarker_PreRender.Auto();
 
             Play.PreRender();
+
+            scenePasses.CommitMotion();
 
             var camera = Play.Camera;
             if (scenePasses.SetViewProjection(camera.GetViewMatrix(), camera.GetProjectionMatrix())) {
                 RenderRevision++;
             }
 
-            var activeArea = Play.LandscapeRenderer.GetVisibleBounds(scenePasses.Frustum);
-            activeArea = BoundingBox.Union(activeArea, shadowPass.RetainedRenderer.BVH.GetActiveBounds(scenePasses.Frustum));
-            //activeArea = BoundingBox.Union(activeArea, Play.Scene.GetActiveBounds());
-            if (activeArea.Extents.X <= 0f) {
-                activeArea = new BoundingBox(new Vector3(0f), new Vector3(1f));
+            tCamera = Play.Camera;
+            if (Input.GetKeyDown(KeyCode.O)) {
+                tCamera.Orientation *= Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.01f);
             }
-            if (shadowPass.UpdateShadowFrustum(scenePasses.Frustum, activeArea)) {
+            var tViewProj = tCamera.GetViewMatrix() * tCamera.GetProjectionMatrix();
+
+            var clippedFrustum = scenePasses.Frustum;
+            var farClip = (-clippedFrustum.NearPlane.D / clippedFrustum.NearPlane.Normal.Length() + 500f) * clippedFrustum.FarPlane.Normal.Length();
+            clippedFrustum.SetFarClip(MathF.Min(farClip, clippedFrustum.FarPlane.D));
+
+            var activeArea = BoundingBox.Union(
+                Play.LandscapeRenderer.GetVisibleBounds(clippedFrustum),
+                shadowPass.RetainedRenderer.BVH.GetActiveBounds(clippedFrustum)
+            );
+            if (shadowPass.UpdateShadowFrustum(clippedFrustum, activeArea)) {
                 RenderRevision++;
             }
+            //scenePasses.SetViewProjection(shadowPass.View, shadowPass.Projection);
             //scenePasses.SetViewProjection(shadowPass.View, shadowPass.Projection);
             if (Play.DrawVisibilityVolume) shadowPass.DrawVolume();
 
@@ -294,7 +318,6 @@ namespace Game5.Game {
 
             using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial, null);
 
-            scenePasses.CommitMotion();
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled
             //Play.RenderUpdate(graphics, dt);

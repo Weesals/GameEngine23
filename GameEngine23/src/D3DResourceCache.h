@@ -193,8 +193,8 @@ private:
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
     PerFrameItemStore<ShaderResourceView> mResourceViewCache;
     PerFrameItemStore<RenderTargetView> mTargetViewCache;
-    PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>, 2> mUploadBufferCache;
-    PerFrameItemStoreNoHash<D3DReadback, 2> mReadbackBufferCache;
+    PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mUploadBufferCache;
+    PerFrameItemStoreNoHash<D3DReadback> mReadbackBufferCache;
     PerFrameItemStoreNoHash<ComPtr<ID3D12Resource>> mDelayedRelease;
 
     std::vector<std::shared_ptr<CommandAllocator>> mCommandAllocators;
@@ -208,7 +208,7 @@ public:
     void ClearAllocator(D3DAllocatorHandle handle);
     D3DAllocatorHandle GetFirstBusyAllocator();
     CommandAllocator* RequireAllocator();
-    void CheckInflightFrames();
+    LockMask CheckInflightFrames();
     void UnlockFrame(size_t frameHash);
     void ClearDelayedData();
     ID3D12Resource* AllocateUploadBuffer(size_t size, LockMask lockBits);

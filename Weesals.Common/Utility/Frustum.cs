@@ -13,7 +13,13 @@ namespace Weesals.Engine {
 		public Vector3 Right => new Vector3(mPlaneXs.Y, mPlaneYs.Y, mPlaneZs.Y);
 		public Vector3 Down => new Vector3(mPlaneXs.Z, mPlaneYs.Z, mPlaneZs.Z);
 		public Vector3 Up => new Vector3(mPlaneXs.W, mPlaneYs.W, mPlaneZs.W);
-		public Frustum4(Matrix4x4 vp) {
+
+        public Plane LeftPlane => new(mPlaneXs.X, mPlaneYs.X, mPlaneZs.X, mPlaneDs.X);
+        public Plane RightPlane => new(mPlaneXs.Y, mPlaneYs.Y, mPlaneZs.Y, mPlaneDs.Y);
+        public Plane DownPlane => new(mPlaneXs.Z, mPlaneYs.Z, mPlaneZs.Z, mPlaneDs.Z);
+        public Plane UpPlane => new(mPlaneXs.W, mPlaneYs.W, mPlaneZs.W, mPlaneDs.W);
+
+        public Frustum4(Matrix4x4 vp) {
 			mPlaneXs = new Vector4(vp.M14) + new Vector4(vp.M11, -vp.M11, vp.M12, -vp.M12);
 			mPlaneYs = new Vector4(vp.M24) + new Vector4(vp.M21, -vp.M21, vp.M22, -vp.M22);
 			mPlaneZs = new Vector4(vp.M34) + new Vector4(vp.M31, -vp.M31, vp.M32, -vp.M32);
@@ -89,8 +95,16 @@ namespace Weesals.Engine {
 		Frustum4 mFrustum4;
         Vector4 mNearPlane;
 		Vector4 mFarPlane;
-		public Vector3 Backward => mNearPlane.toxyz();
+        public Vector3 Left => mFrustum4.Left;
+        public Vector3 Right => mFrustum4.Right;
+        public Vector3 Up => mFrustum4.Up;
+        public Vector3 Down => mFrustum4.Down;
+        public Vector3 Backward => mNearPlane.toxyz();
         public Vector3 Forward => mFarPlane.toxyz();
+        public Plane LeftPlane => mFrustum4.LeftPlane;
+        public Plane RightPlane => mFrustum4.RightPlane;
+        public Plane DownPlane => mFrustum4.DownPlane;
+        public Plane UpPlane => mFrustum4.UpPlane;
         public Plane NearPlane => new(mNearPlane.toxyz(), mNearPlane.W);
         public Plane FarPlane => new(mFarPlane.toxyz(), mFarPlane.W);
         public Frustum(Matrix4x4 vp) {
@@ -184,7 +198,25 @@ namespace Weesals.Engine {
                 + new Vector2(Vector3.Dot(Vector3.Abs(mNearPlane.toxyz()), ext), Vector3.Dot(Vector3.Abs(mFarPlane.toxyz()), ext));
             return nfd.X > 0f || nfd.Y > 0f;
         }
+        private Vector3 IntersectPlanes(Plane p1, Plane p2, Plane p3) {
+            Vector3 n1 = p1.Normal;
+            Vector3 n2 = p2.Normal;
+            Vector3 n3 = p3.Normal;
+            Vector3 cross23 = Vector3.Cross(n2, n3);
+            Vector3 cross31 = Vector3.Cross(n3, n1);
+            Vector3 cross12 = Vector3.Cross(n1, n2);
+            return (p1.D * cross23 + p2.D * cross31 + p3.D * cross12) / -Vector3.Dot(n1, cross23);
+        }
         public void GetCorners(Span<Vector3> corners) {
+            corners[0] = IntersectPlanes(NearPlane, DownPlane, LeftPlane);
+            corners[1] = IntersectPlanes(NearPlane, DownPlane, RightPlane);
+            corners[2] = IntersectPlanes(NearPlane, UpPlane, LeftPlane);
+            corners[3] = IntersectPlanes(NearPlane, UpPlane, RightPlane);
+            corners[4] = IntersectPlanes(FarPlane, DownPlane, LeftPlane);
+            corners[5] = IntersectPlanes(FarPlane, DownPlane, RightPlane);
+            corners[6] = IntersectPlanes(FarPlane, UpPlane, LeftPlane);
+            corners[7] = IntersectPlanes(FarPlane, UpPlane, RightPlane);
+            return;
             var vp = CalculateViewProj();
             Matrix4x4.Invert(vp, out vp);
             int i = 0;
@@ -217,5 +249,8 @@ namespace Weesals.Engine {
             planes[5] = new Plane(mFarPlane.X, mFarPlane.Y, mFarPlane.Z, mFarPlane.W);
         }
 
+        public void SetFarClip(float farClip) {
+            mFarPlane.W = farClip;
+        }
     }
 }

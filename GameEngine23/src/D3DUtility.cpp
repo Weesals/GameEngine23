@@ -34,6 +34,7 @@ namespace D3D {
         ID3D12Resource* d3dResource, PrimaryResourceState& resource,
         BarrierHandle handle, int subresource, D3D12_RESOURCE_STATES state,
         BarrierMeta meta) {
+        assert(d3dResource != nullptr);
         // If there is only 1 subresource, always set all
         if (meta.mSubresourceCount <= 1) subresource = -1;
         // Setting all subresources

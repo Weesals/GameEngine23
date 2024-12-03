@@ -104,7 +104,7 @@ public struct GridThickRayIterator : IEnumerator<Int2> {
         IsNegated = (IsSwizzled ? direction.Y : direction.X) < 0;
         var sfrom = IsSwizzled ? From.YX : From;
         if (IsNegated) sfrom.X *= -1;
-        Step = new Int2(FloorDiv(sfrom.X, GridSize), 0);
+        Step = new Int2((int)FloorDiv(sfrom.X, GridSize), 0);
         ExtentEnd = int.MinValue;
     }
     public void Dispose() { }
@@ -124,27 +124,25 @@ public struct GridThickRayIterator : IEnumerator<Int2> {
         if (sdir.X == 0) return new Int2(sfrom.Y, sfrom.Y);
         if (IsNegated) { sfrom.X *= -1; sdir.X *= -1; }
         int x0 = Step.X, x1 = x0 + 1;
-        var y0 = (sfrom.Y + FloorDiv(sdir.Y * (x0 * GridSize - sfrom.X), sdir.X));
-        var y1 = (sfrom.Y + FloorDiv(sdir.Y * (x1 * GridSize - sfrom.X), sdir.X));
+        var y0 = (sfrom.Y + FloorDiv((long)sdir.Y * (x0 * GridSize - sfrom.X), sdir.X));
+        var y1 = (sfrom.Y + FloorDiv((long)sdir.Y * (x1 * GridSize - sfrom.X), sdir.X));
         if (y1 < y0) { var t = y0; y0 = y1; y1 = t; }
         if (sdir.Y > 0) y0 = Math.Max(y0, sfrom.Y);
         else y1 = Math.Min(y1, sfrom.Y);
         y0 -= Thickness; y1 += Thickness;
-        return new Int2(FloorDiv(y0, GridSize), FloorDiv(y1, GridSize));
+        return new Int2((int)FloorDiv(y0, GridSize), (int)FloorDiv(y1, GridSize));
     }
     public bool MoveNext() {
         if (++Step.Y <= ExtentEnd) return true;
         if (ExtentEnd != int.MinValue) Step.X++;
+        if (IsEnded) return false;
         var extents = GetExtents();
         ExtentEnd = extents.Y;
         Step.Y = extents.X;
-        return !IsEnded;
+        return true;
     }
-    private static int RoundDiv(int value, int div) {
-        return (value + (value < 0 ? -div / 2 : div / 2)) / div;
-    }
-    private static int FloorDiv(int value, int div) {
-        return (value + (value < 0 ? -(div - 1) : 0)) / div;
+    private static long FloorDiv(long value, int div) {
+        return ((value + (value < 0 ? -(div - 1) : 0)) / div);
     }
     public GridThickRayIterator GetEnumerator() => this;
 }

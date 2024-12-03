@@ -15,6 +15,16 @@ namespace Weesals.Engine {
         public static int RenderHash;
         public static readonly Color ColorFactor = new Color(64, 64, 64, 255);
 
+        public struct ColorScope : IDisposable {
+            Color originalColor;
+            public ColorScope(Color color) {
+                Handles.color = color;
+            }
+            public void Dispose() {
+                Handles.color = originalColor;
+            }
+        }
+
         private class MeshBuffer : IDisposable {
             public Material Material;
             public DynamicMesh Mesh;

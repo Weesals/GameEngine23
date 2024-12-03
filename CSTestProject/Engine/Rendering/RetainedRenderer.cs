@@ -301,6 +301,7 @@ namespace Weesals.Engine {
             instanceVisibility[instanceId] = GenerateCellMask(aabb.Min, aabb.Max);
             if (instanceListeners[instanceId] != 0) {
                 movedInstances.Add(instance);
+                //UpdateInstanceData(instance, sizeof(Matrix4x4), &mat, sizeof(Matrix4x4));
             }
         }
         unsafe public BoundingBox GetInstanceAABB(SceneInstance instance) {
@@ -752,15 +753,6 @@ namespace Weesals.Engine {
                         var activeBounds = en.ActiveBoundingBox;
                         Gizmos.DrawWireCube(activeBounds.Centre, activeBounds.Size, en.IsFullyInFrustum ? Color.Blue : Color.Red);
                     }
-                    /*var bounds = en.ActiveBoundingBox;
-                    var nearest = new Vector3(
-                        frustum.NearPlane.Normal.X < 0f ? bounds.Max.X : bounds.Min.X,
-                        frustum.NearPlane.Normal.Y < 0f ? bounds.Max.Y : bounds.Min.Y,
-                        frustum.NearPlane.Normal.Z < 0f ? bounds.Max.Z : bounds.Min.Z
-                    );
-                    var bbDp = Vector3.Dot(fwdNrm, nearest);
-                    if (bbDp > fwdPlaneCull) continue;*/
-
                     int indexBegin = queue.Count;
                     if (en.IsFullyInFrustum) {
                         var range = queue.AddCount(indexRange.Length);
@@ -780,35 +772,9 @@ namespace Weesals.Engine {
                         }
                         en.OverwriteBoundingBox(bounds);
                     }
-                    /*{
-                        var instanceMeta = BVH.GetInstanceMeta<InstanceCache>();
-                        batchIds.AddCount(queue.Count - indexBegin);
-                        for (int i = indexBegin; i < queue.Count; i++) {
-                            batchIds[i] = instanceMeta[queue[i]].BatchIndex;
-                        }
-                        if (bbDp > fwdPlaneLOD) {
-                            for (int i = indexBegin; i < queue.Count; i++) {
-                                var batchId = batchIds[i];
-                                var lodBatch = batches[batchId].LODBatch;
-                                if (lodBatch != -1) batchIds[i] = lodBatch;
-                            }
-                        } else {
-                            for (int i = indexBegin; i < queue.Count; i++) {
-                                var batchId = instanceMeta[queue[i]].BatchIndex;
-                                var lodBatch = batches[batchId].LODBatch;
-                                if (lodBatch >= 0) {
-                                    var instanceData = Scene.GetInstanceData(BVH.GetInstance(queue[i]));
-                                    var pos = *(Vector3*)&instanceData.Data[3];
-                                    if (Vector3.Dot(fwdNrm, pos) > fwdPlaneLOD) {
-                                        batchId = lodBatch;
-                                    }
-                                }
-                                batchIds[i] = batchId;
-                            }
-                        }
-                    }*/
                 }
             }
+            // Compute LODs
             using (var frustumMarker = ProfileMarker_Batches.Auto()) {
                 var instanceMeta = BVH.GetInstanceMeta<InstanceCache>();
                 Trace.Assert(batchIds.AddCount(queue.Count - instBegin).Start == instBegin);
@@ -872,9 +838,6 @@ namespace Weesals.Engine {
                 instanceSortKeys[i] = batchIds[i];
             }*/
             // Sort them into batches
-            using (var frustumSort = ProfileMarker_SortInstances.Auto()) {
-                MemoryExtensions.Sort(instanceSortKeys, indices.AsSpan());
-            }
             using (var frustumSort = ProfileMarker_SortInstances.Auto()) {
                 MemoryExtensions.Sort(instanceSortKeys, indices.AsSpan());
             }

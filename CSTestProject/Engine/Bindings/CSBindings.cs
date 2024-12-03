@@ -456,18 +456,25 @@ namespace Weesals.Engine {
                     Readback = readback;
                 }
                 public void OnCompleted(Action continuation) {
-                    onComplete.Add(Readback.mReadback, continuation);
+                    lock (onComplete) {
+                        onComplete.Add(Readback.mReadback, continuation);
+                    }
                 }
                 public static void InvokeCallbacks(CSGraphics graphics) {
                     using var done = new PooledList<nint>(4);
-                    foreach (var callback in onComplete) {
-                        var readback = new AsyncReadback(graphics.mGraphics, callback.Key);
-                        if (readback.GetIsDone()) { done.Add(callback.Key); break; }
+                    lock (onComplete) {
+                        foreach (var callback in onComplete) {
+                            var readback = new AsyncReadback(graphics.mGraphics, callback.Key);
+                            if (readback.GetIsDone()) { done.Add(callback.Key); break; }
+                        }
                     }
-                    foreach(var item in done) {
-                        var callback = onComplete[item];
-                        onComplete.Remove(item);
-                        callback();
+                    foreach (var item in done) {
+                        onComplete[item]();
+                    }
+                    lock (onComplete) {
+                        foreach (var item in done) {
+                            onComplete.Remove(item);
+                        }
                     }
                 }
                 private static Dictionary<nint, Action> onComplete = new();

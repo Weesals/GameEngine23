@@ -25,7 +25,7 @@ namespace Weesals.UI {
         public Color Color { get => Element.Color; set => Element.Color = value; }
         public CanvasBlending.BlendModes BlendMode { get => Element.BlendMode; set => Element.SetBlendMode(value); } 
 
-        public Image(CSTexture texture = default) {
+        public Image(CSBufferReference texture = default) {
             Element = new CanvasImage(texture, new RectF(0f, 0f, 1f, 1f));
         }
         public Image(Sprite? sprite) {
@@ -371,6 +371,74 @@ namespace Weesals.UI {
         }
         public override SizingResult GetDesiredSize(SizingParameters sizing) {
             return sizing.ClampSize(new Vector2(20f, 20f));
+        }
+    }
+    public class Slider : CanvasRenderable, IBeginDragHandler, IDragHandler, IEndDragHandler, IBindableValue {
+        private float value = 0f;
+        public float Value {
+            get => value;
+            set => SetValue(value);
+        }
+        public float MinimumValue = 0f;
+        public float MaximumValue = 0f;
+        public Action<float>? OnStateChanged;
+        private int composeHash = 0;
+        public Slider() {
+        }
+        protected virtual void SetValue(float _value) {
+            if (value == _value) return;
+            value = _value;
+            OnStateChanged?.Invoke(value);
+            MarkComposeDirty();
+        }
+        public void BindValue(PropertyPath path) {
+            Value = path.GetValueAs<float>();
+            OnStateChanged = (newValue) => path.SetValueAs<float>(newValue);
+        }
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            return sizing.ClampSize(new Vector2(100f, 20f));
+        }
+
+        private CanvasLayout GetSliderLayout() => GetComputedLayout().Inset(10f, 0f, 10f, 0f);
+        public override void Compose(ref CanvasCompositor.Context composer) {
+            var range = MaximumValue - MinimumValue;
+            var valueN = Value / range;
+            var layout = GetSliderLayout();
+            var newComposeHash = Value.GetHashCode();
+            var valueLayout = layout.MinMaxNormalized(valueN, 0.5f, valueN, 0.5f).Inset(-10f);
+            ref var bg = ref composer.CreateTransient(Canvas, static () => new CanvasImage(Resources.TryLoadSprite("TextBox")) { });
+            ref var bg2 = ref composer.CreateTransient(Canvas, static () => new CanvasImage(Resources.TryLoadSprite("ButtonBG")) { Color = Color.White.WithAlpha(64), });
+            ref var nub = ref composer.CreateTransient(Canvas, static () => new CanvasImage(Resources.TryLoadSprite("ButtonBG")) { Color = Color.White, });
+            ref var txt = ref composer.CreateTransient(Canvas, static () => new CanvasText() { Alignment = TextAlignment.Centre, FontSize = 12, Color = Color.White, });
+            if (composeHash != newComposeHash) {
+                composeHash = newComposeHash;
+                nub.MarkLayoutDirty();
+                txt.MarkLayoutDirty();
+                txt.Text = Value.ToString("0.##");
+            }
+            var layoutDirty = HasDirtyFlag(DirtyFlags.Layout);
+            if (layoutDirty || bg2.HasDirtyFlags) bg2.UpdateLayout(Canvas, layout.MinMaxNormalized(0f, 0.5f, 1f, 0.5f).Inset(-10f));
+            if (layoutDirty || bg.HasDirtyFlags) bg.UpdateLayout(Canvas, layout.MinMaxNormalized(0f, 0.35f, 1f, 0.65f).Inset(-2f, 0f));
+            if (layoutDirty || nub.HasDirtyFlags) nub.UpdateLayout(Canvas, valueLayout);
+            if (layoutDirty || txt.HasDirtyFlags) txt.UpdateLayout(Canvas, valueLayout);
+            bg2.Append(ref composer);
+            bg.Append(ref composer);
+            nub.Append(ref composer);
+            txt.Append(ref composer);
+            base.Compose(ref composer);
+        }
+
+        void IBeginDragHandler.OnBeginDrag(PointerEvent events) {
+        }
+        void IDragHandler.OnDrag(PointerEvent events) {
+            var range = MaximumValue - MinimumValue;
+            var layout = GetSliderLayout();
+            var delta = (events.CurrentPosition - events.PreviousPosition) / layout.GetWidth() * range;
+            var newValue = Math.Clamp(Value + delta.X, MinimumValue, MaximumValue);
+            if (range >= 100f) newValue = MathF.Round(newValue);
+            SetValue(newValue);
+        }
+        void IEndDragHandler.OnEndDrag(PointerEvent events) {
         }
     }
     public class FixedGridLayout : CanvasRenderable, ICanvasLayout {

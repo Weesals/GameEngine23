@@ -48,7 +48,7 @@ namespace Weesals.Landscape.Editor {
             using var vertices = new PooledList<Vector3>();
             using var uvs = new PooledList<Vector2>();
             using var indices = new PooledList<ushort>();
-            AppendRing(landscapeData, ref vertices.AsMutable(), ref uvs.AsMutable(), ref indices.AsMutable(), pos, radiusMin, angle);
+            AppendRing(landscapeData, ref vertices.AsMutable(), ref uvs.AsMutable(), ref indices.AsMutable(), pos, radiusMin, 0f);
             AppendRing(landscapeData, ref vertices.AsMutable(), ref uvs.AsMutable(), ref indices.AsMutable(), pos, radiusMax, angle, 16);
             brushMesh.SetVertexCount(vertices.Count);
             brushMesh.RequireVertexTexCoords(0);

@@ -524,6 +524,7 @@ namespace Weesals.Utility {
             Vector3 max = new Vector3(float.MinValue);
             var en = new FrustumEnumerator(this, frustum);
             while (en.MoveNext()) {
+                if (en.GetInstanceRange().Length == 0) continue;
                 var bounds = en.ActiveBoundingBox;
                 min = Vector3.Min(min, bounds.Min);
                 max = Vector3.Max(max, bounds.Max);

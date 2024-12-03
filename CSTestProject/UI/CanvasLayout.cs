@@ -130,12 +130,14 @@ namespace Weesals.UI {
                 + AxisY.toxyz() * (offset * AxisY.W),
             };
         }
-        public CanvasLayout Inset(float amount) {
+        public CanvasLayout Inset(float amount) => Inset(amount, amount, amount, amount);
+        public CanvasLayout Inset(float width, float height) => Inset(width, height, width, height);
+        public CanvasLayout Inset(float left, float top, float right, float bottom) {
             return new CanvasLayout {
-                AxisX = new Vector4(AxisX.toxyz(), AxisX.W - amount * 2),
-                AxisY = new Vector4(AxisY.toxyz(), AxisY.W - amount * 2),
+                AxisX = new Vector4(AxisX.toxyz(), AxisX.W - (left + right)),
+                AxisY = new Vector4(AxisY.toxyz(), AxisY.W - (top + bottom)),
                 AxisZ = AxisZ,
-                Position = TransformPosition2D(Vector2.One * amount),
+                Position = TransformPosition2D(new Vector2(left, top)),
             };
         }
         public static CanvasLayout MakeBox(Vector2 size) {

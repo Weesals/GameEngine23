@@ -171,8 +171,19 @@ float4 PSMain(PSInput input) : SV_Target {
         
         float3 viewPos = viewDir * depth;
         float3 shadowPos = ViewToShadow(viewPos);
-        //shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z);
+        shadow = ShadowMap.SampleCmpLevelZero(ShadowSampler, shadowPos.xy, shadowPos.z);
+        //return float4(shadowPos.xy, 0, 1) * 0.1;
         shadow = PCFSample2(ShadowMap, ShadowSampler, shadowPos, 512);
+        //shadow = lerp(shadow, frac(dot(frac(floor(shadowPos.xy * 256) / 2.0), 1)) * 2, 0.2);
+        shadow = all(shadowPos.xy > 0) && all(shadowPos.xy < 1) ? shadow : 1;
+        float3 albedoCol = frac(min(min(shadowPos.x, shadowPos.y), 1 - max(shadowPos.x, shadowPos.y)) * float3(4, 10, 20));
+        albedoCol = lerp(1, albedoCol, all(saturate(shadowPos) == shadowPos) ? 1 : 0.5);
+        albedoCol = lerp(1, albedoCol, 0.3);
+        if (all(saturate(shadowPos) == shadowPos))
+        {
+            albedoCol = frac(shadowPos * 16);
+        }
+        //Albedo *= albedoCol;
         float ssShadThick = depth * 0.01;     //1.08
         float3 ssShadPos = viewPos + _ViewSpaceLightDir0 * (depth * 0.02);
         float4 ssVPos = mul(Projection, float4(ssShadPos, 1));

@@ -317,67 +317,128 @@ namespace Weesals.Engine {
         }
     }
 
-    public class ShadowPass : ScenePass {
+    public class ShadowPass : ScenePass, ICustomOutputTextures {
         public Action OnPostRender;
         public Vector3 LightDirection = new Vector3(-4f, -5f, 7f);
 
+        public CSRenderTarget shadowBuffer;
+
         private ConvexHull activeArea = new();
         public Material ShadowReceiverMaterial;
+
+        public float ShadowPerspective = 0.35f;
 
         public ShadowPass(Scene scene) : base(scene, "Shadows") {
             Outputs = new[] { new PassOutput("ShadowMap").SetTargetDesc(new TextureDesc() { Size = 512, Format = BufferFormat.FORMAT_D16_UNORM, }) };
             OverrideMaterial.SetRenderPassOverride("ShadowCast");
             TagsToInclude.Add(RenderTag.ShadowCast);
             ShadowReceiverMaterial = new();
+
+            shadowBuffer = CSRenderTarget.Create("Shadows");
+            shadowBuffer.SetSize(512);
+            shadowBuffer.SetFormat(BufferFormat.FORMAT_D16_UNORM);
+        }
+        public bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context) {
+            context.OverwriteOutput(context.Outputs[0], shadowBuffer);
+            return true;
         }
         public bool UpdateShadowFrustum(Frustum frustum, BoundingBox relevantArea = default) {
             // Create shadow projection based on frustum near/far corners
-            Span<Vector3> corners = stackalloc Vector3[8];
-            frustum.GetCorners(corners);
-            var nearD = -frustum.NearPlane.D / frustum.NearPlane.Normal.Length();
-            var farD = frustum.FarPlane.D / frustum.FarPlane.Normal.Length();
-            const float ShadowFarClip = 500f;
-            if (farD > nearD + ShadowFarClip) {
-                float lerp = ShadowFarClip / (farD - nearD);
-                for (int i = 0; i < 4; i++) {
-                    corners[i + 4] = Vector3.Lerp(corners[i], corners[i + 4], lerp);
-                }
+
+            // Get bounding hull corners
+            if (relevantArea.Min.Y < relevantArea.Max.Y) {
+                activeArea.FromFrustum(frustum);
+                activeArea.Slice(relevantArea);
+                activeArea.DrawGizmos();
+            }
+            Span<Vector3> activeCorners = stackalloc Vector3[relevantArea.Min.Y < relevantArea.Max.Y ? activeArea.CornerCount : 8];
+            if (relevantArea.Min.Y <= relevantArea.Max.Y) {
+                activeArea.GetCorners(activeCorners);
+            } else {
+                frustum.GetCorners(activeCorners);
             }
 
-            var lightViewMatrix = Matrix4x4.CreateLookAt(-LightDirection, Vector3.Zero, Vector3.UnitY);
+            // Compute a light view matrix
+            var cameraVP = frustum.CalculateViewProj();
+            Matrix4x4.Invert(cameraVP, out var cameraVPInv);
+            var cameraPos4 = Vector4.Transform(new Vector4(0f, 0f, -1f, 0f), cameraVPInv);
+            var cameraPos = cameraPos4.toxyz() / cameraPos4.W;
+            var cameraFwd = Vector3.Normalize(frustum.Forward);
+            var lightDir = Vector3.Normalize(LightDirection);
+
+            var lightViewMatrix = Matrix4x4.CreateLookAt(cameraPos, cameraPos + lightDir, cameraFwd);
+            var lightProjMatrix = Matrix4x4.Identity;
+
+            // Disable shadows
+            if (activeCorners.Length <= 0) {
+                lightViewMatrix.M44 = 0f;
+                return SetViewProjection(lightViewMatrix, Matrix4x4.Identity);
+            }
+
+            if (!Input.GetKeyDown(KeyCode.P)) {
+                float PerspScale = MathF.Pow(ShadowPerspective, 5f) * (1f - MathF.Abs(Vector3.Dot(cameraFwd, lightDir)));
+                float OrthoBias = 1f - PerspScale;
+
+                // Find the hull bounds in projection space
+                Vector3 projMin = new Vector3(float.MaxValue), projMax = new Vector3(float.MinValue);
+                foreach (ref var corner in activeCorners) {
+                    var lightCorner = Vector3.Transform(corner, lightViewMatrix);
+                    var div = lightCorner.Y * PerspScale - OrthoBias;
+                    var projCorner = new Vector3(lightCorner.X / div, lightCorner.Y, lightCorner.Z / div);
+                    projMin = Vector3.Min(projMin, projCorner);
+                    projMax = Vector3.Max(projMax, projCorner);
+                }
+                projMin.Z += projMin.Z - projMax.Z; // 0-1 range remap
+                projMin.Z -= 50f * OrthoBias;       // Casters bias
+
+                // Construct optimized projection matrix
+                var po = (projMax + projMin) / 2f;
+                var ps = (projMax - projMin) / 2f;
+                var n = projMax.Y;
+                var f = projMin.Y;
+                var zScale = ((f + n) * PerspScale - 2 * OrthoBias) / (f - n);
+                lightProjMatrix = new Matrix4x4(
+                    -1f / ps.X, 0f, 0f, 0f,
+
+                    po.X / ps.X * PerspScale,
+                    zScale,
+                    po.Z / ps.Z * PerspScale,
+                    -PerspScale,
+
+                    0f, 0f, -1f / ps.Z, 0f,
+
+                    -po.X / ps.X * OrthoBias,
+                    f * (PerspScale - zScale) - OrthoBias,
+                    -po.Z / ps.Z * OrthoBias,
+                    OrthoBias
+                );
+                //var nearCS = Vector4.Transform(new Vector4(0f, projMax.Y, 0f, 1f), lightProj2);
+                //var farCS = Vector4.Transform(new Vector4(0f, projMin.Y, 0f, 1f), lightProj2);
+                //nearCS /= nearCS.W;
+                //farCS /= farCS.W;
+
+                return SetViewProjection(
+                    lightViewMatrix,
+                    lightProjMatrix
+                );
+            }
+
+            // Find hull bounds in view space
             var lightMin = new Vector3(float.MaxValue);
             var lightMax = new Vector3(float.MinValue);
-
-            if (relevantArea.Min.Y < relevantArea.Max.Y) {
-                activeArea.FromBox(corners);
-                activeArea.Slice(relevantArea);
-                //activeArea.DrawGizmos();
-
-                Span<Vector3> activeCorners = stackalloc Vector3[activeArea.CornerCount];
-                activeArea.GetCorners(activeCorners);
-                foreach (ref var corner in activeCorners) {
-                    corner = Vector3.Transform(corner, lightViewMatrix);
-                    lightMin = Vector3.Min(lightMin, corner);
-                    lightMax = Vector3.Max(lightMax, corner);
-                }
-            } else {
-                foreach (ref var corner in corners) {
-                    corner = Vector3.Transform(corner, lightViewMatrix);
-                    lightMin = Vector3.Min(lightMin, corner);
-                    lightMax = Vector3.Max(lightMax, corner);
-                }
+            foreach (ref var corner in activeCorners) {
+                corner = Vector3.Transform(corner, lightViewMatrix);
+                lightMin = Vector3.Min(lightMin, corner);
+                lightMax = Vector3.Max(lightMax, corner);
             }
 
             // Max is actually min
             lightMax.Z += 20.0f;
 
-            var lightSize = lightMax - lightMin;
-            bool noShadows = lightSize.X < 0f;
-            lightSize = Vector3.Max(lightSize, Vector3.One * 10.0f);
-
+            var lightSize = Vector3.Max(lightMax - lightMin, Vector3.One * 10.0f);
             lightViewMatrix.Translation = lightViewMatrix.Translation - (lightMin + lightMax) / 2.0f;
-            var lightProjMatrix = Matrix4x4.CreateOrthographic(-lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
-            if (noShadows) lightViewMatrix.M44 = 0f;
+            lightProjMatrix = Matrix4x4.CreateOrthographic(-lightSize.X, lightSize.Y, -lightSize.Z / 2.0f, lightSize.Z / 2.0f);
+
             return SetViewProjection(
                 lightViewMatrix,
                 lightProjMatrix
@@ -395,7 +456,9 @@ namespace Weesals.Engine {
             bool noShadows = !this.Enabled;
             var shadowView = this.View;
             shadowView.M44 = 1.0f;
+            shadowView.M43 += 0.1f;     // Shadow bias
             var shadowPassViewProj = noShadows ? Matrix4x4.Identity : shadowView * this.Projection;
+            //var shadowPassViewProj = noShadows ? Matrix4x4.Identity : OtherView * OtherProjection;
             Matrix4x4.Invert(shadowView, out var shadowPassInvView);
             Matrix4x4.Invert(view, out var basePassInvView);
             basePassMat.SetValue("ShadowViewProjection", shadowPassViewProj);

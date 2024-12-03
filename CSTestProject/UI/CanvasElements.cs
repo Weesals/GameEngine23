@@ -114,7 +114,10 @@ namespace Weesals.UI {
         public bool EnableDraw { get => (drawFlags & DrawFlags.Never) == 0; set { if (value) drawFlags &= ~DrawFlags.Never; else drawFlags |= DrawFlags.Never; } }
         public CanvasBlending.BlendModes BlendMode { get => blending.BlendMode; }
         public CanvasImage() : this(default, new RectF(0f, 0f, 1f, 1f)) { }
-        public CanvasImage(CSTexture texture, RectF uvrect) {
+        public CanvasImage(Sprite? sprite) : this(default, new RectF(0f, 0f, 1f, 1f)) {
+            if (sprite != null) SetSprite(sprite);
+        }
+        public CanvasImage(CSBufferReference texture, RectF uvrect) {
             Texture = texture;
             UVRect = uvrect;
             blending = CanvasBlending.Default;
@@ -337,6 +340,7 @@ namespace Weesals.UI {
         public Font Font { get => font; set { if (font != value) SetFont(value); } }
         public TextAlignment Alignment { get => alignment; set { if (alignment == value) return; alignment = value; dirty |= DirtyFlags.Composite; } }
         public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty |= DirtyFlags.Composite; if (element.Material != null) UpdateMaterialProperties(); } }
+        public bool HasDirtyFlags => dirty != DirtyFlags.None;
 
         public CanvasText() : this("") { }
         public CanvasText(string txt) {

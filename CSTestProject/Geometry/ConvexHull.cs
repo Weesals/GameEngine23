@@ -104,11 +104,12 @@ namespace Weesals.Geometry {
                     ref var edge = ref edges[it.Index];
                     var dp1 = dpCache[edge.Corner1];
                     var dp2 = dpCache[edge.Corner2];
-                    (keep1 ? ref edge.Corner2 : ref edge.Corner1) = InsertCorner(Vector3.Lerp(
+                    var newCorner = InsertCorner(Vector3.Lerp(
                         corners[edge.Corner1],
                         corners[edge.Corner2],
                         (0 - dp1) / (dp2 - dp1))
                     );
+                    (keep1 ? ref edge.Corner2 : ref edge.Corner1) = newCorner;
                 } else if (!keep1) {
                     // Edge is entirely on wrong side, delete it
                     RemoveEdge(it.Index);
@@ -143,6 +144,19 @@ namespace Weesals.Geometry {
                 for (var bits = pointMasks[i];  bits != 0; bits &= bits - 1) {
                     RemoveCorner(i * 64 + BitOperations.TrailingZeroCount(bits));
                 }
+            }
+            foreach (var edge in edges) {
+                Debug.Assert(corners.ContainsIndex(edge.Corner1));
+                Debug.Assert(corners.ContainsIndex(edge.Corner2));
+                var poly0 = edge.PolygonL;
+                int edgeMask = 0;
+                foreach (var edge2 in edges) {
+                    if (edge2.PolygonL == poly0 || edge2.PolygonR == poly0) {
+                        edgeMask ^= edge2.Corner1;
+                        edgeMask ^= edge2.Corner2;
+                    }
+                }
+                Debug.Assert(edgeMask == 0);
             }
             return true;
         }

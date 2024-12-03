@@ -8,6 +8,7 @@
 #include <span>
 #include <vector>
 #include <atomic>
+#include <mutex>
 
 #include "MathTypes.h"
 
@@ -122,49 +123,15 @@ static size_t VariadicHash(First first, Args... args)
     return AppendHash(first, VariadicHash(args...));
 }
 
-
-// Stores a cache of items allowing efficient reuse where possible
-// but avoiding overwriting until they have been consumed by the GPU
-template<class T, int FrameDelay = 0>
-class PerFrameItemStoreNoHash {
-    static const int BlockShift = 4;
-    static const int BlockSize = 1 << BlockShift;
-    static const int BlockMask = BlockSize - 1;
+class PerFrameItemStoreBase {
 protected:
-    struct Item {
-        size_t mLayoutHash;
-        T mData;
-        int mLockId = 0;
-        const T& operator * () const { return mData; }
-        const T* operator -> () const { return &mData; }
-        T& operator * () { return mData; }
-        T* operator -> () { return &mData; }
-    };
-    struct Block {
-        std::unique_ptr<std::array<Item, BlockSize> > mItems;
-        int mFirstEmpty;
-        Block() : mItems(std::make_unique< std::array<Item, BlockSize> >()), mFirstEmpty(0) { }
-        Item& operator [](int index) const { return (*mItems)[index]; }
-    };
     struct LockBundle {
         LockMask mHandles;
         int mItemCount;
     };
-
-private:
-    // Item storage
-    std::vector<Block> mBlocks;
-    // Number of items allocated
-    int mItemCount = 0;
     // Ranges within mItems which are locked
     std::vector<LockBundle> mLocks;
 
-    int FindLock(LockMask mask) {
-        for (int i = 1; i < (int)mLocks.size(); ++i) {
-            if (mLocks[i].mHandles == mask) return i;
-        }
-        return -1;
-    }
     int RequireLock(LockMask mask) {
         while (true) {
             int index = -1;
@@ -185,14 +152,81 @@ private:
         auto& oldLock = mLocks[oldLockI];
         if (std::atomic_ref<int>(oldLock.mItemCount)-- == 0) oldLock.mHandles = 0;
     }
-    bool TrySetLock(Item& item, int oldLockI, int lockI) {
-        if (!std::atomic_ref<int>(item.mLockId).compare_exchange_weak(oldLockI, lockI)) return false;
-        ChangeLockRef(oldLockI, lockI);
+
+    bool TrySetLock(int& lockId, int oldLockI, int newLockI) {
+        if (!std::atomic_ref<int>(lockId).compare_exchange_weak(oldLockI, newLockI)) return false;
+        ChangeLockRef(oldLockI, newLockI);
         return true;
     }
+    void SetLock(int& lockId, int newLockI) {
+        std::atomic_ref<int> newLockItemCountRef(mLocks[newLockI].mItemCount);
+        newLockItemCountRef++;
+        assert(newLockI == 0 || mLocks[newLockI].mHandles != 0);
+        auto oldLockI = std::atomic_ref<int>(lockId).exchange(newLockI);
+        auto& oldLock = mLocks[oldLockI];
+        // NOTE: This is unsafe - mItemCount could be 0 but another thread may be adding an item to it
+        if (std::atomic_ref<int>(oldLock.mItemCount)-- == 0) oldLock.mHandles = 0;
+    }
+
+    PerFrameItemStoreBase() {
+        mLocks.reserve(8);
+        mLocks.push_back({ .mItemCount = -1, });
+    }
+
+public:
+    bool GetHasAny(LockMask mask, LockMask value) {
+        for (int i = 0; i < (int)mLocks.size(); ++i) {
+            if ((mLocks[i].mHandles & mask) == value && mLocks[i].mItemCount > 0) return true;
+        }
+        return false;
+    }
+    uint64_t Unlock(LockMask mask, bool& anyNewEmpty) {
+        int changeCount = 0;
+        uint64_t lockMask = 0ull;
+        for (int i = 0; i < (int)mLocks.size(); ++i) {
+            if ((mLocks[i].mHandles & mask) != 0) {
+                lockMask |= 1ull << i;
+                mLocks[i].mHandles &= ~mask;
+                anyNewEmpty |= mLocks[i].mHandles == 0;
+                ++changeCount;
+            }
+        }
+        return lockMask;
+    }
+};
+
+// Stores a cache of items allowing efficient reuse where possible
+// but avoiding overwriting until they have been consumed by the GPU
+template<class T>
+class PerFrameItemStoreNoHash : public PerFrameItemStoreBase {
+    static const int BlockShift = 4;
+    static const int BlockSize = 1 << BlockShift;
+    static const int BlockMask = BlockSize - 1;
+protected:
+    struct Item {
+        size_t mLayoutHash;
+        T mData;
+        int mLockId = 0;
+        const T& operator * () const { return mData; }
+        const T* operator -> () const { return &mData; }
+        T& operator * () { return mData; }
+        T* operator -> () { return &mData; }
+    };
+    struct Block {
+        std::unique_ptr<std::array<Item, BlockSize> > mItems;
+        int mFirstEmpty;
+        Block() : mItems(std::make_unique< std::array<Item, BlockSize> >()), mFirstEmpty(0) { }
+        Item& operator [](int index) const { return (*mItems)[index]; }
+    };
+
+private:
+    // Item storage
+    std::vector<Block> mBlocks;
+    // Number of items allocated
+    int mItemCount = 0;
+
     void SetLock(Item& item, int lockI) {
-        auto oldLockI = std::atomic_ref<int>(item.mLockId).exchange(lockI);
-        ChangeLockRef(oldLockI, lockI);
+        PerFrameItemStoreBase::SetLock(item.mLockId, lockI);
     }
 
     template<class Allocate>
@@ -207,12 +241,13 @@ private:
                     auto& item = block[i];
                     auto oldLock = item.mLockId;
                     if (oldLock != 0 && mLocks[oldLock].mHandles == 0)
-                        TrySetLock(item, oldLock, 0);
+                        TrySetLock(item.mLockId, oldLock, 0);
                     if (item.mLockId == 0) firstEmpty = i;
                 }
                 block.mFirstEmpty = firstEmpty;
             }
-            for (int index = firstEmpty; index < BlockSize; ++index) {
+            int endIndex = std::min(BlockSize, mItemCount - blockI * BlockSize);
+            for (int index = firstEmpty; index < endIndex; ++index) {
                 auto& item = block[index];
                 if (item.mLockId != 0 || item.mLayoutHash != layoutHash) continue;
                 return item;
@@ -231,45 +266,39 @@ private:
 public:
     PerFrameItemStoreNoHash() {
         mBlocks.reserve(32);
-        mLocks.reserve(8);
-        mLocks.push_back({ .mItemCount = -1, });
     }
     ~PerFrameItemStoreNoHash() { }
 
-    Item& InsertItem(const T& data, size_t layoutHash, LockMask lockBits) {
+    template<class Allocate>
+    Item& RequireLockedItem(size_t layoutHash, LockMask lockBits, Allocate&& alloc) {
         auto lockId = RequireLock(lockBits);
         while (true) {
-            auto& item = AllocateItem(layoutHash, [&](Item& item) {});
-            if (!TrySetLock(item, 0, lockId)) continue;
-            item.mData = data;
+            auto& item = AllocateItem(layoutHash, alloc);
+            // The lock failed to set, probably taken by another thread
+            if (!TrySetLock(item.mLockId, 0, lockId)) continue;
+            while (mLocks[lockId].mHandles != lockBits) {
+                // The lock is incorrect - probably changed while we were assigning it
+                lockId = RequireLock(lockBits);
+                SetLock(item, lockId);
+            }
             return item;
         }
     }
+    Item& InsertItem(const T& data, size_t layoutHash, LockMask lockBits) {
+        Item& item = RequireLockedItem(layoutHash, lockBits, [&](Item& item) {});
+        item.mData = data;
+        return item;
+    }
     template<class Allocate, class DataFill>
     Item& RequireItem(uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
-        Item& item = AllocateItem(layoutHash, alloc);
-        // Setup item state
-        SetLock(item, RequireLock(lockBits));
+        Item& item = RequireLockedItem(layoutHash, lockBits, alloc);
         dataFill(item);
         return item;
     }
-    bool GetHasAny(LockMask mask, LockMask value) {
-        for (int i = 0; i < (int)mLocks.size(); ++i) {
-            if ((mLocks[i].mHandles & mask) == value && mLocks[i].mItemCount > 0) return true;
-        }
-        return false;
-    }
     uint64_t Unlock(LockMask mask) {
-        int changeCount = 0;
-        uint64_t lockMask = 0ull;
-        for (int i = 0; i < (int)mLocks.size(); ++i) {
-            if ((mLocks[i].mHandles & mask) != 0) {
-                lockMask |= 1ull << i;
-                mLocks[i].mHandles &= ~mask;
-                ++changeCount;
-            }
-        }
-        if (changeCount > 0) {
+        bool anyNewEmpty;
+        uint64_t lockMask = PerFrameItemStoreBase::Unlock(mask, anyNewEmpty);
+        if (anyNewEmpty) {
             for (auto& block : mBlocks) block.mFirstEmpty = -1;
         }
         return lockMask;
@@ -300,7 +329,7 @@ public:
         }
     }
     struct MaskedCollection {
-        PerFrameItemStoreNoHash<T, FrameDelay>& mItemStore;
+        PerFrameItemStoreNoHash<T>& mItemStore;
         uint64_t mLockMask;
         struct Iterator {
             MaskedCollection mCollection;
@@ -325,7 +354,7 @@ public:
             T* operator -> () const { return &*this; }
             T& operator *() const { return GetItem().mData; }
         };
-        MaskedCollection(PerFrameItemStoreNoHash<T, FrameDelay>& itemStore, uint64_t mask)
+        MaskedCollection(PerFrameItemStoreNoHash<T>& itemStore, uint64_t mask)
             : mItemStore(itemStore), mLockMask(mask)
         { }
         Iterator begin() const {
@@ -349,10 +378,23 @@ public:
     }
 };
 
+#if 0
 // Stores a cache of items allowing efficient reuse where possible
 // but avoiding overwriting until they have been consumed by the GPU
 template<class T>
-class PerFrameItemStore {
+struct ItemWithDataHash { T mData; size_t mDataHash; };
+template<class T>
+class PerFrameItemStore : PerFrameItemStoreNoHash< ItemWithDataHash<T> > {
+
+    // All items, organised by the hash of their data
+    std::unordered_map<size_t, Item*> mItemsByHash;
+
+};
+#else
+// Stores a cache of items allowing efficient reuse where possible
+// but avoiding overwriting until they have been consumed by the GPU
+template<class T>
+class PerFrameItemStore : public PerFrameItemStoreBase {
     static const int BlockShift = 4;
     static const int BlockSize = 1 << BlockShift;
     static const int BlockMask = BlockSize - 1;
@@ -369,40 +411,18 @@ protected:
         Block() : mItems(std::make_unique< std::array<Item, BlockSize> >()), mFirstEmpty(0) { }
         Item& operator [](int index) { return (*mItems)[index]; }
     };
-    struct LockBundle {
-        LockMask mHandles;
-        int mItemCount;
-    };
 
 private:
     // Item storage
     std::vector<Block> mBlocks;
     // Number of items allocated
     int mItemCount = 0;
+    std::mutex mItemsHashMutex;
     // All items, organised by the hash of their data
     std::unordered_map<size_t, Item*> mItemsByHash;
-    // Ranges within mItems which are locked
-    std::vector<LockBundle> mLocks;
 
-    int FindLock(LockMask mask) {
-        for (int i = 1; i < (int)mLocks.size(); ++i) {
-            if (mLocks[i].mHandles == mask) return i;
-        }
-        return -1;
-    }
-    int RequireLock(LockMask mask) {
-        int index = FindLock(mask);
-        if (index == -1) {
-            for (index = 1; index < (int)mLocks.size(); ++index) if (mLocks[index].mItemCount == 0) break;
-            if (index >= (int)mLocks.size()) mLocks.push_back({ .mItemCount = 0, });
-            mLocks[index].mHandles = mask;
-        }
-        return index;
-    }
     void SetLock(Item& item, int lockI) {
-        mLocks[item.mLockId].mItemCount--;
-        item.mLockId = lockI;
-        mLocks[item.mLockId].mItemCount++;
+        PerFrameItemStoreBase::SetLock(item.mLockId, lockI);
     }
 
     template<class Allocate>
@@ -410,19 +430,23 @@ private:
         // Try to reuse an existing one (based on age) of the same size
         for (int blockI = 0; blockI < (int)mBlocks.size(); blockI++) {
             Block& block = mBlocks[blockI];
-            if (block.mFirstEmpty == -1) {
-                block.mFirstEmpty = BlockSize;
+            int firstEmpty = block.mFirstEmpty;
+            if (firstEmpty == -1) {
+                firstEmpty = BlockSize;
                 for (int i = BlockSize - 1; i >= 0; --i) {
                     auto& item = block[i];
-                    if (item.mLockId != 0 && mLocks[item.mLockId].mHandles == 0)
-                        SetLock(item, 0);
-                    if (item.mLockId == 0) block.mFirstEmpty = i;
+                    auto oldLock = item.mLockId;
+                    if (oldLock != 0 && mLocks[oldLock].mHandles == 0)
+                        TrySetLock(item.mLockId, oldLock, 0);
+                    if (item.mLockId == 0) firstEmpty = i;
                 }
+                block.mFirstEmpty = firstEmpty;
             }
             int endIndex = std::min(BlockSize, mItemCount - blockI * BlockSize);
-            for (int index = block.mFirstEmpty; index < endIndex; ++index) {
+            for (int index = firstEmpty; index < endIndex; ++index) {
                 auto& item = block[index];
                 if (item.mLockId != 0 || item.mLayoutHash != layoutHash) continue;
+                std::scoped_lock lock(mItemsHashMutex);
                 mItemsByHash.erase(item.mDataHash);
                 return item;
             }
@@ -441,6 +465,9 @@ public:
     PerFrameItemStore()
         //: mLockFrameId(0), mCurrentFrameId(0)
     {
+        mBlocks.reserve(128);
+        mLocks.reserve(16);
+        mItemsByHash.reserve(256);
         mLocks.push_back({ .mItemCount = -1, });
     }
     ~PerFrameItemStore() { }
@@ -449,18 +476,21 @@ public:
     template<class Allocate, class DataFill, class Found>
     Item& RequireItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill, Found&& found) {
         assert(lockBits != 0);
-        // Find if a buffer matching this hash already exists
-        auto itemKV = mItemsByHash.find(dataHash);
-        // Matching buffer was found, move it to end of queue
-        if (itemKV != mItemsByHash.end()) {
+        while (true) {
+            // Find if a buffer matching this hash already exists
+            auto itemKV = mItemsByHash.find(dataHash);
+            // Matching buffer was found, move it to end of queue
+            if (itemKV == mItemsByHash.end()) break;
             // If this is the first time we're using it this frame
             // update its last used frame
             Item& item = *itemKV->second;
+            assert(item.mDataHash == dataHash);
             assert(item.mLayoutHash == layoutHash);
-            if ((mLocks[item.mLockId].mHandles & lockBits) != lockBits) {
-                auto newMask = mLocks[item.mLockId].mHandles | lockBits;
+            auto oldLockI = item.mLockId;
+            if ((mLocks[oldLockI].mHandles & lockBits) != lockBits) {
+                auto newMask = mLocks[oldLockI].mHandles | lockBits;
                 int lockId = RequireLock(newMask);
-                SetLock(item, lockId);
+                if (!TrySetLock(item.mLockId, oldLockI, lockId)) continue;
             }
             found(item);
             return item;
@@ -470,30 +500,29 @@ public:
     }
     template<class Allocate, class DataFill>
     Item& AllocateItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
-        Item& item = AllocateItem(layoutHash, alloc);
-        dataFill(item);
-        // Setup item state
-        SetLock(item, RequireLock(lockBits));
-        item.mDataHash = dataHash;
-        mItemsByHash.insert({ dataHash, &item, });
-        return item;
+        while (true) {
+            Item& item = AllocateItem(layoutHash, alloc);
+            // Setup item state
+            if (!TrySetLock(item.mLockId, 0, RequireLock(lockBits))) continue;
+            dataFill(item);
+            item.mDataHash = dataHash;
+            std::scoped_lock lock(mItemsHashMutex);
+            mItemsByHash.insert({ dataHash, &item, });
+            return item;
+        }
     }
 
     void Substitute(LockMask mask, LockMask newMask) {
         for (int i = 0; i < (int)mLocks.size(); ++i) {
             if ((mLocks[i].mHandles & mask) == 0) continue;
-            mLocks[i].mHandles &= ~mask;
-            mLocks[i].mHandles |= newMask;
+            std::atomic<size_t> handles(mLocks[i].mHandles);
+            handles |= newMask;
+            handles &= (~mask | newMask);   // In case any bits are common in both mask and newMask
         }
     }
     void Unlock(LockMask mask) {
-        bool anyNewEmpty = false;
-        for (int i = 0; i < (int)mLocks.size(); ++i) {
-            if ((mLocks[i].mHandles & mask) == 0) continue;
-            mLocks[i].mHandles &= ~mask;
-            if (mLocks[i].mHandles != 0) continue;
-            anyNewEmpty |= true;
-        }
+        bool anyNewEmpty;
+        uint64_t lockMask = PerFrameItemStoreBase::Unlock(mask, anyNewEmpty);
         if (anyNewEmpty) {
             for (auto& block : mBlocks) block.mFirstEmpty = -1;
         }
@@ -505,6 +534,7 @@ public:
                 (*block.mItems)[i] = { };
             }
         }
+        std::scoped_lock lock(mItemsHashMutex);
         mItemsByHash.clear();
         for (int i = 0; i < (int)mLocks.size(); ++i) mLocks[i] = { };
         mLocks[0].mItemCount = -1;
@@ -531,9 +561,10 @@ public:
         }
     }
     void DetachAll() {
-        ForAll([&](auto& item) {
+        /*ForAll([&](auto& item) {
             item.mDataHash = 0;
-        });
+        });*/
+        std::scoped_lock lock(mItemsHashMutex);
         mItemsByHash.clear();
     }
     void RemoveLock(int index, LockMask mask) {
@@ -551,3 +582,5 @@ public:
         }
     }
 };
+
+#endif

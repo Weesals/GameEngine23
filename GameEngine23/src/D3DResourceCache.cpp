@@ -222,12 +222,18 @@ void D3DResourceCache::DestroyD3DRT(const RenderTarget2D* rt, LockMask lockBits)
     PurgeSRVs(lockBits);
 }
 void D3DResourceCache::PurgeSRVs(LockMask lockBits) {
-    mResourceViewCache.DetachAll();
-    mTargetViewCache.DetachAll();
-    mResourceViewCache.Substitute(0x80000000, lockBits);
-    mTargetViewCache.Substitute(0x80000000, lockBits);
-    mResourceViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
-    mTargetViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
+    {
+        std::scoped_lock lock(mResourceMutex);
+        mResourceViewCache.DetachAll();
+        mTargetViewCache.DetachAll();
+    }
+    std::scoped_lock lock(rtMapping.mMutex);
+    LockMask inflightFrames = lockBits;
+    inflightFrames |= CheckInflightFrames();
+    mResourceViewCache.Substitute(0x80000000, inflightFrames);
+    mTargetViewCache.Substitute(0x80000000, inflightFrames);
+    //mResourceViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
+    //mTargetViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
     // Must clear SRVs because all RTVs are detached and have persistent lock cleared
     // (will be reused once other locks clear)
     for (auto& buffer : depthBufferPool) buffer.second->mSRVOffset = -1;
@@ -490,6 +496,7 @@ D3D12_RESOURCE_DESC D3DResourceCache::GetTextureDesc(const Texture& tex) {
 int D3DResourceCache::GetTextureSRV(ID3D12Resource* buffer,
     DXGI_FORMAT fmt, bool is3D, int arrayCount,
     LockMask lockBits, int mipB, int mipC) {
+    assert(buffer != nullptr);
     size_t hash = (size_t)buffer + mipB * 12341237 + mipC * 123412343;
     const auto& result = mResourceViewCache.RequireItem(hash, 1, lockBits,
         [&](auto& item) {
@@ -641,19 +648,26 @@ void D3DResourceCache::UpdateTextureData(D3DTexture* d3dTex, const Texture& tex,
 
     // Get d3d cache instance
     if (d3dTex->mBuffer == nullptr) {
+        static std::mutex texMutex;
+        std::scoped_lock lock(texMutex);
+        if (d3dTex->mBuffer != nullptr) return;
+        assert(d3dTex->mSRVOffset == -1);
         auto textureDesc = GetTextureDesc(tex);
         if (tex.GetAllowUnorderedAccess())
             textureDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        ComPtr<ID3D12Resource> buffer;
         ThrowIfFailed(device->CreateCommittedResource(
             &D3D::DefaultHeap,
             D3D12_HEAP_FLAG_NONE,
             &textureDesc,
             D3D12_RESOURCE_STATE_COPY_DEST,
             nullptr,
-            IID_PPV_ARGS(&d3dTex->mBuffer)
+            IID_PPV_ARGS(&buffer)
         ));
-        d3dTex->mBuffer->SetName(tex.GetName().c_str());
+        buffer->SetName(tex.GetName().c_str());
         d3dTex->mFormat = textureDesc.Format;
+        assert(d3dTex->mBuffer == nullptr);
+        d3dTex->mBuffer = buffer;
         assert(d3dTex->mSRVOffset == -1);
     } else {
         // Put the texture in write mode
@@ -906,19 +920,21 @@ D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     mCommandAllocators.push_back(allocator);
     return mCommandAllocators.back().get();
 }
-void D3DResourceCache::CheckInflightFrames() {
-    bool changes = false;
+LockMask D3DResourceCache::CheckInflightFrames() {
+    LockMask inflightFrames = 0;
     for (int i = 0; i < (int)mCommandAllocators.size(); ++i) {
         auto& cmdAllocator = *mCommandAllocators[i];
         auto lockFrame = cmdAllocator.GetLockFrame();
         auto consumeFrame = cmdAllocator.ConsumeFrame(lockFrame);
         if (lockFrame == consumeFrame) continue;
         cmdAllocator.mCmdAllocator->Reset();
-        uint64_t frameHandles = 1ull << cmdAllocator.mId;
-        UnlockFrame(frameHandles);
-        changes = true;
+        inflightFrames |= 1ull << cmdAllocator.mId;
     }
-    if (changes) mDelayedRelease.PurgeUnlocked();
+    if (inflightFrames != 0) {
+        UnlockFrame(inflightFrames);
+        mDelayedRelease.PurgeUnlocked();
+    }
+    return inflightFrames;
 }
 void D3DResourceCache::UnlockFrame(size_t frameHandles) {
     mConstantBufferCache.Unlock(frameHandles);
@@ -1261,8 +1277,9 @@ D3DResourceCache::RenderTargetView& D3DResourceCache::RequireTextureRTV(
             }
             item.mData.mResource = buffer;
         }, [&](auto& item) {
+            assert(item.mDataHash == dataHash);
             assert(item.mData.mResource == buffer);
-        });
+            });
     return item.mData;
 }
 int D3DResourceCache::RequireTextureSRV(D3DResourceCache::D3DTexture& texture, LockMask lockBits) {

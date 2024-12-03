@@ -19,6 +19,7 @@ using Weesals.Engine.Particles;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 using Game5.Rendering;
+using System.ComponentModel.DataAnnotations;
 
 /*
  * TODO:
@@ -83,6 +84,10 @@ namespace Game5.Game
         [EditorField] public int LoadedModelCount => Resources.LoadedModelCount;
         [EditorField] public int LoadedShaderCount => Resources.LoadedShaderCount;
         [EditorField] public int LoadedTextureCount => Resources.LoadedTextureCount;
+        [EditorField, Range(0f, 1f)] public float ShadowPerspective {
+            get => GameRoot.ShadowPass.ShadowPerspective;
+            set => GameRoot.ShadowPass.ShadowPerspective = value;
+        }
 
         float time = 0;
 
@@ -189,6 +194,9 @@ namespace Game5.Game
                 Position = new Vector3(-0f, 25f, -0f),
                 Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
                     * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),
+                /*Position = new Vector3(-0f, 10f, 10f),
+                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.45f)
+                    * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.15f),*/
                 NearPlane = 5.0f,
                 FarPlane = 10000.0f,
             };
@@ -202,6 +210,11 @@ namespace Game5.Game
             loadHandle.Join(simHandle).Complete();
 
             visualsJob.Complete();
+
+            var img = new Image(new CSBufferReference(GameRoot.ShadowPass.shadowBuffer)) {
+                Transform = CanvasTransform.MakeAnchored(new Vector2(256, 256), new Vector2(0f, 0f)),
+            };
+            root.Canvas.AppendChild(img);
 
             GameRoot.RegisterEditable(this, true);
         }
@@ -266,7 +279,7 @@ namespace Game5.Game
         }
 
         public void SetAutoQuality(CSGraphics graphics) {
-            if (!graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase)) {
+            if (false && !graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase)) {
                 EnableFog = true;
                 EnableAO = true;
                 EnableFoliage = true;

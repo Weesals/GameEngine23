@@ -117,7 +117,7 @@ namespace Weesals.Landscape {
             public Int2 WorldToLandscape(Vector2 worldPos, out Vector2 outLerp) {
                 worldPos -= Location.toxz();
                 worldPos *= 1024f / Scale1024;
-                var pnt = (Int2)(worldPos);
+                var pnt = Int2.FloorToInt(worldPos);
                 outLerp = worldPos - (Vector2)pnt;
                 return pnt;
             }
@@ -475,7 +475,7 @@ namespace Weesals.Landscape {
         public static float GetHeightAtF<T>(this T heightmap, Vector2 pos) where T : IHeightmapReader{
             Vector2 l;
             var p00 = heightmap.Sizing.WorldToLandscape(pos, out l);
-            p00 = Int2.Clamp(p00, 0, heightmap.Sizing.Size - 2);
+            //p00 = Int2.Clamp(p00, 0, heightmap.Sizing.Size - 2);
             var h00 = heightmap.GetHeightAt(p00);
             var h10 = heightmap.GetHeightAt(p00 + new Int2(1, 0));
             var h01 = heightmap.GetHeightAt(p00 + new Int2(0, 1));

@@ -160,8 +160,8 @@ namespace Game5.UI {
             pos.Y = Math.Min(pos.Y, 3850f);
             camera.Position = pos;
 
-            var delta = (Input.GetKeyDown(KeyCode.Minus) ? -1 : 0)
-                + (Input.GetKeyDown(KeyCode.Plus) ? 1 : 0);
+            var delta = (Input.GetKeyDown(KeyCode.Minus) ? 1 : 0)
+                + (Input.GetKeyDown(KeyCode.Plus) ? -1 : 0);
             var rot = Quaternion.CreateFromAxisAngle(Vector3.UnitY, delta * dt);
             camera.Orientation = rot * camera.Orientation;
             camera.Position += (pivot - camera.Position)

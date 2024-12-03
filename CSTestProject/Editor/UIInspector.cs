@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
@@ -282,7 +283,13 @@ namespace Weesals.Editor {
             row.AppendChild(label);
 
             var type = path.GetPropertyType();
-            if (type == typeof(bool)) {
+            if (path.Member.GetCustomAttribute<RangeAttribute>() is RangeAttribute range) {
+                var slider = new Slider() { MinimumValue = Convert.ToSingle(range.Minimum), MaximumValue = Convert.ToSingle(range.Maximum) };
+                slider.BindValue(path);
+                if (onChanged != null) slider.OnStateChanged += (newValue) => { onChanged(); };
+                row.AppendChild(slider);
+                bindables.Add(new Bindables(path, slider));
+            } else if (type == typeof(bool)) {
                 var toggle = new ToggleButton() { };
                 toggle.BindValue(path);
                 if (onChanged != null) toggle.OnStateChanged += (newValue) => { onChanged(); };
