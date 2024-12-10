@@ -482,7 +482,9 @@ namespace Weesals.Engine {
         public override int GetHashCode() {
             if (hashCache == 0) {
                 hashCache = HashCode.Combine(State.GetHashCode(), base.GetHashCode());
-                if (Macros != null) hashCache += Macros.GetHashCode();
+                if (Macros != null) {
+                    foreach (var item in Macros) hashCache += HashCode.Combine(item.Key.GetHashCode(), item.Value.GetHashCode());
+                }
             }
             return hashCache;
         }
