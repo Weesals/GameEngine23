@@ -227,7 +227,7 @@ namespace Weesals.Engine {
         unsafe public int GetMipCount() { return GetMipCount(mRenderTarget); }
         unsafe public void Dispose() { Dispose(mRenderTarget); mRenderTarget = null; }
 
-        public override bool Equals(object? obj) { return obj is CSTexture texture && Equals(texture); }
+        public override bool Equals(object? obj) { throw new NotImplementedException(); }
         unsafe public bool Equals(CSRenderTarget other) { return mRenderTarget == other.mRenderTarget; }
         unsafe public override int GetHashCode() { return HashCode.Combine((ulong)mRenderTarget); }
         unsafe public override string ToString() { return $"RT{(nint)mRenderTarget:x} Size<{Size}> Fmt<{Format}>"; }
@@ -486,6 +486,10 @@ namespace Weesals.Engine {
         public CSIdentifier GetDeviceName() { return new CSIdentifier(GetDeviceName(mGraphics)); }
         public CSGraphicsCapabilities GetCapabiltiies() { return GetCapabilities(mGraphics); }
         public CSRenderStatistics GetRenderStatistics() { return GetRenderStatistics(mGraphics); }
+        public void BeginScope(string name) {
+            fixed(char* nameStr = name) BeginScope(mGraphics, new CSString(nameStr, name.Length));
+        }
+        public void EndScope() { EndScope(mGraphics); }
         public CSGraphicsSurface CreateSurface(CSWindow window) { return new CSGraphicsSurface(CreateSurface(mGraphics, window.GetNativeWindow())); }
         public void SetSurface(CSGraphicsSurface surface) { SetSurface(mGraphics, surface.GetNativeSurface()); }
         public CSGraphicsSurface GetSurface() { return new CSGraphicsSurface(GetSurface(mGraphics)); }

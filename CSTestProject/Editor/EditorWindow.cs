@@ -67,31 +67,47 @@ public static class EntityProxyExt {
 }
 
 namespace Weesals.Editor {
+    public class EditorStyle {
+        public Color Background = new(20, 20, 20, 255);
+        public Color Panel = new(56, 56, 56, 255);
+        public Color PanelHeaderTextColor = new(230, 230, 230, 255);
+        public Color PanelDark = new(51, 51, 51, 255);
+        public Color Field = new(42, 42, 42, 255);
+        public Color TextColor = new(255, 255, 255, 255);
+    }
     public class Editor {
-        public Font DefaultFont = Resources.LoadFont("./Assets/Roboto-Regular.ttf");
+        public EditorStyle Style = new EditorStyle();
         public AssetDatabase AssetDatabase = new();
         public SelectionManager ProjectSelection = new(null);
+        public StyleDictionary.ResolvedStyle ResolveStyle(StyleDictionary.ResolvedStyle style) {
+            style.Background = Style.Panel;
+            return style;
+        }
     }
     public class TabbedWindow : CanvasRenderable {
+        public readonly Editor Editor;
         public CanvasImage TitleBG = new();
         public CanvasText TitleText = new();
         public CanvasImage PanelBG = new();
 
-        public string Title { get => TitleText.Text; set { TitleText.Text = value; MarkLayoutDirty(); MarkComposeDirty(); } }
+        public string Title { get => TitleText.Text; set { if (TitleText.Text == value) return; TitleText.Text = value; MarkLayoutDirty(); MarkComposeDirty(); } }
         public bool EnableBackground { get; set; } = true;
 
+        protected override StyleDictionary.Resolver styleResolver => Editor.ResolveStyle;
+
         public TabbedWindow(Editor editor, string title) {
+            Editor = editor;
             Title = title;
-            TitleText.SetFont(editor.DefaultFont, 16);
-            TitleText.Color = Color.DarkGray;
-            TitleText.DisplayParameters = TextDisplayParameters.Header;
+            //TitleText.Anchor = new Vector2(0.5f, 0.5f);
+            //TitleText.DisplayParameters = TextDisplayParameters.Header;
             TitleBG.SetSprite(Resources.TryLoadSprite("HeaderBG"));
-            PanelBG.SetSprite(Resources.TryLoadSprite("PanelBG"));
+            //PanelBG.SetSprite(Resources.TryLoadSprite("PanelBG"));
         }
 
         protected CanvasLayout GetContentsLayout() {
             var layout = mLayoutCache;
             layout.SliceTop(TitleText.GetPreferredHeight() + 5);
+            layout = layout.Inset(1, 0, 1, 1);
             return layout;
         }
 
@@ -100,6 +116,9 @@ namespace Weesals.Editor {
             TitleBG.Initialize(Canvas);
             TitleText.Initialize(Canvas);
             PanelBG.Initialize(Canvas);
+            TitleBG.Color = Style.Background;
+            PanelBG.Color = Style.Background;
+            TitleText.Color = Style.Foreground;
         }
         public override void Uninitialise(CanvasBinding binding) {
             PanelBG.Dispose(Canvas);
@@ -120,17 +139,24 @@ namespace Weesals.Editor {
                 child.UpdateLayout(contentLayout);
             }
         }
-        public override void Compose(ref CanvasCompositor.Context composer) {
+        private void UpdateElementLayouts() {
             var layout = mLayoutCache;
             var tabHeader = layout.SliceTop(TitleText.GetPreferredHeight() + 5);
+            layout = layout.Inset(1, 0, 1, 1);
             TitleBG.UpdateLayout(Canvas, tabHeader);
             TitleText.UpdateLayout(Canvas, tabHeader);
             if (EnableBackground) PanelBG.UpdateLayout(Canvas, layout);
-
+        }
+        public override void Compose(ref CanvasCompositor.Context composer) {
+            UpdateElementLayouts();
             TitleBG.Append(ref composer);
             TitleText.Append(ref composer);
             if (EnableBackground) PanelBG.Append(ref composer);
             base.Compose(ref composer);
+        }
+        public override void ComposePartial() {
+            UpdateElementLayouts();
+            base.ComposePartial();
         }
     }
 
@@ -138,6 +164,11 @@ namespace Weesals.Editor {
     public class EditorWindow : ApplicationWindow, IDisposable {
         private static ProfilerMarker ProfileMarker_Update = new("Editor Update");
         private static ProfilerMarker ProfileMarker_Render = new("Editor Render");
+        private static ProfilerMarker ProfileMarker_Readbacks = new("Readbacks");
+        private static ProfilerMarker ProfileMarker_AcquireFrame = new("Acquire Frame");
+        private static ProfilerMarker ProfileMarker_OnRender = new("OnRender");
+        private static ProfilerMarker ProfileMarker_GameViewUpdate = new("GameView");
+        private static ProfilerMarker ProfileMarker_RenderCanvas = new("Canvas");
         public Editor Editor;
         public UIInspector Inspector;
         public UIGameView GameView;
@@ -281,6 +312,7 @@ namespace Weesals.Editor {
             if (Input.GetKeyPressed(KeyCode.D) && Input.GetKeyDown(KeyCode.Control)) EventSystem.EnableDebug ^= true;
 
             Canvas.SetSize(Size);
+            Canvas.PreUpdate(dt);
             EventSystem.Update(dt);
             Canvas.Update(dt);
             Canvas.RequireComposed();
@@ -306,16 +338,28 @@ namespace Weesals.Editor {
 
             graphics.Reset();
 
-            CSGraphics.AsyncReadback.Awaiter.InvokeCallbacks(graphics);
-            graphics.SetSurface(Surface);
+            using (ProfileMarker_Readbacks.Auto()) {
+                CSGraphics.AsyncReadback.Awaiter.InvokeCallbacks(graphics);
+            }
+            using (ProfileMarker_AcquireFrame.Auto()) {
+                graphics.SetSurface(Surface);
+                //graphics.SetViewport(new RectI(0, Size));
+                //graphics.Clear(new CSClearConfig(Editor.Style.Background, 1f));
+            }
 
             // Render the game world and UI
-            OnRender?.Invoke(dt, graphics);
+            using (ProfileMarker_OnRender.Auto()) {
+                OnRender?.Invoke(dt, graphics);
+            }
 
             // Render the editor chrome
             graphics.SetViewport(new RectI(0, Size));
-            GameView.Update(dt);
-            Canvas.Render(graphics);
+            using (ProfileMarker_GameViewUpdate.Auto()) {
+                GameView.Update(dt);
+            }
+            using (ProfileMarker_Render.Auto()) {
+                Canvas.Render(graphics);
+            }
 
             // Flush render command buffer
             graphics.Execute();

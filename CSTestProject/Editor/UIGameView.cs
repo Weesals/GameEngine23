@@ -167,6 +167,11 @@ namespace Weesals.Editor {
                 timeSinceFPSUpdate = 0f;
                 ticksSinceFPSUpdate = 0;
             }
+            /*var newColor = HasDirtyFlag(DirtyFlags.Compose) ? Color.Red : Style.Foreground;
+            if (TitleText.Color != newColor) {
+                TitleText.Color = newColor;
+                MarkComposePartialDirty();
+            }*/
         }
 
     }

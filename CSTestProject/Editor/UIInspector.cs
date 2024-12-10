@@ -120,6 +120,7 @@ namespace Weesals.Editor {
             }
             public void OnBeginDrag(PointerEvent events) {
                 if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
+                if (NumberConverter.ConvertTo(1.0, Binding.GetPropertyType()) == null) { events.Yield(); return; }
                 dragOver = 0;
             }
             private double ToLinear(double value) => Math.Sign(value) * Math.Pow(Math.Abs(value), 1.0f / 3.0f);
@@ -285,7 +286,7 @@ namespace Weesals.Editor {
         }
         public void AppendProperty(PropertyPath path, Action onChanged = null) {
             var row = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
-            var label = new PropertyLabel(path) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat, };
+            var label = new PropertyLabel(path) { FontSize = 14, };
             if (onChanged != null) label.OnValueChanged += () => { onChanged(); };
             label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
             row.AppendChild(label);
@@ -317,7 +318,7 @@ namespace Weesals.Editor {
         }
         public void AppendSelector(PropertyPath dataList, PropertyPath path, Action onChanged = null) {
             var row = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
-            var label = new PropertyLabel(path) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat, };
+            var label = new PropertyLabel(path) { FontSize = 14, };
             label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
             row.AppendChild(label);
             var selector = new DropDownSelector(dataList, path) { };
@@ -360,6 +361,13 @@ namespace Weesals.Editor {
 
     public class UIEntityInspector : CanvasRenderable {
         public ListLayout List;
+        public class HeaderTextBlock : TextBlock {
+            private bool isSparse = false;
+            protected override StyleDictionary.Resolver styleResolver => isSparse ? static (resolved) => { resolved.Foreground = Color.Lerp(resolved.Foreground, Color.Blue, 0.5f); return resolved; } : base.styleResolver;
+            public HeaderTextBlock(string title, bool _isSparse) : base(title) {
+                isSparse = _isSparse;
+            }
+        }
         public UIEntityInspector() {
             List = new ListLayout() { Axis = CanvasAxes.Vertical, };
             AppendChild(List);
@@ -369,10 +377,12 @@ namespace Weesals.Editor {
             if (world != null) {
                 var entityAddr = world.Manager.RequireEntityAddress(entity);
                 var entityName = $"{entity} (Arch {entityAddr.ArchetypeId} Row {entityAddr.Row})";
-                List.AppendChild(new TextBlock(entityName) { FontSize = 14, TextColor = Color.Black, DisplayParameters = TextDisplayParameters.Flat });
+                List.AppendChild(new TextBlock(entityName) { FontSize = 14, DisplayParameters = TextDisplayParameters.Flat });
                 foreach (var component in world.GetEntityComponents(entity)) {
                     var type = component.GetComponentType();
-                    List.AppendChild(new TextBlock(type.Type.Name) { FontSize = 14, TextColor = component.TypeId.IsSparse ? Color.Blue : Color.Black, DisplayParameters = TextDisplayParameters.Flat });;
+                    var header = new TextBlock(type.Type.Name) { FontSize = 14, DisplayParameters = TextDisplayParameters.Flat };
+                    if (component.TypeId.IsSparse) header.TextColor = Color.Blue;
+                    List.AppendChild(header);
                     var properties = new UIPropertiesList() { Name = "Entity Inspector" };
                     var scope = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
                     foreach (var field in type.Type.GetFields(scope)) {
@@ -427,7 +437,7 @@ namespace Weesals.Editor {
         public void Refresh() {
             List.ClearChildren();
             foreach (var editable in Editables) {
-                List.AppendChild(new TextBlock(editable.GetType().Name) { TextColor = Color.DarkGray, });
+                List.AppendChild(new TextBlock(editable.GetType().Name) { });
                 var properties = new UIPropertiesList() { Name = "Editables Inspector" };
                 properties.AppendPropertiesFrom(editable);
                 List.AppendChild(properties);
@@ -445,6 +455,8 @@ namespace Weesals.Editor {
         private CanvasRenderable? activeInspector;
 
         public Action<CanvasRenderable, bool> OnRegisterInspector;
+
+        //protected override StyleDictionary.Resolver styleResolver => static (style) => { style.Foreground = Color.Black; return style; };
 
         public UIInspector(Editor editor) : base(editor, "Inspector") {
             content.AppendChild(EditablesInspector);

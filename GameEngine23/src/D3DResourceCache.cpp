@@ -270,7 +270,7 @@ bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3
     if (d3dBin.mBuffer != nullptr) {
         // TODO: Remove 0x8000...0 lock from this
         if (d3dBin.mSRVOffset >= 0) d3dBin.mSRVOffset |= 0x80000000;
-        if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin);
+        if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin, lockBits);
         // TODO: Should use lockbits from previous used frames
         mDelayedRelease.InsertItem(d3dBin.mBuffer, 0, lockBits);
         d3dBin.mBuffer = nullptr;
@@ -555,7 +555,7 @@ int D3DResourceCache::GetBufferSRV(D3DBinding& d3dBin, int offset, int count, in
     bool isFullRange = offset == 0 && count == d3dBin.mCount;
     if (isFullRange) {
         if (d3dBin.mSRVOffset >= 0) return d3dBin.mSRVOffset;
-        if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin);
+        if (d3dBin.mSRVOffset < -1) ClearBufferSRV(d3dBin, lockBits);
         lockBits |= 0x80000000;
     }
     auto buffer = d3dBin.mBuffer.Get();
@@ -794,11 +794,6 @@ D3DResourceCache::D3DTexture* D3DResourceCache::RequireCurrentTexture(const Text
     return d3dTex;
 }
 void D3DResourceCache::RequireState(D3DCommandContext& cmdList, D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state) {
-    if (state == D3D12_RESOURCE_STATE_COMMON) {
-        state =
-            (binding.mUsage == BufferLayout::Usage::Index ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER)
-            | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-    }
     if (buffer.mState == state) return;
     cmdList.mBarrierStateManager->mDelayedBarriers.push_back({ CD3DX12_RESOURCE_BARRIER::Transition(buffer.mBuffer.Get(), buffer.mState, state), });
     buffer.mState = state;
@@ -854,7 +849,8 @@ void D3DResourceCache::ComputeElementData(std::span<const BufferLayout*> binding
             if (d3dBin.mRevision != binding.mRevision) {
                 CopyBufferData(cmdList, binding, d3dBin, itemSize, 0, binding.mSize);
             }
-            RequireState(cmdList, d3dBin, binding);
+            RequireState(cmdList, d3dBin, binding,
+                binding.mUsage == BufferLayout::Usage::Index ? D3D12_RESOURCE_STATE_INDEX_BUFFER : D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
         },
         [&](const BufferLayout& binding, D3DBinding& d3dBin, int itemSize) {
             indexCount = binding.mCount;
@@ -941,6 +937,7 @@ D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     mCommandAllocators.push_back(allocator);
     return mCommandAllocators.back().get();
 }
+LockMask lastInflightFrames = 0;
 LockMask D3DResourceCache::CheckInflightFrames() {
     LockMask inflightFrames = 0;
     for (int i = 0; i < (int)mCommandAllocators.size(); ++i) {
@@ -955,10 +952,12 @@ LockMask D3DResourceCache::CheckInflightFrames() {
         UnlockFrame(inflightFrames);
         mDelayedRelease.PurgeUnlocked();
     }
+    lastInflightFrames = inflightFrames;
     return inflightFrames;
 }
 void D3DResourceCache::UnlockFrame(size_t frameHandles) {
     mConstantBufferCache.Unlock(frameHandles);
+    mConstantBufferPool.Unlock(frameHandles);
     mResourceViewCache.Unlock(frameHandles);
     mTargetViewCache.Unlock(frameHandles);
     mUploadBufferCache.Unlock(frameHandles);
@@ -1213,53 +1212,98 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequireComputePSO(const Co
     return pipelineState;
 }
 // Find or allocate a constant buffer for the specified material and CB layout
-D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(D3DCommandContext& cmdList, std::span<const uint8_t> tData, size_t dataHash) {
+D3DConstantBuffer* D3DResourceCache::RequireConstantBuffer(D3DCommandContext& cmdList, std::span<const uint8_t> tData, size_t dataHash, D3DResourceCache::CBBumpAllocator& bumpAllocator) {
     // CB should be padded to multiples of 256
     auto allocSize = (int)(tData.size() + 255) & ~255;
     if (dataHash == 0) dataHash = allocSize + GenericHash(tData.data(), tData.size());
 
-    auto CBState = D3D12_RESOURCE_STATE_COMMON;// D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
+    auto FillItem = [&](PerFrameItemStore<D3DConstantBuffer>::Item& item) {
+        const int MinAllocationSize = 4 * 1024;
+        int bumpBuffer = bumpAllocator.mBumpConstantBuffer;
+        int bumpConsume = bumpAllocator.mBumpConstantConsume;
+        if (bumpBuffer == -1 || bumpConsume + allocSize > MinAllocationSize) {
+            auto bufferSize = std::max(allocSize, MinAllocationSize);
+            mConstantBufferPool.RequireItem(
+                bufferSize,
+                cmdList.mLockBits,
+                [&](auto& item) { // Allocate a new item
+                    // We got a fresh item, need to create the relevant buffers
+                    CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+                    auto device = mD3D12.GetD3DDevice();
+                    auto hr = device->CreateCommittedResource(
+                        &D3D::DefaultHeap,
+                        D3D12_HEAP_FLAG_NONE,
+                        &resourceDesc,
+                        D3D12_RESOURCE_STATE_COMMON,
+                        nullptr,
+                        IID_PPV_ARGS(&item.mData.mConstantBuffer)
+                    );
+                    if (FAILED(hr)) throw "[D3D] Failed to create constant buffer";
+                    item.mData.mConstantBuffer->SetName(L"ConstantBuffer");
+                    item.mData.mRevision = 1;
+                    mStatistics.mBufferCreates++;
+                },
+                [&](auto& item) {
+                    item.mData.mRevision++;
+                },
+                [&](int itemIndex) {
+                    bumpBuffer = itemIndex;
+                    bumpConsume = 0;
+                });
+        }
+        assert(bumpBuffer >= 0);
+        item.mData.mConstantBufferIndex = bumpBuffer;
+        item.mData.mConstantBufferRevision = mConstantBufferPool.GetItem(bumpBuffer).mData.mRevision;
+        item.mData.mOffset = bumpConsume;
+        bumpAllocator.mBumpConstantBuffer = bumpBuffer;
+        bumpAllocator.mBumpConstantConsume = bumpConsume + allocSize;
 
+        int copySize = (tData.size() + 15) & ~15;
+        auto* constantBuffer = mConstantBufferPool.GetItem(item.mData.mConstantBufferIndex).mData.mConstantBuffer.Get();
+        bool canSkipTransition = false;
+        if (!cmdList.mBarrierStateManager->mDelayedBarriers.empty()) {
+            auto lastBarrier = cmdList.mBarrierStateManager->mDelayedBarriers.back();
+            if (lastBarrier.Transition.pResource == constantBuffer && lastBarrier.Transition.StateBefore == D3D12_RESOURCE_STATE_COPY_DEST) {
+                cmdList.mBarrierStateManager->mDelayedBarriers.pop_back();
+                canSkipTransition = true;
+            }
+        }
+        if (!canSkipTransition) {
+            cmdList.mBarrierStateManager->mDelayedBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(constantBuffer, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST));
+        }
+        ID3D12Resource* uploadBuffer = AllocateUploadBuffer(copySize, cmdList.mLockBits);
+        D3D::FillBuffer(uploadBuffer, [&](uint8_t* data) { std::memcpy(data, tData.data(), tData.size()); });
+        FlushBarriers(cmdList);
+        cmdList->CopyBufferRegion(constantBuffer, item.mData.mOffset, uploadBuffer, 0, copySize);
+        mStatistics.BufferWrite(tData.size());
+        cmdList.mBarrierStateManager->mDelayedBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(constantBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COMMON));
+    };
     auto& resultItem = mConstantBufferCache.RequireItem(dataHash, allocSize, cmdList.mLockBits,
         [&](auto& item) { // Allocate a new item
-            auto device = mD3D12.GetD3DDevice();
-            assert(item.mData.mConstantBuffer == nullptr);
-            // We got a fresh item, need to create the relevant buffers
-            CD3DX12_RESOURCE_DESC resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(allocSize);
-            auto hr = device->CreateCommittedResource(
-                &D3D::DefaultHeap,
-                D3D12_HEAP_FLAG_NONE,
-                &resourceDesc,
-                CBState,
-                nullptr,
-                IID_PPV_ARGS(&item.mData.mConstantBuffer)
-            );
-            assert(item.mData.mConstantBuffer != nullptr);
-            if (FAILED(hr)) throw "[D3D] Failed to create constant buffer";
-            mStatistics.mBufferCreates++;
+            item.mData.mConstantBufferIndex = -1;
+            item.mData.mConstantBufferRevision = 0;
+            item.mData.mOffset = 0;
         },
         [&](auto& item) { // Fill an item with data
-            // Copy data into this new one
-            /*assert(item.mData.mConstantBuffer != nullptr);
-            UINT8* cbDataBegin;
-            if (SUCCEEDED(item.mData.mConstantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&cbDataBegin)))) {
-                std::memcpy(cbDataBegin, tData.data(), tData.size());
-                item.mData.mConstantBuffer->Unmap(0, nullptr);
-            }
-            mStatistics.BufferWrite(tData.size());*/
-            int copySize = (tData.size() + 15) & ~15;
-            cmdList.mBarrierStateManager->mDelayedBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(item.mData.mConstantBuffer.Get(), CBState, D3D12_RESOURCE_STATE_COPY_DEST));
-            FlushBarriers(cmdList);
-            ID3D12Resource* uploadBuffer = AllocateUploadBuffer(copySize, cmdList.mLockBits);
-            D3D::FillBuffer(uploadBuffer, [&](uint8_t* data) { std::memcpy(data, tData.data(), tData.size()); });
-            cmdList->CopyBufferRegion(item.mData.mConstantBuffer.Get(), 0, uploadBuffer, 0, copySize);
-            mStatistics.BufferWrite(tData.size());
-            cmdList.mBarrierStateManager->mDelayedBarriers.push_back(CD3DX12_RESOURCE_BARRIER::Transition(item.mData.mConstantBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, CBState));
+            FillItem(item);
         },
-        [&](auto& item) { } // An existing item was found to match the data
+        [&](auto& item) {
+            auto& cbItem = mConstantBufferPool.GetItem(item.mData.mConstantBufferIndex);
+            if (cbItem.mData.mRevision == item.mData.mConstantBufferRevision) {
+                mConstantBufferPool.RequireItemLock(cbItem, cmdList.mLockBits);
+            }
+            else {
+                FillItem(item);
+            }
+        } // An existing item was found to match the data
     );
+    auto& cbItem = mConstantBufferPool.GetItem(resultItem.mData.mConstantBufferIndex);
+    assert(cbItem.mData.mRevision == resultItem.mData.mConstantBufferRevision);
     assert(resultItem.mLayoutHash == allocSize);
     return &resultItem.mData;
+}
+ComPtr<ID3D12Resource>& D3DResourceCache::GetConstantBuffer(int index) {
+    return mConstantBufferPool.GetItem(index).mData.mConstantBuffer;
 }
 D3DResourceCache::RenderTargetView& D3DResourceCache::RequireTextureRTV(
     D3DResourceCache::D3DRenderSurfaceView& bufferView, LockMask lockBits
@@ -1305,7 +1349,7 @@ D3DResourceCache::RenderTargetView& D3DResourceCache::RequireTextureRTV(
 }
 int D3DResourceCache::RequireTextureSRV(D3DResourceCache::D3DTexture& texture, LockMask lockBits) {
     if (texture.mSRVOffset < 0) {
-        if (texture.mSRVOffset < -1) ClearBufferSRV(texture);
+        if (texture.mSRVOffset < -1) ClearBufferSRV(texture, lockBits);
         auto textureDesc = texture.mBuffer->GetDesc();
         texture.mSRVOffset = GetTextureSRV(texture.mBuffer.Get(),
             textureDesc.Format, textureDesc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D,
@@ -1316,14 +1360,14 @@ int D3DResourceCache::RequireTextureSRV(D3DResourceCache::D3DTexture& texture, L
 void D3DResourceCache::InvalidateBufferSRV(D3DResourceCache::D3DBuffer& buffer) {
     if (buffer.mSRVOffset >= 0) buffer.mSRVOffset |= 0x80000000;
 }
-void D3DResourceCache::ClearBufferSRV(D3DResourceCache::D3DBuffer& buffer) {
+void D3DResourceCache::ClearBufferSRV(D3DResourceCache::D3DBuffer& buffer, LockMask lockBits) {
     assert(buffer.mSRVOffset < -1);
     buffer.mSRVOffset &= ~0x80000000;
     auto itemId = mResourceViewCache.Find([&](auto& item) {
         return item.mData.mSRVOffset == buffer.mSRVOffset;
     });
+    mResourceViewCache.Substitute(mResourceViewCache.GetItem(itemId), 0x80000000, CheckInflightFrames() | lockBits);
     buffer.mSRVOffset = -1;
-    mResourceViewCache.RemoveLock(itemId, 0x80000000);
 }
 
 

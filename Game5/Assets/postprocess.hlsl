@@ -91,11 +91,11 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float4 sceneColor = SceneColor.SampleLevel(BilinearSampler, input.uv, 0);
     //return float4(sceneColor.rgb / LuminanceFactor, 1);
     
-    float4 blur = 0.0;
+    float4 bloom = 0.0;
 #if defined(ENABLEBLOOM) && ENABLEBLOOM
     //blur = float4(BloomChain.SampleLevel(BilinearClampedSampler, input.uv, 0.0).rgb, 1.0);
-    blur = GaussianSampleLevel<2>(BloomChain, BilinearClampedSampler, input.uv, 1.0 / Resolution, 1.0, 1.0);
-    blur /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
+    bloom = GaussianSampleLevel<2>(BloomChain, BilinearClampedSampler, input.uv, 1.0 / Resolution, 1.0, 1.0);
+    bloom /= 2.0;        // Roughly the series of 1.0 + 0.5 + 0.25 + 0.125
 #endif
         
     sceneColor *= 1.0 / LuminanceFactor;
@@ -103,8 +103,10 @@ float4 PSMain(PSInput input) : SV_TARGET {
     
     const float Intensity = 0.0;
     //return float4(blur.rgb * 1.0, Intensity);
-    sceneColor.rgb += blur.rgb;
-    sceneColor.rgb = Tonemap_Uchimura(sceneColor.rgb * 1.2);
+    sceneColor.rgb += bloom.rgb;
+    //sceneColor.rgb *= 1.2;
+    sceneColor.rgb = Tonemap_Uchimura(sceneColor.rgb);
+    //sceneColor.rgb = ACESFilm(sceneColor.rgb);
     //sceneColor.rgb = Evaluate(sceneColor.rgb, 0.3, 0.18, 1.0);
     input.uv -= 0.5;
     input.uv *= 2.0;

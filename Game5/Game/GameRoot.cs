@@ -54,6 +54,7 @@ namespace Game5.Game {
         TemporalJitter temporalJitter;
         PostProcessPass postProcessPass;
         DelegatePass canvasPass;
+        DelegatePass screenClearPass;
         FinalPass finalPass;
 
         RenderGraph renderGraph = new();
@@ -162,6 +163,10 @@ namespace Game5.Game {
                     new[] { new RenderPass.PassOutput("SceneColor", 0), },
                     (CSGraphics graphics, ref RenderPass.Context context) => {
                         Canvas.Render(graphics);
+                    });
+                screenClearPass = new("Screen Clear", new RenderPass.PassInput[] { }, new[] { new RenderPass.PassOutput("SceneColor") },
+                    (CSGraphics graphics, ref RenderPass.Context context) => {
+                        graphics.Clear(new CSClearConfig(Color.Black, 1f));
                     });
                 finalPass = new("Final",
                     new[] { new RenderPass.PassInput("SceneColor", false) },
@@ -314,7 +319,7 @@ namespace Game5.Game {
             Canvas.RequireComposed();
         }
         public void Render(float dt, CSGraphics graphics) {
-            using var updateMarker = ProfileMarker_Render.Auto();
+            using var marker = ProfileMarker_Render.Auto();
 
             using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial);
 
@@ -327,6 +332,9 @@ namespace Game5.Game {
 
             //Camera.FarPlane = 45f + (0.5f + 0.5f * MathF.Sin(UnityEngine.Time.time * 10.0f)) * 400.0f;
             renderGraph.Clear();
+
+            renderGraph.BeginPass(screenClearPass)
+                .SetOutput("SceneColor", graphics.GetSurface().GetBackBuffer());
 
             // Render shadows
             renderGraph.BeginPass(shadowPass);
@@ -354,7 +362,10 @@ namespace Game5.Game {
                 renderGraph.BeginPass(bloomPass);
             }
             postProcessPass.SetBloomEnabled(Play.EnableBloom);
-            renderGraph.BeginPass(postProcessPass);
+            //var sceneInput = renderGraph.FindPassFor("SceneColor", out var sceneInputId);
+            renderGraph.BeginPass(postProcessPass)
+                //.SetDependency("SceneColorInput", sceneInput, sceneInputId)
+                ;
 
             // Render UI
             renderGraph.BeginPass(canvasPass);

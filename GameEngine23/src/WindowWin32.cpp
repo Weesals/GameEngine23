@@ -33,6 +33,8 @@ WindowWin32::WindowWin32(const std::wstring &name)
 
     // Set a pointer to this object so that messages can be forwarded
     SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)this);
+
+    EnableMouseInPointer(TRUE);
 }
 
 WindowWin32::~WindowWin32()
@@ -99,8 +101,18 @@ void WindowWin32::Close()
 
 std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
 {
-    if (mMousePointer == nullptr && mInput != nullptr) mMousePointer = mInput->AllocatePointer(-1);
+    if (mMousePointer == nullptr && mInput != nullptr) {
+        mMousePointer = RequirePointer(-1);
+    }
     return mMousePointer;
+}
+std::shared_ptr<Pointer> WindowWin32::RequirePointer(int id)
+{
+    auto pointer = mPointersById.find(id);
+    if (pointer == mPointersById.end()) {
+        pointer = mPointersById.insert({ id, mInput->AllocatePointer(id) }).first;
+    }
+    return pointer->second;
 }
 
 LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -137,6 +149,11 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     case WM_GETMINMAXINFO: str << "WM_GETMINMAXINFO"; break;
     case WM_LBUTTONDOWN: str << "WM_LBUTTONDOWN"; break;
     case WM_LBUTTONUP: str << "WM_LBUTTONUP"; break;
+    case WM_MOUSEWHEEL: str << "WM_MOUSEWHEEL"; break;
+    case WM_POINTERUP: str << "WM_POINTERUP"; break;
+    case WM_POINTERDOWN: str << "WM_POINTERDOWN"; break;
+    case WM_POINTERUPDATE: str << "WM_POINTERUPDATE"; break;
+    case WM_POINTERWHEEL: str << "WM_POINTERWHEEL"; break;
     default: str << message; break;
     }
     str << "  " << wParam << " " << lParam << std::endl;
@@ -163,6 +180,26 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         //str << wParam << " S " << state << std::endl;
         //OutputDebugStringA(str.str().c_str());
     };
+    static auto UpdatePointerInfo = [](WindowWin32* window, const std::shared_ptr<Pointer>& pointer, POINTER_INFO& pointerInfo) {
+        pointer->mDeviceType = pointerInfo.pointerType;
+    };
+    static auto ReceivePointerMove = [](HWND hWnd, const std::shared_ptr<Pointer>& pointer, POINTER_INFO& pointerInfo) {
+        //POINT p = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        POINT p = pointerInfo.ptPixelLocation;
+        ScreenToClient(hWnd, &p);
+        pointer->ReceiveMoveEvent(Vector2((float)p.x, (float)p.y));
+    };
+    static auto ReceivePointerState = [&](WindowWin32* window, HWND hWnd, const std::shared_ptr<Pointer>& pointer, POINTER_INFO& pointerInfo, bool state) {
+        int buttonMask = 1 << ((pointerInfo.ButtonChangeType - 1) >> 1);
+        // Update mouse button state
+        ReceivePointerMove(hWnd, pointer, pointerInfo);
+        pointer->ReceiveButtonEvent(buttonMask, state);
+
+        UpdatePointerInfo(window, pointer, pointerInfo);
+
+        // Extend input to outside of window
+        if (state) SetCapture(hWnd); else ReleaseCapture();
+    };
 
     switch (message) {
     case WM_PAINT: {
@@ -184,7 +221,36 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         }
     } break;
     // Receive mouse events
-    case WM_LBUTTONDOWN: {
+    case WM_POINTERDOWN: case WM_POINTERUP: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        POINTER_INFO pointerInfo;
+        if (GetPointerInfo(GET_POINTERID_WPARAM(wParam), &pointerInfo)) {}
+        auto pointer = window->RequirePointer(pointerInfo.pointerId);
+        if (pointer == nullptr) break;
+        ReceivePointerState(window, hWnd, pointer, pointerInfo, message == WM_POINTERDOWN);
+        if (message == WM_POINTERUP && pointerInfo.pointerType == PT_TOUCH) {
+            window->mPointersById.erase(pointerInfo.pointerId);
+        }
+    } break;
+    case WM_POINTERUPDATE: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        POINTER_INFO pointerInfo;
+        if (GetPointerInfo(GET_POINTERID_WPARAM(wParam), &pointerInfo)) {}
+        auto pointer = window->RequirePointer(pointerInfo.pointerId);
+        if (pointer == nullptr) break;
+        ReceivePointerMove(hWnd, pointer, pointerInfo);
+    } break;
+    case WM_POINTERWHEEL: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        POINTER_INFO pointerInfo;
+        if (GetPointerInfo(GET_POINTERID_WPARAM(wParam), &pointerInfo)) { }
+        auto pointer = window->RequirePointer(pointerInfo.pointerId);
+        if (pointer == nullptr) break;
+        ReceivePointerMove(hWnd, pointer, pointerInfo);
+        pointer->ReceiveMouseScroll(GET_WHEEL_DELTA_WPARAM(wParam));
+        UpdatePointerInfo(window, pointer, pointerInfo);
+    } break;
+    /*case WM_LBUTTONDOWN: {
         _MouseButtonEvent(hWnd, wParam, lParam, 0x01, true);
     } return 0;
     case WM_LBUTTONUP: {
@@ -211,11 +277,16 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         auto pointer = window->RequireMousePointer();
         if (pointer) {
+            LONG_PTR extraInfo = GetMessageExtraInfo();
+            bool isTouch = ((extraInfo & SIGNATURE_MASK) == MI_WP_SIGNATURE);
+            std::stringstream str;
+            str << std::hex << extraInfo << std::endl;
+            OutputDebugStringA(str.str().c_str());
             // This is offset - seems to be in screen space
             //pointer->ReceiveMoveEvent(Vector2((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam)));
             pointer->ReceiveMouseScroll(GET_WHEEL_DELTA_WPARAM(wParam));
         }
-    } return 0;
+    } return 0;*/
     // Receive key events
     case WM_SYSKEYDOWN:
     case WM_SYSKEYUP: {

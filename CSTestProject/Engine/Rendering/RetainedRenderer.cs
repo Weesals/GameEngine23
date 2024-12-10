@@ -781,7 +781,7 @@ namespace Weesals.Engine {
                 var queueArr = queue.Data;
                 var batchArr = batchIds.Data;
                 var batchRange = RangeInt.FromBeginEnd(instBegin, queue.Count);
-                JobHandle.ScheduleBatch((range) => {
+                Action<RangeInt> computeLods = (range) => {
                     using var marker = ProfileMarker_EvalBatches.Auto();
                     int end = range.End;
                     for (int i = range.Start; i < end; i++) {
@@ -796,7 +796,8 @@ namespace Weesals.Engine {
                         }
                         batchArr[i] = batchId;
                     }
-                }, batchRange).Complete();
+                };
+                JobHandle.ScheduleBatch(computeLods, batchRange, 128).Complete();
             }
             return new(instBegin, queue.Count - instBegin);
         }

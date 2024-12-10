@@ -5,6 +5,7 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
 namespace Weesals.Engine {
@@ -53,6 +54,8 @@ namespace Weesals.Engine {
         public struct RPOutput {
             public RenderPass.PassOutput Output;
             public int TargetId;
+            public int OtherPassId;
+            public int OtherOutput;
             public CSRenderTarget SpecifiedRT;
             public override string ToString() { return $"{Output}: {TargetId}"; }
             public static readonly RPOutput Invalid = new RPOutput() { Output = default, TargetId = -1, };
@@ -168,6 +171,7 @@ namespace Weesals.Engine {
             public CSIdentifier Name;
             public TextureDesc Description;
             public bool RequireAttachment;
+            public RenderPass.PassOutput.Channels ValidChannels;
             public RenderPass.Target Target;
             public override string ToString() {
                 return $"{Name}: {Target}: {Description}";
@@ -317,59 +321,94 @@ namespace Weesals.Engine {
                             }
                         }
 
-                        // Require added to executeList and following self
-                        int otherI = FindEvaluator(selfInput.OtherPassId);
-                        if (otherI == -1) {
-                            executeList.Add(new ExecuteItem() { PassId = selfInput.OtherPassId, });
-                        } else if (otherI < l) {
-                            var otherExec = executeList[otherI];
-                            executeList.RemoveAt(otherI);
-                            executeList.Insert(l, otherExec);
-                            --l;
-                        }
-
+                        if (RequireExecuteAt(selfInput.OtherPassId, l) == l) --l;
                     }
                 }
             }
+
+            private int RequireExecuteAt(int passId, int l) {
+                // Require added to executeList and following self
+                int otherI = FindEvaluator(passId);
+                if (otherI == -1) {
+                    executeList.Add(new ExecuteItem() { PassId = passId, });
+                    l = executeList.Count - 1;
+                } else if (otherI < l) {
+                    var otherExec = executeList[otherI];
+                    executeList.RemoveAt(otherI);
+                    executeList.Insert(l, otherExec);
+                } else l = otherI;
+                return l;
+            }
+
             public void CollectAndMergeDescriptors() {
                 // Collect and merge descriptors
                 for (int l = executeList.Count - 1; l >= 0; --l) {
-                    var selfExec = executeList[l];
-                    var selfPassData = passes[selfExec.PassId];
-                    var selfInputs = dependencies.Slice(selfPassData.InputsRange).AsSpan();
-                    var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
-                    // Fill selfTargets
-                    for (int o = 0; o < selfOutputs.Length; ++o) {
-                        var selfOutput = selfOutputs[o];
-                        if (selfOutputs[o].TargetId != -1) continue;
-                        Debug.Assert(selfOutputs[o].TargetId == -1);
-                        // First based on passthrough inputs (reuse buffer of input)
-                        if (selfOutput.Output.PassthroughInput != -1) {
-                            var selfDep = selfInputs[selfOutput.Output.PassthroughInput];
-                            int otherI = FindEvaluator(selfDep.OtherPassId);
-                            Debug.Assert(otherI >= 0);
-                            ref var otherExec = ref executeList[otherI];
-                            var otherTargetIds = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
-                            selfOutputs[o].TargetId = otherTargetIds[selfDep.OtherOutput].TargetId;
-                        }
-                        // Otherwise allocate a new buffer
-                        if (selfOutputs[o].TargetId == -1) {
-                            selfOutputs[o].TargetId = buffers.Add(new BufferItem() { Description = selfOutput.Output.TargetDesc, });
-                        }
-                        // Populate the buffer with our specifications
-                        ref var buffer = ref buffers[selfOutputs[o].TargetId];
-                        if (buffer.Description.Format == BufferFormat.FORMAT_UNKNOWN)
-                            buffer.Description.Format = selfOutput.Output.TargetDesc.Format;
-                        if (buffer.Description.Size == 0)
-                            buffer.Description.Size = selfOutput.Output.TargetDesc.Size;
-                        if (buffer.Description.MipCount == 1)
-                            buffer.Description.MipCount = selfOutput.Output.TargetDesc.MipCount;
-                        if (selfOutput.SpecifiedRT.IsValid)
-                            buffer.Target = new(selfOutput.SpecifiedRT);
+                    CollectAndMergeDescriptors(l);
+                }
+            }
+            public void CollectAndMergeDescriptors(int l) {
+                var selfExec = executeList[l];
+                var selfPassData = passes[selfExec.PassId];
+                var selfInputs = dependencies.Slice(selfPassData.InputsRange).AsSpan();
+                var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
+                // Fill selfTargets
+                for (int o = 0; o < selfOutputs.Length; ++o) {
+                    var selfOutput = selfOutputs[o];
+                    if (selfOutputs[o].TargetId != -1) continue;
+                    Debug.Assert(selfOutputs[o].TargetId == -1);
+                    // First based on passthrough inputs (reuse buffer of input)
+                    if (selfOutput.Output.PassthroughInput != -1) {
+                        var selfDep = selfInputs[selfOutput.Output.PassthroughInput];
+                        int otherI = FindEvaluator(selfDep.OtherPassId);
+                        Debug.Assert(otherI >= 0);
+                        ref var otherExec = ref executeList[otherI];
+                        var otherTargetIds = outputs.AsSpan().Slice(passes[otherExec.PassId].OutputsRange);
+                        selfOutputs[o].TargetId = otherTargetIds[selfDep.OtherOutput].TargetId;
                     }
+                    // Otherwise allocate a new buffer
+                    if (selfOutputs[o].TargetId == -1) {
+                        selfOutputs[o].TargetId = buffers.Add(new BufferItem() { Description = selfOutput.Output.TargetDesc, });
+                    }
+                    // Populate the buffer with our specifications
+                    ref var buffer = ref buffers[selfOutputs[o].TargetId];
+                    buffer.ValidChannels |= selfOutput.Output.WriteChannels;
+                    if (buffer.Description.Format == BufferFormat.FORMAT_UNKNOWN)
+                        buffer.Description.Format = selfOutput.Output.TargetDesc.Format;
+                    if (buffer.Description.Size == 0)
+                        buffer.Description.Size = selfOutput.Output.TargetDesc.Size;
+                    if (buffer.Description.MipCount == 1)
+                        buffer.Description.MipCount = selfOutput.Output.TargetDesc.MipCount;
+                    if (selfOutput.SpecifiedRT.IsValid)
+                        buffer.Target = new(selfOutput.SpecifiedRT);
                 }
             }
             public void MarkAttachments() {
+                for (int l = executeList.Count - 1; l >= 0; --l) {
+                    var selfExec = executeList[l];
+                    var selfPassData = passes[selfExec.PassId];
+                    var selfOutputs = outputs.AsSpan().Slice(selfPassData.OutputsRange);
+                    for (int i = 0; i < selfOutputs.Length; i++) {
+                        var selfOutput = selfOutputs[i];
+                        var target = buffers[selfOutput.TargetId];
+                        if (target.ValidChannels == RenderPass.PassOutput.Channels.All) continue;
+                        for (int p = 0; p < passes.Count; p++) {
+                            var otherPassData = passes[p];
+                            if (otherPassData.OutputsRange.Length < 0) continue;
+                            var otherOutputs = outputs.AsSpan().Slice(otherPassData.OutputsRange);
+                            for (int o = 0; o < otherOutputs.Length; o++) {
+                                if (otherOutputs[o].TargetId != selfOutput.TargetId &&
+                                    !otherOutputs[o].SpecifiedRT.Equals(buffers[selfOutput.TargetId].Target.Texture)) continue;
+                                if((otherOutputs[o].Output.WriteChannels | target.ValidChannels) != target.ValidChannels) {
+                                    var insertI = RequireExecuteAt(o, l);
+                                    CollectAndMergeDescriptors(insertI);
+                                    target = buffers[selfOutput.TargetId];
+                                    if (target.ValidChannels == RenderPass.PassOutput.Channels.All) break;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 for (int l = executeList.Count - 1; l >= 0; --l) {
                     var selfExec = executeList[l];
                     var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
@@ -603,8 +642,20 @@ namespace Weesals.Engine {
                     var selfPassData = passes[selfExec.PassId];
                     var selfPass = selfPassData.RenderPass;
 
-                    // Set resolved RTs to pass material
                     var selfInputs = dependencies.Slice(passes[selfExec.PassId].InputsRange).AsSpan();
+                    var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
+
+                    /*for (int i = 0; i < selfOutputs.Length; i++) {
+                        var selfOutput = selfOutputs[i];
+                        if (selfOutput.Output.PassthroughInput >= 0) {
+                            // Allowed to bind depth as readonly
+                            ref var selfInput = ref selfInputs[selfOutput.Output.PassthroughInput];
+                            if (!selfInput.Input.RequireAttachment) continue;
+                            if (BufferFormatType.GetIsDepthBuffer(buffers[selfOutput.TargetId].Target.Texture.Format)) continue;
+                            selfInput.OtherPassId = -1;
+                        }
+                    }*/
+                    // Set resolved RTs to pass material
                     for (int i = 0; i < selfInputs.Length; ++i) {
                         var input = selfInputs[i].Input;
                         var dep = selfInputs[i];
@@ -622,10 +673,10 @@ namespace Weesals.Engine {
                     }
 
                     // Collect outputs
-                    var selfOutputs = outputs.Slice(selfPassData.OutputsRange).AsSpan();
                     RenderPass.Target depth = default;
                     for (int i = 0; i < selfOutputs.Length; i++) {
-                        var bufferId = selfOutputs[i].TargetId;
+                        var selfOutput = selfOutputs[i];
+                        var bufferId = selfOutput.TargetId;
                         ref var buffer = ref buffers[bufferId];
                         if (!buffer.Target.IsValid) RequireBuffer(ref tempTargets.AsMutable(), bufferId);
                         var target = buffer.Target;
@@ -638,7 +689,9 @@ namespace Weesals.Engine {
                     if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, selfPassData.OutputSize);
                     if (context.Viewport.Width == 0) context.Viewport = new RectI(Int2.Zero, Graphics.GetSurface().GetResolution());
                     using (var markerRender = selfPassData.RenderPass.RenderMarker.Auto()) {
-                        selfPassData.RenderPass.Render(Graphics, ref context);
+                        using (var gpuMarker = new GPUMarker(Graphics, selfPassData.RenderPass.Name)) {
+                            selfPassData.RenderPass.Render(Graphics, ref context);
+                        }
                     }
                     targetsSpan.Clear();
                     var range = bufferLastUseRanges[r];
@@ -674,6 +727,16 @@ namespace Weesals.Engine {
 
         internal PassData GetPassData(int passId) {
             return passes[passId];
+        }
+
+        public RenderPass? FindPassFor(CSIdentifier name, out int outputId) {
+            outputId = -1;
+            for (int i = passes.Count - 1; i >= 0; i--) {
+                var pass = passes[i];
+                outputId = pass.RenderPass.FindOutputI(name);
+                if (outputId >= 0) return pass.RenderPass;
+            }
+            return null;
         }
     }
 }

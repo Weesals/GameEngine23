@@ -23,19 +23,22 @@ namespace Weesals.Editor {
                     Text = new(name) {
                         FontSize = 14,
                         Alignment = TextAlignment.Left,
-                        TextColor = Color.DarkGray,
                     };
                     AppendChild(Text);
                     var depth = 0;
                     for (var p = ParentFolder; p != null; p = p.ParentFolder) ++depth;
                     SetTransform(CanvasTransform.MakeDefault().WithOffsets(5f + 5f * depth, 0f, 0f, 0f));
                 }
+                public override void Initialise(CanvasBinding binding) {
+                    base.Initialise(binding);
+                    Text.TextColor = Style.Foreground;
+                }
                 public override void OnSelected(ISelectionGroup group, bool _selected) {
                     base.OnSelected(group, _selected);
                     if (IsSelected) {
                         FindParent<UIProjectView>()?.SetContentPath(Filename);
                     }
-                    Text.TextColor = IsSelected ? Color.Orange : Color.DarkGray;
+                    Text.TextColor = IsSelected ? Color.Orange : Style.Foreground;
                 }
                 public override SizingResult GetDesiredSize(SizingParameters sizing) {
                     var size = base.GetDesiredSize(sizing);
@@ -141,8 +144,7 @@ namespace Weesals.Editor {
                         BlendMode = CanvasBlending.BlendModes.Overlay,
                     };
                     Text = new(Path.GetFileName(filename)) {
-                        FontSize = 10,
-                        TextColor = Color.Black,
+                        FontSize = 12,
                         DisplayParameters = TextDisplayParameters.Flat,
                     };
                     Icon.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 1f, 1f).WithOffsets(10f, 0f, -10f, -32f));

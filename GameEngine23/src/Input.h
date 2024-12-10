@@ -12,6 +12,7 @@
 struct Pointer
 {
 	unsigned int mDeviceId;
+	int mDeviceType;
 	// Store current and previous states to compute deltas
 	Vector2 mPositionCurrent;
 	Vector2 mPositionPrevious;
@@ -169,7 +170,12 @@ public:
 			mInput->mPressKeys.clear();
 			mInput->mReleaseKeys.clear();
 			mInput->mCharBuffer.clear();
-			for (auto pointer : mInput->mPointers) {
+			for (int i = 0; i < mInput->mPointers.size(); ++i) {
+				auto pointer = mInput->mPointers[i];
+				if (pointer->mDeviceType == 2 && pointer->mCurrentButtonState == 0) {
+					mInput->mPointers.erase(mInput->mPointers.begin() + i);
+					continue;
+				}
 				pointer->ReceiveTickEvent();
 			}
 		}

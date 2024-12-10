@@ -230,8 +230,8 @@ private:
         PerFrameItemStoreBase::SetLock(item.mLockId, lockI);
     }
 
-    template<class Allocate>
-    Item& AllocateItem(uint64_t layoutHash, Allocate&& alloc) {
+    template<class Allocate, class ReceiveIndex>
+    Item& AllocateItem(uint64_t layoutHash, Allocate&& alloc, ReceiveIndex&& receiveIndex) {
         // Try to reuse an existing one (based on age) of the same size
         for (int blockI = 0; blockI < (int)mBlocks.size(); blockI++) {
             Block& block = mBlocks[blockI];
@@ -251,16 +251,19 @@ private:
             for (int index = firstEmpty; index < endIndex; ++index) {
                 auto& item = block[index];
                 if (item.mLockId != 0 || item.mLayoutHash != layoutHash) continue;
+                receiveIndex((blockI << BlockShift) + index);
                 return item;
             }
         }
-        if (mItemCount >> BlockShift >= (int)mBlocks.size()) {
+        std::atomic_ref<int> itemCount(mItemCount);
+        int itemIndex = itemCount++;
+        if (itemIndex >> BlockShift >= (int)mBlocks.size()) {
             mBlocks.emplace_back();
         }
-        Item& item = mBlocks[mItemCount >> BlockShift][mItemCount & BlockMask];
-        ++mItemCount;
+        Item& item = mBlocks[itemIndex >> BlockShift][itemIndex & BlockMask];
         item = Item{ .mLayoutHash = layoutHash, };
         alloc(item);
+        receiveIndex(itemIndex);
         return item;
     }
 
@@ -270,11 +273,16 @@ public:
     }
     ~PerFrameItemStoreNoHash() { }
 
-    template<class Allocate>
-    Item& RequireLockedItem(size_t layoutHash, LockMask lockBits, Allocate&& alloc) {
+    Item& GetItem(int index) {
+        return mBlocks[index >> BlockShift][index & BlockMask];
+    }
+
+    template<class Allocate, class ReceiveIndex>
+    Item& RequireLockedItem(size_t layoutHash, LockMask lockBits, Allocate&& alloc, ReceiveIndex&& receiveIndex) {
         auto lockId = RequireLock(lockBits);
         while (true) {
-            auto& item = AllocateItem(layoutHash, alloc);
+            int itemIndex = -1;
+            auto& item = AllocateItem(layoutHash, alloc, [&](int index) { itemIndex = index; });
             // The lock failed to set, probably taken by another thread
             if (!TrySetLock(item.mLockId, 0, lockId)) continue;
             while (mLocks[lockId].mHandles != lockBits) {
@@ -282,17 +290,22 @@ public:
                 lockId = RequireLock(lockBits);
                 SetLock(item, lockId);
             }
+            receiveIndex(itemIndex);
             return item;
         }
     }
     Item& InsertItem(const T& data, size_t layoutHash, LockMask lockBits) {
-        Item& item = RequireLockedItem(layoutHash, lockBits, [&](Item& item) {});
+        Item& item = RequireLockedItem(layoutHash, lockBits, [&](Item& item) {}, [](int index) {});
         item.mData = data;
         return item;
     }
     template<class Allocate, class DataFill>
     Item& RequireItem(uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
-        Item& item = RequireLockedItem(layoutHash, lockBits, alloc);
+        return RequireItem(layoutHash, lockBits, alloc, dataFill, [](int index) {});
+    }
+    template<class Allocate, class DataFill, class ReceiveIndex>
+    Item& RequireItem(uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill, ReceiveIndex&& receiveIndex) {
+        Item& item = RequireLockedItem(layoutHash, lockBits, alloc, receiveIndex);
         dataFill(item);
         return item;
     }
@@ -303,6 +316,13 @@ public:
             for (auto& block : mBlocks) block.mFirstEmpty = -1;
         }
         return lockMask;
+    }
+    void RequireItemLock(Item& item, LockMask mask) {
+        auto oldLock = mLocks[item.mLockId];
+        auto newMask = oldLock.mHandles | mask;
+        if (oldLock.mHandles == newMask) return;
+        auto lockId = newMask == 0 ? 0 : RequireLock(newMask);
+        SetLock(item, lockId);
     }
     void Clear() {
         for (int b = 0; b < (int)mBlocks.size(); ++b) {
@@ -399,13 +419,14 @@ class PerFrameItemStore : public PerFrameItemStoreBase {
     static const int BlockShift = 4;
     static const int BlockSize = 1 << BlockShift;
     static const int BlockMask = BlockSize - 1;
-protected:
+public:
     struct Item {
         size_t mDataHash;
         size_t mLayoutHash;
         T mData;
         int mLockId = 0;
     };
+protected:
     struct Block {
         std::unique_ptr<std::array<Item, BlockSize> > mItems;
         int mFirstEmpty;
@@ -426,8 +447,8 @@ private:
         PerFrameItemStoreBase::SetLock(item.mLockId, lockI);
     }
 
-    template<class Allocate>
-    Item& AllocateItem(uint64_t layoutHash, Allocate&& alloc) {
+    template<class Allocate, class ReceiveIndex>
+    Item& AllocateItem(uint64_t layoutHash, Allocate&& alloc, ReceiveIndex&& receiveIndex) {
         // Try to reuse an existing one (based on age) of the same size
         for (int blockI = 0; blockI < (int)mBlocks.size(); blockI++) {
             Block& block = mBlocks[blockI];
@@ -449,6 +470,7 @@ private:
                 if (item.mLockId != 0 || item.mLayoutHash != layoutHash) continue;
                 std::scoped_lock lock(mItemsHashMutex);
                 mItemsByHash.erase(item.mDataHash);
+                receiveIndex(index);
                 return item;
             }
         }
@@ -460,6 +482,7 @@ private:
         Item& item = mBlocks[itemIndex >> BlockShift][itemIndex & BlockMask];
         item = Item{ .mLayoutHash = layoutHash, };
         alloc(item);
+        receiveIndex(itemIndex);
         return item;
     }
 
@@ -503,8 +526,9 @@ public:
     template<class Allocate, class DataFill>
     Item& AllocateItem(uint64_t dataHash, uint64_t layoutHash, LockMask lockBits, Allocate&& alloc, DataFill&& dataFill) {
         while (true) {
-            Item& item = AllocateItem(layoutHash, alloc);
+            Item& item = AllocateItem(layoutHash, alloc, [](int index) {});
             // Setup item state
+            auto oldLockId = item.mLockId;
             if (!TrySetLock(item.mLockId, 0, RequireLock(lockBits))) continue;
             dataFill(item);
             item.mDataHash = dataHash;
@@ -514,12 +538,26 @@ public:
         }
     }
 
+    Item& GetItem(int index) {
+        return mBlocks[index >> BlockShift][index & BlockMask];
+    }
+
     void Substitute(LockMask mask, LockMask newMask) {
         for (int i = 0; i < (int)mLocks.size(); ++i) {
             if ((mLocks[i].mHandles & mask) == 0) continue;
             std::atomic_ref<size_t> handles(mLocks[i].mHandles);
             handles |= newMask;
             handles &= (~mask | newMask);   // In case any bits are common in both mask and newMask
+        }
+    }
+    void Substitute(Item& item, LockMask mask, LockMask newMask) {
+        while (true) {
+            auto oldLockId = item.mLockId;
+            auto oldLockHandles = mLocks[oldLockId].mHandles;
+            if ((oldLockHandles & mask) == 0) return;
+            auto newHandles = (oldLockHandles & ~mask) | newMask;
+            auto newLockId = newHandles == 0 ? 0 : RequireLock(newHandles);
+            if (TrySetLock(item.mLockId, oldLockId, newLockId)) return;
         }
     }
     void Unlock(LockMask mask) {
@@ -581,6 +619,13 @@ public:
         });*/
         std::scoped_lock lock(mItemsHashMutex);
         mItemsByHash.clear();
+    }
+    void RequireItemLock(Item& item, LockMask mask) {
+        auto oldLock = mLocks[item.mLockId];
+        auto newMask = oldLock.mHandles | mask;
+        if (oldLock.mHandles == newMask) return;
+        auto lockId = newMask == 0 ? 0 : RequireLock(newMask);
+        SetLock(item, lockId);
     }
     void RemoveLock(int index, LockMask mask) {
         int b = (index >> BlockShift);

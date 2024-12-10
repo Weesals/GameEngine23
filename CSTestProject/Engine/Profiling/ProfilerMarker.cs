@@ -9,7 +9,7 @@ using Weesals.Engine.Jobs;
 namespace Weesals.Engine.Profiling {
     public struct ProfilerMarker {
 
-        public const bool EnableTracy = false;
+        public const bool EnableTracy = true;
 
         public struct Snapshot {
             public string Name;
@@ -78,5 +78,16 @@ namespace Weesals.Engine.Profiling {
             if (EnableTracy) Tracy.TracyPlot(Tracy.CreateString(name), value);
         }
 
+    }
+
+    public struct GPUMarker : IDisposable {
+        public readonly CSGraphics Graphics;
+        public GPUMarker(CSGraphics graphics, string name) {
+            Graphics = graphics;
+            Graphics.BeginScope(name);
+        }
+        public void Dispose() {
+            Graphics.EndScope();
+        }
     }
 }

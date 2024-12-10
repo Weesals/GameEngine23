@@ -270,7 +270,7 @@ namespace Game5.Game {
                 var newPos = FixedMath.MoveToward(tform.Position, nextPos, (int)(mobile.MovementSpeed * dt / 1000));
 
                 for (var it = entityMap.CreateSpiralIterator(newPos); it.MoveNext() && it.GetDistanceSq(newPos) < 1000 * 1000;) {
-                    foreach (var other in entityMap.GetChunk(it.Current)) {
+                    foreach (var other in entityMap.GetEntitiesEnumerator(it.Current, 0)) {
                         if (other == entity) continue;
                         var otform = tformLookup[other];
                         var odelta = newPos - otform.Position;

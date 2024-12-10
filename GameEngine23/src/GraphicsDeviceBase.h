@@ -222,6 +222,8 @@ class CommandBufferInteropBase
 public:
     virtual ~CommandBufferInteropBase() { }
     virtual GraphicsDeviceBase* GetGraphics() const = 0;
+    virtual void BeginScope(const std::wstring_view& name) = 0;
+    virtual void EndScope() = 0;
     virtual void Reset() = 0;
     virtual void SetSurface(GraphicsSurface* surface) = 0;
     virtual GraphicsSurface* GetSurface() = 0;
@@ -264,6 +266,8 @@ public:
     CommandBuffer(CommandBufferInteropBase* interop) : mInterop(interop) { }
     CommandBuffer& operator = (CommandBuffer&& other) = default;
     GraphicsDeviceBase* GetGraphics() const { return mInterop->GetGraphics(); }
+    void BeginScope(const std::wstring_view& name) { mInterop->BeginScope(name); }
+    void EndScope() { mInterop->EndScope(); }
     void Reset() { mInterop->Reset(); mArena.Clear(); }
     void SetSurface(GraphicsSurface* surface) { mInterop->SetSurface(surface); }
     GraphicsSurface* GetSurface() { return mInterop->GetSurface(); }

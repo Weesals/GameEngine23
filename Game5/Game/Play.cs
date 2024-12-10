@@ -211,10 +211,10 @@ namespace Game5.Game
 
             visualsJob.Complete();
 
-            var img = new Image(new CSBufferReference(GameRoot.ShadowPass.shadowBuffer)) {
+            /*var img = new Image(new CSBufferReference(GameRoot.ShadowPass.shadowBuffer)) {
                 Transform = CanvasTransform.MakeAnchored(new Vector2(512, 512), new Vector2(0f, 0f)),
             };
-            root.Canvas.AppendChild(img);
+            root.Canvas.AppendChild(img);*/
 
             GameRoot.RegisterEditable(this, true);
         }
@@ -352,11 +352,12 @@ namespace Game5.Game
             var sign = new Int2(chunkEnd.X > chunkBeg.X ? 1 : -1, chunkEnd.Y > chunkBeg.Y ? 1 : -1);
             var rayIt = new GridThickRayIterator(chunkBeg, chunkEnd - chunkBeg, 4 * 1024, EntityMapSystem.Separation);
             foreach (var cell in rayIt) {
-                /*Gizmos.DrawWireCube(
+                var entities = entityMap.AllEntities.GetEntitiesEnumerator(cell, 0);
+                if (!entities.HasAny) continue;
+                Gizmos.DrawWireCube(
                     SimulationWorld.SimulationToWorld(EntityMapSystem.ChunkToSim(cell)),
                     Vector3.One * (EntityMapSystem.Separation * SimulationWorld.WorldScale * 0.9f)
-                );*/
-                var entities = entityMap.AllEntities.GetChunk(cell);
+                );
                 foreach (var entity in entities) {
                     if (!World.TryGetComponent<ECTransform>(entity, out var epos)) continue;
                     if (!World.TryGetComponent<CModel>(entity, out var emodel)) continue;
@@ -414,7 +415,7 @@ namespace Game5.Game
             int count = 0;
             for (int y = cmin.Y; y <= cmax.Y; y++) {
                 for (int x = cmin.X; x <= cmax.X; x++) {
-                    var chunkEntities = entityMapSystem.AllEntities.GetChunk(new Int2(x, y));
+                    var chunkEntities = entityMapSystem.AllEntities.GetEntitiesEnumerator(new Int2(x, y), 0);
                     foreach (var entity in chunkEntities) {
                         if (!World.IsValid(entity)) continue;
                         if (!World.TryGetComponent<PrototypeData>(entity, out var protoData)) continue;

@@ -1,4 +1,4 @@
-#define PIX 0
+#define PIX 1
 
 #include "D3DGraphicsDevice.h"
 #include <sstream>
@@ -14,6 +14,8 @@
 
 extern void* SimpleProfilerMarker(const char* name);
 extern void SimpleProfilerMarkerEnd(void* zone);
+
+extern "C" HMODULE gPixModule = 0;
 
 void ThrowIfFailed(HRESULT hr) {
     if (FAILED(hr)) {
@@ -56,9 +58,10 @@ static std::wstring GetLatestWinPixGpuCapturerPath() {
 D3DGraphicsDevice::D3DGraphicsDevice()
 {
 #if PIX
-    if (GetModuleHandle(L"WinPixGpuCapturer.dll") == 0) {
+    gPixModule = GetModuleHandle(L"WinPixGpuCapturer.dll");
+    if (gPixModule == 0) {
         auto path = GetLatestWinPixGpuCapturerPath();
-        if (!path.empty()) LoadLibrary(path.c_str());
+        if (!path.empty()) gPixModule = LoadLibrary(path.c_str());
     }
 #endif
     CoInitialize(nullptr);

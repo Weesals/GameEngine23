@@ -8,6 +8,7 @@
 #include <ui/font/FontRenderer.h>
 #include <WindowBase.h>
 #include <D3DShader.h>
+#include <GraphicsDeviceD3D12.h>
 #undef CreateWindow
 
 #include <algorithm>
@@ -269,6 +270,12 @@ void CSGraphics::Dispose(NativeGraphics* graphics) {
 uint16_t CSGraphics::GetDeviceName(const NativeGraphics* graphics) { return Identifier::RequireStringId(graphics->mCmdBuffer.GetGraphics()->GetDeviceName().c_str()); }
 CSGraphicsCapabilities CSGraphics::GetCapabilities(const NativeGraphics* graphics) { return (CSGraphicsCapabilities&)graphics->mCmdBuffer.GetGraphics()->mCapabilities; }
 CSRenderStatistics CSGraphics::GetRenderStatistics(const NativeGraphics* graphics) { return (CSRenderStatistics&)graphics->mCmdBuffer.GetGraphics()->mStatistics; }
+void CSGraphics::BeginScope(NativeGraphics* graphics, CSString name) {
+	graphics->mCmdBuffer.BeginScope(ToWString(name));
+}
+void CSGraphics::EndScope(NativeGraphics* graphics) {
+	graphics->mCmdBuffer.EndScope();
+}
 NativeSurface* CSGraphics::CreateSurface(NativeGraphics* graphics, NativeWindow* window) {
 	auto surface = graphics->mCmdBuffer.GetGraphics()->CreateSurface(window);
 	increment_shared(surface);

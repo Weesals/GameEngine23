@@ -318,6 +318,8 @@ private:
 	static uint16_t GetDeviceName(const NativeGraphics* graphics);
 	static CSGraphicsCapabilities GetCapabilities(const NativeGraphics* graphics);
 	static CSRenderStatistics GetRenderStatistics(const NativeGraphics* graphics);
+	static void BeginScope(NativeGraphics* graphics, CSString name);
+	static void EndScope(NativeGraphics* graphics);
 	static NativeSurface* CreateSurface(NativeGraphics* graphics, NativeWindow* window);
 	static void SetSurface(NativeGraphics* graphics, NativeSurface* surface);
 	static NativeSurface* GetSurface(NativeGraphics* graphics);
@@ -387,6 +389,7 @@ private:
 
 struct CSPointer {
 	unsigned int mDeviceId;
+	int mDeviceType;
 	Vector2 mPositionCurrent;
 	Vector2 mPositionPrevious;
 	Vector2 mPositionDown;

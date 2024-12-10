@@ -51,11 +51,14 @@ namespace Weesals.Engine {
             public override string ToString() { return Name.ToString(); }
         }
         public struct PassOutput {
+            public enum Channels : byte { None = 0, Clear = 1, Data = 2, All = Clear | Data }
             public readonly CSIdentifier Name;
             public readonly int PassthroughInput;
+            public readonly Channels WriteChannels;
             public TextureDesc TargetDesc { get; private set; } = new() { Size = -1, };
-            public PassOutput(CSIdentifier name, int passthroughInput = -1) {
-                Name = name; PassthroughInput = passthroughInput;
+            public PassOutput(CSIdentifier name) : this(name, -1, Channels.All) { }
+            public PassOutput(CSIdentifier name, int passthroughInput = -1, Channels writeChannels = Channels.Data) {
+                Name = name; PassthroughInput = passthroughInput; WriteChannels = writeChannels;
             }
             public PassOutput SetTargetDesc(TextureDesc desc) { TargetDesc = desc; return this; }
             public override string ToString() { return Name.ToString(); }
@@ -349,10 +352,9 @@ namespace Weesals.Engine {
             if (relevantArea.Min.Y < relevantArea.Max.Y) {
                 activeArea.FromFrustum(frustum);
                 activeArea.Slice(relevantArea);
-                activeArea.DrawGizmos();
             }
             Span<Vector3> activeCorners = stackalloc Vector3[relevantArea.Min.Y < relevantArea.Max.Y ? activeArea.CornerCount : 8];
-            if (relevantArea.Min.Y <= relevantArea.Max.Y) {
+            if (relevantArea.Min.Y < relevantArea.Max.Y) {
                 activeArea.GetCorners(activeCorners);
             } else {
                 frustum.GetCorners(activeCorners);
@@ -452,7 +454,7 @@ namespace Weesals.Engine {
         public void DrawVolume() {
             activeArea.DrawGizmos();
         }
-        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 5.0f) {
+        public void ApplyParameters(Matrix4x4 view, Material basePassMat, float sunIntensity = 6.0f) {
             bool noShadows = !this.Enabled;
             var shadowView = this.View;
             shadowView.M44 = 1.0f;
@@ -543,7 +545,7 @@ namespace Weesals.Engine {
             };
             Outputs = new[] {
                 new PassOutput("SceneDepth", 0),
-                new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R10G10B10A2_UNORM, MipCount = 1, }),
+                new PassOutput("SceneColor", writeChannels: PassOutput.Channels.Data).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R10G10B10A2_UNORM, MipCount = 1, }),
             };
             deferredMaterial = new Material("./Assets/deferred.hlsl", GetPassMaterial());
             deferredMaterial.SetBlendMode(BlendMode.MakeOpaque());
@@ -730,7 +732,7 @@ namespace Weesals.Engine {
         public Material TemporalMaterial => temporalMaterial;
         public TemporalJitter(string name) : base(name) {
             Inputs = new[] { new RenderPass.PassInput("SceneDepth"), new RenderPass.PassInput("SceneColor", true), new RenderPass.PassInput("SceneVelId", true), };
-            Outputs = new[] { new RenderPass.PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }), };
+            Outputs = new[] { new RenderPass.PassOutput("SceneColor", writeChannels: PassOutput.Channels.Data).SetTargetDesc(new TextureDesc() { Size = -1, }), };
             temporalMaterial = new Material("./Assets/temporalpass.hlsl", GetPassMaterial());
             temporalMaterial.SetDepthMode(DepthMode.MakeReadOnly());
         }
@@ -893,19 +895,22 @@ namespace Weesals.Engine {
         public PostProcessPass() : base("PostProcess") {
             Inputs = new[] {
                 new PassInput("SceneColor"),
+                //new PassInput("SceneColorInput"),
                 new PassInput("BloomChain", defaultTexture: DefaultTexture.Black),
             };
             Outputs = new[] {
-                new PassOutput("SceneColor").SetTargetDesc(new TextureDesc() { Size = -1, }),
+                new PassOutput("SceneColor", writeChannels: PassOutput.Channels.Data).SetTargetDesc(new TextureDesc() { Size = -1, }),
             };
             postMaterial = new Material("./Assets/postprocess.hlsl", OverrideMaterial);
             postMaterial.SetBlendMode(BlendMode.MakePremultiplied());
+            postMaterial.SetDepthMode(DepthMode.MakeOff());
         }
         public void SetBloomEnabled(bool enableBloom) {
             postMaterial.SetMacro("ENABLEBLOOM", enableBloom ? "1" : CSIdentifier.Invalid);
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
+            graphics.Clear(new(Color.Black));
             DrawQuad(graphics, default, postMaterial);
         }
     }

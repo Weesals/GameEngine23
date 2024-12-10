@@ -237,6 +237,7 @@
     </None>
     <None Include="externals\nvtt\squish\fastclusterlookup.inl" />
     <None Include="externals\nvtt\squish\singlecolourlookup.inl" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="debug\GameEngine23.natvis" />

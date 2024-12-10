@@ -1,3 +1,5 @@
+#define PIX _DEBUG
+
 #include <span>
 #include <vector>
 
@@ -19,6 +21,44 @@
 const D3D12_RESOURCE_STATES InitialBufferState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
 int gActiveCmdBuffers;
+
+#if PIX
+#define PIXGetCaptureState __PIXGetCaptureState
+#define PIXReportCounter __PIXReportCounter
+#define PIXEventsReplaceBlock __PIXEventsReplaceBlock
+#define PIXGetThreadInfo __PIXGetThreadInfo
+#define PIXNotifyWakeFromFenceSignal __PIXNotifyWakeFromFenceSignal
+#define PIXRecordMemoryAllocationEvent __PIXRecordMemoryAllocationEvent
+#define PIXRecordMemoryFreeEvent __PIXRecordMemoryFreeEvent
+#include <pix3.h>
+struct PIXEventsThreadInfo;
+DWORD(WINAPI* Fn_PIXGetCaptureState)() = nullptr;
+void(WINAPI* Fn_PIXReportCounter)(_In_ PCWSTR name, float value) = nullptr;
+UINT64(WINAPI* Fn_PIXEventsReplaceBlock)(PIXEventsThreadInfo* threadInfo, bool getEarliestTime) = nullptr;
+PIXEventsThreadInfo* (WINAPI* Fn_PIXGetThreadInfo)() noexcept = nullptr;
+void(WINAPI* Fn_PIXNotifyWakeFromFenceSignal)(_In_ HANDLE event) noexcept = nullptr;
+void(WINAPI* Fn_PIXRecordMemoryAllocationEvent)(USHORT allocatorId, void* baseAddress, size_t size, UINT64 metadata) noexcept = nullptr;
+void(WINAPI* Fn_PIXRecordMemoryFreeEvent)(USHORT allocatorId, void* baseAddress, size_t size, UINT64 metadata) noexcept = nullptr;
+extern "C" DWORD WINAPI PIXGetCaptureState() { return Fn_PIXGetCaptureState(); }
+extern "C" void WINAPI PIXReportCounter(_In_ PCWSTR name, float value) { Fn_PIXReportCounter(name, value); }
+extern "C" UINT64 WINAPI PIXEventsReplaceBlock(PIXEventsThreadInfo* threadInfo, bool getEarliestTime) noexcept {
+    return Fn_PIXEventsReplaceBlock(threadInfo, getEarliestTime);
+}
+extern "C" PIXEventsThreadInfo* WINAPI PIXGetThreadInfo() noexcept {
+    return Fn_PIXGetThreadInfo();
+}
+extern "C" void WINAPI PIXNotifyWakeFromFenceSignal(_In_ HANDLE event) {
+    Fn_PIXNotifyWakeFromFenceSignal(event);
+}
+extern "C" void WINAPI PIXRecordMemoryAllocationEvent(USHORT allocatorId, void* baseAddress, size_t size, UINT64 metadata) {
+    Fn_PIXRecordMemoryAllocationEvent(allocatorId, baseAddress, size, metadata);
+}
+extern "C" void WINAPI PIXRecordMemoryFreeEvent(USHORT allocatorId, void* baseAddress, size_t size, UINT64 metadata) {
+    Fn_PIXRecordMemoryFreeEvent(allocatorId, baseAddress, size, metadata);
+}
+
+extern "C" HMODULE gPixModule;
+#endif
 
 // Handles receiving rendering events from the user application
 // and issuing relevant draw commands
@@ -42,11 +82,13 @@ class D3DCommandBuffer : public CommandBufferInteropBase {
     D3DRoot mGraphicsRoot;
     D3DRoot mComputeRoot;
     D3D::BarrierStateManager mBarrierStateManager;
+    D3DResourceCache::CBBumpAllocator cbBumpAllocator;
 public:
     D3DCommandBuffer(GraphicsDeviceD3D12* device)
         : mDevice(device)
         , mCmdAllocator(nullptr)
     {
+        cbBumpAllocator.mBumpConstantBuffer = -1;
         tVertexViews.reserve(4);
     }
     ~D3DCommandBuffer() {
@@ -54,6 +96,28 @@ public:
     ID3D12Device* GetD3DDevice() const { return mDevice->GetD3DDevice(); }
     GraphicsDeviceBase* GetGraphics() const override {
         return mDevice;
+    }
+    virtual void BeginScope(const std::wstring_view& name) override {
+#if PIX
+        if (Fn_PIXGetCaptureState == nullptr && gPixModule) {
+            HMODULE gPixModule = GetModuleHandle(L"WinPixEventRuntime.dll");
+            if (!gPixModule) gPixModule = LoadLibrary(L"WinPixEventRuntime.dll");
+            Fn_PIXGetCaptureState = (decltype(Fn_PIXGetCaptureState))GetProcAddress(gPixModule, "PIXGetCaptureState");
+            Fn_PIXReportCounter = (decltype(Fn_PIXReportCounter))GetProcAddress(gPixModule, "PIXReportCounter");
+            Fn_PIXEventsReplaceBlock = (decltype(Fn_PIXEventsReplaceBlock))GetProcAddress(gPixModule, "PIXEventsReplaceBlock");
+            Fn_PIXGetThreadInfo = (decltype(Fn_PIXGetThreadInfo))GetProcAddress(gPixModule, "PIXGetThreadInfo");
+            Fn_PIXNotifyWakeFromFenceSignal = (decltype(Fn_PIXNotifyWakeFromFenceSignal))GetProcAddress(gPixModule, "PIXNotifyWakeFromFenceSignal");
+            Fn_PIXRecordMemoryAllocationEvent = (decltype(Fn_PIXRecordMemoryAllocationEvent))GetProcAddress(gPixModule, "PIXRecordMemoryAllocationEvent");
+            Fn_PIXRecordMemoryFreeEvent = (decltype(Fn_PIXRecordMemoryFreeEvent))GetProcAddress(gPixModule, "PIXRecordMemoryFreeEvent");
+        }
+        if (Fn_PIXGetCaptureState) PIXBeginEvent(mCmdList.Get(), 0, name.data());
+        //commandList->BeginEvent(WINPIX_EVENT_PIX3BLOB_V2, data, size);
+#endif
+    }
+    virtual void EndScope() override {
+#if PIX
+        if (Fn_PIXGetCaptureState) PIXEndEvent(mCmdList.Get());
+#endif
     }
     // Get this command buffer ready to begin rendering
     virtual void Reset() override {
@@ -123,7 +187,7 @@ public:
         //if (colorTargets.empty() && depthTarget.mTarget == nullptr) d3dColorTargets.push_back(&mSurface->GetFrameBuffer());
         if (depthTarget.mTarget != nullptr)
             d3dDepthTarget = D3DResourceCache::D3DRenderSurfaceView(RequireInitializedRT(depthTarget.mTarget), depthTarget.mMip, depthTarget.mSlice);
-        SetD3DRenderTarget(d3dColorTargets, d3dDepthTarget);
+        SetD3DRenderTargets(d3dColorTargets, d3dDepthTarget);
     }
     void FlushBarriers() {
         mDevice->GetResourceCache().FlushBarriers(CreateContext());
@@ -195,8 +259,8 @@ public:
         auto d3dDevice = mDevice->GetD3DDevice();
         return surface;
     }
-    void SetD3DRenderTarget(std::span<const D3DResourceCache::D3DRenderSurfaceView> frameBuffers, D3DResourceCache::D3DRenderSurfaceView depthBuffer) {
-        bool same = mDepthBuffer == depthBuffer;
+    void SetD3DRenderTargets(std::span<const D3DResourceCache::D3DRenderSurfaceView> frameBuffers, D3DResourceCache::D3DRenderSurfaceView depthBuffer) {
+        bool same = mDepthBuffer == depthBuffer && frameBuffers.size() == mFrameBuffers.size();
         D3DResourceCache::D3DRenderSurfaceView anyBuffer = depthBuffer;
         for (int i = 0; i < (int)frameBuffers.size(); ++i) {
             auto buffer = frameBuffers[i];
@@ -204,7 +268,7 @@ public:
             if (buffer != mFrameBuffers[i]) same = false;
         }
         if (same) return;
-        if (anyBuffer != nullptr && depthBuffer == nullptr) depthBuffer = RequireDepth(Int2(anyBuffer.mSurface->mDesc.mWidth, anyBuffer.mSurface->mDesc.mHeight));
+        //if (anyBuffer != nullptr && depthBuffer == nullptr) depthBuffer = RequireDepth(Int2(anyBuffer.mSurface->mDesc.mWidth, anyBuffer.mSurface->mDesc.mHeight));
         {
             int fbcount = std::max((int)frameBuffers.size(), (int)mFrameBuffers.size());
             for (int i = 0; i < fbcount; ++i) {
@@ -236,7 +300,10 @@ public:
             FlushBarriers();
         }
 
-        if (anyBuffer != nullptr) {
+        if (anyBuffer == nullptr) {
+            mCmdList->OMSetRenderTargets(0, nullptr, FALSE, nullptr);
+        }
+        else {
             auto& cache = mDevice->GetResourceCache();
             SetViewport(RectInt(0, 0, anyBuffer->mDesc.mWidth, anyBuffer->mDesc.mHeight));
 
@@ -246,12 +313,9 @@ public:
                 assert((uint32_t)surface.mRTVOffset < 4096);
                 targets.push_back(CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), surface.mRTVOffset));
             }
-            auto& depthSurface = cache.RequireTextureRTV(mDepthBuffer, mFrameHandle);
-            CD3DX12_CPU_DESCRIPTOR_HANDLE depthHandle(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), depthSurface.mRTVOffset);
-            mCmdList->OMSetRenderTargets(targets.size(), targets.data(), FALSE, &depthHandle);
-        }
-        else {
-            mCmdList->OMSetRenderTargets(0, nullptr, FALSE, nullptr);
+            auto depthRTV = mDepthBuffer != nullptr ? cache.RequireTextureRTV(mDepthBuffer, mFrameHandle).mRTVOffset : -1;
+            CD3DX12_CPU_DESCRIPTOR_HANDLE depthHandle(mDevice->GetDSVHeap()->GetCPUDescriptorHandleForHeapStart(), depthRTV);
+            mCmdList->OMSetRenderTargets(targets.size(), targets.data(), FALSE, depthRTV == -1 ? nullptr : &depthHandle);
         }
         // Dont know if this is required, but NSight showed draw calls failing without it
         // Probably also need to clear bound resource cache?
@@ -298,7 +362,7 @@ public:
 
     void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash) override {
         auto& cache = mDevice->GetResourceCache();
-        return cache.RequireConstantBuffer(CreateContext(), data, hash);
+        return cache.RequireConstantBuffer(CreateContext(), data, hash, cbBumpAllocator);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) override {
         auto& cache = mDevice->GetResourceCache();
@@ -324,9 +388,12 @@ public:
 
         // Depth buffer might be in Read mode, ensure it is write mode if required
         if (pipelineState->mMaterialState.mDepthMode.GetDepthWrite()) {
-            mBarrierStateManager.SetResourceState(
-                mDepthBuffer->mBuffer.Get(), mDepthBuffer->mBarrierHandle, mDepthBuffer.GetSubresource(),
-                D3D12_RESOURCE_STATE_DEPTH_WRITE, mDepthBuffer->mDesc);
+            assert(mDepthBuffer != nullptr);
+            if (mDepthBuffer != nullptr) {
+                mBarrierStateManager.SetResourceState(
+                    mDepthBuffer->mBuffer.Get(), mDepthBuffer->mBarrierHandle, mDepthBuffer.GetSubresource(),
+                    D3D12_RESOURCE_STATE_DEPTH_WRITE, mDepthBuffer->mDesc);
+            }
         }
 
         mGraphicsRoot.mLastPipeline = pipelineState;
@@ -351,7 +418,7 @@ public:
 
         InplaceVector<DXGI_FORMAT> frameBufferFormats;
         for (auto& fb : mFrameBuffers) frameBufferFormats.push_back(fb->mFormat);
-        DXGI_FORMAT depthBufferFormat = mDepthBuffer->mFormat;
+        DXGI_FORMAT depthBufferFormat = mDepthBuffer != nullptr ? mDepthBuffer->mFormat : DXGI_FORMAT_UNKNOWN;
         auto pipelineState = mDevice->GetResourceCache().RequirePipelineState(
             shaders, materialState, bindings,
             frameBufferFormats, depthBufferFormat
@@ -365,6 +432,7 @@ public:
         return pipelineState->mLayout.get();
     }
     int BindConstantBuffers(std::pair<int, const D3DConstantBuffer*> constantBinds[32], std::vector<const ShaderBase::ConstantBuffer*> cbuffers, std::span<const void*> resources, int& r) {
+        cbBumpAllocator.mBumpConstantBuffer = -1;
         for (int i = 0; i < cbuffers.size(); ++i) {
             constantBinds[i] = { cbuffers[i]->mBindPoint, (D3DConstantBuffer*)resources[r++] };
         }
@@ -407,7 +475,7 @@ public:
                 auto* surface = RequireInitializedRT(rt);
                 assert(surface->mBuffer != nullptr);
                 assert(surface->mBuffer.Get() != nullptr);
-                assert(surface->mFormat != (DXGI_FORMAT_UNKNOWN)(-1));
+                assert(surface->mFormat != (DXGI_FORMAT)(-1));
                 if (viewFmt == DXGI_FORMAT_UNKNOWN) viewFmt = surface->mFormat;
                 if (viewFmt == DXGI_FORMAT_D24_UNORM_S8_UINT) viewFmt = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
                 if (viewFmt == DXGI_FORMAT_D32_FLOAT) viewFmt = DXGI_FORMAT_R32_FLOAT;
@@ -421,7 +489,7 @@ public:
                 }
                 else if (rb->mType == ShaderBase::ResourceTypes::R_Texture) {
                     barrierState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-                    if (mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
+                    if (mDepthBuffer != nullptr && mDepthBuffer->mBuffer.Get() == surface->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
                     srvOffset = cache.GetTextureSRV(surface->mBuffer.Get(),
                         viewFmt, false, rt->GetArrayCount(), mFrameHandle,
                         resource->mSubresourceId, resource->mSubresourceCount);
@@ -493,12 +561,14 @@ public:
         if (cCount == -1 || rCount == -1) return;
 
         FlushBarriers();
+        auto& cache = mDevice->GetResourceCache();
         for (int i = 0; i < cCount; ++i) {
             int bindPoint = constantBinds[i].first;
             auto* d3dCB = constantBinds[i].second;
             if (mGraphicsRoot.mLastCBs[bindPoint] == d3dCB) continue;
             mGraphicsRoot.mLastCBs[bindPoint] = d3dCB;
-            mCmdList->SetGraphicsRootConstantBufferView(bindPoint, d3dCB->mConstantBuffer->GetGPUVirtualAddress());
+            auto* constantBuffer = cache.GetConstantBuffer(d3dCB->mConstantBufferIndex).Get();
+            mCmdList->SetGraphicsRootConstantBufferView(bindPoint, constantBuffer->GetGPUVirtualAddress() + d3dCB->mOffset);
         }
         for (int i = 0; i < rCount; ++i) {
             auto handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart(), resourceBinds[i].second);
@@ -522,12 +592,14 @@ public:
         if (cCount == -1 || rCount == -1) return;
 
         FlushBarriers();
+        auto& cache = mDevice->GetResourceCache();
         for (int i = 0; i < cCount; ++i) {
             int bindPoint = constantBinds[i].first;
             auto* d3dCB = constantBinds[i].second;
             if (mComputeRoot.mLastCBs[bindPoint] == d3dCB) continue;
             mComputeRoot.mLastCBs[bindPoint] = d3dCB;
-            mCmdList->SetComputeRootConstantBufferView(bindPoint, d3dCB->mConstantBuffer->GetGPUVirtualAddress());
+            auto* constantBuffer = cache.GetConstantBuffer(d3dCB->mConstantBufferIndex).Get();
+            mCmdList->SetComputeRootConstantBufferView(bindPoint, constantBuffer->GetGPUVirtualAddress() + d3dCB->mOffset);
         }
         for (int i = 0; i < rCount; ++i) {
             auto handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart(), resourceBinds[i].second);
@@ -545,16 +617,13 @@ public:
             .SizeInBytes = 0,
             .Format = DXGI_FORMAT_UNKNOWN,
         };
+        tVertexViews.clear();
         if (bindings.empty()) {
             mCmdList->IASetIndexBuffer(&indexView);
         }
         else {
-            tVertexViews.clear();
             auto& cache = mDevice->GetResourceCache();
             cache.ComputeElementData(bindings, CreateContext(), tVertexViews, indexView, indexCount);
-            FlushBarriers();
-            mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
-            if (indexView.Format != DXGI_FORMAT_UNKNOWN) mCmdList->IASetIndexBuffer(&indexView);
         }
     }
     void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* state, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) override {
@@ -573,11 +642,14 @@ public:
         }
         assert(instanceCount > 0);
 
-        BindGraphicsState(pipelineState, resources);
-
         int indexCount;
         D3D12_INDEX_BUFFER_VIEW indexView;
         BindVertexIndexBuffers(bindings, indexView, indexCount);
+        BindGraphicsState(pipelineState, resources);
+
+        FlushBarriers();
+        mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
+        if (indexView.Format != DXGI_FORMAT_UNKNOWN) mCmdList->IASetIndexBuffer(&indexView);
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
 
         if (indexView.Format != DXGI_FORMAT_UNKNOWN)
@@ -591,11 +663,14 @@ public:
         auto* pipelineState = (D3DResourceCache::D3DPipelineState*)state->mPipelineHash;
         if (pipelineState == nullptr) return;
 
-        BindGraphicsState(pipelineState, resources);
-
         int indexCount;
         D3D12_INDEX_BUFFER_VIEW indexView;
         BindVertexIndexBuffers(bindings, indexView, indexCount);
+        BindGraphicsState(pipelineState, resources);
+
+        FlushBarriers();
+        mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
+        if (indexView.Format != DXGI_FORMAT_UNKNOWN) mCmdList->IASetIndexBuffer(&indexView);
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
 
         mCmdList->DispatchMesh(
@@ -611,11 +686,14 @@ public:
         if (pipelineState == nullptr) return;
         auto& cache = mDevice->GetResourceCache();
 
-        BindGraphicsState(pipelineState, resources);
-
         int indexCount;
         D3D12_INDEX_BUFFER_VIEW indexView;
         BindVertexIndexBuffers(bindings, indexView, indexCount);
+        BindGraphicsState(pipelineState, resources);
+
+        FlushBarriers();
+        mCmdList->IASetVertexBuffers(0, (uint32_t)tVertexViews.size(), tVertexViews.data());
+        if (indexView.Format != DXGI_FORMAT_UNKNOWN) mCmdList->IASetIndexBuffer(&indexView);
         if (config.mIndexCount >= 0) indexCount = config.mIndexCount;
         if (cache.mIndirectSig == nullptr) {
             D3D12_INDIRECT_ARGUMENT_DESC argumentDescs[1] = {
@@ -675,7 +753,7 @@ public:
             //presentSurface = d3dRT;// mSurface->GetFrameBuffer();
         }
 
-        SetD3DRenderTarget({ }, D3DResourceCache::D3DRenderSurfaceView());
+        SetD3DRenderTargets({ }, D3DResourceCache::D3DRenderSurfaceView());
 
         if (presentSurface != nullptr) {
             mBarrierStateManager.SetResourceState(

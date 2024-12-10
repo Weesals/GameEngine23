@@ -332,7 +332,8 @@ namespace Weesals.Engine.Jobs {
                     if (Interlocked.CompareExchange(ref State, 0x20000 | state, state) != state) continue;
                     state |= 0x20000;
                     taskId = Pool[begin];
-                    Trace.Assert(Interlocked.CompareExchange(ref State, (begin << 8) | (count), state) == state);
+                    var oldState = Interlocked.CompareExchange(ref State, (begin << 8) | (count), state);
+                    Trace.Assert(oldState == state);
                     return true;
                 }
                 throw new Exception("Failed to pop an item");
@@ -355,7 +356,8 @@ namespace Weesals.Engine.Jobs {
                 }
             }
             public bool YieldPop(nint state) {
-                Trace.Assert(Interlocked.CompareExchange(ref State, state & 0xffff, state) == state);
+                var oldState = Interlocked.CompareExchange(ref State, state & 0xffff, state);
+                Trace.Assert(oldState == state);
                 return true;
             }
             public bool EndPop(nint state) {
@@ -425,8 +427,8 @@ namespace Weesals.Engine.Jobs {
             public TBatchIndex DataBegin, DataCount;
             public uint RunState;
             public JobHandle Dependency;
-            public int RunCount => (int)(RunState & 0xffff);
-            public int CompleteCount => (int)((RunState >> 16) & 0xffff);
+            public int RunCount => (int)(RunState & 0xff);
+            public int CompleteCount => (int)((RunState >> 8) & 0xff);
             public bool IsMainThread => RunState == RunState_MainThread;
             public bool IsBasic => RunState == RunState_Basic;
             public bool DataIsContext => RunState >= RunState_Basic;
@@ -460,15 +462,19 @@ namespace Weesals.Engine.Jobs {
                 Thread = new Thread(Invoke) { Name = name };
                 Thread.Start();
             }
-            internal static int GetRunCount(TBatchIndex maxCount) {
-                int batchBit = 31 - BitOperations.LeadingZeroCount((uint)maxCount);
-                var shift = Math.Max(batchBit - 4, 0);
+            internal static TBatchIndex GetMinBatchSize(JobTask task) => (task.RunState >> 16) & 0xff;
+            internal static int GetRunCount(JobTask task) => GetRunCount(GetMinBatchSize(task), task.DataCount);
+            internal static int GetRunCount(TBatchIndex minBatchCount, TBatchIndex maxCount) {
+                int batchBit = 31 - BitOperations.LeadingZeroCount((uint)maxCount) - 4;
+                batchBit = Math.Max(batchBit, 31 - BitOperations.LeadingZeroCount((uint)minBatchCount));
+                var shift = Math.Max(batchBit, 0);
                 return (int)((maxCount + (1 << shift) - 1) >> shift);
             }
-            internal static void GetRunIndices(int index, JobTask task, out TBatchIndex batchBegin, out TBatchIndex batchCount) {
-                int batchBit = 31 - BitOperations.LeadingZeroCount((uint)task.DataCount);
-                batchBegin = (TBatchIndex)(index << Math.Max(batchBit - 4, 0));
-                var batchEnd = Math.Min(((index + 1) << Math.Max(batchBit - 4, 0)), task.DataCount);
+            internal static void GetRunIndices(int index, JobTask task, TBatchIndex minBatchCount, out TBatchIndex batchBegin, out TBatchIndex batchCount) {
+                int batchBit = 31 - BitOperations.LeadingZeroCount((uint)task.DataCount) - 4;
+                batchBit = Math.Max(batchBit, 31 - BitOperations.LeadingZeroCount((uint)minBatchCount));
+                batchBegin = (TBatchIndex)(index << Math.Max(batchBit, 0));
+                var batchEnd = Math.Min(((index + 1) << Math.Max(batchBit, 0)), task.DataCount);
                 batchCount = (TBatchIndex)(batchEnd - batchBegin);
                 batchBegin += task.DataBegin;
             }
@@ -479,13 +485,13 @@ namespace Weesals.Engine.Jobs {
                 if (task.RunState >= uint.MaxValue - 10) {
                     CurrentTasks.EndPop(state);
                 } else {
-                    var index = (int)(Interlocked.Increment(ref task.RunState) & 0xffff);
-                    if (index >= GetRunCount(task.DataCount)) {
+                    var index = (int)(Interlocked.Increment(ref task.RunState) & 0xff);
+                    if (index >= GetRunCount(task)) {
                         CurrentTasks.EndPop(state);
                     } else {
                         CurrentTasks.YieldPop(state);
                     }
-                    GetRunIndices(index - 1, task, out run.BatchBegin, out run.BatchCount);
+                    GetRunIndices(index - 1, task, GetMinBatchSize(task), out run.BatchBegin, out run.BatchCount);
                 }
                 return run;
             }
@@ -683,12 +689,16 @@ namespace Weesals.Engine.Jobs {
             lock (pool) { pool.Push(boxed); }
         }
 
-        public ushort CreateBatchTask(Action<RangeInt> action, int count) {
-            return CreateBatchTask(action, new RangeInt(0, count));
+        public ushort CreateBatchTask(Action<RangeInt> action, int count, int minBatchSize) {
+            return CreateBatchTask(action, new RangeInt(0, count), minBatchSize);
         }
-        public ushort CreateBatchTask(Action<RangeInt> action, RangeInt range) {
+        public ushort CreateBatchTask(Action<RangeInt> action, RangeInt range, int minBatchSize) {
             if (!EnableThreading) { action(range); return ushort.MaxValue; }
-            return IntlPushTask(new JobTask() { Callback = action, DataBegin = (TBatchIndex)range.Start, DataCount = (TBatchIndex)range.Length, RunState = 0, });
+            return IntlPushTask(new JobTask() {
+                Callback = action,
+                DataBegin = (TBatchIndex)range.Start, DataCount = (TBatchIndex)range.Length,
+                RunState = (uint)(minBatchSize << 16),
+            });
         }
         public void MarkRunOnMain(ushort job) {
             Debug.Assert(taskArray[job].IsBasic,
@@ -705,7 +715,9 @@ namespace Weesals.Engine.Jobs {
                 return;
             }
             PushJobToThread(taskId);
-            int wakeThreads = Math.Min(jobThreads.Length, (int)taskArray[taskId].DataCount);
+            ref var task = ref taskArray[taskId];
+            var runCount = Math.Max(1, JobThread.GetRunCount(task));
+            int wakeThreads = Math.Min(jobThreads.Length, runCount);
             for (int c = 0; c < wakeThreads; ++c) jobThreads[c].RequireWake();
         }
         private bool PushJobToThread(int jobId) {
@@ -721,7 +733,12 @@ namespace Weesals.Engine.Jobs {
         public bool GetHasQueuedTasks() {
             if (mainThreadTasks.Count > 0) return true;
             foreach (var job in jobThreads) {
-                if (job.CurrentTasks.Count > 0) return true;
+                if (job.CurrentTasks.Count == 0) continue;
+                if (job.CurrentTasks.Count > 1) return true;
+                if (job.CurrentTasks.TryPeek(out var taskId)) {
+                    ref var task = ref taskArray[taskId];
+                    if (task.RunCount < JobThread.GetRunCount(task)) return true;
+                }
             }
             return false;
         }
@@ -793,9 +810,9 @@ namespace Weesals.Engine.Jobs {
             } else {
                 Debug.Assert(task.DataCount > 0);
                 ((Action<RangeInt>)task.Callback)(new RangeInt((int)run.BatchBegin, (int)run.BatchCount));
-                var runCount = JobThread.GetRunCount(task.DataCount);
-                var newState = Interlocked.Add(ref task.RunState, 0x10000);
-                if (((newState >> 16) & 0xffff) >= runCount)
+                var runCount = JobThread.GetRunCount(task);
+                var newState = Interlocked.Add(ref task.RunState, 0x100);
+                if (((newState >> 8) & 0xff) >= runCount)
                     MarkComplete(ref task);
             }
         }

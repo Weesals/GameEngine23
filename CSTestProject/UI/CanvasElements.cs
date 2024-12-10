@@ -341,7 +341,7 @@ namespace Weesals.UI {
         Font font;
         DirtyFlags dirty;
         GlyphStyle defaultStyle = GlyphStyle.Default;
-        TextAlignment alignment = TextAlignment.Centre;
+        Vector2 anchor = new Vector2(0.5f, 0.5f);
         PooledList<GlyphStyle> styles;
         PooledList<GlyphPlacement> glyphPlacements;
         PooledList<GlyphLayout> glyphLayout;
@@ -353,9 +353,14 @@ namespace Weesals.UI {
         public Color Color { get => defaultStyle.mColor; set { if (defaultStyle.mColor == value) return; defaultStyle.mColor = value; dirty |= DirtyFlags.Composite; ; } }
         public float FontSize { get => defaultStyle.mFontSize; set { if (defaultStyle.mFontSize == value) return; defaultStyle.mFontSize = value; dirty |= DirtyFlags.All; } }
         public Font Font { get => font; set { if (font != value) SetFont(value); } }
-        public TextAlignment Alignment { get => alignment; set { if (alignment == value) return; alignment = value; dirty |= DirtyFlags.Composite; } }
+        public Vector2 Anchor { get => anchor; set { if (anchor == value) return; anchor = value; dirty |= DirtyFlags.Composite; } }
         public TextDisplayParameters DisplayParameters { get => displayParameters; set { displayParameters = value; dirty |= DirtyFlags.Composite; if (element.Material != null) UpdateMaterialProperties(); } }
         public bool HasDirtyFlags => dirty != DirtyFlags.None;
+
+        public TextAlignment Alignment {
+            get => anchor.X < 0.25f ? TextAlignment.Left : anchor.X > 0.75f ? TextAlignment.Right : TextAlignment.Centre;
+            set => anchor.X = value switch { TextAlignment.Left => 0f, TextAlignment.Centre => 0.5f, TextAlignment.Right => 1f, _ => throw new NotImplementedException() };
+        }
 
         public CanvasText() : this("") { }
         public CanvasText(string txt) {
@@ -511,10 +516,7 @@ namespace Weesals.UI {
 			}
             var sizeDelta = layout.GetSize() - (max - min);
             var offset = new Vector2(0f, sizeDelta.Y / 2.0f) - min;
-            switch (alignment) {
-                case TextAlignment.Centre: offset.X = sizeDelta.X * 0.5f; break;
-                case TextAlignment.Right: offset.X = sizeDelta.X * 1.0f; break;
-            }
+            offset += sizeDelta * anchor;
             for (int l = 0; l < glyphLayout.Count; ++l) {
                 var tlayout = glyphLayout[l];
                 tlayout.mLocalPosition += offset;

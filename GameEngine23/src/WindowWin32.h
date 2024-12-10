@@ -2,6 +2,7 @@
 
 #include <string>
 #include <memory>
+#include <unordered_map>
 
 #include "WindowBase.h"
 #include "Input.h"
@@ -22,10 +23,12 @@ class WindowWin32 :
     std::shared_ptr<Input> mInput;
     // And can send mouse events to this pointer
     std::shared_ptr<Pointer> mMousePointer;
+    std::unordered_map<int, std::shared_ptr<Pointer>> mPointersById;
 
     std::vector<void(*)()> mMovedCallbacks;
 
     std::shared_ptr<Pointer> RequireMousePointer();
+    std::shared_ptr<Pointer> RequirePointer(int id);
 
 public:
     WindowWin32(const std::wstring &name);

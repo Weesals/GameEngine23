@@ -14,6 +14,7 @@ using Weesals.Utility;
 
 namespace Weesals.UI {
     public class PointerEvent : IDisposable {
+        public enum Types : byte { Unknown, Pointer, Touch, Pen, Mouse, Touchpad, }
         public struct EventTargets {
             public object? Hover;
             public object? Press;
@@ -35,6 +36,7 @@ namespace Weesals.UI {
             public Int2 Scroll;
         }
         public uint DeviceId;
+        public Types Type;
         public StateData Current;
         public StateData Previous;
         public EventTargets Targets;
@@ -647,7 +649,14 @@ namespace Weesals.UI {
             }
         }
 
-        public void ProcessPointers(Span<CSPointer> pointers, Modifiers modifiers) {
+        public void ProcessPointers(Span<CSPointer> pointers, Modifiers modifiers, ulong activePointers = ~0ul) {
+            /*if (activePointers == ~0ul) {
+                for (int i = 0; i < pointers.Length; i++) {
+                    if (pointers[i].mDeviceType == 2 && pointers[i].mCurrentButtonState == 0) {
+                        activePointers &= ~(1ul << i);
+                    }
+                }
+            }*/
             using var seenPointers = new PooledList<uint>();
             foreach (var deferredPtrs in activeDeferred.Values) {
                 for (int i = deferredPtrs.Count - 1; i >= 0; --i) {
@@ -662,18 +671,17 @@ namespace Weesals.UI {
                     deferredPtrs[i] = ptr;
                 }
             }
-            foreach (var pointer in pointers) {
-                seenPointers.Add(pointer.mDeviceId);
+            for (int i = 0; i < pointers.Length; i++) {
+                var pointer = pointers[i];
                 if (!pointerEvents.TryGetValue(pointer.mDeviceId, out var events)) {
                     events = new PointerEvent(this, pointer.mDeviceId) {
+                        Type = (PointerEvent.Types)pointer.mDeviceType,
                         CurrentPosition = pointer.mPositionCurrent + pointerOffset,
+                        ScrollState = new Int2(0, pointer.mMouseScroll),
                     };
                     pointerEvents.Add(pointer.mDeviceId, events);
                 }
                 events.Modifiers = modifiers;
-                PointerUpdate update = new(events);
-                UpdatePointerPre(events, pointer.mPositionCurrent + pointerOffset, pointer.mCurrentButtonState, update);
-                events.Current.Scroll.Y = pointer.mMouseScroll;
 
                 // Find active element (hover is default state so will always happen at least once)
                 if (!events.IsButtonDown && events.CanYield() && events.PreviousButtonState == 0) {
@@ -681,7 +689,17 @@ namespace Weesals.UI {
                     SetHover(events, hit);
                 }
 
+                PointerUpdate update = new(events);
+                UpdatePointerPre(events, pointer.mPositionCurrent + pointerOffset, pointer.mCurrentButtonState, update);
+                events.Current.Scroll.Y = pointer.mMouseScroll;
+
                 UpdatePointerPost(events, pointer.mCurrentButtonState, update);
+                if ((activePointers & (1ul << i)) == 0) {
+                    SetTargetStates(events, new(), events.State);
+                    pointerEvents.Remove(pointer.mDeviceId);
+                } else {
+                    seenPointers.Add(pointer.mDeviceId);
+                }
             }
             foreach (var ptr in pointerEvents) {
                 if (seenPointers.Contains(ptr.Key)) continue;
@@ -693,10 +711,9 @@ namespace Weesals.UI {
                 var nested = kv.Key;
                 var es = nested.EventSystem;
                 if (es != null)
-                    es.ProcessPointers(CollectionsMarshal.AsSpan(kv.Value), modifiers);
+                    es.ProcessPointers(CollectionsMarshal.AsSpan(kv.Value), modifiers, kv.Value.ActivePointers);
                 for (int i = 0; i < kv.Value.Count; ++i) {
                     var ptr = kv.Value[i];
-                    //if (!seenPointers.Contains(ptr.mDeviceId)) kv.Value.RemoveAt(i--);
                     if ((kv.Value.ActivePointers & (1ul << i)) == 0) kv.Value.RemoveAt(i--);
                 }
                 if (kv.Value.Count == 0) toRelease.Add(kv.Key);
@@ -801,7 +818,7 @@ namespace Weesals.UI {
             PointerEvent.States cmn = events.State;
             if (events.Targets.EffectiveHover != targets.EffectiveHover) {
                 cmn &= ~(PointerEvent.States.Hover);
-                Debug.WriteLine($"Changing hover from {events.Targets.EffectiveHover} to {targets.EffectiveHover}");
+                //Debug.WriteLine($"Changing hover from {events.Targets.EffectiveHover} to {targets.EffectiveHover}");
             }
             if (events.Targets.EffectivePress != targets.EffectivePress) {
                 cmn &= ~(PointerEvent.States.Press | PointerEvent.States.Drag);
@@ -829,7 +846,7 @@ namespace Weesals.UI {
             PointerEvent.EventTargets targets = events.Targets;
             TryInvoke(events, state, targets, eDragHandler, false);
             TryInvoke(events, state, targets, pUpHandler, false);
-            TryInvoke(events, state, targets, pExitHandler, false);
+            TryInvoke(events, state, targets, pExitHandler);
             TryInvoke(events, state, targets, pEndIntHandler, false);
             TryInvoke(events, state, targets, pBeginIntHandler);
             TryInvoke(events, state, targets, pEnterHandler);

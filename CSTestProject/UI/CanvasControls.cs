@@ -22,7 +22,7 @@ namespace Weesals.UI {
         public Vector2 ImageAnchor = new Vector2(0.5f, 0.5f);
 
         public CSBufferReference Texture { get => Element.Texture; set { Element.SetTexture(value); MarkLayoutDirty(); } }
-        public Color Color { get => Element.Color; set => Element.Color = value; }
+        public Color Color { get => Element.Color; set { Element.Color = value; MarkComposePartialDirty(); } }
         public CanvasBlending.BlendModes BlendMode { get => Element.BlendMode; set => Element.SetBlendMode(value); } 
 
         public Image(CSBufferReference texture = default) {
@@ -57,16 +57,25 @@ namespace Weesals.UI {
             Element.Append(ref composer);
             base.Compose(ref composer);
         }
+        public override void ComposePartial() {
+            if (Element.HasDirtyFlags) {
+                Element.UpdateLayout(Canvas, mLayoutCache);
+            }
+            base.ComposePartial();
+        }
     }
     public class TextBlock : CanvasRenderable {
+        public enum ExplicitFields { None = 0, Color = 1, }
         public CanvasText TextElement;
 
         public string Text { get => TextElement.Text; set { if (TextElement.Text == value) return; TextElement.Text = value; MarkComposeDirty(); MarkTransformDirty(); } }
-        public Color TextColor { get => TextElement.Color; set { TextElement.Color = value; MarkComposeDirty(); } }
+        public Color TextColor { get => TextElement.Color; set { TextElement.Color = value; MarkComposePartialDirty(); explicitFields |= ExplicitFields.Color; } }
         public float FontSize { get => TextElement.FontSize; set { TextElement.FontSize = value; MarkComposeDirty(); MarkTransformDirty(); } }
         public Font Font { get => TextElement.Font; set { TextElement.Font = value; MarkComposeDirty(); MarkTransformDirty(); } }
         public TextAlignment Alignment { get => TextElement.Alignment; set { TextElement.Alignment = value; MarkComposeDirty(); } }
         public TextDisplayParameters DisplayParameters { get => TextElement.DisplayParameters; set { TextElement.DisplayParameters = value; MarkComposeDirty(); } }
+
+        private ExplicitFields explicitFields;
 
         public TextBlock(string text = "") {
             TextElement = new CanvasText(text);
@@ -74,6 +83,8 @@ namespace Weesals.UI {
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
             TextElement.Initialize(Canvas);
+            if ((explicitFields & ExplicitFields.Color) == 0)
+                TextElement.Color = Style.Foreground;
         }
         public override void Uninitialise(CanvasBinding binding) {
             TextElement.Dispose(Canvas);
@@ -84,10 +95,13 @@ namespace Weesals.UI {
             TextElement.MarkLayoutDirty();
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
-            var layout = mLayoutCache;
-            TextElement.UpdateLayout(Canvas, layout);
+            TextElement.UpdateLayout(Canvas, mLayoutCache);
             TextElement.Append(ref composer);
             base.Compose(ref composer);
+        }
+        public override void ComposePartial() {
+            TextElement.UpdateLayout(Canvas, mLayoutCache);
+            base.ComposePartial();
         }
         public override SizingResult GetDesiredSize(SizingParameters sizing) {
             var width = TextElement.GetPreferredWidth();
@@ -413,7 +427,7 @@ namespace Weesals.UI {
         }
         protected virtual void SetValue(float _value) {
             if (value == _value) return;
-            value = _value;
+            value = Math.Clamp(_value, MinimumValue, MaximumValue);
             OnStateChanged?.Invoke(value);
             MarkComposeDirty();
         }
@@ -1060,12 +1074,12 @@ namespace Weesals.UI {
         public Vector2 Scroll { get => scroll; set => SetScroll(value); }
 
         public void OnBeginDrag(PointerEvent events) {
-            if (!events.GetIsButtonDown(1)) { events.Yield(); return; }
+            if (!events.GetIsButtonDown(1) && events.Type != PointerEvent.Types.Touch) { events.Yield(); return; }
             SetFlag(Flags.Dragging);
         }
         public void OnDrag(PointerEvent events) {
             var delta = -(events.CurrentPosition - events.PreviousPosition) * ScrollMask;
-            Scroll += delta;
+            ApplyDeltaScroll(delta);
             velocity = Vector2.Lerp(velocity, delta / Math.Max(0.0001f, events.System.DeltaTime), 0.5f);
         }
         public void OnEndDrag(PointerEvent events) {
@@ -1073,19 +1087,24 @@ namespace Weesals.UI {
             ClearFlag(Flags.Dragging);
         }
 
+        public void OnScroll(PointerEvent events) {
+            ApplyDeltaScroll(-(Vector2)events.ScrollDelta / 2f);
+            Canvas.Tweens.RegisterTweenable(this, events.Type != PointerEvent.Types.Touchpad ? 0.2f : 0f);
+        }
+
         private void SetScroll(Vector2 value) {
             scroll = value;
             MarkChildrenDirty();
         }
-
-        public void OnScroll(PointerEvent events) {
-            SetScroll(scroll - (Vector2)events.ScrollDelta / 2f);
-            Canvas.Tweens.RegisterTweenable(this);
+        private void ApplyDeltaScroll(Vector2 delta) {
+            var scroll = this.scroll;
+            var scrollable = Vector2.Max(default, contentSize - (mLayoutCache.GetSize() - Margins.Size));
+            scroll = MoveClamped(scroll, delta, default, scrollable);
+            SetScroll(scroll);
         }
 
-        public override void UpdateChildLayouts() {
+        private Vector2 ComputeContentSize() {
             var layout = mLayoutCache;
-            layout.Position.toxy(layout.Position.toxy() - Scroll - Margins.Min);
             contentSize = default;
             var availableSize = layout.GetSize() - Margins.Size;
             var sizing = SizingParameters.Default.SetPreferredSize(availableSize);
@@ -1094,7 +1113,12 @@ namespace Weesals.UI {
             foreach (var child in mChildren) {
                 contentSize = Vector2.Max(contentSize, child.GetDesiredSize(sizing).TotalSize);
             }
-            layout.SetSize(contentSize);
+            return contentSize;
+        }
+        public override void UpdateChildLayouts() {
+            var layout = mLayoutCache;
+            layout.Position.toxy(layout.Position.toxy() - Scroll - Margins.Min);
+            layout.SetSize(ComputeContentSize());
             foreach (var child in mChildren) {
                 child.UpdateLayout(layout);
             }
@@ -1129,7 +1153,7 @@ namespace Weesals.UI {
             return scroll;
         }
         private float MoveClamped(float from, float delta, float min, float max) {
-            const float Power = 1.2f;
+            const float Power = 1.5f;
             var limit = delta < 0f ? from - min : max - from;
             if (limit < 0f) limit = 1.0f - MathF.Pow(1.0f - limit, Power);
             limit -= Math.Abs(delta);

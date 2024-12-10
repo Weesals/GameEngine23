@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Utility;
 
 namespace Weesals.UI {
@@ -27,29 +29,35 @@ namespace Weesals.UI {
             public float Timer;
         }
         private List<Instance> instances = new();
-        public void RegisterTweenable(ITweenable tweenable) {
+        public void RegisterTweenable(ITweenable tweenable, float delay = 0f) {
             int i = 0;
             for (; i < instances.Count; i++) {
                 if (instances[i].Tweenable == tweenable) break;
             }
             if (i >= instances.Count) instances.Add(new Instance() { Tweenable = tweenable, });
             var instance = instances[i];
-            instance.Timer = 0f;
+            instance.Timer = -delay;
             instances[i] = instance;
         }
         public void Update(float dt) {
             for (int i = 0; i < instances.Count; i++) {
                 var instance = instances[i];
-                var tween = new Tween() { Time0 = instance.Timer, };
+                var tween = new Tween() { Time0 = Math.Max(0f, instance.Timer), };
                 instance.Timer += dt;
-                tween.Time1 = instance.Timer;
                 instances[i] = instance;
+                if (tween.Time0 == tween.Time1) continue;
+                tween.Time1 = Math.Max(0f, instance.Timer);
                 if (!instance.Tweenable.UpdateTween(tween)) continue;
                 instances.RemoveAt(i--);
             }
         }
     }
     public class Canvas : CanvasRenderable, IDisposable {
+        private static ProfilerMarker ProfileMarker_Layout = new("Canvas Layout");
+        private static ProfilerMarker ProfileMarker_Compose = new("Canvas Compose");
+        private static ProfilerMarker ProfileMarker_ComposePartial = new("Canvas Compose Partial");
+        private static ProfilerMarker ProfileMarker_Tweens = new("Canvas Tweens");
+        private static ProfilerMarker ProfileMarker_Update = new("Canvas Update");
         public delegate void CanvasRepaintDelegate(ref CanvasCompositor.Context context);
 
         public CanvasMeshBuffer Builder { get; private set; }
@@ -64,7 +72,11 @@ namespace Weesals.UI {
         public KeyboardFilter KeyboardFilter;
         public CanvasRepaintDelegate OnRepaint;
 
+        public StyleDictionary StyleDictionary = new();
+
         public int Revision => Builder.VertexRevision + Compositor.GetIndices().BufferLayout.revision;
+
+        private List<CanvasRenderable> partialUpdates = new();
 
         public Canvas() {
             Builder = new();
@@ -108,9 +120,12 @@ namespace Weesals.UI {
         public bool GetIsComposeDirty() { return base.HasDirtyFlag(DirtyFlags.Compose); }
         public void RequireComposed() {
             if (HasDirtyFlag(DirtyFlags.Children)) {
+                using var marker = ProfileMarker_Layout.Auto();
                 RequireLayout();
             }
             if (HasDirtyFlag(DirtyFlags.Compose)) {
+                using var marker = ProfileMarker_Compose.Auto();
+                partialUpdates.Clear();
                 ClearDirtyFlag(DirtyFlags.Compose);
                 var builder = Compositor.CreateBuilder(this);
                 var compositor = Compositor.CreateRoot(ref builder);
@@ -118,20 +133,36 @@ namespace Weesals.UI {
                 if (OnRepaint != null) OnRepaint(ref compositor);
                 Compositor.EndBuild(builder);
             }
+            if (partialUpdates.Count > 0) {
+                using var marker = ProfileMarker_ComposePartial.Auto();
+                foreach (var partial in partialUpdates) {
+                    partial.ComposePartial();
+                }
+                Builder.MarkVerticesChanged(default);
+            }
         }
         public Int2 GetSize() {
 	        return mSize;
         }
 
-        public void Update(float dt) {
+        public void PreUpdate(float dt) {
+            using var marker = ProfileMarker_Tweens.Auto();
             Tweens.Update(dt);
+        }
+        public void Update(float dt) {
+            using var marker = ProfileMarker_Update.Auto();
             Updatables.Invoke(dt);
         }
 
         public void Render(CSGraphics graphics) {
-            Compositor.Render(graphics, Material);
+            using (new GPUMarker(graphics, "Canvas Render")) {
+                Compositor.Render(graphics, Material);
+            }
         }
 
+        public void AppendPartialDirty(CanvasRenderable renderable) {
+            partialUpdates.Add(renderable);
+        }
     }
 
 }

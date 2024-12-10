@@ -113,6 +113,7 @@ namespace Weesals.UI {
             Layout = 2,     // Our mLayoutCache was changed
             Children = 4,   // Our children require layout (our mLayoutCache is unchanged)
             Compose = 8,    // We require a compose pass
+            ComposePartial = 16,    // We dont require a full compose (only UpdateLayout for each element)
         };
         public enum StateFlags : byte {
             None = 0,
@@ -145,6 +146,7 @@ namespace Weesals.UI {
         protected DirtyFlags dirtyFlags;
         protected StateFlags stateFlags;
         protected FeatureFlags featureFlags;
+        protected int styleId;
 
         public Canvas Canvas => mBinding.mCanvas;
         public CanvasRenderable? Parent => mBinding.mParent;
@@ -162,9 +164,13 @@ namespace Weesals.UI {
             get => (featureFlags & FeatureFlags.IgnoreLayout) != 0;
             set => featureFlags = (featureFlags & ~FeatureFlags.IgnoreLayout) | (value ? FeatureFlags.IgnoreLayout : 0);
         }
+        public StyleDictionary.ResolvedStyle Style => Canvas.StyleDictionary.RequireStyle(styleId);
+        protected virtual StyleDictionary.Resolver styleResolver => null;
         public virtual void Initialise(CanvasBinding binding) {
             mBinding = binding;
             if (mBinding.mCanvas != null) {
+                styleId = Canvas.StyleDictionary.InheritStyle(Parent?.styleId ?? 0, styleResolver);
+
                 mDepth = (byte)(binding.mParent == null ? 0 : (binding.mParent.mDepth + 1));
                 stateFlags = StateFlags.None;
                 // Should this default to on?
@@ -186,6 +192,8 @@ namespace Weesals.UI {
         }
         public virtual void Uninitialise(CanvasBinding binding) {
             if (mBinding.mCanvas != null) {
+                Canvas.StyleDictionary.ReleaseStyle(styleId);
+                styleId = -1;
                 stateFlags = StateFlags.None;
                 mBinding.mCanvas.MarkComposeDirty();
                 if (mChildren != null) {
@@ -288,7 +296,7 @@ namespace Weesals.UI {
         }
         public virtual void Compose(ref CanvasCompositor.Context composer) {
             using var zindex = composer.PushZIndex(ZIndex);
-            ClearDirtyFlag(DirtyFlags.Compose | DirtyFlags.Layout);
+            ClearDirtyFlag(DirtyFlags.Compose | DirtyFlags.Layout | DirtyFlags.ComposePartial);
             if (mChildren != null) {
                 foreach (var child in mChildren) {
                     var childContext = composer.InsertChild(child);
@@ -296,6 +304,9 @@ namespace Weesals.UI {
                     childContext.ClearRemainder();
                 }
             }
+        }
+        public virtual void ComposePartial() {
+            ClearDirtyFlag(DirtyFlags.ComposePartial);
         }
 
         public T? FindChild<T>() where T : CanvasRenderable {
@@ -352,6 +363,11 @@ namespace Weesals.UI {
         protected void MarkComposeDirty() {
             dirtyFlags |= DirtyFlags.Compose;
             if (Canvas != null && Canvas != this) Canvas.MarkComposeDirty();
+        }
+        protected void MarkComposePartialDirty() {
+            if (HasDirtyFlag(DirtyFlags.Compose | DirtyFlags.ComposePartial)) return;
+            dirtyFlags |= DirtyFlags.Compose | DirtyFlags.ComposePartial;
+            if (Canvas != null && Canvas != this) Canvas.AppendPartialDirty(this);
         }
         internal bool HasDirtyFlag(DirtyFlags flag) {
             return (dirtyFlags & flag) != 0;

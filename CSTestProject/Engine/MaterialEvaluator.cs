@@ -80,11 +80,12 @@ namespace Weesals.Engine {
                 tmpData.Slice(0, data.Length).CopyTo(data);
             }
 		}
-		unsafe static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
+        private static CSIdentifier sHalfIdentifier = "half";
+        unsafe static void ResolveConstantBuffer(CSConstantBuffer cb, Span<Material> materialStack, Span<byte> buffer) {
             using var collector = Material.BeginGetUniforms(materialStack);
             foreach (var val in cb.GetValues()) {
 				var data = collector.GetUniform(val.mName);
-                if (val.mType == "half") {
+                if (val.mType == sHalfIdentifier) {
                     var floats = MemoryMarshal.Cast<byte, float>(data);
                     for (int r = 0; r < val.mRows; r++) {
                         var halfArr = MemoryMarshal.Cast<byte, Half>(buffer.Slice(val.mOffset + 16 * r));
@@ -319,10 +320,11 @@ namespace Weesals.Engine {
                 values[v] = value;
             }
         }
+        private static CSIdentifier gNullMatIdentifier = "NullMat";
         public Span<byte> GetUniformSourceNull(CSIdentifier name, MaterialCollectorContext context) {
             var material = Material.NullInstance;
             var parameters = material.GetParametersRaw();
-            var itemIndex = parameters.GetItemIndex("NullMat");
+            var itemIndex = parameters.GetItemIndex(gNullMatIdentifier);
             var valueIndex = ObserveValue(material, itemIndex);
             var value = values[valueIndex].EvalValue;
             return parameters.GetDataRaw().Slice(value.ValueOffset, value.DataSize);

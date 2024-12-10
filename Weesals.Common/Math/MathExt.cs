@@ -497,6 +497,9 @@ namespace Weesals.Engine {
         public static bool operator !=(RectI r, RectI o) { return !(r == o); }
         public static implicit operator RectF(RectI r) { return new RectF(r.X, r.Y, r.Width, r.Height); }
 
+        public bool Contains(Int2 pnt) {
+            return (uint)(pnt.X - X) < Width && (uint)(pnt.Y - Y) < Height;
+        }
         public bool ContainsInclusive(Int2 pnt) {
             return (uint)(pnt.X - X) <= Width && (uint)(pnt.Y - Y) <= Height;
         }

@@ -19,12 +19,14 @@ class D3DGraphicsSurface;
 
 // Stores a cache of Constant Buffers that have been generated
 // so that they can be efficiently reused where appropriate
-    // The GPU data for a set of shaders, rendering state, and vertex attributes
-struct D3DConstantBuffer {
+struct D3DConstantBufferPooled {
     ComPtr<ID3D12Resource> mConstantBuffer;
-    D3D12_GPU_DESCRIPTOR_HANDLE mConstantBufferHandle;
-    int mSize;
-    int mDetatchRefCount;
+    int mRevision;
+};
+struct D3DConstantBuffer {
+    int mConstantBufferIndex;
+    int mConstantBufferRevision;
+    int mOffset;
 };
 
 struct D3DAllocatorHandle {
@@ -190,6 +192,7 @@ private:
     ResourceMap<const Texture*, D3DTexture> textureMapping;
     ResourceMap<const RenderTarget2D*, D3DRenderSurface> rtMapping;
     std::map<size_t, std::unique_ptr<D3DBinding>> mBindings;
+    PerFrameItemStoreNoHash<D3DConstantBufferPooled> mConstantBufferPool;
     PerFrameItemStore<D3DConstantBuffer> mConstantBufferCache;
     PerFrameItemStore<ShaderResourceView> mResourceViewCache;
     PerFrameItemStore<RenderTargetView> mTargetViewCache;
@@ -244,11 +247,16 @@ public:
         std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
     D3DPipelineState* RequireComputePSO(const CompiledShader& shader);
-    D3DConstantBuffer* RequireConstantBuffer(D3DCommandContext& cmdList, std::span<const uint8_t> data, size_t hash);
+    struct CBBumpAllocator {
+        int mBumpConstantBuffer;
+        int mBumpConstantConsume;
+    };
+    D3DConstantBuffer* RequireConstantBuffer(D3DCommandContext& cmdList, std::span<const uint8_t> data, size_t hash, CBBumpAllocator& bumpAllocator);
+    ComPtr<ID3D12Resource>& GetConstantBuffer(int index);
     RenderTargetView& RequireTextureRTV(D3DRenderSurfaceView& view, LockMask lockBits);
     int RequireTextureSRV(D3DTexture& texture, LockMask lockBits);
     void InvalidateBufferSRV(D3DBuffer& buffer);
-    void ClearBufferSRV(D3DBuffer& buffer);
+    void ClearBufferSRV(D3DBuffer& buffer, LockMask lockBits);
 
     D3D12_RESOURCE_DESC GetTextureDesc(const Texture& tex);
     int GetTextureSRV(ID3D12Resource* buffer, DXGI_FORMAT fmt, bool is3D, int arrayCount, LockMask lockBits, int mipB = 0, int mipC = -1);
@@ -261,7 +269,7 @@ public:
     D3DTexture* RequireTexture(const Texture* tex, D3DCommandContext& cmdList);
     D3DTexture* RequireCurrentTexture(const Texture* tex, D3DCommandContext& cmdList);
 
-    void RequireState(D3DCommandContext& cmdList, D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON);
+    void RequireState(D3DCommandContext& cmdList, D3DBinding& buffer, const BufferLayout& binding, D3D12_RESOURCE_STATES state);
     void FlushBarriers(D3DCommandContext& cmdList);
 
     void DelayResourceDispose(const ComPtr<ID3D12Resource>& resource, LockMask lockBits);

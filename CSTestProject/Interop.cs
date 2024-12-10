@@ -707,6 +707,12 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetRenderStatistics@CSGraphics@@CA?AUCSRenderStatistics@@PEBVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern CSRenderStatistics GetRenderStatistics([NativeTypeName("const NativeGraphics *")] NativeGraphics* graphics);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?BeginScope@CSGraphics@@CAXPEAVNativeGraphics@@UCSString@@@Z", ExactSpelling = true)]
+        private static extern void BeginScope(NativeGraphics* graphics, CSString name);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?EndScope@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
+        private static extern void EndScope(NativeGraphics* graphics);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateSurface@CSGraphics@@CAPEAVGraphicsSurface@@PEAVNativeGraphics@@PEAVWindowBase@@@Z", ExactSpelling = true)]
         [return: NativeTypeName("NativeSurface *")]
         private static extern NativeGraphicsSurface* CreateSurface(NativeGraphics* graphics, [NativeTypeName("NativeWindow *")] WindowBase* window);
@@ -896,6 +902,8 @@ namespace Weesals.Engine
     {
         [NativeTypeName("unsigned int")]
         public uint mDeviceId;
+
+        public int mDeviceType;
 
         [NativeTypeName("Vector2")]
         public System.Numerics.Vector2 mPositionCurrent;

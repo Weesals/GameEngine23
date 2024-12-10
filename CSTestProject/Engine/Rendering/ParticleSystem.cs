@@ -7,6 +7,7 @@ using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.ECS;
+using Weesals.Engine.Profiling;
 using Weesals.UI;
 using Weesals.Utility;
 
@@ -448,76 +449,78 @@ namespace Weesals.Engine {
             blockMeta[blockIndex] = BlockMetadata.Invalid;
         }
         unsafe public void Update(CSGraphics graphics, float dt) {
-            if (dt > 0.2f) dt = 0.2f;
-            if (time == 0f) {
+            using (new GPUMarker(graphics, "Particles Simulate")) {
+                if (dt > 0.2f) dt = 0.2f;
+                if (time == 0f) {
+                    SetTargets(graphics);
+                    graphics.Clear();
+                }
+                int oldCycle = (int)(time / 500.0f);
+                time += dt;
+                int newCycle = (int)(time / 500.0f);
+                if (oldCycle != newCycle) PruneOld(graphics);
+                rootMaterial.SetValue("DeltaTime", dt);
+                rootMaterial.SetValue("LocalTime", time);
+                rootMaterial.SetValue("LocalTimeZ", (time / 500.0f) % 1.0f);
+                rootMaterial.SetValue("PoolSize", (int)PoolSize.X);
+                rootMaterial.SetValue("BlockSizeBits", BitOperations.TrailingZeroCount(PoolSize.X) - 2);
+                if (oldCycle != newCycle) Rebase(graphics);
+
+                var bindingsPtr = stackalloc CSBufferLayout[2];
+                var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
+                using var materials = new PooledArray<Material>(2);
+                materials[1] = rootMaterial;
+
+                // Delete expired blocks
+                foreach (var system in systems) {
+                    system.UpdateExpired(graphics, emissionMesh, dt);
+                }
+                if (emissionMesh.IndexCount > 0) {
+                    SetTargets(graphics, 1);
+                    bindings[0] = emissionMesh.IndexBuffer;
+                    bindings[1] = emissionMesh.VertexBuffer;
+                    materials[0] = expireMaterial;
+                    var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
+                    var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                    graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
+                    SetTargets(graphics);
+                    pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
+                    resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                    graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
+                    emissionMesh.Clear();
+                }
                 SetTargets(graphics);
-                graphics.Clear();
-            }
-            int oldCycle = (int)(time / 500.0f);
-            time += dt;
-            int newCycle = (int)(time / 500.0f);
-            if (oldCycle != newCycle) PruneOld(graphics);
-            rootMaterial.SetValue("DeltaTime", dt);
-            rootMaterial.SetValue("LocalTime", time);
-            rootMaterial.SetValue("LocalTimeZ", (time / 500.0f) % 1.0f);
-            rootMaterial.SetValue("PoolSize", (int)PoolSize.X);
-            rootMaterial.SetValue("BlockSizeBits", BitOperations.TrailingZeroCount(PoolSize.X) - 2);
-            if (oldCycle != newCycle) Rebase(graphics);
 
-            var bindingsPtr = stackalloc CSBufferLayout[2];
-            var bindings = new MemoryBlock<CSBufferLayout>(bindingsPtr, 2);
-            using var materials = new PooledArray<Material>(2);
-            materials[1] = rootMaterial;
+                // Spawn new blocks
+                foreach (var system in systems) {
+                    var irange = system.UpdateEmission(graphics, emissionMesh, dt);
+                    if (irange.Length <= 0) continue;
+                    bindings[0] = emissionMesh.IndexBuffer;
+                    bindings[1] = emissionMesh.VertexBuffer;
+                    materials[0] = system.SpawnerMaterial;
+                    var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
+                    var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                    var drawConfig = CSDrawConfig.Default;
+                    graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
+                    emissionMesh.Clear();
+                }
 
-            // Delete expired blocks
-            foreach (var system in systems) {
-                system.UpdateExpired(graphics, emissionMesh, dt);
-            }
-            if (emissionMesh.IndexCount > 0) {
-                SetTargets(graphics, 1);
-                bindings[0] = emissionMesh.IndexBuffer;
-                bindings[1] = emissionMesh.VertexBuffer;
-                materials[0] = expireMaterial;
-                var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
-                var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
+                // Update valid blocks
+                FlipBuffers();
                 SetTargets(graphics);
-                pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
-                resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), CSDrawConfig.Default);
-                emissionMesh.Clear();
-            }
-            SetTargets(graphics);
+                foreach (var system in systems) {
+                    if (!system.HasParticles) continue;
+                    bindings[0] = updateMesh.IndexBuffer;
+                    bindings[1] = updateMesh.VertexBuffer;
+                    materials[0] = system.StepperMaterial;
+                    var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
+                    var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
+                    var drawConfig = CSDrawConfig.Default;
+                    graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
+                }
 
-            // Spawn new blocks
-            foreach (var system in systems) {
-                var irange = system.UpdateEmission(graphics, emissionMesh, dt);
-                if (irange.Length <= 0) continue;
-                bindings[0] = emissionMesh.IndexBuffer;
-                bindings[1] = emissionMesh.VertexBuffer;
-                materials[0] = system.SpawnerMaterial;
-                var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
-                var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                var drawConfig = CSDrawConfig.Default;
-                graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
-                emissionMesh.Clear();
+                requireActiveBlocksUpdate = true;
             }
-
-            // Update valid blocks
-            FlipBuffers();
-            SetTargets(graphics);
-            foreach (var system in systems) {
-                if (!system.HasParticles) continue;
-                bindings[0] = updateMesh.IndexBuffer;
-                bindings[1] = updateMesh.VertexBuffer;
-                materials[0] = system.StepperMaterial;
-                var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
-                var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                var drawConfig = CSDrawConfig.Default;
-                graphics.Draw(pso, bindings.AsCSSpan(), resources.AsCSSpan(), drawConfig);
-            }
-
-            requireActiveBlocksUpdate = true;
         }
 
         unsafe private void PruneOld(CSGraphics graphics) {
@@ -546,7 +549,9 @@ namespace Weesals.Engine {
         }
 
         public void Draw(CSGraphics graphics) {
-            Draw(graphics, RenderTag.Default | RenderTag.Transparent);
+            using (new GPUMarker(graphics, "Particles")) {
+                Draw(graphics, RenderTag.Default | RenderTag.Transparent);
+            }
         }
         unsafe public void Draw(CSGraphics graphics, RenderTags tags) {
             var bindingsPtr = stackalloc CSBufferLayout[1] { updateMesh.IndexBuffer, };
@@ -623,6 +628,7 @@ namespace Weesals.Engine {
     }
     public class ParticleSystem {
         private static readonly ushort[] quadIndices = new ushort[] { 0, 1, 2, 1, 3, 2, };
+        private readonly int BufferDirtyFlag = unchecked((int)0x80000000);
         public readonly string? Name;
         public ParticleSystemManager? Manager;
         public Material CommonMaterial;
@@ -733,6 +739,7 @@ namespace Weesals.Engine {
             emitter.CountOverTime.SetConstant(SpawnRate);
             emitter.Position = pos;
             emitters.Add(emitter);
+            emitterData.BufferLayout.revision |= BufferDirtyFlag;
             return emitter;
         }
         private bool GetIsExpired(int expireTimeMS) {
@@ -766,18 +773,6 @@ namespace Weesals.Engine {
             if (emitters.Count == 0) return default;
 
             //Debug.Assert(emitters.Count < 255, "Too many emitters!");
-            int emitterCount = emitters.Count;// Math.Min(emitters.Count, 255);
-            if (emitterCount > emitterData.BufferCapacityCount)
-                emitterData.AllocResize(emitterCount);
-            emitterData.SetCount(emitterCount);
-            var emitterPositions = new TypedBufferView<Vector3>(emitterData.Elements[0], emitterData.Count);
-            for (int i = 0; i < emitterCount; i++) {
-                var emitter = emitters[i];
-                emitterPositions[i] = emitter.Position;
-            }
-            emitterData.NotifyChanged();
-            graphics.CopyBufferData(emitterData, new RangeInt(0, emitterData.BufferStride * emitterCount));
-
             var rangeBegin = mesh.IndexCount;
             for (int i = 0; i < emitters.Count; i++) {
                 var emitter = emitters[i];
@@ -802,7 +797,22 @@ namespace Weesals.Engine {
                 if (emitter.Lifetime >= 0f && emitter.Age > emitter.Lifetime) {
                     emitter.MarkDead();
                     emitters.RemoveAt(i--);
+                    emitterData.BufferLayout.revision |= BufferDirtyFlag;
                 }
+            }
+            if ((emitterData.BufferLayout.revision & BufferDirtyFlag) != 0) {
+                emitterData.BufferLayout.revision &= ~BufferDirtyFlag;
+                int emitterCount = emitters.Count;// Math.Min(emitters.Count, 255);
+                if (emitterCount > emitterData.BufferCapacityCount)
+                    emitterData.AllocResize(emitterCount);
+                emitterData.SetCount(emitterCount);
+                var emitterPositions = new TypedBufferView<Vector3>(emitterData.Elements[0], emitterData.Count);
+                for (int i = 0; i < emitterCount; i++) {
+                    var emitter = emitters[i];
+                    emitterPositions[i] = emitter.Position;
+                }
+                emitterData.NotifyChanged();
+                graphics.CopyBufferData(emitterData, new RangeInt(0, emitterData.BufferStride * emitterCount));
             }
             return RangeInt.FromBeginEnd(rangeBegin, mesh.IndexCount);
         }
