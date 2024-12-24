@@ -866,6 +866,10 @@ namespace Weesals.Engine
             return mWindow;
         }
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateChildWindow@CSWindow@@SAPEAVWindowBase@@PEAV2@UCSString@@URectInt@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("NativeWindow *")]
+        public static extern WindowBase* CreateChildWindow([NativeTypeName("NativeWindow *")] WindowBase* parent, CSString name, [NativeTypeName("RectInt")] Weesals.Engine.RectI rect);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispose@CSWindow@@CAXPEAVWindowBase@@@Z", ExactSpelling = true)]
         private static extern void Dispose([NativeTypeName("NativeWindow *")] WindowBase* window);
 

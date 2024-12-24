@@ -46,7 +46,7 @@ namespace Game5.Game {
         public override string ToString() { return $"Selected {Selected}"; }
     }
 
-    public class EntityProxy : IItemPosition, IEntitySelectable, IEntityTeam, IItemRedirect, IItemStringifier {
+    public class EntityProxy : IItemPosition, IEntitySelectable, IEntityTeam, IEntityFootprint, IItemRedirect, IItemStringifier {
 
         public readonly World World;
         public EntityMapSystem EntityMapSystem;
@@ -97,6 +97,27 @@ namespace Game5.Game {
         public ItemReference MakeHandle(Entity entity) {
             return new ItemReference(this, EntityProxyExt.PackEntity(entity));
         }
+
+        public EntityFootprint GetEntityFootprint(ulong id = 0) {
+            var entity = EntityProxyExt.UnpackEntity(id);
+            if (entity.IsValid) {
+                var protoData = World.GetComponent<PrototypeData>(entity);
+                return protoData.Footprint;
+            }
+            return default;
+        }
+    }
+
+    public class LandscapeProxy : LandscapeRenderer, IEntityFootprint, IItemPositionRO {
+        public EntityFootprint GetEntityFootprint(ulong id = 0) {
+            return new EntityFootprint() {
+                Size = Bounds.Size.toxz() * SimulationWorld.InvWorldScale,
+                Shape = EntityFootprint.Shapes.Box,
+            };
+        }
+
+        Vector3 IItemPositionRO.GetPosition(ulong id) => new(Bounds.Centre.X, 0f, Bounds.Centre.Z);
+        Quaternion IItemPositionRO.GetRotation(ulong id) => Quaternion.Identity;
     }
 
     public class Simulation {
@@ -114,15 +135,17 @@ namespace Game5.Game {
         public LifeSystem LifeSystem { get; private set; }
         public PrefabRegistry PrefabRegistry { get; private set; }
 
-        private NavigationSystem navigationSystem;
-
-        public NavMesh NavMesh => navigationSystem.NavMesh;
-        public NavMesh2Baker NavBaker => navigationSystem.NavMeshBaker;
+        public NavigationSystem NavigationSystem { get; private set; }
 
         public class ProfiledBootstrap : SystemBootstrap {
             public override T CreateSystem<T>(EntityContext context) {
                 using var marker = new ProfilerMarker("NewSys " + typeof(T).Name).Auto();
                 return base.CreateSystem<T>(context);
+            }
+            public override void UpdateSystem<T>(T system) {
+                using (new ProfilerMarker(system.Name).Auto()) {
+                    base.UpdateSystem(system);
+                }
             }
         }
 
@@ -141,7 +164,7 @@ namespace Game5.Game {
             ActionDispatchSystem = World.GetOrCreateSystem<OrderDispatchSystem>();
             ActionQueueSystem = World.GetOrCreateSystem<OrderQueueSystem>();
             EntityMapSystem = World.GetOrCreateSystem<EntityMapSystem>();
-            navigationSystem = World.GetOrCreateSystem<NavigationSystem>();
+            NavigationSystem = World.GetOrCreateSystem<NavigationSystem>();
             World.GetOrCreateSystem<OrderMoveSystem>();
             World.GetOrCreateSystem<OrderAttackSystem>();
             World.GetOrCreateSystem<OrderTrainSystem>();
@@ -151,7 +174,7 @@ namespace Game5.Game {
         public void SetLandscape(LandscapeData landscape) {
             Landscape = landscape;
             EntityMapSystem.SetLandscape(landscape);
-            navigationSystem.SetLandscape(landscape);
+            NavigationSystem.SetLandscape(landscape);
         }
 
         Entity tcInstance;
@@ -294,7 +317,7 @@ namespace Game5.Game {
                 //World.GetComponentRef<ECTransform>(tcInstance).Position += new Int2(1000, 1000);
                 World.GetComponentRef<ECTransform>(tcInstance).Position += new Int2(500, 0);
                 World.GetComponentRef<CModel>(tcInstance);
-                navigationSystem.Update();
+                NavigationSystem.Update();
             }
             World.GetOrCreateSystem<TimeSystem>().Step(dtMS);
             World.Step();

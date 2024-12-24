@@ -102,8 +102,8 @@ namespace Weesals.Engine {
         public CSWindow Window;
         public CSGraphicsSurface Surface;
         public CSInput Input;
-        public Int2 Size => Window.GetSize();
-        public bool IsRenderable => Size.Y > 0;
+        public Int2 WindowSize => Window.GetSize();
+        public bool IsRenderable => WindowSize.Y > 0;
 
         protected FrameThrottler throttler = new();
 
@@ -114,18 +114,22 @@ namespace Weesals.Engine {
         }
 
         public virtual void RegisterRootWindow(CSWindow window) {
-            var core = Core.ActiveInstance;
             Window = window;
-            using (var marker = new ProfilerMarker("Create Surface").Auto()) {
-                Surface = core.GetGraphics().CreateSurface(window);
-            }
             Window.SetInput(Input);
+            CreateSurface();
             ApplicationWindow.ActiveWindows.Add(this);
+        }
+
+        protected virtual void CreateSurface() {
+            var core = Core.ActiveInstance;
+            using (var marker = new ProfilerMarker("Create Surface").Auto()) {
+                Surface = core.GetGraphics().CreateSurface(Window);
+            }
         }
 
         public virtual bool Validate() {
             if (!Window.IsValid) return false;
-            var size = Size;
+            var size = WindowSize;
             if (size.Y <= 0) return false;
             if (Surface.IsValid && size != Surface.GetResolution())
                 Surface.SetResolution(size);

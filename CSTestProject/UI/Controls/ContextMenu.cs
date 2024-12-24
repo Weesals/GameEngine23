@@ -45,7 +45,7 @@ namespace Weesals.UI.Controls {
             base.Update(dt);
             EventSystem.Update(dt);
             if (!Window.IsValid) return;
-            Canvas.SetSize(Size);
+            Canvas.SetSize(WindowSize);
             Canvas.Update(dt);
             Canvas.RequireComposed();
         }

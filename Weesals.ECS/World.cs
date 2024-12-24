@@ -357,6 +357,8 @@ namespace Weesals.ECS {
             Debug.Assert(newData.ArchetypeId == EntityStorage.GetEntityDataRef(entity).ArchetypeId,
                 "Entity cannot be moved in a change callback. Add/Remove Sparse components only");
             ColumnStorage.Validate?.Invoke();
+            ColumnStorage.NotifyDestroyed(ref oldArchetype, oldData);
+            ColumnStorage.NotifyCreated(ref newArchetype, newData);
         }
         private void RemoveRow(EntityAddress entityData) {
             ColumnStorage.Validate?.Invoke();
@@ -801,8 +803,16 @@ namespace Weesals.ECS {
 
         public void Step() {
             for (int i = 0; i < systems.Count; i++) {
+                if (systems[i] is not IEarlyUpdateSystem system) continue;
+                system.OnEarlyUpdate();
+            }
+            for (int i = 0; i < systems.Count; i++) {
                 var system = systems[i];
-                system.Update();
+                if (Context.SystemBootstrap != null) {
+                    Context.SystemBootstrap.UpdateSystem(system);
+                } else {
+                    system.Update();
+                }
             }
             for (int i = 0; i < systems.Count; i++) {
                 if (systems[i] is not ILateUpdateSystem system) continue;

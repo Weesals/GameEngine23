@@ -53,7 +53,7 @@ namespace Weesals.Editor {
                 const float ThreadSeparation = 2f;
                 const float RowHeight = ThreadHeight + ThreadSeparation;
                 base.Compose(ref composer);
-                var windowSize = Window.Size;
+                var windowSize = Window.WindowSize;
                 var snapshots = ProfilerMarker.AllSnapshots;
                 var bgSprite = Resources.TryLoadSprite("PanelBG");
                 var minSnapshot = GetSnapshotAt(PXToTick(0f));
@@ -147,7 +147,7 @@ namespace Weesals.Editor {
             graphics.SetSurface(Surface);
             graphics.SetRenderTargets(Surface.GetBackBuffer(), default);
             graphics.Clear();
-            Canvas.SetSize(Size);
+            Canvas.SetSize(WindowSize);
             Canvas.Update(dt);
             Canvas.RequireComposed();
             Canvas.Render(graphics);

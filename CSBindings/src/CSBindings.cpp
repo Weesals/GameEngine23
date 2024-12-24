@@ -460,6 +460,15 @@ void CSGraphicsSurface::Present(NativeSurface* surface) {
 	surface->Present();
 }
 
+NativeWindow* CSWindow::CreateChildWindow(NativeWindow* parent, CSString name, RectInt rect) {
+	auto* win32Parent = dynamic_cast<WindowWin32*>(parent);
+	std::shared_ptr<WindowWin32> childWindow = std::make_shared<WindowWin32>(
+		(std::wstring)ToWString(name), win32Parent->GetHWND()
+	);
+	childWindow->SetClientSize(Int2(rect.width, rect.height));
+	increment_shared(childWindow);
+	return childWindow.get();
+}
 void CSWindow::Dispose(NativeWindow* window) {
 	window->Close();
 }
@@ -514,20 +523,22 @@ void CSWindow::SetWindowFrame(const NativeWindow* window, const RectInt* frame, 
 	Int2 tl = frame->GetMin(), br = frame->GetMax();
 	auto& wndRect = placement.rcNormalPosition;
 	wndRect = { tl.x, tl.y, br.x, br.y };
-	auto hMonitor = MonitorFromRect(&wndRect, MONITOR_DEFAULTTONEAREST);
-	if (hMonitor) {
-		MONITORINFO monitorInfo = { sizeof(MONITORINFO) };
-		if (GetMonitorInfo(hMonitor, &monitorInfo)) {
-			auto& workRect = monitorInfo.rcWork;
-			auto width = std::min(wndRect.right - wndRect.left, workRect.right - workRect.left);
-			auto height = std::min(wndRect.bottom - wndRect.top, workRect.bottom - workRect.top);
-			wndRect.left = std::clamp(wndRect.left, workRect.left, workRect.right - width);
-			wndRect.top = std::clamp(wndRect.top, workRect.top, workRect.bottom - height);
-			wndRect.right = wndRect.left + width;
-			wndRect.bottom = wndRect.top + height;
+	if (GetParent(hwnd) == 0) {
+		auto hMonitor = MonitorFromRect(&wndRect, MONITOR_DEFAULTTONEAREST);
+		if (hMonitor) {
+			MONITORINFO monitorInfo = { sizeof(MONITORINFO) };
+			if (GetMonitorInfo(hMonitor, &monitorInfo)) {
+				auto& workRect = monitorInfo.rcWork;
+				auto width = std::min(wndRect.right - wndRect.left, workRect.right - workRect.left);
+				auto height = std::min(wndRect.bottom - wndRect.top, workRect.bottom - workRect.top);
+				wndRect.left = std::clamp(wndRect.left, workRect.left, workRect.right - width);
+				wndRect.top = std::clamp(wndRect.top, workRect.top, workRect.bottom - height);
+				wndRect.right = wndRect.left + width;
+				wndRect.bottom = wndRect.top + height;
+			}
 		}
+		placement.showCmd = maximized ? SW_MAXIMIZE : SW_RESTORE;
 	}
-	placement.showCmd = maximized ? SW_MAXIMIZE : SW_RESTORE;
 	SetWindowPlacement(hwnd, &placement);
 }
 void CSWindow::RegisterMovedCallback(const NativeWindow* window, void (*Callback)(), bool enable) {

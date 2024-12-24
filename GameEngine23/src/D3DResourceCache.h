@@ -32,7 +32,7 @@ struct D3DConstantBuffer {
 struct D3DAllocatorHandle {
     int mAllocatorId;
     UINT64 mFenceValue;
-    D3DAllocatorHandle() : mAllocatorId(-1), mFenceValue(0) { }
+    D3DAllocatorHandle(int allocId = -1, UINT64 fenceValue = 0) : mAllocatorId(allocId), mFenceValue(fenceValue) { }
 };
 
 struct D3DCommandContext {
@@ -78,6 +78,8 @@ public:
     struct D3DRootSignature {
         ComPtr<ID3D12RootSignature> mRootSignature;
         int mNumConstantBuffers;
+        int mSRVCount;
+        int mUAVCount;
         int mNumResources;
         int GetNumBindings() const { return mNumConstantBuffers + mNumResources; }
     };
@@ -112,19 +114,14 @@ public:
         ComPtr<ID3D12Fence> mFence;
         UINT64 mFenceValue;
         UINT64 mLockFrame;
-        D3DAllocatorHandle CreateWaitHandle() {
-            D3DAllocatorHandle handle;
-            handle.mAllocatorId = mId;
-            handle.mFenceValue = mFenceValue;
-            return handle;
-        }
+        D3DAllocatorHandle CreateWaitHandle() { return D3DAllocatorHandle(mId, mFenceValue); }
         bool HasLockedFrames() const { return mFenceValue != mLockFrame; }
         UINT64 GetHeadFrame() const { return mFenceValue; }
         UINT64 GetLockFrame() const { return mFence->GetCompletedValue(); }
-        UINT64 ConsumeFrame(UINT64 untilFrame) {
-            auto id = mLockFrame;
-            mLockFrame = untilFrame;
-            return id;
+        bool ConsumeFrame(UINT64 untilFrame) {
+            UINT64 oldValue = mLockFrame;
+            return oldValue != untilFrame && std::atomic_ref<UINT64>(mLockFrame)
+                .compare_exchange_weak(oldValue, untilFrame) && mFenceValue == untilFrame;
         }
     };
 
@@ -135,8 +132,6 @@ public:
     std::atomic<int> mRTOffset;
     std::atomic<int> mDSOffset;
     std::atomic<int> mCBOffset;
-
-    std::unordered_map<Int2, std::unique_ptr<D3DRenderSurface>> depthBufferPool;
 
     // Used for generating unique barrier ids
     std::atomic<int> mLastBarrierId = 0;
@@ -215,6 +210,7 @@ public:
     void UnlockFrame(size_t frameHash);
     void ClearDelayedData();
     ID3D12Resource* AllocateUploadBuffer(size_t size, LockMask lockBits);
+    ID3D12Resource* AllocateUploadBuffer(size_t size, LockMask lockBits, int& itemIndex);
     ID3D12Resource* AllocateReadbackBuffer(size_t size, LockMask lockBits);
     bool RequireBuffer(const BufferLayout& binding, D3DBinding& d3dBin, LockMask lockBits);
     D3DResourceCache::D3DBinding* GetBinding(uint64_t bindingIdentifier);

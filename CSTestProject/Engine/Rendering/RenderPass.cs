@@ -20,12 +20,20 @@ namespace Weesals.Engine {
      * Inputs can be write-only (transparent rendering on top of opaque pass)
      * Outputs can be RT or direct to screen
      */
-    public struct TextureDesc {
+    public struct TextureDesc : IEquatable<TextureDesc> {
         public Int2 Size = 0;
         public BufferFormat Format;
         public int MipCount = 1;
         public TextureDesc() { }
+        public TextureDesc(Int2 size, BufferFormat fmt = BufferFormat.FORMAT_R8G8B8A8_UNORM, int mipCount = 1) {
+            Size = size; Format = fmt; MipCount = mipCount;
+        }
+        public TextureDesc(CSRenderTarget rt) { Size = rt.Size; Format = rt.Format; MipCount = rt.MipCount; }
+
+        public bool Equals(TextureDesc other)
+            => Size == other.Size && Format == other.Format && MipCount == other.MipCount;
         public override string ToString() { return $"<{Size}:{Format}:{MipCount}>"; }
+        public override int GetHashCode() => (Size, Format, MipCount).GetHashCode();
     }
     public interface ICustomOutputTextures {
         bool FillTextures(CSGraphics graphics, ref RenderGraph.CustomTexturesContext context);

@@ -266,6 +266,10 @@ namespace Weesals.Utility {
 
         public BoundingVolumeHierarchy(Scene scene) {
             Scene = scene;
+            CreateRoot(default, 4);
+            RequireBranches();
+            branches[root.Index].Bounds = BoundingBox.Invalid;
+            Debug.WriteLine("Create root");
         }
 
         public void SetInstanceMetaType<T>() {
@@ -277,12 +281,7 @@ namespace Weesals.Utility {
 
         unsafe public Mutation Add(Int2 pos, SceneInstance instance) {
             using var marker = ProfileMarker_Add.Auto();
-            if (!HasRoot) {
-                CreateRoot(pos);
-                RequireBranches();
-                branches[root.Index].Bounds = BoundingBox.Invalid;
-                Debug.WriteLine("Create root");
-            } else if (!root.Contains(pos)) {
+            if (!root.Contains(pos)) {
                 if (nodes[root.Index].ChildIndex < 0) {
                     var rootMax = root.Offset + (int)root.Size;
                     root.Offset = Int2.Min(root.Offset, pos);
@@ -308,7 +307,7 @@ namespace Weesals.Utility {
                     //Debug.WriteLine($"Require root to {pos}");
                 }
             }
-            Span<int> stack = stackalloc int[32];
+            Span<int> stack = stackalloc int[16];
             int stackCount = 0;
             var addr = FindBranch(stack, ref stackCount, pos);
 

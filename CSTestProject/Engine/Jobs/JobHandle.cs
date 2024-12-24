@@ -145,6 +145,8 @@ namespace Weesals.Engine.Jobs {
                 if (JobScheduler.Instance.GetHasQueuedTasks()) {
                     JobScheduler.Instance.WakeHelperThread();
                 }
+                var thread = JobScheduler.CurrentThread;
+                if (thread != null) { thread.TryRunWork(); continue; }
                 Thread.Sleep(0);
             }
         }

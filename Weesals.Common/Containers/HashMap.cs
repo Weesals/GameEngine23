@@ -516,7 +516,9 @@ namespace Weesals.Utility {
         public ref TValue this[TKey key] => ref map[key];
         public void Add(TKey key, TValue value) {
             map.AddDuplicate(key, value);
-            Debug.Assert(Contains(key, value));
+            if (value is IEquatable<TValue>) {
+                Debug.Assert(Contains(key, value));
+            }
         }
         public bool Remove(TKey key) {
             int c = 0;
@@ -594,6 +596,12 @@ namespace Weesals.Utility {
             }
             public void Dispose() { }
             public void Reset() { throw new NotImplementedException(); }
+            public int GetCount() {
+                var copy = this;
+                int count = 0;
+                while (copy.MoveNext()) ++count;
+                return count;
+            }
             public bool MoveNext() {
                 var remap = hashMap.map.map.Set.Remap;
                 var keys = hashMap.map.map.Set.Keys;
@@ -644,15 +652,17 @@ namespace Weesals.Utility {
         public UniqueKeyEnumerator Keys => new(this);
 
         public struct KeyValueEnumerator : IEnumerator<KeyValuePair<TKey, TValue>> {
+            MultiHashMap<TKey, TValue> hashMap;
             PooledHashMap<TKey, TValue>.Enumerator enumerator;
-            public KeyValueEnumerator(PooledHashMap<TKey, TValue> map) { enumerator = new(map); }
+            public KeyValueEnumerator(MultiHashMap<TKey, TValue> map) { hashMap = map; enumerator = new(map.map); }
             public KeyValuePair<TKey, TValue> Current => enumerator.Current;
             object IEnumerator.Current => Current;
             public void Dispose() { }
             public void Reset() => enumerator.Reset();
             public bool MoveNext() => enumerator.MoveNext();
+            public void RemoveSelf() { enumerator.RemoveSelf(ref hashMap.map); }
         }
-        public KeyValueEnumerator GetEnumerator() => new(map);
+        public KeyValueEnumerator GetEnumerator() => new(this);
         IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator() => GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 

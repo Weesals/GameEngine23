@@ -16,6 +16,7 @@ namespace Game5.Game {
     using CompletionInstance = OrderSystemBase.CompletionInstance;
     //[UpdateOrderId(10)]
     public partial class NavigationSystem : SystemBase
+        , IEarlyUpdateSystem
         , ILateUpdateSystem
         , IPostUpdateVerificationSystem
         {
@@ -29,9 +30,9 @@ namespace Game5.Game {
         public LifeSystem LifeSystem { get; private set; }
         public TimeSystem TimeSystem { get; private set; }
 
-        public NavGrid NavGrid { get; private set; }
-        public Navigation.NavMesh NavMesh { get; private set; }
-        public NavMesh2Baker NavMeshBaker { get; private set; }
+        private NavGrid navGrid;
+        private Navigation.NavMesh navMesh;
+        private NavMesh2Baker navMeshBaker;
         public LandscapeData Landscape { get; private set; }
 
         private HashSet<CompletionInstance> completions;
@@ -67,14 +68,14 @@ namespace Game5.Game {
             completions = new(32);
             pathCachePoints = new(512);
             moveContract = EntityMapSystem.AllocateContract();
-            NavGrid = new NavGrid();
-            NavMesh = new NavMesh();
-            NavMeshBaker = new NavMesh2Baker(NavMesh);
-            NavMeshBaker.Allocate();
+            navGrid = new NavGrid();
+            navMesh = new NavMesh();
+            navMeshBaker = new NavMesh2Baker(navMesh);
+            navMeshBaker.Allocate();
             var query = World.BeginQuery().With<ECObstruction>().Build();
             World.Manager.AddListener(query, new ArchetypeListener() {
-                OnCreate = RegisterObstruction,
-                OnDelete = UnregisterObstruction,
+                //OnCreate = RegisterObstruction,
+                //OnDelete = UnregisterObstruction,
             });
             var pathingQuery = World.BeginQuery().With<ECActionMove>().Build();
             World.Manager.AddListener(pathingQuery, new ArchetypeListener() {
@@ -84,12 +85,16 @@ namespace Game5.Game {
         }
         protected override void OnDestroy() {
             // TODO: Remove listener
-            NavMeshBaker.Dispose();
-            NavGrid.Dispose();
-            NavMesh.Dispose();
+            navMeshBaker.Dispose();
+            navGrid.Dispose();
+            navMesh.Dispose();
             moveContract.Dispose();
             //completions.Dispose();
             base.OnDestroy();
+        }
+
+        public NavMesh2Baker GetBaker() {
+            return navMeshBaker;
         }
 
         public bool BeginNavigation(Entity entity, RequestId requestId, Int2 targetLocation, int range = 0) {
@@ -117,8 +122,8 @@ namespace Game5.Game {
         public unsafe void SetLandscape(LandscapeData landscapeData) {
             if (Landscape != null) Landscape.OnLandscapeChanged -= Landscape_OnLandscapeChanged;
             Landscape = landscapeData;
-            NavGrid.Allocate(NavGrid.SimulationToGrid(Landscape.Sizing.SimulationSize));
-            NavMesh.Allocate(NavigationSystem.SimulationToNavMesh(Landscape.Sizing.SimulationSize));
+            navGrid.Allocate(navGrid.SimulationToGrid(Landscape.Sizing.SimulationSize));
+            navMesh.Allocate(NavigationSystem.SimulationToNavMesh(Landscape.Sizing.SimulationSize));
             if (Landscape != null) Landscape.OnLandscapeChanged += Landscape_OnLandscapeChanged;
             UpdateGridRepresentation(new(Int2.Zero, Landscape.Size));
         }
@@ -130,20 +135,20 @@ namespace Game5.Game {
             var controlMap = Landscape.GetControlMap();
             var heightMap = Landscape.GetHeightMap();
             var waterMap = Landscape.GetWaterMap();
-            var accessor = NavGrid.GetAccessor();
+            var accessor = navGrid.GetAccessor();
             ulong layerIsPassable = 0;
             for (int i = 0; i < Landscape.Layers.LayerCount; i++) {
                 var layer = Landscape.Layers[i];
                 if ((layer.Flags & LandscapeLayer.TerrainFlags.FlagImpassable) != 0)
                     layerIsPassable |= 1ul << i;
             }
-            var rangeMin = NavGrid.SimulationToGrid(Landscape.Sizing.LandscapeToSimulation(range.Min));
-            var rangeMax = NavGrid.SimulationToGrid(Landscape.Sizing.LandscapeToSimulation(range.Max));
+            var rangeMin = navGrid.SimulationToGrid(Landscape.Sizing.LandscapeToSimulation(range.Min));
+            var rangeMax = navGrid.SimulationToGrid(Landscape.Sizing.LandscapeToSimulation(range.Max));
             for (int y = rangeMin.Y; y < rangeMax.Y; y++) {
                 for (int x = rangeMin.X; x < rangeMax.X; x++) {
                     var pnt = new Int2(x, y);
                     var mode = NavGrid.LandscapeModes.None;
-                    var pos = NavGrid.GridToSimulation(pnt);
+                    var pos = navGrid.GridToSimulation(pnt);
                     var lpos = SimulationWorld.SimulationToLandscape(pos);
                     if (controlMap.Sizing.IsInBounds(lpos)) {
                         int i = controlMap.Sizing.ToIndex(lpos);
@@ -158,23 +163,38 @@ namespace Game5.Game {
             }
         }
 
-        protected override void OnUpdate() {
+        private void FlushChanges(bool enableThreading = true) {
+            foreach (var created in mutations.GetCreated()) {
+                RegisterObstruction(created.EntityAddress);
+            }
+            foreach (var created in mutations.GetDestroyed()) {
+                UnregisterObstruction(created.EntityAddress);
+            }
             foreach (var mutation in mutations) {
                 UpdateEntity(mutation.EntityAddress);
             }
             mutations.Clear();
-            if (NavGrid.HasChanges) {
-                NavGrid.PushToNavMesh(NavMeshBaker);
+            if (navGrid.HasChanges) {
+                navGrid.PushToNavMesh(navMeshBaker, enableThreading);
             }
+        }
+
+        void IEarlyUpdateSystem.OnEarlyUpdate() {
+            FlushChanges();
+        }
+
+        protected override void OnUpdate() {
+            FlushChanges(false);
+
             if (Input.IsInitialized && Input.GetKeyDown(KeyCode.Z)) this.disableMovements = !this.disableMovements;
             var time = TimeSystem.GetInterval();
             var entityMap = EntityMapSystem.AllEntities;
             var tformLookup = GetComponentLookup<ECTransform>(false);
             var completions = this.completions;
             ref var moveContract = ref this.moveContract;
-            var navMesh = NavMesh.GetReadOnly();
+            var navMesh = this.navMesh.GetReadOnly();
             ref var navQuery = ref this.navQuery;
-            navQuery.Initialise(NavMesh);
+            navQuery.Initialise(this.navMesh);
             using var portals = new PooledList<TriangleEdge>(4);
             bool noPath = Input.IsInitialized && Input.GetKeyDown(KeyCode.LeftShift);
             var pathCache = this.pathCache;
@@ -339,7 +359,7 @@ namespace Game5.Game {
                     );
                 }
             }
-            NavGrid.DrawGizmos();
+            navGrid.DrawGizmos();
         }
 
         private static Int2 NavMeshToSimulation(Int2 position) {
@@ -440,17 +460,17 @@ namespace Game5.Game {
         private void RegisterObstruction(Entity entity, ObstructionCache obstruction, bool enable) {
             Span<Int2> corners = stackalloc Int2[4];
             ComputeObstruction(corners, obstruction);
-            NavGrid.AppendGeometry(corners, enable ? 1 : -1);
+            navGrid.AppendGeometry(corners, enable ? 1 : -1);
         }
 
         public Int2 FindNearestObstruction(Int2 from) {
             var nfrom = Coordinate.FromInt2(SimulationToNavMesh(from));
-            var triI = NavMeshBaker.GetTriangleAt(nfrom);
-            var tri = NavMesh.GetTriangle(triI);
+            var triI = navMeshBaker.GetTriangleAt(nfrom);
+            var tri = navMesh.GetTriangle(triI);
             int nearestDst2 = int.MaxValue;
             Int2 nearest = default;
             for (int i = 0; i < 3; i++) {
-                var corner = NavMesh.GetCorner(tri.GetCorner(i));
+                var corner = navMesh.GetCorner(tri.GetCorner(i));
                 var dst2 = (int)Int2.DistanceSquared(corner, nfrom);
                 if (dst2 < nearestDst2) {
                     nearestDst2 = dst2;
@@ -461,8 +481,8 @@ namespace Game5.Game {
         }
         public Int2 FindNearestPathable(byte navMask, Int2 from) {
             var nfrom = Coordinate.FromInt2(SimulationToNavMesh(from));
-            var ro = NavMesh.GetReadOnly();
-            var aj = NavMesh.GetAdjacency();
+            var ro = navMesh.GetReadOnly();
+            var aj = navMesh.GetAdjacency();
             var triI = aj.FindNearestPathable(ro, navMask, nfrom);
             if (triI == NavMesh.InvalidTriId) return from;
             from = ro.GetNearestPointInTriangle(triI, nfrom);

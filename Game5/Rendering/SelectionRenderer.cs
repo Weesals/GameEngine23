@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Game5.Game;
 using Weesals;
 using Weesals.Engine;
+using Weesals.Landscape;
 using Weesals.UI;
 
 namespace Game5.Rendering {
@@ -68,11 +69,12 @@ namespace Game5.Rendering {
                 var pos = item.Item.GetWorldPosition();
                 var size = new Vector2(1f, 1f);
                 var isBox = false;
-                var entity = item.Item.GetAccessor();
-                if (entity.IsValid) {
-                    var protoData = entity.GetComponent<PrototypeData>();
-                    size = SimulationWorld.WorldScale * (Vector2)protoData.Footprint.Size;
-                    isBox = protoData.Footprint.Shape == EntityFootprint.Shapes.Box;
+                if (item.Item.Owner is IEntityFootprint efootprint) {
+                    var footprint = efootprint.GetEntityFootprint(item.Item.Data);
+                    if (footprint.IsValid) {
+                        size = SimulationWorld.WorldScale * (Vector2)footprint.Size;
+                        isBox = footprint.Shape == EntityFootprint.Shapes.Box;
+                    }
                 }
                 instancesPositions[index] = new(pos, item.TimeSelected);
                 instancesPlayerIds[index] = new(size.X, size.Y, item.Item.TryGetOwnerId(), isBox ? 1f : 0f);

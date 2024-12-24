@@ -515,8 +515,7 @@ namespace Weesals.UI {
                 pos.X += placement.mAdvance;
 			}
             var sizeDelta = layout.GetSize() - (max - min);
-            var offset = new Vector2(0f, sizeDelta.Y / 2.0f) - min;
-            offset += sizeDelta * anchor;
+            var offset = sizeDelta * anchor - min;
             for (int l = 0; l < glyphLayout.Count; ++l) {
                 var tlayout = glyphLayout[l];
                 tlayout.mLocalPosition += offset;

@@ -902,7 +902,7 @@ namespace Weesals.Engine {
             var rt = Surface.GetBackBuffer();
             graphics.SetRenderTargets(new Span<CSRenderTarget>(ref rt), default);
             graphics.Clear();
-            canvas.SetSize(Size);
+            canvas.SetSize(WindowSize);
             canvas.Update(dt);
             canvas.RequireComposed();
             canvas.Render(graphics);

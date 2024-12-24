@@ -37,6 +37,8 @@ namespace Game5.Game
     public class Play : IDisposable {
 
         private static ProfilerMarker ProfileMarker_PlayUpdate = new ProfilerMarker("Play.Update");
+        private static ProfilerMarker ProfileMarker_SimulationUpdate = new ProfilerMarker("SimUpdate");
+        private static ProfilerMarker ProfileMarker_AnimationUpdate = new ProfilerMarker("AnimUpdate");
 
         public Camera Camera { get; private set; }
         public readonly GameRoot GameRoot;
@@ -87,6 +89,20 @@ namespace Game5.Game
         [EditorField, Range(0f, 1f)] public float ShadowPerspective {
             get => GameRoot.ShadowPass.ShadowPerspective;
             set => GameRoot.ShadowPass.ShadowPerspective = value;
+        }
+        [EditorField]
+        public bool NavigationDebug {
+            get => NavDebug != null;
+            set {
+                if (NavDebug == null && value) {
+                    NavDebug = new();
+                    NavDebug.Initialise(Simulation.NavigationSystem.GetBaker());
+                    SelectionManager.SetSelected(new(NavDebug));
+                } else if (NavDebug != null && !value) {
+                    SelectionManager.RemoveSelected(new(NavDebug));
+                    NavDebug = null;
+                }
+            }
         }
 
         float time = 0;
@@ -149,7 +165,7 @@ namespace Game5.Game
                     //landscape.Resize(300);
                 }
                 using (new ProfilerMarker("Renderer").Auto()) {
-                    landscapeRenderer = new LandscapeRenderer();
+                    landscapeRenderer = new LandscapeProxy();
                     landscapeRenderer.Initialise(landscape, Scene.RootMaterial);
                     landscape.OnLandscapeChanged += (landscape, change) => { root.RenderRevision++; };
                 }
@@ -239,7 +255,9 @@ namespace Game5.Game
 
             NavDebug?.OnDrawGizmosSelected();
 
-            Simulation.Step((int)MathF.Round(dt * 1000));
+            using (ProfileMarker_SimulationUpdate.Auto()) {
+                Simulation.Step((int)MathF.Round(dt * 1000));
+            }
             EntityHighlighting.Update((uint)(time * 1000f));
 
             Scene.RootMaterial.SetValue("Time", time);
@@ -251,22 +269,24 @@ namespace Game5.Game
                 Resources.ReloadAssets();
             }
 
-            var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
-            particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
+            //var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
+            //particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
 
             foreach (var accessor in World.QueryAll<ECTransform, ECParticleBinding>()) {
                 ((ECParticleBinding)accessor).Emitter.Position =
                     ((ECTransform)accessor).GetWorldPosition();
             }
-            var moveTypeId = World.Context.RequireComponentTypeId<ECActionMove>();
-            foreach (var accessor in World.QueryAll<CAnimation>()) {
-                var anim = (CAnimation)accessor;
-                bool isMoving =
-                    accessor.Archetype.TryGetSparseColumn(moveTypeId, out var moveColumn) &&
-                    accessor.Archetype.GetHasSparseComponent(ref World.Manager.ColumnStorage, moveColumn, accessor.Row);
-                var desiredClip = isMoving ? anim.WalkAnim : anim.IdleAnim;
-                if (!accessor.Component1.Animation.Equals(desiredClip)) {
-                    accessor.Component1Ref.Animation = desiredClip;
+            using (ProfileMarker_AnimationUpdate.Auto()) {
+                var moveTypeId = World.Context.RequireComponentTypeId<ECActionMove>();
+                foreach (var accessor in World.QueryAll<CAnimation>()) {
+                    var anim = (CAnimation)accessor;
+                    bool isMoving =
+                        accessor.Archetype.TryGetSparseColumn(moveTypeId, out var moveColumn) &&
+                        accessor.Archetype.GetHasSparseComponent(ref World.Manager.ColumnStorage, moveColumn, accessor.Row);
+                    var desiredClip = isMoving ? anim.WalkAnim : anim.IdleAnim;
+                    if (!accessor.Component1.Animation.Equals(desiredClip)) {
+                        accessor.Component1Ref.Animation = desiredClip;
+                    }
                 }
             }
             /*if (Input.GetKeyPressed(KeyCode.Space)) {
@@ -288,18 +308,6 @@ namespace Game5.Game
                 landscapeRenderer.HighQualityBlend = false;
                 landscapeRenderer.EnableStochastic = false;
                 landscapeRenderer.Parallax = false;
-            }
-        }
-
-        [EditorButton]
-        public void ToggleNavDebug() {
-            if (NavDebug == null) {
-                NavDebug = new();
-                NavDebug.Initialise(Simulation.NavBaker);
-                SelectionManager.SetSelected(new(NavDebug));
-            } else {
-                SelectionManager.RemoveSelected(new(NavDebug));
-                NavDebug = null;
             }
         }
 
@@ -413,24 +421,31 @@ namespace Game5.Game
             var cmax = EntityMapSystem.SimToChunk(SimulationWorld.WorldToSimulation(rangeMax).XZ + MaxEntitySize);
             var entityMapSystem = World.GetOrCreateSystem<EntityMapSystem>();
             int count = 0;
+            var seenBuckets = new PooledHashSet<int>(8);
             for (int y = cmin.Y; y <= cmax.Y; y++) {
                 for (int x = cmin.X; x <= cmax.X; x++) {
                     var chunkEntities = entityMapSystem.AllEntities.GetEntitiesEnumerator(new Int2(x, y), 0);
-                    foreach (var entity in chunkEntities) {
-                        if (!World.IsValid(entity)) continue;
-                        if (!World.TryGetComponent<PrototypeData>(entity, out var protoData)) continue;
-                        var footprint = protoData.Footprint;
-                        var entitySize = new Vector3(
-                            (float)footprint.Size.X * SimulationWorld.WorldScale * 0.5f,
-                            (float)footprint.Height / SimulationWorld.AltitudeGranularity,
-                            (float)footprint.Size.Y * SimulationWorld.WorldScale * 0.5f
-                        );
-                        var tform = World.GetComponent<ECTransform>(entity);
-                        var pos = SimulationWorld.SimulationToWorld(tform.GetPosition3());
-                        pos.Y += entitySize.Y * 0.5f;
-                        ++count;
-                        if (frustum.GetIsVisible(pos, entitySize)) {
-                            entities.Add(Simulation.EntityProxy.MakeHandle(entity));
+                    for (; chunkEntities.MoveNextBucket();) {
+                        if (!seenBuckets.AddUnique(chunkEntities.BucketId)) {
+                            continue;
+                        }
+                        for (; chunkEntities.MoveNextEntity();) {
+                            var entity = chunkEntities.Current;
+                            if (!World.IsValid(entity)) continue;
+                            if (!World.TryGetComponent<PrototypeData>(entity, out var protoData)) continue;
+                            var footprint = protoData.Footprint;
+                            var entitySize = new Vector3(
+                                (float)footprint.Size.X * SimulationWorld.WorldScale * 0.5f,
+                                (float)footprint.Height / SimulationWorld.AltitudeGranularity,
+                                (float)footprint.Size.Y * SimulationWorld.WorldScale * 0.5f
+                            );
+                            var tform = World.GetComponent<ECTransform>(entity);
+                            var pos = SimulationWorld.SimulationToWorld(tform.GetPosition3());
+                            pos.Y += entitySize.Y * 0.5f;
+                            ++count;
+                            if (frustum.GetIsVisible(pos, entitySize)) {
+                                entities.Add(Simulation.EntityProxy.MakeHandle(entity));
+                            }
                         }
                     }
                 }

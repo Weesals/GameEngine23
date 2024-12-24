@@ -41,6 +41,9 @@ namespace Weesals.ECS {
             set => GetRefRW(entity) = value;
         }
     }
+    public interface IEarlyUpdateSystem {
+        void OnEarlyUpdate();
+    }
     public interface ILateUpdateSystem {
         void OnLateUpdate();
     }
@@ -51,9 +54,11 @@ namespace Weesals.ECS {
         void CopyStateFrom(World other);
     }
     public abstract class SystemBase {
+        public string Name { get; private set; }
         public World World { get; private set; }
         public EntityManager Stage => World.Manager;
         public EntityContext Context => Stage.Context;
+        public SystemBase() { Name = GetType().Name; }
         public void Initialise(World world) {
             World = world;
             OnCreate();

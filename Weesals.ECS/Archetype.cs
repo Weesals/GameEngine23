@@ -36,10 +36,12 @@ namespace Weesals.ECS {
             Manager = manager;
             RevisionMonitor = monitor;
         }
-        public RevisionStorage.Enumerator GetEnumerator(EntityManager manager) {
+        public RevisionStorage.Enumerator GetEnumerator(EntityManager manager, RevisionStorage.RevisionTypes type = RevisionStorage.RevisionTypes.Modified) {
             ref var archetype = ref Manager.GetArchetype(ArchetypeId);
-            return manager.ColumnStorage.GetChanges(RevisionMonitor, ref archetype);
+            return manager.ColumnStorage.GetRevisionChannel(RevisionMonitor, ref archetype, type);
         }
+        public RevisionStorage.Enumerator GetCreated(EntityManager manager) => GetEnumerator(manager, RevisionStorage.RevisionTypes.Created);
+        public RevisionStorage.Enumerator GetDestroyed(EntityManager manager) => GetEnumerator(manager, RevisionStorage.RevisionTypes.Destroyed);
     }
     // Flag when a component changes on any archetype
     public class ComponentMutateListener : ArchetypeListener, IDisposable {
@@ -51,16 +53,18 @@ namespace Weesals.ECS {
             Manager = manager;
             TypeId = typeId;
             Manager.AddListener(query, this);
-            OnCreate += (entityAddr) => {
-                int index = 0;
-                for (; index < bindings.Count; ++index) if (bindings[index].ArchetypeId == entityAddr.ArchetypeId) break;
-                if (index >= bindings.Count) {
-                    ref var archetype = ref Manager.GetArchetype(entityAddr.ArchetypeId);
-                    Debug.Assert(archetype.GetColumnId(TypeId, Manager.Context) >= 0);
-                    var listener = new ArchetypeMutateListener(Manager, Manager.ColumnStorage.CreateRevisionMonitor(TypeId, ref archetype));
-                    bindings.Add(listener);
-                }
-            };
+            if (TypeId != TypeId.Invalid) {
+                OnCreate += (entityAddr) => {
+                    int index = 0;
+                    for (; index < bindings.Count; ++index) if (bindings[index].ArchetypeId == entityAddr.ArchetypeId) break;
+                    if (index >= bindings.Count) {
+                        ref var archetype = ref Manager.GetArchetype(entityAddr.ArchetypeId);
+                        Debug.Assert(archetype.GetColumnId(TypeId, Manager.Context) >= 0);
+                        var listener = new ArchetypeMutateListener(Manager, Manager.ColumnStorage.CreateRevisionMonitor(TypeId, ref archetype));
+                        bindings.Add(listener);
+                    }
+                };
+            }
         }
         public void Dispose() {
             foreach (var binding in bindings) {
@@ -76,15 +80,13 @@ namespace Weesals.ECS {
         public struct Enumerator : IEnumerator<ComponentRef> {
             public readonly ComponentMutateListener Listener;
             private List<ArchetypeMutateListener>.Enumerator listenersEn;
-            private RevisionStorage.Enumerator bitEnum;
+            private RevisionStorage.Enumerator bitEnum = RevisionStorage.Enumerator.Invalid;
             public ArchetypeId ArchetypeId => listenersEn.Current.ArchetypeId;
-            public ref Archetype Archetype => ref Listener.Manager.GetArchetype(ArchetypeId);
             public ComponentRef Current => new ComponentRef(Listener.Manager, ArchetypeId, bitEnum.Current, Listener.TypeId);
             object IEnumerator.Current => throw new NotImplementedException();
             public Enumerator(ComponentMutateListener listener) {
                 Listener = listener;
                 listenersEn = Listener.bindings.GetEnumerator();
-                bitEnum = RevisionStorage.Enumerator.Invalid;
             }
             public void Dispose() { }
             public void Reset() { }
@@ -97,6 +99,53 @@ namespace Weesals.ECS {
             }
         }
         public Enumerator GetEnumerator() { return new(this); }
+
+        public struct CreatedEnumerator : IEnumerator<ComponentRef> {
+            public readonly ComponentMutateListener Listener;
+            private List<ArchetypeMutateListener>.Enumerator listenersEn;
+            private RevisionStorage.Enumerator bitEnum = RevisionStorage.Enumerator.Invalid;
+            public ArchetypeId ArchetypeId => listenersEn.Current.ArchetypeId;
+            public ComponentRef Current => new ComponentRef(Listener.Manager, ArchetypeId, bitEnum.Current, Listener.TypeId);
+            object IEnumerator.Current => throw new NotImplementedException();
+            public CreatedEnumerator(ComponentMutateListener listener) {
+                Listener = listener;
+                listenersEn = Listener.bindings.GetEnumerator();
+            }
+            public void Dispose() { }
+            public void Reset() { }
+            public bool MoveNext() {
+                while (!bitEnum.MoveNext()) {
+                    if (!listenersEn.MoveNext()) return false;
+                    bitEnum = listenersEn.Current.GetCreated(Listener.Manager);
+                }
+                return true;
+            }
+            public CreatedEnumerator GetEnumerator() => this;
+        }
+        public CreatedEnumerator GetCreated() { return new(this); }
+        public struct DestroyedEnumerator : IEnumerator<ComponentRef> {
+            public readonly ComponentMutateListener Listener;
+            private List<ArchetypeMutateListener>.Enumerator listenersEn;
+            private RevisionStorage.Enumerator bitEnum = RevisionStorage.Enumerator.Invalid;
+            public ArchetypeId ArchetypeId => listenersEn.Current.ArchetypeId;
+            public ComponentRef Current => new ComponentRef(Listener.Manager, ArchetypeId, bitEnum.Current, Listener.TypeId);
+            object IEnumerator.Current => throw new NotImplementedException();
+            public DestroyedEnumerator(ComponentMutateListener listener) {
+                Listener = listener;
+                listenersEn = Listener.bindings.GetEnumerator();
+            }
+            public void Dispose() { }
+            public void Reset() { }
+            public bool MoveNext() {
+                while (!bitEnum.MoveNext()) {
+                    if (!listenersEn.MoveNext()) return false;
+                    bitEnum = listenersEn.Current.GetDestroyed(Listener.Manager);
+                }
+                return true;
+            }
+            public DestroyedEnumerator GetEnumerator() => this;
+        }
+        public DestroyedEnumerator GetDestroyed() { return new(this); }
     }
 
     // A column stores a list of data for a specific component type within a archetype
@@ -107,23 +156,27 @@ namespace Weesals.ECS {
         // The range of pages used for sparse lookup in SparsePages
         public Range SparsePages;
 
-        public RevisionStorage.ColumnRevision RevisionData;
-        public int Revision => RevisionData.Revision < 0 ? ~RevisionData.Revision : RevisionData.Revision;
-        public bool HasRevision => RevisionData.Revision >= 0;
-
-        public int MonitorRef;
+        public RevisionStorage.ColumnRevision Revision = RevisionStorage.ColumnRevision.Default;
 
         public ArchetypeColumn(TypeId typeId) {
             TypeId = typeId;
         }
 
-        public void NotifyMutation(scoped ref ColumnStorage columnStorage, int row) {
-            if (MonitorRef > 0) {
-                if (!HasRevision) {
-                    columnStorage.RevisionStorage.Begin(ref RevisionData);
-                }
-                columnStorage.RevisionStorage.SetModified(ref RevisionData, row);
+        private void SetRevisionEntry(scoped ref ColumnStorage columnStorage, int row, RevisionStorage.RevisionTypes created) {
+            if (!Revision.IsMonitored) return;
+            if (!Revision.HasRevision) columnStorage.RevisionStorage.Begin(ref Revision);
+            foreach (var r in Revision.RevisionRange) {
+                columnStorage.RevisionStorage.SetEntry(ref Revision.GetChannel(columnStorage.RevisionStorage, Revision.Revision, RevisionStorage.RevisionTypes.Created), row);
             }
+        }
+        public void NotifyCreated(scoped ref ColumnStorage columnStorage, int row) {
+            SetRevisionEntry(ref columnStorage, row, RevisionStorage.RevisionTypes.Created);
+        }
+        public void NotifyMutation(scoped ref ColumnStorage columnStorage, int row) {
+            SetRevisionEntry(ref columnStorage, row, RevisionStorage.RevisionTypes.Modified);
+        }
+        public void NotifyDestroy(scoped ref ColumnStorage columnStorage, int row) {
+            SetRevisionEntry(ref columnStorage, row, RevisionStorage.RevisionTypes.Destroyed);
         }
 
         public override string ToString() { return $"C{TypeId}<x{DataRange.Length}>"; }
@@ -209,6 +262,7 @@ namespace Weesals.ECS {
                 return SparseTypeMask.TryGetBitIndex(typeId.Index, out var index) ? ColumnCount + index : -1;
             } else {
                 if (!TypeMask.TryGetBitIndex(typeId, out var index)) {
+                    if (typeId == TypeId.Entity) return 0;
                     AssertComponentId(typeId, context);
                     return -1;
                 }
@@ -346,7 +400,6 @@ namespace Weesals.ECS {
         }
         public RevisionMonitor CreateRevisionMonitor(EntityManager manager, int columnIndex) {
             ref var column = ref GetColumn(ref manager.ColumnStorage, columnIndex);
-            column.MonitorRef++;
             return manager.ColumnStorage.CreateRevisionMonitor(column.TypeId, ref this);
         }
         public override string ToString() {

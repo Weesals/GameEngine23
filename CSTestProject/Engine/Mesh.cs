@@ -26,8 +26,8 @@ namespace Weesals.Engine {
         protected bool isDynamic;
 
         public string Name => name;
-        public CSBufferLayout IndexBuffer => indexBuffer;
-        public CSBufferLayout VertexBuffer => vertexBuffer;
+        public CSBufferLayout IndexBuffer => indexBuffer.BufferLayout;
+        public CSBufferLayout VertexBuffer => vertexBuffer.BufferLayout;
         public BoundingBox BoundingBox => boundingBox;
         public int Revision => revision;
         public Material Material => material;

@@ -12,10 +12,12 @@ namespace Weesals.Engine {
     public interface IItemStringifier {
         string ToString(ulong id);
     }
-    public interface IItemPosition {
+    public interface IItemPositionRO {
         Vector3 GetPosition(ulong id = ulong.MaxValue);
-        void SetPosition(Vector3 pos, ulong id = ulong.MaxValue);
         Quaternion GetRotation(ulong id = ulong.MaxValue);
+    }
+    public interface IItemPosition : IItemPositionRO {
+        void SetPosition(Vector3 pos, ulong id = ulong.MaxValue);
         void SetRotation(Quaternion rot, ulong id = ulong.MaxValue);
     }
     public interface IItemRedirect {
@@ -68,7 +70,7 @@ namespace Weesals.Engine {
             return pos ?? default;
         }
         public Vector3? TryGetWorldPosition(int index = -1) {
-            if (Owner is IItemPosition eposition) {
+            if (Owner is IItemPositionRO eposition) {
                 return eposition.GetPosition(Data);
             } else if (ReferenceEquals(Owner, Vec2Id)) {
                 return new Vector3(
@@ -89,7 +91,7 @@ namespace Weesals.Engine {
             return null;
         }
         public Quaternion GetWorldRotation(int index = -1) {
-            if (Owner is IItemPosition eposition) {
+            if (Owner is IItemPositionRO eposition) {
                 return eposition.GetRotation(Data);
             }
             return Quaternion.Identity;

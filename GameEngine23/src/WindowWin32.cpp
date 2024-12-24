@@ -6,23 +6,43 @@
 
 WCHAR szWindowClass[] = L"RTSWINDOW";
 
-WindowWin32::WindowWin32(const std::wstring &name)
+WindowWin32::WindowWin32(const std::wstring &name, HWND parent)
 {
     hInstance = GetModuleHandle(NULL);
 
-    // Register a class for our window to be a member of
-    WNDCLASSW wcex = {};
-    wcex.lpfnWndProc = WindowWin32::_WndProc;
-    wcex.hInstance = hInstance;
-    wcex.lpszClassName = szWindowClass;
-    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    RegisterClassW(&wcex);
+    static bool classRegistered = false;
+    if (!classRegistered) {
+        classRegistered = true;
+        // Register a class for our window to be a member of
+        WNDCLASSW wcex = {};
+        wcex.lpfnWndProc = WindowWin32::_WndProc;
+        wcex.hInstance = hInstance;
+        wcex.lpszClassName = szWindowClass;
+        wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+        //HBRUSH blackBrush = CreateSolidBrush(RGB(32, 32, 32));
+        wcex.hbrBackground = (HBRUSH)GetStockObject(DKGRAY_BRUSH);
+        RegisterClassW(&wcex);
+    }
 
     // Create a standard overlapped window
     hWnd = CreateWindowExW(0,
-        szWindowClass, name.c_str(), WS_OVERLAPPEDWINDOW,
+        szWindowClass, name.c_str(), parent != 0 ? WS_CHILDWINDOW | WS_VISIBLE : WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-        nullptr, nullptr, hInstance, nullptr);
+        parent, nullptr, hInstance, nullptr);
+    //SendMessage(hWnd, WM_SETREDRAW, false, 0);
+    if (!hWnd) {
+        DWORD error = GetLastError();
+        wchar_t* errorMsg = nullptr;
+        FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPWSTR)&errorMsg, 0, NULL);
+        MessageBox(NULL, errorMsg, L"CreateWindowExW Failed", MB_ICONERROR);
+        LocalFree(errorMsg);
+
+        OutputDebugStringA("CreateWindow failed with ");
+        char buffer[32];
+        _itoa_s(error, buffer, _countof(buffer));
+        OutputDebugStringA(buffer);
+        OutputDebugStringA("\n");
+    }
 
     //SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
     //SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
@@ -97,6 +117,7 @@ int WindowWin32::MessagePump() {
 void WindowWin32::Close()
 {
     CloseWindow(hWnd);
+    DestroyWindow(hWnd);
 }
 
 std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
@@ -110,6 +131,7 @@ std::shared_ptr<Pointer> WindowWin32::RequirePointer(int id)
 {
     auto pointer = mPointersById.find(id);
     if (pointer == mPointersById.end()) {
+        if (mInput == nullptr) return nullptr;
         pointer = mPointersById.insert({ id, mInput->AllocatePointer(id) }).first;
     }
     return pointer->second;
@@ -117,6 +139,13 @@ std::shared_ptr<Pointer> WindowWin32::RequirePointer(int id)
 
 LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (message == WM_NCHITTEST) {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        //char buffer[32]; sprintf_s(buffer, "CHTEST %llx %d\n", hWnd, window->mInput != nullptr);
+        //OutputDebugStringA(buffer);
+        if (window->mInput == nullptr) return HTTRANSPARENT;
+        return HTCLIENT;
+    }
     /*std::stringstream str;
     str << " >> " << std::hex << " M ";
     switch (message) {
@@ -223,6 +252,8 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     // Receive mouse events
     case WM_POINTERDOWN: case WM_POINTERUP: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        char buffer[32]; sprintf_s(buffer, "PDOWN %llx %d\n", hWnd, window->mInput != nullptr);
+        OutputDebugStringA(buffer);
         POINTER_INFO pointerInfo;
         if (GetPointerInfo(GET_POINTERID_WPARAM(wParam), &pointerInfo)) {}
         auto pointer = window->RequirePointer(pointerInfo.pointerId);

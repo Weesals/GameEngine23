@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -24,12 +25,10 @@ namespace Weesals.Impostors {
         public ConfigurationData Configuration = ConfigurationData.Default;
         public Material Material;
 
-        public CSRenderTarget AlbedoTarget;
-        public CSRenderTarget NormalDepthTarget;
-
         private Material distanceFieldMaterial;
         private BufferLayoutPersistent instanceBuffer;
         private CSRenderTarget tempTarget1, tempTarget2;
+        private CSRenderTarget depthTarget;
 
         private struct InstanceData {
             public Matrix4x4 Model;
@@ -39,19 +38,12 @@ namespace Weesals.Impostors {
             public float Dummy1, Dummy2, Dummy3;
         }
 
-        unsafe public ImpostorGenerator() {
+        public ImpostorGenerator() {
             var frameCount = Configuration.FramesCounts.X * Configuration.FramesCounts.Y;
-            AlbedoTarget = CSRenderTarget.Create("Impostor Albedo");
-            NormalDepthTarget = CSRenderTarget.Create("Impostor NormalDepth");
-            AlbedoTarget.SetSize(Configuration.AtlasResolution);
-            NormalDepthTarget.SetSize(Configuration.AtlasResolution);
 
-            tempTarget1 = CSRenderTarget.Create("Temp");
-            tempTarget1.SetSize(Configuration.AtlasResolution);
-            tempTarget1.SetFormat(BufferFormat.FORMAT_R16G16_UNORM);
-            tempTarget2 = CSRenderTarget.Create("Temp");
-            tempTarget2.SetSize(Configuration.AtlasResolution);
-            tempTarget2.SetFormat(BufferFormat.FORMAT_R16G16_UNORM);
+            tempTarget1 = RenderTargetPool.RequirePooled(Configuration.AtlasResolution, BufferFormat.FORMAT_R16G16_UNORM);
+            tempTarget2 = RenderTargetPool.RequirePooled(Configuration.AtlasResolution, BufferFormat.FORMAT_R16G16_UNORM);
+            depthTarget = RenderTargetPool.RequirePooled(Configuration.AtlasResolution, BufferFormat.FORMAT_D16_UNORM);
 
             instanceBuffer = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Instance);
             instanceBuffer.AppendElement(new CSBufferElement("INSTANCE", BufferFormat.FORMAT_R32G32B32A32_FLOAT));
@@ -62,6 +54,7 @@ namespace Weesals.Impostors {
                 Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "VSMain"),
                 Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "PSSeed")
             );
+            distanceFieldMaterial.SetDepthMode(DepthMode.MakeOff());
 
             Material = new Material("./Assets/Shader/ImpostorBaker.hlsl");
             var view = Matrix4x4.CreateRotationX(MathF.PI / 2.0f);
@@ -75,6 +68,11 @@ namespace Weesals.Impostors {
             Material.SetValue("Projection", proj);
             Material.SetValue("ViewProjection", view * proj);
             Material.SetBuffer("instanceData", instanceBuffer);
+        }
+        public void Dispose() {
+            RenderTargetPool.ReturnPooled(tempTarget1);
+            RenderTargetPool.ReturnPooled(tempTarget2);
+            RenderTargetPool.ReturnPooled(depthTarget);
         }
 
         unsafe private (CSRenderTarget albedo, CSRenderTarget normalDepth) Generate(CSGraphics graphics, Mesh mesh, float scale, Vector3 offset) {
@@ -105,8 +103,12 @@ namespace Weesals.Impostors {
 
             instanceBuffer.NotifyChanged();
             graphics.CopyBufferData(instanceBuffer);
+
+            var AlbedoTarget = RenderTargetPool.RequirePooled(Configuration.AtlasResolution);
+            var NormalDepthTarget = RenderTargetPool.RequirePooled(Configuration.AtlasResolution);
+
             Span<CSRenderTarget> targets = [AlbedoTarget, NormalDepthTarget];
-            graphics.SetRenderTargets(targets, default);
+            graphics.SetRenderTargets(targets, depthTarget);
 
             using var materials = new PooledArray<Material>(2) {
                 [0] = mesh.Material,
@@ -135,16 +137,19 @@ namespace Weesals.Impostors {
             distanceFieldMaterial.SetPixelShader(Resources.LoadShader("./Assets/Shader/DistanceField.hlsl", "PSApply"));
             distanceFieldMaterial.SetTexture("SDF", tempTarget1);
             distanceFieldMaterial.SetTexture("Mask", AlbedoTarget);
-            var newAlbedoTarget = CSRenderTarget.Create("Impostor Albedo SDF");
-            var newNormalDepthTarget = CSRenderTarget.Create("Impostor NormalDepth SDF");
+
+            var newAlbedoTarget = RenderTargetPool.RequirePooled(Configuration.AtlasResolution);
+            var newNormalDepthTarget = RenderTargetPool.RequirePooled(Configuration.AtlasResolution);
             newAlbedoTarget.SetSize(Configuration.AtlasResolution);
             newNormalDepthTarget.SetSize(Configuration.AtlasResolution);
             distanceFieldMaterial.SetMacro("APPLYGRADIENT", "1");
             BlitQuad(graphics, newAlbedoTarget, AlbedoTarget, distanceFieldMaterial);
             distanceFieldMaterial.ClearMacro("APPLYGRADIENT");
             BlitQuad(graphics, newNormalDepthTarget, NormalDepthTarget, distanceFieldMaterial);
-            Swap(ref newAlbedoTarget, ref AlbedoTarget);
-            Swap(ref newNormalDepthTarget, ref NormalDepthTarget);
+            //Swap(ref newAlbedoTarget, ref AlbedoTarget);
+            //Swap(ref newNormalDepthTarget, ref NormalDepthTarget);
+            RenderTargetPool.ReturnPooled(AlbedoTarget);
+            RenderTargetPool.ReturnPooled(NormalDepthTarget);
             return (newAlbedoTarget, newNormalDepthTarget);
         }
         private void Swap<T>(ref T v1, ref T v2) {
@@ -219,8 +224,8 @@ namespace Weesals.Impostors {
                 ReadTexture(graphics, albedoTarget, albedoTex, BufferFormat.FORMAT_BC3_UNORM, true),
                 ReadTexture(graphics, normalDepthTarget, nrmDepthTex, BufferFormat.FORMAT_BC3_UNORM)
             );
-            albedoTarget.Dispose();
-            normalDepthTarget.Dispose();
+            RenderTargetPool.ReturnPooled(albedoTarget);
+            RenderTargetPool.ReturnPooled(normalDepthTarget);
             var material = new Material(
                 Resources.LoadShader("./Assets/Shader/impostor.hlsl", "VSMain"),
                 Resources.LoadShader("./Assets/Shader/impostor.hlsl", "PSMain")

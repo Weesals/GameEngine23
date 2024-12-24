@@ -47,8 +47,8 @@ namespace Weesals.UI {
             Cursor.Dispose(Canvas);
             base.Uninitialise(binding);
         }
-        protected override void NotifyTransformChanged() {
-            base.NotifyTransformChanged();
+        protected override void NotifyLayoutChanged() {
+            base.NotifyLayoutChanged();
             Background.MarkLayoutDirty();
             Cursor.MarkLayoutDirty();
         }

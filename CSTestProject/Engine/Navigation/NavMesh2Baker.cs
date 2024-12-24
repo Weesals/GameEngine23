@@ -17,6 +17,7 @@ using Weesals.Engine;
 using Weesals.Engine.Profiling;
 using System.Diagnostics;
 using System.Numerics;
+using Weesals.Engine.Jobs;
 
 // Store adjacency with key = [min-corner-index << 16 | max-corner-index]
 // Adajacency should store pair of triangle ids; left+right
@@ -40,6 +41,7 @@ namespace Navigation {
 
         public MultiHashMap<int, int> vertIdByHash;
         internal HashSet<Edge> pinnedEdges;
+        public JobHandle UpdateHandle;
 
         internal SparseArray<Coordinate> corners => NavMesh.corners;
         internal SparseArray<Triangle> triangles => NavMesh.triangles;

@@ -11,6 +11,7 @@ using Weesals.Utility;
 using Weesals;
 using CornerId = System.UInt16;
 using TriangleId = System.UInt16;
+using Weesals.Engine.Jobs;
 
 public class NavGrid : IDisposable {
 
@@ -220,6 +221,7 @@ public class NavGrid : IDisposable {
 
         internal PooledHashMap<Edge, AdjacencyIds> edgeValues;
         public void Execute() {
+            using var marker_UpdateNav = new ProfilerMarker("Updating navmesh").Auto();
             Span<Int2> Directions = stackalloc Int2[] { new Int2(1, 0), new Int2(0, 1), new Int2(-1, 0), new Int2(0, -1), };
             var edgeValues = new PooledHashMap<Edge, AdjacencyIds>(64);
             var meshSize = Size * Coordinate.Granularity / Granularity;
@@ -470,8 +472,10 @@ public class NavGrid : IDisposable {
         return typeId;
     }
     AdjacencyPushJob pushJob;
-    public void PushToNavMesh(NavMesh2Baker navMesh) {
+    public void PushToNavMesh(NavMesh2Baker navMesh, bool enableThreading) {
         if (!HasChanges) return;
+
+        navMesh.UpdateHandle.Complete();
 
         // Partial update is not supported along edges yet
         // (because RemoveVertex cant always find all triangles with the clockwise walk)
@@ -480,7 +484,6 @@ public class NavGrid : IDisposable {
             changeMax = Size - 1;
         }
 
-        using var marker = new ProfilerMarker("Updating navmesh").Auto();
         var pushJob = new AdjacencyPushJob() {
             map = map,
             Size = Size,
@@ -495,14 +498,19 @@ public class NavGrid : IDisposable {
             var size = Size * Coordinate.Granularity / Granularity;
             navMesh.InsertRectangle(new RectI(0, 0, size.X, size.Y), new TriangleType() { TypeId = 1, });
         }
-        pushJob.Execute();
-
         if (pushJob.Enable) {
             changeMin = int.MaxValue;
             changeMax = int.MinValue;
-            pushJob = default;
         }
-        this.pushJob = pushJob;
+
+        if (enableThreading) {
+            navMesh.UpdateHandle = JobHandle.Schedule(() => {
+                pushJob.Execute();
+            });
+        } else {
+            pushJob.Execute();
+        }
+        this.pushJob = pushJob.Enable ? default : pushJob;
     }
 
     public void DrawGizmos() {

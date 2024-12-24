@@ -9,7 +9,7 @@ using Weesals.Engine.Jobs;
 namespace Weesals.Engine.Profiling {
     public struct ProfilerMarker {
 
-        public const bool EnableTracy = true;
+        public const bool EnableTracy = false;
 
         public struct Snapshot {
             public string Name;

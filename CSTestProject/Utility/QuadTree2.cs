@@ -66,11 +66,11 @@ namespace Weesals.Utility {
         public Int2 Minimum => root.Offset;
         public Int2 Maximum => root.Offset + (int)RootSize;
 
-        protected void CreateRoot(Int2 pos) {
+        protected void CreateRoot(Int2 pos, int altitude = 0) {
             Debug.Assert(!root.IsValid);
             root.Index = nodes.Add(Node.Create());
             root.Offset = pos;
-            root.Altitude = 0;
+            root.Altitude = altitude;
             Debug.Assert(root.Index == 0);
         }
         private void Swap<T>(ref T v1, ref T v2) { var t = v1; v1 = v2; v2 = t; }

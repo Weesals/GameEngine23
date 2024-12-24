@@ -31,7 +31,7 @@ class WindowWin32 :
     std::shared_ptr<Pointer> RequirePointer(int id);
 
 public:
-    WindowWin32(const std::wstring &name);
+    WindowWin32(const std::wstring &name, HWND parent = 0);
     ~WindowWin32() override;
 
     // Set input buffer to receive input events

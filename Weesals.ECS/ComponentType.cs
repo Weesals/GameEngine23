@@ -65,6 +65,7 @@ namespace Weesals.ECS {
         public static implicit operator int(TypeId id) { return id.Packed; }
         public static TypeId MakeSparse(int typeIndex) { return new TypeId(SparseHeader + typeIndex); }
         public static TypeId MakeTag(int typeIndex) { return new TypeId(TagHeader + typeIndex); }
+        public static readonly TypeId Entity = new(0);
         public static readonly TypeId Invalid = new(-1);
         public static EntityContext? DebugContext;
     }

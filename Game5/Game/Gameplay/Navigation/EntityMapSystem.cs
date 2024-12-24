@@ -245,6 +245,7 @@ namespace Game5.Game {
                 private MultiHashMap<uint, int>.Enumerator cellsAt;
                 public Entity Current => entities.Current;
                 public bool HasAny => GetHasAny();
+                public int BucketId => cellsAt.Current;
                 public EntitiesEnumerator(EntityMap entityMap, Int2 point, int nameHash) {
                     EntityMap = entityMap;
                     Position = point;
@@ -256,17 +257,24 @@ namespace Game5.Game {
                     var copy = this;
                     return copy.MoveNext();
                 }
+                public void SkipBucket() {
+                    entities = new ArraySegment<Entity>(Array.Empty<Entity>()).GetEnumerator();
+                }
+                public bool MoveNextEntity() => entities.MoveNext();
+                public bool MoveNextBucket() {
+                    while (true) {
+                        if (!cellsAt.MoveNext()) return false;
+                        var bucket = EntityMap.buckets[cellsAt.Current];
+                        if ((bucket.Names & (1ul << NameHash)) == 0) continue;
+                        if (!bucket.Range.Contains(Position)) continue;
+                        entities = EntityMap.entities.Slice(bucket.EntityRange).GetEnumerator();
+                        return true;
+                    }
+                }
                 public bool MoveNext() {
                     while (true) {
-                        if (entities.MoveNext()) return true;
-                        while (true) {
-                            if (!cellsAt.MoveNext()) return false;
-                            var bucket = EntityMap.buckets[cellsAt.Current];
-                            if ((bucket.Names & (1ul << NameHash)) == 0) continue;
-                            if (!bucket.Range.Contains(Position)) continue;
-                            entities = EntityMap.entities.Slice(bucket.EntityRange).GetEnumerator();
-                            break;
-                        }
+                        if (MoveNextEntity()) return true;
+                        if (!MoveNextBucket()) return false;
                     }
                 }
                 public EntitiesEnumerator GetEnumerator() => this;
@@ -321,8 +329,8 @@ namespace Game5.Game {
 
             var query = World.BeginQuery().With<ECTransform>().Build();
             World.Manager.AddListener(query, new ArchetypeListener() {
-                OnCreate = RegisterEntity,
-                OnDelete = UnregisterEntity,
+                //OnCreate = RegisterEntity,
+                //OnDelete = UnregisterEntity,
             });
             mutations = new ComponentMutateListener(World.Manager, query, World.Context.RequireComponentTypeId<ECTransform>());
         }
@@ -335,13 +343,18 @@ namespace Game5.Game {
             base.OnDestroy();
         }
         protected override void OnUpdate() {
+            foreach (var transform in mutations.GetDestroyed()) {
+                UnregisterEntity(transform.EntityAddress);
+            }
+            foreach (var transform in mutations.GetCreated()) {
+                RegisterEntity(transform.EntityAddress);
+            }
             foreach (var transform in mutations) {
                 var mapRegister = World.Manager.GetComponent<EntityMapRegister>(transform.EntityAddress);
                 var newChunkId = SimToRect(transform.GetRO<ECTransform>().Position);
                 if (newChunkId != mapRegister.ChunkRect) {
                     var remove = AllEntities.Remove(mapRegister.ChunkRect, transform.Entity, 1);
                     Debug.Assert(remove, "Failed to remove entity");
-                    Debug.WriteLine($"Moving from {mapRegister.ChunkRect} to {newChunkId}");
                     mapRegister.ChunkRect = newChunkId;
                     World.Manager.GetComponentRef<EntityMapRegister>(transform.EntityAddress) = mapRegister;
                     AllEntities.Insert(mapRegister.ChunkRect, transform.Entity, 1);

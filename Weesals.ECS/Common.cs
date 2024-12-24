@@ -53,6 +53,9 @@ namespace Weesals.ECS {
         public virtual T CreateSystem<T>(EntityContext context) where T : new() {
             return new T();
         }
+        public virtual void UpdateSystem<T>(T system) where T : SystemBase {
+            system.Update();
+        }
     }
 
     // Context shared between all compatible stages/worlds
@@ -94,9 +97,9 @@ namespace Weesals.ECS {
             return ((index & TypeId.Header) == 0 ? componentTypes : sparseComponentTypes)[index & TypeId.Tail];
         }
         unsafe public BitField RequireTypeMask(BitField.Generator generator) {
-            if (generator.Pages.Count == 0) return default;
-            ulong* fieldPages = stackalloc ulong[generator.Pages.Count];
-            for (int i = 0; i < generator.Pages.Count; i++) fieldPages[i] = generator.Pages[i];
+            if (generator.PageCount == 0) return default;
+            ulong* fieldPages = stackalloc ulong[generator.PageCount];
+            for (int i = 0; i < generator.PageCount; i++) fieldPages[i] = generator.Pages[i];
             return RequireTypeMask(new BitField(generator.PageIds, fieldPages));
         }
         public BitField RequireTypeMask(BitField field) {

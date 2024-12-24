@@ -33,11 +33,17 @@ namespace Weesals.Engine {
             mMaterialSets.Return(id);
             mSetIDByHash.Remove(hash);
         }
+        public int TryGetByHash(ulong hash) {
+            return mSetIDByHash.TryGetValue(hash, out var id) ? id : -1;
+        }
+        public int InsertSet(ulong hash, Span<Material> materials) {
+            var id = mMaterialSets.Add(new RetainedMaterialSet(materials));
+            mSetIDByHash.Add(hash, id);
+            return id;
+        }
         public int Require(Span<Material> materials) {
             ulong hash = ArrayHash(materials);
             if (!mSetIDByHash.TryGetValue(hash, out var id)) {
-                id = mMaterialSets.Add(new RetainedMaterialSet(materials));
-                mSetIDByHash.Add(hash, id);
             }
             return id;
         }
@@ -47,6 +53,10 @@ namespace Weesals.Engine {
                 if (mat == null) continue;
                 hash = hash * 0x9E3779B97F4A7C15uL + (ulong)mat.GetIdentifier();
             }
+            return hash;
+        }
+        public static ulong HashCombineMaterial(ulong hash, Material mat) {
+            hash = hash * 0x9E3779B97F4A7C15uL + (ulong)mat.GetIdentifier();
             return hash;
         }
     }
@@ -667,12 +677,16 @@ namespace Weesals.Engine {
 
         // Add an instance to be drawn each frame
         unsafe public int AppendInstance(Mesh mesh, Span<Material> materials, SceneInstance instance) {
-            using var mats = new PooledArray<Material>(materials, materials.Length + 1);
-            mats[^1] = instanceMaterial;
+            ulong matHash = 0;
+            foreach (var mat in materials) matHash = RetainedMaterialCollection.HashCombineMaterial(matHash, mat);
+            matHash = RetainedMaterialCollection.HashCombineMaterial(matHash, instanceMaterial);
+            int matSetId = Scene.MaterialCollection.TryGetByHash(matHash);
+            if (matSetId == -1) {
+                using var mats = new PooledArray<Material>(materials, materials.Length + 1) { [^1] = instanceMaterial };
+                matSetId = Scene.MaterialCollection.InsertSet(matHash, mats);
+            }
 
-            int matSetId = Scene.MaterialCollection.Require(mats);
             var batchIndex = RequireBatchIndex(mesh, matSetId);
-            var batch = batches[batchIndex];
             var mut = BVH.Add(GetPosition(instance), instance);
             instanceBatches.Add(Permute(instance), batchIndex);
             BVH.GetInstanceMeta<InstanceCache>()[mut.NewIndex] = new InstanceCache() { BatchIndex = batchIndex, };

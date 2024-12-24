@@ -40,8 +40,8 @@ namespace Weesals.UI {
             Element.Dispose(Canvas);
             base.Uninitialise(binding);
         }
-        protected override void NotifyTransformChanged() {
-            base.NotifyTransformChanged();
+        protected override void NotifyLayoutChanged() {
+            base.NotifyLayoutChanged();
             Element.MarkLayoutDirty();
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
@@ -90,8 +90,8 @@ namespace Weesals.UI {
             TextElement.Dispose(Canvas);
             base.Uninitialise(binding);
         }
-        protected override void NotifyTransformChanged() {
-            base.NotifyTransformChanged();
+        protected override void NotifyLayoutChanged() {
+            base.NotifyLayoutChanged();
             TextElement.MarkLayoutDirty();
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
@@ -222,8 +222,8 @@ namespace Weesals.UI {
             Background.Dispose(Canvas);
             base.Uninitialise(binding);
         }
-        protected override void NotifyTransformChanged() {
-            base.NotifyTransformChanged();
+        protected override void NotifyLayoutChanged() {
+            base.NotifyLayoutChanged();
             Background.MarkLayoutDirty();
         }
         public void DrawBackground(ref CanvasCompositor.Context composer) {
@@ -358,8 +358,8 @@ namespace Weesals.UI {
             Icon.Dispose(Canvas);
             base.Uninitialise(binding);
         }
-        protected override void NotifyTransformChanged() {
-            base.NotifyTransformChanged();
+        protected override void NotifyLayoutChanged() {
+            base.NotifyLayoutChanged();
             Icon.MarkLayoutDirty();
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
@@ -617,9 +617,9 @@ namespace Weesals.UI {
                 child.UpdateLayout(layout);
             }
         }
-        protected override void NotifyTransformChanged() {
+        protected override void NotifyLayoutChanged() {
             gridXs = default;
-            base.NotifyTransformChanged();
+            base.NotifyLayoutChanged();
         }
         private void ComputeLayout() {
             var size = ComputeGridSize();
@@ -900,6 +900,10 @@ namespace Weesals.UI {
 
             base.RemoveChild(child);
         }
+        public void AppendLeft(CanvasRenderable child, float width = 0.2f) {
+            base.InsertChild(0, child);
+            AppendDivision(0, width, false);
+        }
         public void AppendRight(CanvasRenderable child, float width = 0.2f) {
             base.InsertChild(-1, child);
             AppendDivision(0, width);
@@ -936,7 +940,7 @@ namespace Weesals.UI {
 
         // Appends a division to the specified parent, scaling all other children
         // Does NOT insert a matching child!
-        private void AppendDivision(int parent, float width) {
+        private void AppendDivision(int parent, float width, bool atEnd = true) {
             var root = divisions[parent];
             var childSize = root.Children == 0 ? 1.0f : width;
             int d = parent + 1;
@@ -948,7 +952,7 @@ namespace Weesals.UI {
             }
             root.Children++;
             divisions[parent] = root;
-            divisions.Insert(d, new Division() { Size = childSize, Children = 0, });
+            divisions.Insert(atEnd ? d : parent + 1, new Division() { Size = childSize, Children = 0, });
         }
         // Splits a division, consuming a percentage of its size
         // Does NOT insert a matching child!
@@ -1044,7 +1048,7 @@ namespace Weesals.UI {
         }
         FlexCache cache = new();
         public override void UpdateChildLayouts() {
-            base.UpdateChildLayouts();
+            //base.UpdateChildLayouts();
             cache.Process(divisions);
             var axes = cache.Axes;
             for (int c = 0; c < cache.Items.Count; ++c) {
@@ -1124,6 +1128,9 @@ namespace Weesals.UI {
             }
             var min = mLayoutCache.Position.toxy();
             var max = mLayoutCache.TransformPosition2DN(new Vector2(1f, 1f));
+            var canvasPos = Canvas.GetComputedLayout().Position;
+            min -= canvasPos.toxy();
+            max -= canvasPos;
             clipMaterial.SetValue("CullRect", new Vector4(min.X, min.Y, max.X, max.Y));
         }
         public override void Compose(ref CanvasCompositor.Context composer) {

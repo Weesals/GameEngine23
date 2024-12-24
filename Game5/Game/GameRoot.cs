@@ -250,6 +250,7 @@ namespace Game5.Game {
                         }
                         _ = JobHandle.RunOnMain((_) => {
                             impostorGraphics.Dispose();
+                            impostorGenerator.Dispose();
                         });
 
                         //play.ScenePasses.AddInstance(meshInstance, hull, material, RenderTags.Default);

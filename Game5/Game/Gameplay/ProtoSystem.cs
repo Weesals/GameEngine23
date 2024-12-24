@@ -13,14 +13,19 @@ using Weesals.Utility;
 namespace Game5.Game {
 
     public struct EntityFootprint : IEquatable<EntityFootprint> {
-        public enum Shapes { Box, Capsule, }
+        public enum Shapes { None, Box, Capsule, }
         public Int2 Size;
         public int Height;
         public Shapes Shape;
+        public bool IsValid => Height >= 0;
         public override string ToString() { return $"{Shape}: {Size}x{Height}"; }
         public bool Equals(EntityFootprint other) {
             return Size == other.Size && Height == other.Height && Shape == other.Shape;
         }
+        public static readonly EntityFootprint Invalid = new() { Height = -1, };
+    }
+    public interface IEntityFootprint {
+        public EntityFootprint GetEntityFootprint(ulong id = 0);
     }
     public class PrototypeData {
         public int Id = -1;

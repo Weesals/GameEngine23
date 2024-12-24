@@ -11,6 +11,18 @@ namespace Weesals.ECS {
         public int End => Start + Length;
         public Range(int start, int length) { Start = start; Length = length; }
         public override string ToString() { return $"<{Start} {Length}>"; }
+        public struct Enumerator : IEnumerator<int> {
+            public readonly int End;
+            public int Current { get; private set; }
+            object IEnumerator.Current => Current;
+            public Enumerator(Range range) { Current = range.Start - 1; End = range.End; }
+            public void Dispose() { }
+            public void Reset() => throw new NotImplementedException();
+            public bool MoveNext() {
+                return ++Current < End;
+            }
+        }
+        public Enumerator GetEnumerator() => new(this);
     }
     // Starts "Off", first index is start of first range of "On"
     // posCount should always be a multiple of 2

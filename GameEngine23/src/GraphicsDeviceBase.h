@@ -349,6 +349,7 @@ struct GraphicsCapabilities {
     bool mComputeShaders;
     bool mMeshShaders;
     bool mMinPrecision;
+    bool mRaytracingSupported;
 };
 struct RenderStatistics {
     int mBufferCreates;

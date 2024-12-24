@@ -318,6 +318,7 @@ namespace Weesals.Rendering {
             }
         }
         public TableBindings[] Bindings = Array.Empty<TableBindings>();
+        private ComponentMutateListener mutations;
         public RenderWorldBinding(World world, Scene scene, ScenePassManager scenePasses, ParticleSystemManager particleSystem, VisualsCollection entityVisuals) {
             World = world;
             //RenderWorld = renderWorld;
@@ -328,30 +329,35 @@ namespace Weesals.Rendering {
 
             var renderables = World.BeginQuery().With<ECTransform>().With<CModel>().Build();
             World.Manager.AddListener(renderables, new ArchetypeListener() {
-                OnCreate = (entityAddr) => {
-                    //var renEntity = renderWorld.CreateEntity();
-                    var entity = World.Manager.GetEntity(entityAddr);
-                    var binding = RequireBinding(entityAddr);
-                    binding.SceneEntities[entityAddr.Row] = entity;
-                    /*binding.ChangedModels.TryAdd(entityAddr.Row);
-                    binding.ChangedTransforms.TryAdd(entityAddr.Row);*/
-                    binding.ValidEntities.TryAdd(entityAddr.Row);
-                    World.Manager.AddComponent<SceneRenderable>(entity) = new() {
-                        //SceneIndex = Array.Empty<SceneInstance>(),
-                    };
-                },
-                OnMove = (move) => {
-                    RequireEntitySlot(move.To) = RequireEntitySlot(move.From);
-                    RequireEntitySlot(move.From) = default;
-                    MoveEntityFlags(move.From, move.To);
-                },
-                OnDelete = (entityAddr) => {
-                    RemoveEntityFlags(entityAddr);
-                    RemoveEntityScene(entityAddr);
-                    //renderWorld.DeleteEntity(RequireEntitySlot(entity));
-                    RequireEntitySlot(entityAddr) = default;
-                }
+                //OnCreate = RegisterEntity,
+                OnMove = EntityMoved,
+                //OnDelete = DeregisterEntity,
             });
+            mutations = new ComponentMutateListener(World.Manager, renderables, TypeId.Entity);
+        }
+
+        private void RegisterEntity(EntityAddress entityAddr) {
+            //var renEntity = renderWorld.CreateEntity();
+            var entity = World.Manager.GetEntity(entityAddr);
+            var binding = RequireBinding(entityAddr);
+            binding.SceneEntities[entityAddr.Row] = entity;
+            /*binding.ChangedModels.TryAdd(entityAddr.Row);
+            binding.ChangedTransforms.TryAdd(entityAddr.Row);*/
+            binding.ValidEntities.TryAdd(entityAddr.Row);
+            World.Manager.AddComponent<SceneRenderable>(entity) = new() {
+                //SceneIndex = Array.Empty<SceneInstance>(),
+            };
+        }
+        private void EntityMoved(ArchetypeListener.MoveEvent move) {
+            RequireEntitySlot(move.To) = RequireEntitySlot(move.From);
+            RequireEntitySlot(move.From) = default;
+            MoveEntityFlags(move.From, move.To);
+        }
+        private void DeregisterEntity(EntityAddress entityAddr) {
+            RemoveEntityFlags(entityAddr);
+            RemoveEntityScene(entityAddr);
+            //renderWorld.DeleteEntity(RequireEntitySlot(entity));
+            RequireEntitySlot(entityAddr) = default;
         }
 
         private void MoveEntityFlags(EntityAddress from, EntityAddress to) {
@@ -495,27 +501,38 @@ namespace Weesals.Rendering {
         }
 
         public void UpdateChanged() {
+            foreach (var destroyed in mutations.GetDestroyed()) {
+                DeregisterEntity(destroyed.EntityAddress);
+            }
+            foreach (var created in mutations.GetCreated()) {
+                RegisterEntity(created.EntityAddress);
+            }
+            mutations.Clear();
             ref var columnStorage = ref World.Manager.ColumnStorage;
             for (int i = 0; i < Bindings.Length; i++) {
                 var binding = Bindings[i];
                 if (binding == null) continue;
-                ref var archetype = ref World.Manager.GetArchetype(new ArchetypeId(i));
-                var changedModels = columnStorage.GetChanges(binding.ChangedModels, ref archetype);
-                var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, ref archetype);
-                var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, ref archetype);
                 binding.ModelLookup.MakeCurrent(World.Manager);
                 binding.TransformLookup.MakeCurrent(World.Manager);
                 binding.SelectedLookup.MakeCurrent(World.Manager);
                 binding.AnimationLookup.MakeCurrent(World.Manager);
-                foreach (var row in changedModels) {
+
+                ref var archetype = ref World.Manager.GetArchetype(new ArchetypeId(i));
+                var createdModels = columnStorage.GetCreated(binding.ChangedModels, ref archetype);
+                var changedModels = columnStorage.GetChanges(binding.ChangedModels, ref archetype);
+                var createdTransforms = columnStorage.GetCreated(binding.ChangedTransforms, ref archetype);
+                var changedTransforms = columnStorage.GetChanges(binding.ChangedTransforms, ref archetype);
+                var createdSelected = columnStorage.GetCreated(binding.ChangedSelected, ref archetype);
+                var changedSelected = columnStorage.GetChanges(binding.ChangedSelected, ref archetype);
+                foreach (var row in DynamicBitField.Union(createdModels, changedModels)) {
                     Debug.Assert(binding.ValidEntities.Contains(row));
                     UpdateModel(new EntityAddress(new ArchetypeId(i), row));
                 }
-                foreach (var row in changedTransforms) {
+                foreach (var row in DynamicBitField.Union(createdTransforms, changedTransforms)) {
                     Debug.Assert(binding.ValidEntities.Contains(row));
                     UpdateTransform(new EntityAddress(new ArchetypeId(i), row));
                 }
-                foreach (var row in changedSelected) {
+                foreach (var row in DynamicBitField.Union(createdSelected, changedSelected)) {
                     Debug.Assert(binding.ValidEntities.Contains(row));
                     UpdateSelected(new EntityAddress(new ArchetypeId(i), row));
                 }
@@ -528,9 +545,6 @@ namespace Weesals.Rendering {
                 columnStorage.Reset(ref binding.ChangedModels, ref archetype);
                 columnStorage.Reset(ref binding.ChangedTransforms, ref archetype);
                 columnStorage.Reset(ref binding.ChangedSelected, ref archetype);
-                //binding.ChangedModels.Clear();
-                //binding.ChangedTransforms.Clear();
-                //binding.ChangedSelected.Clear();
             }
         }
 

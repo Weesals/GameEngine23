@@ -46,6 +46,9 @@ class Texture : public TextureBase {
 public:
 	using TextureBase::TextureBase;
 	Texture(Texture&& other) = default;
+	Texture(Int3 size, BufferFormat fmt = BufferFormat::FORMAT_R8G8B8A8_UNORM) {
+		SetSize3D(size); SetBufferFormat(fmt);
+	}
 	Texture& operator=(Texture&& other) = default;
 	void SetSize(Int2 size);
 	void SetSize3D(Int3 size);

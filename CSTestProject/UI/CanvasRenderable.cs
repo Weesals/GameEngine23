@@ -13,7 +13,10 @@ namespace Weesals.UI {
         public Canvas mCanvas;
         public CanvasRenderable? mParent;
         public CanvasBinding(Canvas canvas) { mCanvas = canvas; mParent = null; }
-        public CanvasBinding(CanvasRenderable parent) { mCanvas = parent.Canvas; mParent = parent; }
+        public CanvasBinding(CanvasRenderable parent) {
+            mCanvas = parent is Canvas selfCanvas ? selfCanvas : parent.Canvas;
+            mParent = parent;
+        }
     }
 
     public enum CanvasAxes : byte { None = 0x0, Horizontal = 0x1, Vertical = 0x2, };
@@ -148,6 +151,14 @@ namespace Weesals.UI {
         protected FeatureFlags featureFlags;
         protected int styleId;
 
+        protected class ExtendedMembers {
+            public Action<CanvasRenderable, bool>? OnChildAdded;
+        }
+        protected ExtendedMembers? extendedMembers;
+        public ref Action<CanvasRenderable, bool>? OnChildAdded {
+            get { extendedMembers ??= new(); return ref extendedMembers.OnChildAdded; }
+        }
+
         public Canvas Canvas => mBinding.mCanvas;
         public CanvasRenderable? Parent => mBinding.mParent;
         public IReadOnlyList<CanvasRenderable> Children => mChildren ?? (IReadOnlyList<CanvasRenderable>)Array.Empty<CanvasRenderable>();
@@ -183,7 +194,8 @@ namespace Weesals.UI {
                 }
                 if (hitBinding.IsEnabled) UpdateHitBinding();
                 if (mChildren != null) {
-                    foreach (var child in mChildren) if (child.Parent == null) child.Initialise(new CanvasBinding(this));
+                    var selfBinding = new CanvasBinding(this);
+                    foreach (var child in mChildren) if (child.Parent == null) child.Initialise(selfBinding);
                 }
                 MarkComposeDirty();
             }
@@ -197,7 +209,8 @@ namespace Weesals.UI {
                 stateFlags = StateFlags.None;
                 mBinding.mCanvas.MarkComposeDirty();
                 if (mChildren != null) {
-                    foreach (var child in mChildren) if (child.Parent == this) child.Uninitialise(new CanvasBinding(this));
+                    var selfBinding = new CanvasBinding(this);
+                    foreach (var child in mChildren) if (child.Parent == this) child.Uninitialise(selfBinding);
                 }
                 RemoveHitBinding();
             }
@@ -230,6 +243,7 @@ namespace Weesals.UI {
                 child.Initialise(new CanvasBinding(this));
             }
             MarkSizingDirty();
+            extendedMembers?.OnChildAdded?.Invoke(child, true);
         }
         public void ClearChildren() {
             if (mChildren == null) return;
@@ -241,6 +255,7 @@ namespace Weesals.UI {
                 child.Uninitialise(new CanvasBinding(this));
             mChildren.Remove(child);
             MarkSizingDirty();
+            extendedMembers?.OnChildAdded?.Invoke(child, false);
         }
         public T? FindParent<T>() {
             for (var parent = Parent; parent != null; parent = parent.Parent) {
@@ -265,7 +280,7 @@ namespace Weesals.UI {
                 MarkLayoutDirty();
                 if (mChildren != null) MarkChildrenDirty();
                 MarkComposeDirty();
-                NotifyTransformChanged();
+                NotifyLayoutChanged();
                 return true;
             }
             if (!hitBinding.IsValid && hitBinding.IsEnabled) {
@@ -315,7 +330,7 @@ namespace Weesals.UI {
             }
             return null;
         }
-        protected virtual void NotifyTransformChanged() {
+        protected virtual void NotifyLayoutChanged() {
             if (hitBinding.IsEnabled) UpdateHitBinding();
         }
         private void UpdateHitBinding() {
@@ -363,6 +378,7 @@ namespace Weesals.UI {
         protected void MarkComposeDirty() {
             dirtyFlags |= DirtyFlags.Compose;
             if (Canvas != null && Canvas != this) Canvas.MarkComposeDirty();
+            else if (Parent != null && Parent.Canvas != this) Parent.Canvas.MarkComposeDirty();
         }
         protected void MarkComposePartialDirty() {
             if (HasDirtyFlag(DirtyFlags.Compose | DirtyFlags.ComposePartial)) return;

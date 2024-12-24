@@ -10,25 +10,73 @@ using Weesals.Utility;
 
 namespace Weesals.Engine {
     public class RenderTargetPool {
-        private List<CSRenderTarget> pool = new();
-        public CSRenderTarget RequireTarget(TextureDesc desc) {
+        public const int MaxPoolCount = 4;
+        public const int OverMaxPoolCount = 16;
+        public static readonly TimeSpan PoolExpiry = TimeSpan.FromSeconds(5f);
+        public static readonly TimeSpan OverPoolExpiry = TimeSpan.FromSeconds(2f);
+
+        public struct PoolEntry { public CSRenderTarget Target; public DateTime ExpireTime; }
+
+        private DateTime expireTime = DateTime.MaxValue;
+        private MultiHashMap<TextureDesc, PoolEntry> poolEntries = new();
+
+        public CSRenderTarget Require(Int2 size, BufferFormat format = BufferFormat.FORMAT_R8G8B8A8_UNORM)
+            => Require(new TextureDesc(size, format));
+        public CSRenderTarget Require(TextureDesc desc) {
             if (desc.MipCount == 0) desc.MipCount = 31 - BitOperations.LeadingZeroCount((uint)Math.Max(desc.Size.X, desc.Size.Y));
-            for (int i = pool.Count - 1; i >= 0; --i) {
-                var item = pool[i];
-                if (item.GetSize() == desc.Size && item.GetFormat() == desc.Format && item.GetMipCount() == desc.MipCount) {
-                    pool.RemoveAt(i);
-                    return item;
+            lock (poolEntries) {
+                for (var it = poolEntries.GetValuesForKey(desc); it.MoveNext();) {
+                    var rt = it.Current;
+                    it.RemoveSelf();
+                    return rt.Target;
                 }
             }
-            var target = CSRenderTarget.Create($"RT<{desc.Format},{desc.Size},Mip={desc.MipCount}>");
-            target.SetSize(desc.Size);
-            target.SetFormat(desc.Format);
-            target.SetMipCount(desc.MipCount);
-            return target;
+            {
+                var rt = CSRenderTarget.Create($"RT<{desc.Format},{desc.Size},Mip={desc.MipCount}>");
+                rt.SetSize(desc.Size);
+                rt.SetFormat(desc.Format);
+                rt.SetMipCount(desc.MipCount);
+                return rt;
+            }
         }
-        public void Return(CSRenderTarget target) {
-            pool.Add(target);
+        public void Return(CSRenderTarget rt) {
+            TextureDesc desc = new(rt);
+            lock (poolEntries) {
+                var count = poolEntries.GetValuesForKey(desc).GetCount();
+                if (count > OverMaxPoolCount) {
+                    rt.Dispose();
+                } else {
+                    var now = DateTime.UtcNow + (count < MaxPoolCount ? PoolExpiry : OverPoolExpiry);
+                    if (now < expireTime) expireTime = now;
+                    poolEntries.Add(desc, new() { Target = rt, ExpireTime = now, });
+                }
+            }
         }
+        public void PruneOldFromPool() {
+            var now = DateTime.UtcNow;
+            if (now < expireTime) return;
+            lock (poolEntries) {
+                expireTime = DateTime.MaxValue;
+                for (var it = poolEntries.GetEnumerator(); it.MoveNext();) {
+                    var item = it.Current;
+                    if (now > item.Value.ExpireTime) {
+                        item.Value.Target.Dispose();
+                        it.RemoveSelf();
+                    } else if (item.Value.ExpireTime < expireTime) {
+                        expireTime = item.Value.ExpireTime;
+                    }
+                }
+            }
+        }
+        public static RenderTargetPool Instance = new();
+
+        public static CSRenderTarget RequirePooled(Int2 size, BufferFormat format = BufferFormat.FORMAT_R8G8B8A8_UNORM)
+            => Instance.Require(new TextureDesc(size, format));
+        public static CSRenderTarget RequirePooled(TextureDesc desc)
+            => Instance.Require(desc);
+        public static void ReturnPooled(CSRenderTarget rt)
+            => Instance.Return(rt);
+
     }
     public class RenderGraph {
         public struct PassData {
@@ -157,7 +205,6 @@ namespace Weesals.Engine {
         private SparseArray<RPInput> dependencies = new();
         private SparseArray<RPOutput> outputs = new();
         private SparseArray<BufferItem> buffers = new();
-        private RenderTargetPool rtPool = new();
         public void Clear() {
             passes.Clear();
             dependencies.Clear();
@@ -256,7 +303,6 @@ namespace Weesals.Engine {
             private readonly SparseArray<RPInput> dependencies => Graph.dependencies;
             private readonly SparseArray<RPOutput> outputs => Graph.outputs;
             private readonly SparseArray<BufferItem> buffers => Graph.buffers;
-            private readonly RenderTargetPool rtPool => Graph.rtPool;
             public Evaluator(RenderGraph graph, RenderPass pass, CSGraphics graphics) {
                 Graph = graph;
                 RootPass = pass;
@@ -597,7 +643,7 @@ namespace Weesals.Engine {
                 var desc = buffer.Description;
                 if (desc.Size.X == -1) desc.Size = Graphics.GetSurface().GetResolution();
                 if (desc.Format == BufferFormat.FORMAT_UNKNOWN) desc.Format = BufferFormat.FORMAT_R8G8B8A8_UNORM;
-                buffer.Target.Texture = rtPool.RequireTarget(desc);
+                buffer.Target.Texture = RenderTargetPool.RequirePooled(desc);
                 tempTargets.Add(i);
             }
             public void PreparePasses() {
@@ -699,7 +745,7 @@ namespace Weesals.Engine {
                     foreach (var bufferId in passLastUse) {
                         ref var buffer = ref buffers[bufferId];
                         if (!buffer.Target.IsValid) continue;
-                        rtPool.Return(buffer.Target.Texture);
+                        RenderTargetPool.ReturnPooled(buffer.Target.Texture);
                         buffer.Target.Texture = default;
                     }
                 }

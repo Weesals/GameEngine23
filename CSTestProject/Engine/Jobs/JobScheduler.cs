@@ -495,38 +495,38 @@ namespace Weesals.Engine.Jobs {
                 }
                 return run;
             }
+            public bool TryRunWork() {
+                var run = TryTakeJobRun();
+                if (run.IsValid) {
+                    Scheduler.ExecuteRun(run);
+                    return true;
+                }
+                if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
+                    lock (Scheduler.globalPool) {
+                        lock (CurrentTasks) {
+                            if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
+                                CurrentTasks = Scheduler.globalPool.Dequeue();
+                                return false;
+                            }
+                        }
+                    }
+                }
+                foreach (var thread in Scheduler.jobThreads) {
+                    run = thread.TryTakeJobRun();
+                    if (run.IsValid) {
+                        Scheduler.ExecuteRun(run);
+                        return true;
+                    }
+                }
+                return false;
+            }
             private void Invoke() {
                 Scheduler.NotifyThreadWake(this);
                 JobScheduler.currentThread = this;
                 ThreadName = Name;
                 int spinCount = 200;
                 for (; !Scheduler.IsQuitting; ++spinCount) {
-                    var run = TryTakeJobRun();
-                    if (run.IsValid) {
-                        Scheduler.ExecuteRun(run);
-                        spinCount = 0;
-                        continue;
-                    }
-                    if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
-                        lock (Scheduler.globalPool) {
-                            lock (CurrentTasks) {
-                                if (CurrentTasks.IsEmpty && Scheduler.globalPool.Count != 0) {
-                                    CurrentTasks = Scheduler.globalPool.Dequeue();
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    bool found = false;
-                    foreach (var thread in Scheduler.jobThreads) {
-                        run = thread.TryTakeJobRun();
-                        if (run.IsValid) {
-                            Scheduler.ExecuteRun(run);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (found) {
+                    if (TryRunWork()) {
                         spinCount = 0;
                         continue;
                     }
@@ -605,6 +605,7 @@ namespace Weesals.Engine.Jobs {
         private Dictionary<JobHandle, int> resultIds = new();
 
         public static string CurrentThreadName => ThreadName ?? "Unknown";
+        public static JobThread? CurrentThread => currentThread;
         public static bool IsMainThread => ThreadName == "Main Thread";
 
         public JobScheduler() {

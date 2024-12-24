@@ -149,6 +149,7 @@ protected:
         }
     }
     void ChangeLockRef(int oldLockI, int lockI) {
+        if (oldLockI == -1) oldLockI = 0;
         std::atomic_ref<int>(mLocks[lockI].mItemCount)++;
         auto& oldLock = mLocks[oldLockI];
         if (std::atomic_ref<int>(oldLock.mItemCount)-- == 0) oldLock.mHandles = 0;
@@ -207,7 +208,7 @@ protected:
     struct Item {
         size_t mLayoutHash;
         T mData;
-        int mLockId = 0;
+        int mLockId = -1;
         const T& operator * () const { return mData; }
         const T* operator -> () const { return &mData; }
         T& operator * () { return mData; }
@@ -223,6 +224,7 @@ protected:
 private:
     // Item storage
     std::vector<Block> mBlocks;
+    std::mutex mItemCountMutex;
     // Number of items allocated
     int mItemCount = 0;
 
@@ -241,7 +243,7 @@ private:
                 for (int i = BlockSize - 1; i >= 0; --i) {
                     auto& item = block[i];
                     auto oldLock = item.mLockId;
-                    if (oldLock != 0 && mLocks[oldLock].mHandles == 0)
+                    if (oldLock > 0 && mLocks[oldLock].mHandles == 0)
                         TrySetLock(item.mLockId, oldLock, 0);
                     if (item.mLockId == 0) firstEmpty = i;
                 }
@@ -255,13 +257,17 @@ private:
                 return item;
             }
         }
-        std::atomic_ref<int> itemCount(mItemCount);
-        int itemIndex = itemCount++;
-        if (itemIndex >> BlockShift >= (int)mBlocks.size()) {
-            mBlocks.emplace_back();
+        int itemIndex = -1;
+        {
+            std::scoped_lock lock(mItemCountMutex);
+            std::atomic_ref<int> itemCount(mItemCount);
+            itemIndex = itemCount++;
+            if (itemIndex >> BlockShift >= (int)mBlocks.size()) {
+                mBlocks.emplace_back();
+            }
         }
         Item& item = mBlocks[itemIndex >> BlockShift][itemIndex & BlockMask];
-        item = Item{ .mLayoutHash = layoutHash, };
+        item.mLayoutHash = layoutHash;
         alloc(item);
         receiveIndex(itemIndex);
         return item;
@@ -284,7 +290,8 @@ public:
             int itemIndex = -1;
             auto& item = AllocateItem(layoutHash, alloc, [&](int index) { itemIndex = index; });
             // The lock failed to set, probably taken by another thread
-            if (!TrySetLock(item.mLockId, 0, lockId)) continue;
+            int oldLockId = item.mLockId == -1 ? -1 : 0;
+            if (!TrySetLock(item.mLockId, oldLockId, lockId)) continue;
             while (mLocks[lockId].mHandles != lockBits) {
                 // The lock is incorrect - probably changed while we were assigning it
                 lockId = RequireLock(lockBits);
@@ -336,11 +343,12 @@ public:
         mItemCount = 0;
     }
     void PurgeUnlocked() {
+        std::scoped_lock lock(mItemCountMutex);
         for (auto& block : mBlocks) {
             block.mFirstEmpty = BlockSize;
             for (auto i = 0; i < BlockSize; ++i) {
                 auto& item = block[i];
-                if (item.mLockId != 0 && mLocks[item.mLockId].mHandles == 0)
+                if (item.mLockId > 0 && mLocks[item.mLockId].mHandles == 0)
                     SetLock(item, 0);
                 if (item.mLockId == 0) {
                     item = { };
@@ -424,7 +432,7 @@ public:
         size_t mDataHash;
         size_t mLayoutHash;
         T mData;
-        int mLockId = 0;
+        int mLockId = -1;
     };
 protected:
     struct Block {
@@ -458,7 +466,7 @@ private:
                 for (int i = BlockSize - 1; i >= 0; --i) {
                     auto& item = block[i];
                     auto oldLock = item.mLockId;
-                    if (oldLock != 0 && mLocks[oldLock].mHandles == 0)
+                    if (oldLock > 0 && mLocks[oldLock].mHandles == 0)
                         TrySetLock(item.mLockId, oldLock, 0);
                     if (item.mLockId == 0) firstEmpty = i;
                 }
@@ -480,7 +488,7 @@ private:
             mBlocks.emplace_back();
         }
         Item& item = mBlocks[itemIndex >> BlockShift][itemIndex & BlockMask];
-        item = Item{ .mLayoutHash = layoutHash, };
+        item.mLayoutHash = layoutHash;
         alloc(item);
         receiveIndex(itemIndex);
         return item;
@@ -528,8 +536,8 @@ public:
         while (true) {
             Item& item = AllocateItem(layoutHash, alloc, [](int index) {});
             // Setup item state
-            auto oldLockId = item.mLockId;
-            if (!TrySetLock(item.mLockId, 0, RequireLock(lockBits))) continue;
+            auto oldLockId = item.mLockId == -1 ? -1 : 0;
+            if (!TrySetLock(item.mLockId, oldLockId, RequireLock(lockBits))) continue;
             dataFill(item);
             item.mDataHash = dataHash;
             std::scoped_lock lock(mItemsHashMutex);
@@ -608,7 +616,7 @@ public:
                 auto& item = (*block.mItems)[i];
                 if (callback(item)) {
                     mItemsByHash.erase(item.mDataHash);
-                    TrySetLock(item.mLockId, item.mLockId, RequireLock(newMask));
+                    TrySetLock(item.mLockId, item.mLockId, newMask == 0 ? 0 : RequireLock(newMask));
                 }
             }
         }

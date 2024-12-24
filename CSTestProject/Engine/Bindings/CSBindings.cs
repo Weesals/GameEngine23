@@ -396,7 +396,7 @@ namespace Weesals.Engine {
         unsafe public Int2 GetResolution() { return GetResolution(mSurface); }
         unsafe public void SetResolution(Int2 res) { SetResolution(mSurface, res); }
         unsafe public void Present() { Present(mSurface); }
-        unsafe public void Dispose() { Dispose(mSurface); }
+        unsafe public void Dispose() { Dispose(mSurface); mSurface = default; }
     }
     public partial struct CSPreprocessedShader {
         unsafe public CSString8 GetSourceRaw() { return GetSource(mShader); }
@@ -641,6 +641,13 @@ namespace Weesals.Engine {
         }
         unsafe public void SetVisible(bool visible) { SetVisible(mWindow, (byte)(visible ? 1 : 0)); }
         unsafe public void SetInput(CSInput input) { SetInput(mWindow, input.GetNativeInput()); }
+        unsafe public CSWindow CreateChildWindow(RectI rect) {
+            var name = "ChildWindow";
+            fixed (char* namePtr = name) {
+                var childWindow = CreateChildWindow(mWindow, new CSString(namePtr, name.Length), rect);
+                return new CSWindow(childWindow);
+            }
+        }
         unsafe public CSWindowFrame GetWindowFrame() { return GetWindowFrame(mWindow); }
         unsafe public void SetWindowFrame(RectI frame, bool maximized) { SetWindowFrame(mWindow, &frame, (byte)(maximized ? 1 : 0)); }
         unsafe public void RegisterMovedCallback(Action callback, bool enable) {

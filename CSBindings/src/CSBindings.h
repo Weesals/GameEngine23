@@ -374,6 +374,7 @@ public:
 	CSWindow(NativeWindow* window)
 		: mWindow(window) { }
 	NativeWindow* GetNativeWindow() { return mWindow; }
+	static NativeWindow* CreateChildWindow(NativeWindow* parent, CSString name, RectInt rect);
 private:
 	static void Dispose(NativeWindow* window);
 	static int GetStatus(NativeWindow* window);

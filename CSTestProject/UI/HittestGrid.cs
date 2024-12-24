@@ -41,6 +41,7 @@ namespace Weesals.UI {
         }
 
         private RectI ToLocalRect(RectI rect) {
+            if (Resolution == default) return default;
             Int2 min = rect.Min * Size / Resolution;
             Int2 max = rect.Max * Size / Resolution;
             min = Int2.Max(min, 0);

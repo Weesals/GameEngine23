@@ -176,20 +176,26 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     }
     {
         mComputeRootSignature.mNumConstantBuffers = 4;
-        mComputeRootSignature.mNumResources = 10;
+        mComputeRootSignature.mSRVCount = 5;
+        mComputeRootSignature.mUAVCount = 5;
+        mComputeRootSignature.mNumResources
+            = mComputeRootSignature.mSRVCount + mComputeRootSignature.mUAVCount;
 
         CD3DX12_ROOT_PARAMETER1 rootParameters[14];
         CD3DX12_DESCRIPTOR_RANGE1 srvR[10];
         int rootParamId = 0;
         for (int i = 0; i < mComputeRootSignature.mNumConstantBuffers; ++i)
             rootParameters[rootParamId++].InitAsConstantBufferView(i);
-        for (int i = 0; i < 5; ++i) {
-            srvR[i] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
-            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[i]);
+        int descId = 0;
+        for (int i = 0; i < mComputeRootSignature.mSRVCount; ++i) {
+            srvR[descId] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
+            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[descId]);
+            ++descId;
         }
-        for (int i = 5; i < mComputeRootSignature.mNumResources; ++i) {
-            srvR[i] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, i - 5);
-            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[i]);
+        for (int i = 0; i < mComputeRootSignature.mUAVCount; ++i) {
+            srvR[descId] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, i);
+            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[descId]);
+            ++descId;
         }
 
         rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
@@ -229,7 +235,8 @@ void D3DResourceCache::DestroyD3DRT(const RenderTarget2D* rt, LockMask lockBits)
         return item.mData.mResource == d3dBuffer;
     }, inflightFrames);
     d3drt->mSRVOffset = -1;
-    DelayResourceDispose(d3drt->mBuffer, inflightFrames);
+    if (inflightFrames != 0)
+        DelayResourceDispose(d3drt->mBuffer, inflightFrames);
     d3drt->mBuffer = nullptr;
     d3drt->mFormat = (DXGI_FORMAT)(-1);
     rtMapping.Delete(rt);
@@ -250,7 +257,6 @@ void D3DResourceCache::PurgeSRVs(LockMask lockBits) {
     //mTargetViewCache.ForAll([](auto& item) { item.mData.mResource = nullptr; });
     // Must clear SRVs because all RTVs are detached and have persistent lock cleared
     // (will be reused once other locks clear)
-    for (auto& buffer : depthBufferPool) buffer.second->mSRVOffset = -1;
     for (auto& buffer : textureMapping.mMap) buffer.second->mSRVOffset = -1;
     for (auto& buffer : rtMapping.mMap) buffer.second->mSRVOffset = -1;
     for (auto& buffer : mBindings) buffer.second->mSRVOffset = -1;
@@ -304,9 +310,11 @@ bool D3DResourceCache::RequireBuffer(const BufferLayout& binding, D3DBinding& d3
 }
 // Retrieve a buffer capable of upload/copy that will be vaild until
 // the frame completes rendering
-std::mutex uploadMutex;
 ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(size_t size, LockMask lockBits) {
-    std::scoped_lock lock(uploadMutex);
+    int index;
+    return AllocateUploadBuffer(size, lockBits, index);
+}
+ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(size_t size, LockMask lockBits, int& itemIndex) {
     size = (size + BufferAlignment) & (~BufferAlignment);
     auto& resultItem = mUploadBufferCache.RequireItem(size, lockBits,
         [&](auto& item) { // Allocate a new item
@@ -321,7 +329,10 @@ ID3D12Resource* D3DResourceCache::AllocateUploadBuffer(size_t size, LockMask loc
             ));
             item.mData->SetName(L"UploadBuffer");
         },
-        [&](auto& item) {}
+        [&](auto& item) {
+            assert(item.mData.Get() != nullptr);
+        },
+        [&](int index) { itemIndex = index; }
     );
     return resultItem.mData.Get();
 }
@@ -775,8 +786,7 @@ Texture* D3DResourceCache::RequireDefaultTexture() {
     if (mDefaultTexture == nullptr) {
         std::scoped_lock lock(mResourceMutex);
         if (mDefaultTexture == nullptr) {
-            mDefaultTexture = std::make_shared<Texture>();
-            mDefaultTexture->SetSize(4);
+            mDefaultTexture = std::make_shared<Texture>(Int3(4));
             auto data = mDefaultTexture->GetRawData();
             std::fill((uint32_t*)&*data.begin(), (uint32_t*)(&*data.begin() + data.size()), 0xffe0e0e0);
             mDefaultTexture->MarkChanged();
@@ -805,6 +815,7 @@ void D3DResourceCache::FlushBarriers(D3DCommandContext& cmdList) {
     delayedBarriers.clear();
 }
 void D3DResourceCache::DelayResourceDispose(const ComPtr<ID3D12Resource>& resource, LockMask lockBits) {
+    assert(lockBits != 0);  // Cant delay if no references to wait for
     mDelayedRelease.InsertItem(resource, 0, lockBits);
 }
 void D3DResourceCache::CopyBufferData(D3DCommandContext& cmdList, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize) {
@@ -883,7 +894,7 @@ int D3DResourceCache::AwaitAllocator(D3DAllocatorHandle handle) {
     // If the next frame is not ready to be rendered yet, wait until it is ready.
     while (true) {
         //if (cmdAllocator.mLockFrame >= handle.mFenceValue) break;
-        auto fenceVal = cmdAllocator.mFence->GetCompletedValue();
+        auto fenceVal = cmdAllocator.GetLockFrame();
         if (fenceVal >= handle.mFenceValue) break;
         mD3D12.CheckDeviceState();
         ThrowIfFailed(cmdAllocator.mFence->SetEventOnCompletion(handle.mFenceValue, cmdAllocator.mFenceEvent));
@@ -939,17 +950,21 @@ D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
 }
 LockMask lastInflightFrames = 0;
 LockMask D3DResourceCache::CheckInflightFrames() {
-    LockMask inflightFrames = 0;
+    LockMask completeFrames = 0, inflightFrames = 0;
     for (int i = 0; i < (int)mCommandAllocators.size(); ++i) {
         auto& cmdAllocator = *mCommandAllocators[i];
+        if (!cmdAllocator.HasLockedFrames()) continue;
         auto lockFrame = cmdAllocator.GetLockFrame();
-        auto consumeFrame = cmdAllocator.ConsumeFrame(lockFrame);
-        if (lockFrame == consumeFrame) continue;
-        cmdAllocator.mCmdAllocator->Reset();
-        inflightFrames |= 1ull << cmdAllocator.mId;
+        if (lockFrame == cmdAllocator.mLockFrame) {
+            inflightFrames |= 1ull << cmdAllocator.mId;
+        }
+        else if (cmdAllocator.ConsumeFrame(lockFrame)) {
+            cmdAllocator.mCmdAllocator->Reset();
+            completeFrames |= 1ull << cmdAllocator.mId;
+        }
     }
-    if (inflightFrames != 0) {
-        UnlockFrame(inflightFrames);
+    if (completeFrames != 0) {
+        UnlockFrame(completeFrames);
         mDelayedRelease.PurgeUnlocked();
     }
     lastInflightFrames = inflightFrames;
@@ -1448,7 +1463,7 @@ void D3DGraphicsSurface::SetResolution(Int2 resolution) {
     SimpleProfilerMarkerEnd(frameBufferMarker);
 }
 void D3DGraphicsSurface::ResizeSwapBuffers() {
-    mCache.PurgeSRVs(1);
+    mCache.PurgeSRVs(0);
     //mSwapChain->Present(1, DXGI_PRESENT_RESTART);
     auto hr = mSwapChain->ResizeBuffers(0, (UINT)mResolution.x, (UINT)mResolution.y, DXGI_FORMAT_UNKNOWN, 0);
     ThrowIfFailed(hr);
@@ -1500,6 +1515,7 @@ int D3DGraphicsSurface::Present() {
     }
     else {
         auto& allocatorHandle = mFrameBuffers[mBackBufferIndex].mAllocatorHandle;
+        if (allocatorHandle.mAllocatorId == -1) return -1;
         RECT rects = { 0, 0, 10, 10 };
         DXGI_PRESENT_PARAMETERS params = { };
         params.DirtyRectsCount = mDenyPresentRef > 0 ? 1 : 0;

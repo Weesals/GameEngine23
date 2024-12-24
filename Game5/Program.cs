@@ -15,6 +15,8 @@ using Game5;
  */
 
 class Program {
+    private static ProfilerMarker ProfileMarker_Readbacks = new("Readbacks");
+
     public static void Main() {
         var coreHandle = JobResult<Core>.Schedule(static () => new Core());
         var coreJob = coreHandle.Then(static (core) => Core.ActiveInstance = core);
@@ -55,9 +57,10 @@ class Program {
 
             // Wait for game root before binding editor and showing window
             rootJob.Complete();
+            grapJob.Complete();
+            editorWindow.RegisterRootWindow(editorWin);
             using (var marker = new ProfilerMarker("Attach Editor").Auto()) {
                 grapJob = grapJob.Then(() => {
-                    editorWindow.RegisterRootWindow(editorWin);
                     editorWin.SetVisible(true);
                 });
                 root.AttachToEditor(editorWindow);
@@ -105,9 +108,14 @@ class Program {
             // Run anything that needs to run on main thread
             JobScheduler.Instance.RunMainThreadTasks();
 
+            var graphics = Core.ActiveInstance.GetGraphics();
+
+            using (ProfileMarker_Readbacks.Auto()) {
+                CSGraphics.AsyncReadback.Awaiter.InvokeCallbacks(graphics);
+            }
+
             // Allow windows to throttle rendering
             int renderingWindows = 0;
-            var graphics = Core.ActiveInstance.GetGraphics();
             foreach (var window in ApplicationWindow.ActiveWindows) {
                 if (!window.IsRenderable) continue;
                 var renDT = window.AdjustRenderDT(dt, 0,
@@ -116,6 +124,9 @@ class Program {
                 window.Render(renDT, graphics);
                 renderingWindows++;
             }
+
+            RenderTargetPool.Instance.PruneOldFromPool();
+
             if (renderingWindows == 0) {
                 Thread.Sleep(6);
             }

@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Weesals.ECS;
 using Weesals.Editor.Assets;
 using Weesals.Engine;
+using Weesals.Engine.Profiling;
 using Weesals.Landscape;
 using Weesals.UI;
 using Weesals.Utility;
@@ -102,6 +103,7 @@ namespace Weesals.Editor {
         }
     }
     public class UIGameView : TabbedWindow, IDropTarget, INestedEventSystem {
+        private static ProfilerMarker ProfileMarker_OnRender = new("OnRender");
 
         public EventSystem? EventSystem;
         EventSystem? INestedEventSystem.EventSystem => EventSystem;
@@ -114,12 +116,14 @@ namespace Weesals.Editor {
 
         public Action<PointerEvent, AssetReference> OnReceiveDrag;
         public Action<RectI> OnViewportChanged;
+        public Action<float, CSGraphics> OnRender;
 
         private ToggleButton realtimeToggle;
         public bool EnableRealtime => realtimeToggle.State;
 
         private float timeSinceFPSUpdate = 0f;
         private int ticksSinceFPSUpdate = 0;
+        private float timeSinceRender = 0f;
 
         public UIGameView(Editor editor) : base(editor, "Game") {
             EnableBackground = false;
@@ -130,8 +134,19 @@ namespace Weesals.Editor {
             AppendChild(realtimeToggle);
         }
 
+        public override void Initialise(CanvasBinding binding) {
+            base.Initialise(binding);
+            Canvas.OnRender += RenderGame;
+        }
+        public override void Uninitialise(CanvasBinding binding) {
+            Canvas.OnRender -= RenderGame;
+            base.Uninitialise(binding);
+        }
+
         public RectI GetGameViewportRect() {
             var gameLayout = GetContentsLayout();
+            var canvasOffset = Canvas.GetComputedLayout().Position;
+            gameLayout.Position -= canvasOffset;
             return new RectI(
                 (int)gameLayout.Position.X, (int)gameLayout.Position.Y,
                 (int)gameLayout.GetWidth(), (int)gameLayout.GetHeight());
@@ -149,12 +164,13 @@ namespace Weesals.Editor {
             }
         }
 
-        protected override void NotifyTransformChanged() {
-            base.NotifyTransformChanged();
+        protected override void NotifyLayoutChanged() {
+            base.NotifyLayoutChanged();
             OnViewportChanged?.Invoke(GetGameViewportRect());
         }
 
         public void Update(float dt) {
+            timeSinceRender += dt;
             timeSinceFPSUpdate += dt;
             ++ticksSinceFPSUpdate;
             if (Canvas.GetIsComposeDirty() || timeSinceFPSUpdate > 0.125f) {
@@ -172,6 +188,14 @@ namespace Weesals.Editor {
                 TitleText.Color = newColor;
                 MarkComposePartialDirty();
             }*/
+        }
+
+        public void RenderGame(CSGraphics graphics) {
+            // Render the game world and UI
+            using (ProfileMarker_OnRender.Auto()) {
+                OnRender?.Invoke(timeSinceRender, graphics);
+                timeSinceRender = 0f;
+            }
         }
 
     }

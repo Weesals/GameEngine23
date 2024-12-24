@@ -135,7 +135,7 @@ namespace Weesals.ECS {
         private static int GetLocalBit(int bit) { return bit & 63; }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int CountBitsUntil(ulong pattern, int pageId) {
-            return BitOperations.PopCount(pattern & ((1ul << pageId) - 1));
+            return BitOperations.PopCount(pattern & ~(~0ul << pageId));
         }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int GetNextBit(ulong pattern, int bit) {
@@ -283,36 +283,29 @@ namespace Weesals.ECS {
         // BitFields are readonly and must be created using this Generator
         public class Generator {
             public ulong PageIds;
-            public List<ulong> Pages = new();
+            public int PageCount;
+            public ulong[] Pages = new ulong[64];
             public bool IsEmpty => PageIds == 0;
             private void InsertPages(ulong toAdd) {
                 Debug.Assert((PageIds & toAdd) == 0);
+                var oldPageCount = PageCount;
+                PageCount += BitOperations.PopCount(toAdd);
                 PageIds |= toAdd;
-                var prune = PageIds;
-                int offset = BitOperations.PopCount(toAdd);
-                for (int i = 0; i < offset; i++) Pages.Add(0);
-                for (int p = Pages.Count - 1; offset > 0; --offset) {
-                    int pageId;
-                    while (true) {
-                        pageId = 63 - BitOperations.LeadingZeroCount(prune);
-                        prune ^= 1ul << pageId;
-                        if ((toAdd & (1ul << pageId)) != 0) break;
-                    }
-                    // Shuffle pages down
-                    for (; p - offset >= pageId;) Pages[p--] = Pages[p - offset];
-                    // Insert slot for new page
-                    Pages[p--] = 0;
+                for (int p0 = oldPageCount - 1, p1 = PageCount - 1; toAdd != 0; p1--) {
+                    var pageIndex = 63 - BitOperations.LeadingZeroCount(toAdd);
+                    toAdd ^= 1ul << pageIndex;
+                    var next = BitOperations.PopCount(PageIds >> pageIndex);
+                    while (p1 >= next) Pages[p1--] = Pages[p0--];
+                    Pages[p1] = 0;
                 }
             }
-            public void Clear() { PageIds = 0; Pages.Clear(); }
+            public void Clear() { PageIds = 0; PageCount = 0; }
             public void Append(BitField field) {
                 var allPages = field.pageIds | PageIds;
                 var toAdd = field.pageIds & (~PageIds);
                 if (toAdd != 0) InsertPages(toAdd);
-                var prune = field.pageIds;
-                while (prune != 0) {
-                    var pageId = BitOperations.TrailingZeroCount(prune);
-                    prune ^= 1ul << pageId;
+                for (var bits = field.pageIds; bits != 0; bits &= bits - 1) {
+                    var pageId = BitOperations.TrailingZeroCount(bits);
                     var dstPageI = CountBitsUntil(PageIds, pageId);
                     var srcPageI = CountBitsUntil(field.pageIds, pageId);
                     Pages[dstPageI] |= field.pages[srcPageI];
@@ -323,16 +316,18 @@ namespace Weesals.ECS {
                 var newPages = ~field.pageIds & PageIds;
                 var toRemove = field.pageIds & PageIds;
                 if (toRemove == 0) return;
-                var prune = field.pageIds;
-                while (prune != 0) {
-                    var pageId = BitOperations.TrailingZeroCount(prune);
-                    prune ^= 1ul << pageId;
+                int consume = 0;
+                for (var bits = field.pageIds; bits != 0; bits &= bits - 1) {
+                    var pageId = BitOperations.TrailingZeroCount(bits);
                     var dstPageI = CountBitsUntil(PageIds, pageId);
                     var srcPageI = CountBitsUntil(field.pageIds, pageId);
                     Pages[dstPageI] &= ~field.pages[srcPageI];
                     if (Pages[dstPageI] == 0) {
                         PageIds &= ~(1ul << pageId);
-                        Pages.RemoveAt(dstPageI);
+                        ++consume;
+                    }
+                    if (consume > 0) {
+                        Pages[dstPageI] = Pages[dstPageI + consume];
                     }
                 }
                 Debug.Assert(PageIds == newPages);
@@ -350,7 +345,9 @@ namespace Weesals.ECS {
                 Pages[pageIndex] &= ~(1ul << (bit & 63));
                 if (Pages[pageIndex] == 0) {
                     PageIds &= ~(1ul << pageId);
-                    Pages.RemoveAt(pageIndex);
+                    var index = BitOperations.PopCount(PageIds & ((1ul << pageId) - 1));
+                    PageCount -= 1;
+                    for (int i = index; i < PageCount; ++i) Pages[i] = Pages[i + 1];
                 }
                 return true;
             }
@@ -707,8 +704,8 @@ namespace Weesals.ECS {
         public struct UnionEnumerator<BitField1, BitField2>
             : IEnumerator<BitIndex>, IEnumerable<BitIndex>, IPagedEnumerator
             where BitField1 : struct, IPagedEnumerator where BitField2 : struct, IPagedEnumerator {
-            public readonly BitField1 Bits1;
-            public readonly BitField2 Bits2;
+            public BitField1 Bits1;
+            public BitField2 Bits2;
             private ulong page;
             private BitIndex bitIndex;
             private BitIndex page1, page2;
@@ -718,15 +715,17 @@ namespace Weesals.ECS {
                 Bits1 = bits1;
                 Bits2 = bits2;
                 bitIndex = InvalidIndex;
-                Bits1.MoveNextPage();
-                Bits2.MoveNextPage();
+                page1 = page2 = 0;
+                //MoveNextPage();
+                //Bits1.MoveNextPage();
+                //Bits2.MoveNextPage();
             }
             public BitIndex MoveNextPage() {
-                var minPage = Math.Min(page1, page2);
-                if (page1 <= minPage) page1 = Bits1.MoveNextPage();
-                if (page2 <= minPage) page2 = Bits2.MoveNextPage();
+                var minPage = (int)Math.Min((uint)page1, (uint)page2);
+                if ((uint)page1 <= (uint)minPage) page1 = Bits1.MoveNextPage();
+                if ((uint)page2 <= (uint)minPage) page2 = Bits2.MoveNextPage();
                 page = 0;
-                minPage = Math.Min(page1, page2);
+                minPage = (int)Math.Min((uint)page1, (uint)page2);
                 if (page1 == minPage) page |= Bits1.GetCurrentPage();
                 if (page2 == minPage) page |= Bits2.GetCurrentPage();
                 return minPage;
@@ -743,10 +742,12 @@ namespace Weesals.ECS {
                 while (true) {
                     var next = GetNextBit(page, (int)(bitIndex & 63));
                     if (next < 64) {
+                        page &= page - 1;
                         bitIndex = (BitIndex)((bitIndex & ~63) + (uint)next);
                         return true;
                     }
                     var pageId = MoveNextPage();
+                    bitIndex = pageId << 6;
                     if (pageId == InvalidIndex) return false;
                 }
             }
