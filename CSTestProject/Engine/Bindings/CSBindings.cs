@@ -325,6 +325,7 @@ namespace Weesals.Engine {
         }
     }
     unsafe public partial struct CSBufferLayout {
+        public Span<CSBufferElement> Elements => GetElements();
         public Span<CSBufferElement> GetElements() {
             return new Span<CSBufferElement>(mElements, mElementCount);
         }
@@ -374,11 +375,11 @@ namespace Weesals.Engine {
     }
     public partial struct CSPipeline {
         unsafe public bool IsValid => mPipeline != null;
-        unsafe public CSIdentifier Name => GetName(mPipeline);
-        unsafe public bool HasStencilState => GetHasStencilState();
-        unsafe public int BindingCount => GetBindingCount();
-        unsafe public int ConstantBufferCount => GetConstantBufferCount();
-        unsafe public int ResourceCount => GetResourceCount();
+        unsafe public CSIdentifier Name => mPipeline != null ? new((ushort)GetName(mPipeline)) : default;
+        unsafe public bool HasStencilState => mPipeline != null ? GetHasStencilState() : default;
+        unsafe public int BindingCount => mPipeline != null ? GetBindingCount() : default;
+        unsafe public int ConstantBufferCount => mPipeline != null ? GetConstantBufferCount() : default;
+        unsafe public int ResourceCount => mPipeline != null ? GetResourceCount() : default;
         unsafe public bool GetHasStencilState() { return GetHasStencilState(mPipeline) != 0; }
         unsafe public int GetBindingCount() { return GetExpectedBindingCount(mPipeline); }
         unsafe public int GetConstantBufferCount() { return GetExpectedConstantBufferCount(mPipeline); }

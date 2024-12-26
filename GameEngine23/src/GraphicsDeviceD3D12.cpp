@@ -286,7 +286,7 @@ public:
     }
     void CopyBufferData(const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length) override {
         auto& cache = mDevice->GetResourceCache();
-        cache.UpdateBufferData(CreateContext(), source, dest, srcOffset, dstOffset, length);
+        cache.CopyBufferData(CreateContext(), source, dest, srcOffset, dstOffset, length);
     }
     void CommitTexture(const Texture* texture) {
         auto& cache = mDevice->GetResourceCache();
@@ -542,6 +542,7 @@ public:
     }
 
     void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* state, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) override {
+        assert(mViewportRect.width > 0 && mViewportRect.height > 0);
         auto* pipelineState = (D3DResourceCache::D3DPipelineState*)state->mPipelineHash;
         if (pipelineState == nullptr) return;
 

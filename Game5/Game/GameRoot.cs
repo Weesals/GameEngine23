@@ -227,7 +227,7 @@ namespace Game5.Game {
                         var hull = Resources.LoadModel("./Assets/B_Granary1_Hull.fbx", new() { }).Meshes[0];
                         var hull2 = Resources.LoadModel("./Assets/B_House_Hull.fbx", new() { }).Meshes[0];
 
-                        using var meshes = new PooledList<(Mesh, Mesh)>(16);
+                        using var meshes = new PooledList<(Mesh mesh, Mesh hull)>(16);
                         using var tasks = new PooledList<Task<Material>>(16);
                         meshes.Add((Resources.LoadModel("./Assets/B_Granary1.fbx").Meshes[0], hull2));
                         meshes.Add((Resources.LoadModel("./Assets/B_Granary2.fbx").Meshes[0], hull2));
@@ -236,7 +236,7 @@ namespace Game5.Game {
                         meshes.Add((Resources.LoadModel("./Assets/B_House2.fbx").Meshes[0], hull2));
                         meshes.Add((Resources.LoadModel("./Assets/B_House3.fbx").Meshes[0], hull2));
                         for (int i = 0; i < meshes.Count; i++) {
-                            tasks.Add(impostorGenerator.CreateImpostor(impostorGraphics, meshes[i].Item1));
+                            tasks.Add(impostorGenerator.CreateImpostor(impostorGraphics, meshes[i].mesh));
                         }
                         await JobHandle.RunOnMain((_) => {
                             impostorGraphics.Execute();
@@ -245,7 +245,7 @@ namespace Game5.Game {
                             var mesh = meshes[i];
                             var material = await tasks[i];
                             await JobHandle.RunOnMain((_) => {
-                                Play.ScenePasses.SetMeshLOD(mesh.Item1, mesh.Item2, material);
+                                Play.ScenePasses.SetMeshLOD(mesh.mesh, mesh.hull, material);
                             });
                         }
                         _ = JobHandle.RunOnMain((_) => {

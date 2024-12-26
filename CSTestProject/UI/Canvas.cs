@@ -196,7 +196,6 @@ namespace Weesals.UI {
 
         public void Render(CSGraphics graphics) {
             OnRender?.Invoke(graphics);
-            graphics.SetViewport(new(default, GetSize()));
             using (new GPUMarker(graphics, "Canvas Render")) {
                 Compositor.Render(graphics, Material);
             }

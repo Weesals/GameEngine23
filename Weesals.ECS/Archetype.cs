@@ -162,21 +162,39 @@ namespace Weesals.ECS {
             TypeId = typeId;
         }
 
-        private void SetRevisionEntry(scoped ref ColumnStorage columnStorage, int row, RevisionStorage.RevisionTypes created) {
+        public void NotifyCreated(scoped ref ColumnStorage columnStorage, int row) {
             if (!Revision.IsMonitored) return;
             if (!Revision.HasRevision) columnStorage.RevisionStorage.Begin(ref Revision);
+            ref var revisionStorage = ref columnStorage.RevisionStorage;
             foreach (var r in Revision.RevisionRange) {
-                columnStorage.RevisionStorage.SetEntry(ref Revision.GetChannel(columnStorage.RevisionStorage, Revision.Revision, RevisionStorage.RevisionTypes.Created), row);
+                ref var modifiedChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Modified);
+                columnStorage.RevisionStorage.ClearEntry(ref modifiedChannel, row);
+                ref var destroyedChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Destroyed);
+                columnStorage.RevisionStorage.ClearEntry(ref destroyedChannel, row);
+                columnStorage.RevisionStorage.SetEntry(ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Created), row);
             }
         }
-        public void NotifyCreated(scoped ref ColumnStorage columnStorage, int row) {
-            SetRevisionEntry(ref columnStorage, row, RevisionStorage.RevisionTypes.Created);
-        }
         public void NotifyMutation(scoped ref ColumnStorage columnStorage, int row) {
-            SetRevisionEntry(ref columnStorage, row, RevisionStorage.RevisionTypes.Modified);
+            if (!Revision.IsMonitored) return;
+            if (!Revision.HasRevision) columnStorage.RevisionStorage.Begin(ref Revision);
+            ref var revisionStorage = ref columnStorage.RevisionStorage;
+            foreach (var r in Revision.RevisionRange) {
+                ref var createdChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Created);
+                if (columnStorage.RevisionStorage.GetEntry(createdChannel, row)) continue;
+                columnStorage.RevisionStorage.SetEntry(ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Modified), row);
+            }
         }
         public void NotifyDestroy(scoped ref ColumnStorage columnStorage, int row) {
-            SetRevisionEntry(ref columnStorage, row, RevisionStorage.RevisionTypes.Destroyed);
+            if (!Revision.IsMonitored) return;
+            if (!Revision.HasRevision) columnStorage.RevisionStorage.Begin(ref Revision);
+            ref var revisionStorage = ref columnStorage.RevisionStorage;
+            foreach (var r in Revision.RevisionRange) {
+                ref var createdChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Created);
+                if (columnStorage.RevisionStorage.ClearEntry(ref createdChannel, row)) continue;
+                ref var modifiedChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Modified);
+                if (columnStorage.RevisionStorage.ClearEntry(ref modifiedChannel, row)) continue;
+                columnStorage.RevisionStorage.SetEntry(ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Destroyed), row);
+            }
         }
 
         public override string ToString() { return $"C{TypeId}<x{DataRange.Length}>"; }

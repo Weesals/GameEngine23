@@ -387,8 +387,12 @@ namespace Game5.Game {
         public void CommitContract(MoveContract contract) { }
 
         public static Int2 ChunkToSim(Int2 cell) => cell * Separation + Separation / 2;
-        public static Int2 SimToChunk(Int2 pnt)  => pnt / Separation;
-        public static RectI SimToRect(Int2 pos) => new(SimToChunk(pos), 1);
+        public static Int2 SimToChunk(Int2 pnt) => pnt / Separation;
+        public static RectI SimToRect(Int2 pos) {
+            var pntMin = SimToChunk(pos - 3000);
+            var pntMax = SimToChunk(pos + 3000);
+            return new(pntMin, pntMax - pntMin + 1);
+        }
 
         public void NotifyCreatedEntities(Span<Entity> entities) {
             var tformLookup = GetComponentLookup<ECTransform>(true);

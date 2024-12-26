@@ -229,7 +229,7 @@ public:
 		: mPipeline(pipeline) { }
 	const NativePipeline* GetNativePipeline() const { return mPipeline; }
 private:
-	static CSIdentifier GetName(const NativePipeline* pipeline);
+	static short GetName(const NativePipeline* pipeline);
 	static int GetHasStencilState(const NativePipeline* pipeline);
 	static int GetExpectedBindingCount(const NativePipeline* pipeline);
 	static int GetExpectedConstantBufferCount(const NativePipeline* pipeline);

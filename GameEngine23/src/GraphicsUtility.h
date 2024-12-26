@@ -365,6 +365,7 @@ public:
             int mItemId;
             Iterator(const MaskedCollection& collection, int itemId)
                 : mCollection(collection), mItemId(itemId) { }
+            Iterator& operator =(const Iterator& o) { std::memcpy(this, &o, sizeof(o)); return *this; }
             Iterator& operator ++() {
                 auto& blocks = mCollection.mItemStore.mBlocks;
                 for (++mItemId; mItemId < mCollection.mItemStore.mItemCount; ++mItemId) {
@@ -380,7 +381,7 @@ public:
             uint64_t GetLockHandle() const { return mCollection.mItemStore.mLocks[GetItem().mLockId].mHandles; }
             void Delete() { mCollection.mItemStore.SetLock(GetItem(), 0); }
             bool operator ==(const Iterator& other) const { return mItemId == other.mItemId; }
-            T* operator -> () const { return &*this; }
+            T* operator -> () const { return &**this; }
             T& operator *() const { return GetItem().mData; }
         };
         MaskedCollection(PerFrameItemStoreNoHash<T>& itemStore, uint64_t mask)

@@ -20,10 +20,11 @@ namespace Game5.Game {
         public const float WorldScale = 1f / InvWorldScale;
         public const float InvWorldScale = 1024f;
         public const int AltitudeGranularity = 1024;
+        public const float AltitudeScale = 1f / AltitudeGranularity;
 
         // Convert from simulation space to world(rendering) space
-        public static Vector3 SimulationToWorld(Int2 vec) {
-            return new Vector3(vec.X, 0f, vec.Y) * WorldScale;
+        public static Vector3 SimulationToWorld(Int2 vec, int altitude = 0) {
+            return new Vector3(vec.X * WorldScale, altitude * AltitudeScale, vec.Y * WorldScale);
         }
         public static Vector3 SimulationToWorld(Int3 vec) {
             Debug.Assert(AltitudeGranularity == InvWorldScale);

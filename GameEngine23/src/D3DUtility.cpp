@@ -162,3 +162,86 @@ namespace D3D {
         return barrier;
     }
 }
+
+
+
+// Unused Texture copy code
+#if 0
+auto desc = d3dTex->mBuffer->GetDesc();
+D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprints[16];
+UINT numRows[16];
+UINT64 rowSizes[16];
+UINT64 RequiredSize = 0;
+device->GetCopyableFootprints(&desc, 0, tex.GetArrayCount(), 0, footprints, numRows, rowSizes, &RequiredSize);
+
+// Update the texture data
+auto* uploadBuffer = AllocateUploadBuffer(RequiredSize, lockBits);
+uint8_t* mappedData;
+CD3DX12_RANGE readRange(0, 0);
+ThrowIfFailed(uploadBuffer->Map(0, &readRange, (void**)&mappedData));
+for (int i = 0; i < tex.GetArrayCount(); ++i) {
+    for (int m = 0; m < tex.GetMipCount(); ++m) {
+        auto srcData = tex.GetData(m, i);
+        memcpy(mappedData, srcData.data(), srcData.size());
+    }
+}
+uploadBuffer->Unmap(0, nullptr);
+//cmdList->CopyBufferRegion(d3dTex->mBuffer.Get(), 0, uploadBuffer, 0, RequiredSize);
+mStatistics.BufferWrite(RequiredSize);
+
+// Copy data from the upload buffer to the texture
+D3D12_TEXTURE_COPY_LOCATION srcLocation = {};
+srcLocation.pResource = uploadBuffer;
+srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+srcLocation.PlacedFootprint.Offset = 0;
+srcLocation.PlacedFootprint.Footprint.Format = desc.Format;
+srcLocation.PlacedFootprint.Footprint.Width = blockRes.x;
+srcLocation.PlacedFootprint.Footprint.Height = blockRes.y;
+srcLocation.PlacedFootprint.Footprint.Depth = blockRes.z;// std::max(blockRes.z, tex.GetArrayCount());
+srcLocation.PlacedFootprint.Footprint.RowPitch = blockBytes * blockRes.x;
+srcLocation.PlacedFootprint.Footprint.RowPitch =
+(srcLocation.PlacedFootprint.Footprint.RowPitch + 255) & ~255;
+
+D3D12_TEXTURE_COPY_LOCATION dstLocation = {};
+dstLocation.pResource = d3dTex->mBuffer.Get();
+dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+dstLocation.SubresourceIndex = 0;
+
+D3D12_BOX srcBox = {};
+srcBox.right = srcLocation.PlacedFootprint.Footprint.Width;
+srcBox.bottom = srcLocation.PlacedFootprint.Footprint.Height;
+srcBox.back = srcLocation.PlacedFootprint.Footprint.Depth;
+
+cmdList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, &srcBox);
+
+#endif
+
+// Unused vsync without present
+//extern "C" NTSTATUS __cdecl D3DKMTWaitForVerticalBlankEvent(const D3DKMT_WAITFORVERTICALBLANKEVENT*);
+//extern "C" NTSTATUS __cdecl D3DKMTOpenAdapterFromHdc(D3DKMT_OPENADAPTERFROMHDC * lpParams);
+/*D3DKMT_WAITFORVERTICALBLANKEVENT getVBlankHandle() {
+    //https://docs.microsoft.com/en-us/windows/desktop/gdi/getting-information-on-a-display-monitor
+    DISPLAY_DEVICE dd;
+    dd.cb = sizeof(DISPLAY_DEVICE);
+
+    DWORD deviceNum = 0;
+    while (EnumDisplayDevices(NULL, deviceNum, &dd, 0)) {
+        if (dd.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) break;
+        deviceNum++;
+    }
+
+    HDC hdc = CreateDC(NULL, dd.DeviceName, NULL, NULL);
+    if (hdc == NULL) { }
+
+    D3DKMT_OPENADAPTERFROMHDC OpenAdapterData;
+    OpenAdapterData.hDc = hdc;
+    D3DKMTOpenAdapterFromHdc(&OpenAdapterData);
+    DeleteDC(hdc);
+    D3DKMT_WAITFORVERTICALBLANKEVENT we;
+    we.hAdapter = OpenAdapterData.hAdapter;
+    we.hDevice = 0; //optional. maybe OpenDeviceHandle will give it to us, https://docs.microsoft.com/en-us/windows/desktop/api/dxva2api/nf-dxva2api-idirect3ddevicemanager9-opendevicehandle
+    we.VidPnSourceId = OpenAdapterData.VidPnSourceId;
+
+    return we;
+}*/
+

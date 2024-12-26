@@ -109,6 +109,7 @@ namespace Weesals.Impostors {
 
             Span<CSRenderTarget> targets = [AlbedoTarget, NormalDepthTarget];
             graphics.SetRenderTargets(targets, depthTarget);
+            graphics.SetViewport(new(default, AlbedoTarget.GetSize()));
 
             using var materials = new PooledArray<Material>(2) {
                 [0] = mesh.Material,
@@ -160,6 +161,7 @@ namespace Weesals.Impostors {
         private Mesh quadMesh;
         unsafe private void BlitQuad(CSGraphics graphics, CSRenderTarget target, CSRenderTarget source, Material material) {
             graphics.SetRenderTargets(target, default);
+            graphics.SetViewport(new(default, target.GetSize()));
             if (quadMesh == null) {
                 quadMesh = new("Quad");
                 quadMesh.SetVertexCount(4);

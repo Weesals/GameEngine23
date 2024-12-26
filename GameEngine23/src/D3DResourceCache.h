@@ -208,7 +208,6 @@ public:
     CommandAllocator* RequireAllocator();
     LockMask CheckInflightFrames();
     void UnlockFrame(size_t frameHash);
-    void ClearDelayedData();
     ID3D12Resource* AllocateUploadBuffer(size_t size, LockMask lockBits);
     ID3D12Resource* AllocateUploadBuffer(size_t size, LockMask lockBits, int& itemIndex);
     ID3D12Resource* AllocateReadbackBuffer(size_t size, LockMask lockBits);
@@ -216,7 +215,7 @@ public:
     D3DResourceCache::D3DBinding* GetBinding(uint64_t bindingIdentifier);
     D3DResourceCache::D3DBinding& RequireBinding(const BufferLayout& buffer);
     void UpdateBufferData(D3DCommandContext& cmdList, const BufferLayout& buffer, std::span<const RangeInt> ranges);
-    void UpdateBufferData(D3DCommandContext& cmdList, const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length);
+    void CopyBufferData(D3DCommandContext& cmdList, const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length);
 
     ID3D12Resource* CreateReadback(D3DCommandContext& cmdList, const D3DRenderSurface& surface);
     D3DReadback* GetReadback(ID3D12Resource* resource, LockMask& outLockHandle);
@@ -225,8 +224,7 @@ public:
 
     void ComputeElementLayout(std::span<const BufferLayout*> bindings,
         std::vector<D3D12_INPUT_ELEMENT_DESC>& inputElements);
-    void CopyBufferData(D3DCommandContext& cmdList,
-        const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize);
+    void CopyBufferData(D3DCommandContext& cmdList, const BufferLayout& binding, D3DBinding& d3dBin, int itemSize, int byteOffset, int byteSize);
     void ComputeElementData(std::span<const BufferLayout*> bindings,
         D3DCommandContext& cmdList,
         std::vector<D3D12_VERTEX_BUFFER_VIEW>& inputViews,

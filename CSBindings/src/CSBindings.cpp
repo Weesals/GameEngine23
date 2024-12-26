@@ -188,8 +188,8 @@ CSSpan CSConstantBuffer::GetValues(const CSConstantBufferData* cb) {
 	return MakeSpan(constantBuffer->GetValues());
 }
 
-CSIdentifier CSPipeline::GetName(const NativePipeline* pipeline) {
-	return CSIdentifier(pipeline->mName.mId);
+short CSPipeline::GetName(const NativePipeline* pipeline) {
+	return pipeline->mName.mId;
 }
 int CSPipeline::GetHasStencilState(const NativePipeline* pipeline) {
 	return pipeline->mMaterialState.mDepthMode.GetStencilEnable();
@@ -333,7 +333,6 @@ const NativePipeline* RequirePipelineFromStages(NativeGraphics* graphics, CSSpan
 		stages, *(MaterialState*)materialState,
 		pobindings
 	);
-	assert(pipeline != nullptr);
 	return pipeline;
 }
 const NativePipeline* CSGraphics::RequirePipeline(NativeGraphics* graphics, CSSpan bindings,

@@ -365,6 +365,7 @@ namespace Weesals.Editor {
                     graphics.SetSurface(proxy.Surface);
                 }
                 graphics.SetRenderTargets(proxy.Surface.GetBackBuffer(), default);
+                graphics.SetViewport(new(default, proxy.GetSize()));
                 proxy.Render(graphics);
                 proxy.NotifyRendered();
                 requirePresent.Add(proxy);

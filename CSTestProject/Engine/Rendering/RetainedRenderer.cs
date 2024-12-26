@@ -44,6 +44,7 @@ namespace Weesals.Engine {
         public int Require(Span<Material> materials) {
             ulong hash = ArrayHash(materials);
             if (!mSetIDByHash.TryGetValue(hash, out var id)) {
+                id = InsertSet(hash, materials);
             }
             return id;
         }
@@ -897,6 +898,7 @@ namespace Weesals.Engine {
 
                 // Compute and cache CB and resource data
                 var resolved = RequirePipeline(graphics, batch, bindings);
+                if (resolved == null) continue;
 
                 var resources = graphics.RequireFrameData<nint>(resolved.TotalResourceCount);
                 using (var resourceMarker = ProfileMarker_ComputeResources.Auto()) {
@@ -939,6 +941,7 @@ namespace Weesals.Engine {
             if (!mPipelineCache.TryGetValue(meshMatHash, out var resolved)) {
                 var materials = Scene.MaterialCollection.GetMaterials(batch.MaterialSet);
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, buffers, materials);
+                if (!pso.IsValid) return null;
                 resolved = new ResolvedPipeline() {
                     Pipeline = pso,
                 };

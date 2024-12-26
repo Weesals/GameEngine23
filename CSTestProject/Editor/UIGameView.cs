@@ -195,6 +195,7 @@ namespace Weesals.Editor {
             using (ProfileMarker_OnRender.Auto()) {
                 OnRender?.Invoke(timeSinceRender, graphics);
                 timeSinceRender = 0f;
+                graphics.SetViewport(new(default, Canvas.GetSize()));
             }
         }
 

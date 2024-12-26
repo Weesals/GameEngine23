@@ -358,12 +358,12 @@ namespace Game5.Game
             var chunkBeg = (SimulationWorld.WorldToSimulation(ray.Origin).XZ);
             var chunkEnd = (SimulationWorld.WorldToSimulation(ray.ProjectTo(new Plane(Vector3.UnitY, 0f))).XZ);
             var sign = new Int2(chunkEnd.X > chunkBeg.X ? 1 : -1, chunkEnd.Y > chunkBeg.Y ? 1 : -1);
-            var rayIt = new GridThickRayIterator(chunkBeg, chunkEnd - chunkBeg, 4 * 1024, EntityMapSystem.Separation);
+            var rayIt = new GridThickRayIterator(chunkBeg, chunkEnd - chunkBeg, 0, EntityMapSystem.Separation);
             foreach (var cell in rayIt) {
                 var entities = entityMap.AllEntities.GetEntitiesEnumerator(cell, 0);
                 if (!entities.HasAny) continue;
                 Gizmos.DrawWireCube(
-                    SimulationWorld.SimulationToWorld(EntityMapSystem.ChunkToSim(cell)),
+                    SimulationWorld.SimulationToWorld(EntityMapSystem.ChunkToSim(cell), EntityMapSystem.Separation / 2),
                     Vector3.One * (EntityMapSystem.Separation * SimulationWorld.WorldScale * 0.9f)
                 );
                 foreach (var entity in entities) {

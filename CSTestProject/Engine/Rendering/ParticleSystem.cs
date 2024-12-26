@@ -578,7 +578,8 @@ namespace Weesals.Engine {
                 rootMaterial.SetValue("ActiveBlocks", new CSBufferReference(ActiveBlocks, from, to - from));
                 var pso = MaterialEvaluator.ResolvePipeline(graphics, bindings, materials);
                 var resources = MaterialEvaluator.ResolveResources(graphics, pso, materials);
-                foreach (var resource in resources.Reinterpret<CSBufferReference>()) {
+                // TODO: A better way to get referenced textures
+                foreach (var resource in resources.Slice(pso.GetConstantBufferCount()).Reinterpret<CSBufferReference>()) {
                     if (resource.mType == CSBufferReference.BufferTypes.Texture) {
                         graphics.CommitTexture(new CSTexture((NativeTexture*)resource.mBuffer));
                     }

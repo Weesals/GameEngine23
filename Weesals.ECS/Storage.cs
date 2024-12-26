@@ -78,9 +78,10 @@ namespace Weesals.ECS {
             public bool HasRevision => revisionData >= 0;
             public bool IsMonitored => monitorRef > 0;
             public Range RevisionRange => revisionRange;
-            public ref RevisionChannel GetChannel(RevisionStorage storage, int revision, RevisionTypes type) {
-                var revisionDelta = Revision - revision + 1;
-                return ref storage.revisions[revisionRange.End * TypeCount - TypeCount * revisionDelta + (int)type];
+            public ref RevisionChannel GetChannel(RevisionStorage storage, RevisionTypes type)
+                => ref GetChannel(storage, revisionRange.End - 1, type);
+            public ref RevisionChannel GetChannel(RevisionStorage storage, int index, RevisionTypes type) {
+                return ref storage.revisions[index * TypeCount + (int)type];
             }
             // End this revision
             public void Flush(ref RevisionStorage storage) {
@@ -117,7 +118,7 @@ namespace Weesals.ECS {
                     storage.CopyRevisionData(revisionRange.Start + r, revisionRange.Length - r, revisionRange.Start + r - 1);
                 }
                 for (int i = 0; i < TypeCount; i++) {
-                    GetChannel(storage, Revision, (RevisionTypes)i) = default;
+                    GetChannel(storage, (RevisionTypes)i) = default;
                 }
                 storage.revisionReferences[revisionRange.End - 1] = 0;
                 return Revision;
@@ -174,11 +175,14 @@ namespace Weesals.ECS {
             ref var page = ref pages.RequirePage(ref revision.PageRange, IndexToPage(index));
             page.BitMask |= IndexToBit(index);
         }
-        public void ClearEntry(ref RevisionChannel revision, int index) {
+        public bool ClearEntry(ref RevisionChannel revision, int index) {
             var pageIndex = pages.GetPageIndex(revision.PageRange, IndexToPage(index));
-            if (pageIndex < 0) return;
+            if (pageIndex < 0) return false;
             ref var page = ref pages.GetPage(pageIndex);
-            page.BitMask &= ~IndexToBit(index);
+            var mask = IndexToBit(index);
+            var exists = (page.BitMask & mask) != 0;
+            page.BitMask &= ~mask;
+            return exists;
         }
         public bool GetEntry(RevisionChannel revision, int index) {
             var pageIndex = pages.GetPageIndex(revision.PageRange, IndexToPage(index));
@@ -520,7 +524,9 @@ namespace Weesals.ECS {
             }
             var revision = GetRevision(monitor, ref archetype);
             if (revision.Revision == 0) return default;
-            return RevisionStorage.GetEnumerator(revision.GetChannel(RevisionStorage, monitor.Revision, type));
+            return RevisionStorage.GetEnumerator(revision.GetChannel(RevisionStorage,
+                revision.RevisionRange.End - 1 - (revision.Revision - monitor.Revision),
+                type));
         }
         public RevisionStorage.Enumerator GetCreated(RevisionMonitor monitor, ref Archetype archetype) {
             return GetRevisionChannel(monitor, ref archetype, RevisionStorage.RevisionTypes.Created);
@@ -616,14 +622,15 @@ namespace Weesals.ECS {
             column.NotifyMutation(ref this, dstRow);
         }
         public void ClearRowModifiedFlags(scoped ref Archetype archetype, int row) {
-            for (int i = 0; i < archetype.AllColumnCount; i++) {
+            // Not needed anymore? Handled by ArchetypeColumn
+            /*for (int i = 0; i < archetype.AllColumnCount; i++) {
                 ref var column = ref archetype.GetColumn(ref this, i);
                 if (!column.Revision.HasRevision) continue;
                 foreach (var r in column.Revision.RevisionRange) {
                     RevisionStorage.ClearEntry(ref column.Revision.GetChannel(RevisionStorage, r, RevisionStorage.RevisionTypes.Created), row);
                     RevisionStorage.ClearEntry(ref column.Revision.GetChannel(RevisionStorage, r, RevisionStorage.RevisionTypes.Modified), row);
                 }
-            }
+            }*/
         }
         public void ReleaseRow(scoped ref Archetype archetype, int row) {
             ++archetype.Revision;
@@ -633,16 +640,16 @@ namespace Weesals.ECS {
             Validate?.Invoke();
         }
 
-        public void NotifyCreated(scoped ref Archetype archetype, EntityAddress oldData) {
+        public void NotifyCreated(scoped ref Archetype archetype, EntityAddress addr) {
             for (int c = 0; c < archetype.ColumnCount; c++) {
                 ref var column = ref archetype.GetColumn(ref this, c);
-                column.NotifyCreated(ref this, oldData.Row);
+                column.NotifyCreated(ref this, addr.Row);
             }
         }
-        public void NotifyDestroyed(scoped ref Archetype archetype, EntityAddress oldData) {
+        public void NotifyDestroyed(scoped ref Archetype archetype, EntityAddress addr) {
             for (int c = 0; c < archetype.ColumnCount; c++) {
                 ref var column = ref archetype.GetColumn(ref this, c);
-                column.NotifyDestroy(ref this, oldData.Row);
+                column.NotifyDestroy(ref this, addr.Row);
             }
         }
     }
