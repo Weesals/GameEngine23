@@ -1,4 +1,4 @@
-#define PIX 1
+#define PIX 0
 
 #include "D3DGraphicsDevice.h"
 #include <sstream>
@@ -61,6 +61,7 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     gPixModule = GetModuleHandle(L"WinPixGpuCapturer.dll");
     if (gPixModule == 0) {
         auto path = GetLatestWinPixGpuCapturerPath();
+        if (GetFileAttributes(path.c_str()) == INVALID_FILE_ATTRIBUTES) path.clear();
         if (!path.empty()) gPixModule = LoadLibrary(path.c_str());
     }
 #endif
