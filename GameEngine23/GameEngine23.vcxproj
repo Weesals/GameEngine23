@@ -180,6 +180,7 @@
     <ClInclude Include="externals\nvtt\tools\cmdline.h" />
     <ClInclude Include="externals\nvtt\tools\configdialog.h" />
     <ClInclude Include="src\Buffer.h" />
+    <ClInclude Include="src\D3DGraphicsSurface.h" />
     <ClInclude Include="src\Lighting.h" />
     <ClInclude Include="src\Containers.h" />
     <ClInclude Include="src\D3DResourceCache.h" />
@@ -218,6 +219,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\SimpleMath.cpp" />
+    <ClCompile Include="src\D3DGraphicsSurface.cpp" />
     <ClCompile Include="src\D3DShader.cpp" />
     <ClCompile Include="src\D3DUtility.cpp" />
     <ClCompile Include="src\GraphicsDeviceBase.cpp" />

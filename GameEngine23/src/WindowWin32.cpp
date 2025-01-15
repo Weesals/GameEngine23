@@ -252,8 +252,8 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     // Receive mouse events
     case WM_POINTERDOWN: case WM_POINTERUP: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
-        char buffer[32]; sprintf_s(buffer, "PDOWN %llx %d\n", hWnd, window->mInput != nullptr);
-        OutputDebugStringA(buffer);
+        //char buffer[32]; sprintf_s(buffer, "PDOWN %llx %d\n", hWnd, window->mInput != nullptr);
+        //OutputDebugStringA(buffer);
         POINTER_INFO pointerInfo;
         if (GetPointerInfo(GET_POINTERID_WPARAM(wParam), &pointerInfo)) {}
         auto pointer = window->RequirePointer(pointerInfo.pointerId);

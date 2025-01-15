@@ -609,7 +609,8 @@ namespace Weesals.Engine.Jobs {
         public static bool IsMainThread => ThreadName == "Main Thread";
 
         public JobScheduler() {
-            Tracy.TracyPlotConfig(Tracy.CreateString("WakeCount"), step: true);
+            if (ProfilerMarker.EnableTracy)
+                Tracy.TracyPlotConfig(Tracy.CreateString("WakeCount"), step: true);
             ThreadName = "Main Thread";
             int coreCount = Platform.GetCoreCount();
             jobThreads = new JobThread[ThreadCount > 0 ? ThreadCount : coreCount];

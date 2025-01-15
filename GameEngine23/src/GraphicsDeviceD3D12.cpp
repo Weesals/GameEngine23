@@ -7,6 +7,7 @@
 
 #include "GraphicsDeviceD3D12.h"
 #include "D3DResourceCache.h"
+#include "D3DGraphicsSurface.h"
 #include "D3DShader.h"
 #include "Resources.h"
 

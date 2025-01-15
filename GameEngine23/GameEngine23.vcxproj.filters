@@ -164,6 +164,9 @@
     <ClInclude Include="externals\nvtt\tools\configdialog.h" />
     <ClInclude Include="src\TextureCompression.h" />
     <ClInclude Include="src\ShaderCache.h" />
+    <ClInclude Include="src\D3DGraphicsSurface.h">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="inc\miniz.c">
@@ -230,6 +233,9 @@
     <ClCompile Include="src\TextureCompression.cpp" />
     <ClCompile Include="src\D3DShader.cpp" />
     <ClCompile Include="src\D3DUtility.cpp" />
+    <ClCompile Include="src\D3DGraphicsSurface.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="inc\SimpleMath.inl">

@@ -434,6 +434,7 @@ public:
         size_t mLayoutHash;
         T mData;
         int mLockId = -1;
+        T* operator -> () { return &mData; }
     };
 protected:
     struct Block {
