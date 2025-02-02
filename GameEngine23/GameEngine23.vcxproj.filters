@@ -231,9 +231,16 @@
     <ClCompile Include="src\Lighting.cpp" />
     <ClCompile Include="src\ui\font\FontRenderer.cpp" />
     <ClCompile Include="src\TextureCompression.cpp" />
-    <ClCompile Include="src\D3DShader.cpp" />
-    <ClCompile Include="src\D3DUtility.cpp" />
     <ClCompile Include="src\D3DGraphicsSurface.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="src\D3DRaytracing.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="src\D3DShader.cpp">
+      <Filter>Core\Platforms\Windows\D3D12</Filter>
+    </ClCompile>
+    <ClCompile Include="src\D3DUtility.cpp">
       <Filter>Core\Platforms\Windows\D3D12</Filter>
     </ClCompile>
   </ItemGroup>

@@ -53,7 +53,7 @@ PSInput VSMain(VSInput input) {
     float3 worldPos = mul(instance.Model, float4(localPos, 1.0)).xyz;
     float3 worldNrm = mul(instance.Model, float4(localNrm, 0.0)).xyz;
     result.positionCS = mul(ViewProjection, float4(worldPos, 1.0));
-    result.viewPos = mul(View, float4(worldPos, 1.0));
+    result.viewPos = mul(View, float4(worldPos, 1.0)).xyz;
     result.normalVS = mul((float3x3)View, worldNrm);
     result.uv = input.uv;
 

@@ -15,20 +15,20 @@ using Game5;
  */
 
 class Program {
+    private static ProfilerMarker ProfileMarker_MainStartup = new("Startup");
     private static ProfilerMarker ProfileMarker_Readbacks = new("Readbacks");
 
     public static void Main() {
-        var coreHandle = JobResult<Core>.Schedule(static () => new Core());
-        var coreJob = coreHandle.Then(static (core) => Core.ActiveInstance = core);
-        var grapJob = coreHandle.Then(static (core) => core.InitializeGraphics());
-        coreHandle.Dispose();
-
-        var loadJob = JobHandle.Schedule(Resources.LoadDefaultUIAssets);
+        var scope = ProfileMarker_MainStartup.Auto();
+        var coreJob = JobHandle.Schedule(static () => Core.ActiveInstance = new Core());
+        var grapJob = coreJob.Then(static () => Core.ActiveInstance.InitializeGraphics());
+        var loadJob = JobHandle.Schedule(Resources.LoadDefaultAssets);
+        scope.Dispose();
 
         GameRoot root = new GameRoot();
 
         // Need UI assets for PlayUI
-        var rootJob = root.Initialise(loadJob);
+        var rootJob = root.Initialise(loadJob, out var playInitJob);
 
         // Require UI assets for Editor UI
         var editorWindowHandle = JobResult<EditorWindow>.Schedule(static () => {
@@ -72,6 +72,8 @@ class Program {
         }
 
         var timer = new FrameTimer(4);
+
+        playInitJob.Complete();
 
         // Loop while the window is valid
         for (int f = 0; ; ++f) {

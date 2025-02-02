@@ -70,7 +70,7 @@ public:
             return true;
         }
     };
-    enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, R_UAVBuffer, R_UAVAppend, R_UAVConsume, };
+    enum ResourceTypes : uint8_t { R_Texture, R_SBuffer, R_RTAS, R_UAVBuffer, R_UAVAppend, R_UAVConsume, };
     struct ResourceBinding {
         Identifier mName;
         int mBindPoint;
@@ -232,6 +232,7 @@ public:
     virtual void ClearRenderTarget(const ClearConfig& clear) = 0;
     virtual uint64_t GetGlobalPSOHash() const { return (uint64_t)this; }
     virtual void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash) { return 0; }
+    virtual uint64_t GetBufferGPUAddress(const BufferLayout& buffer) { return -1; }
     virtual void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) { }
     virtual void CopyBufferData(const BufferLayout& source, const BufferLayout& dest, int srcOffset, int dstOffset, int length) { }
     virtual void CommitTexture(const Texture* texture) { }
@@ -243,13 +244,19 @@ public:
     virtual const PipelineLayout* RequireComputePSO(const CompiledShader& shaders) {
         return nullptr;
     }
+    virtual const PipelineLayout* RequireRaytracePSO(const CompiledShader& rayGenShader, const CompiledShader& hitShader, const CompiledShader& missShader) {
+        return nullptr;
+    }
     virtual void DrawMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void DispatchMesh(std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void DrawIndirect(const BufferLayout& argsBuffer, std::span<const BufferLayout*> bindings, const PipelineLayout* pso, std::span<const void*> resources, const DrawConfig& config, int instanceCount = 1, const char* name = nullptr) { }
     virtual void DispatchCompute(const PipelineLayout* pso, std::span<const void*> resources, Int3 groupCount) { }
+    virtual void DispatchRaytrace(const PipelineLayout* pso, std::span<const void*> resources, Int3 size) { }
     virtual Readback CreateReadback(const RenderTarget2D* rt) { return { }; }
     virtual int GetReadbackResult(const Readback& readback) { return 0; }
     virtual int CopyAndDisposeReadback(Readback& readback, std::span<uint8_t> dest) { return 0; }
+    virtual intptr_t CreateBLAS(const BufferLayout& vertexBuffer, const BufferLayout& indexBuffer) { return 0; }
+    virtual intptr_t CreateTLAS(const BufferLayout& instanceBuffer) { return 0; }
     virtual void Execute() = 0;
 };
 
@@ -284,6 +291,9 @@ public:
     const PipelineLayout* RequireComputePSO(const CompiledShader& computeShader) {
         return mInterop->RequireComputePSO(computeShader);
     }
+    const PipelineLayout* RequireRaytracePSO(const CompiledShader& rayGenShader, const CompiledShader& hitShader, const CompiledShader& missShader) {
+        return mInterop->RequireRaytracePSO(rayGenShader, hitShader, missShader);
+    }
     template<class T> std::span<T> RequireFrameData(int count) { return std::span<T>((T*)RequireFrameData(count * sizeof(T)), count); }
     template<class T> std::span<T> RequireFrameData(std::span<T> data) {
         auto outData = std::span<T>((T*)RequireFrameData((int)(data.size() * sizeof(T))), data.size());
@@ -297,6 +307,9 @@ public:
     }
     void* RequireConstantBuffer(std::span<const uint8_t> data, size_t hash = 0) {
         return mInterop->RequireConstantBuffer(data, hash);
+    }
+    uint64_t GetBufferGPUAddress(const BufferLayout& buffer) {
+        return mInterop->GetBufferGPUAddress(buffer);
     }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) {
         mInterop->CopyBufferData(buffer, ranges);
@@ -333,6 +346,9 @@ public:
     void DispatchCompute(const PipelineLayout* pso, std::span<const void*> resources, Int3 groupCount) {
         mInterop->DispatchCompute(pso, resources, groupCount);
     }
+    void DispatchRaytrace(const PipelineLayout* pso, std::span<const void*> resources, Int3 size) {
+        mInterop->DispatchRaytrace(pso, resources, size);
+    }
     Readback CreateReadback(const RenderTarget2D* rt) {
         return mInterop->CreateReadback(rt);
     }
@@ -341,6 +357,12 @@ public:
     }
     int CopyAndDisposeReadback(Readback& readback, std::span<uint8_t> dest) {
         return mInterop->CopyAndDisposeReadback(readback, dest);
+    }
+    intptr_t CreateBLAS(const BufferLayout& vertexBuffer, const BufferLayout& indexBuffer) {
+        return mInterop->CreateBLAS(vertexBuffer, indexBuffer);
+    }
+    intptr_t CreateTLAS(const BufferLayout& instanceBuffer) {
+        return mInterop->CreateTLAS(instanceBuffer);
     }
     void Execute() { mInterop->Execute(); }
 };

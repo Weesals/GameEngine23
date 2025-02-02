@@ -11,6 +11,7 @@ using Weesals.Editor;
 using Weesals.Engine;
 using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
+using Weesals.Engine.Rendering;
 using Weesals.Impostors;
 using Weesals.Landscape;
 using Weesals.UI;
@@ -69,6 +70,8 @@ namespace Game5.Game {
         private ParticleDebugWindow? previewWindow;
         private ProfilerWindow? profilerWindow;
 
+        private Raytracing raytracing;
+
         public GameRoot() {
             using (new ProfilerMarker("Create Scene").Auto()) {
                 Scene = new();
@@ -77,7 +80,7 @@ namespace Game5.Game {
                 EventSystem = new(Canvas);
             }
         }
-        public JobHandle Initialise(JobHandle dependency) {
+        public JobHandle Initialise(JobHandle dependency, out JobHandle playInit) {
             var playJob = JobResult<Play>.Schedule(() => {
                 using var marker = new ProfilerMarker("Create Play").Auto();
                 return new Play(this);
@@ -91,12 +94,16 @@ namespace Game5.Game {
                 SetupPasses(passes);
                 scenePasses = passes;
             }, dependency);
-            return passesJob.Join(playJob.Handle).Then(() => {
-                using var marker = new ProfilerMarker("Play Init").Auto();
+            var playJob2 = passesJob.Join(playJob.Handle).Then(() => {
+                using var marker = new ProfilerMarker("Play Complete").Auto();
                 Play = playJob.Complete();
+            });
+            playInit = playJob2.Then(() => {
+                using var marker = new ProfilerMarker("Play Init").Auto();
                 Play.Initialise();
                 volGatherPass.SetParticleSystem(Play.ParticleManager);
             });
+            return playJob2;
         }
         public void Dispose() {
             Play.Dispose();
@@ -319,10 +326,25 @@ namespace Game5.Game {
 
             Canvas.RequireComposed();
         }
+        nint tlas;
         public void Render(float dt, CSGraphics graphics) {
+            if (raytracing == null && false) {
+                raytracing = new();
+                var testMesh = Resources.LoadModel("./Assets/SM_House.fbx");
+                var houseBLAS = raytracing.CreateBLAS(graphics, testMesh.Meshes[0]);
+                var treeMesh = Resources.LoadModel("./Assets/SM_Tree.fbx");
+                var treeBLAS = raytracing.CreateBLAS(graphics, treeMesh.Meshes[0]);
+                tlas = raytracing.CreateInstances(graphics, basePass);
+                Canvas.AppendChild(new Image(raytracing.ResultTexture) { HitTestEnabled = false, AspectMode = Image.AspectModes.PreserveAspectContain, });
+                Canvas.RequireComposed();
+            }
             using var marker = ProfileMarker_Render.Auto();
 
             using var scopedGraphics = new Graphics.Scoped(graphics, Scene.RootMaterial);
+
+            using (Graphics.MaterialStack.Push(ScenePasses.MainSceneMaterial)) {
+                if (raytracing != null) raytracing.Dispatch(graphics, tlas);
+            }
 
             // This requires graphics calls, do it first
             // TODO: Check visibility and dont process culled

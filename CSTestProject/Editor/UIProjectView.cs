@@ -225,8 +225,6 @@ namespace Weesals.Editor {
             }
         }
 
-        public readonly Editor Editor;
-
         FolderList folderList = new();
         FileGrid fileGrid = new();
 
@@ -234,7 +232,6 @@ namespace Weesals.Editor {
 
         public UIProjectView(Editor editor) : base(editor, "Project") {
             SelectionGroup = editor.ProjectSelection;
-            Editor = editor;
             folderList.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 0f, 1f).WithOffsets(0f, 0f, 150f, 0f));
             fileGrid.SetTransform(CanvasTransform.MakeDefault().WithOffsets(150f, 0f, 0f, 0f));
             folderList.SetRoot("./Assets/");

@@ -176,12 +176,13 @@ float4 PSMain(PSInput input) : SV_TARGET {
     float4 clipZ = mul(InvViewProjection, float4(vpos, 0.0, 1.0));
     float4 projZ = transpose(InvViewProjection)[2];
     float3 directionVector = normalize(projZ.xyz * InvViewProjection._44 - clipZ.xyz * projZ.w);
-    
+
     float3 ro = float3(0., 0., 0.);
     float3 rd = directionVector.xyz;
     
     float4 r = ProceduralSkybox(ro, rd);
     r.rgb *= LuminanceFactor;
     r.rgb += PermuteV2(input.position.xy) * 0.005 - 0.5 * 0.005;
+    //r.rgb = (directionVector * 0.5 + 0.5) * LuminanceFactor;
     return r;
 }

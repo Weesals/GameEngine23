@@ -787,7 +787,7 @@ struct TypedBufferView {
 };
 
 struct BufferReference {
-	enum BufferTypes : uint8_t { None, Texture, RenderTarget, Buffer, };
+	enum BufferTypes : uint8_t { None, Texture, RenderTarget, Buffer, GPUAddress, };
 	void* mBuffer;
 	int16_t mSubresourceId;
 	int16_t mSubresourceCount;

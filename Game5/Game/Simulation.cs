@@ -224,6 +224,62 @@ namespace Game5.Game {
 
             prefabMarker.Dispose();
 
+            var housesCmdBuffer = new EntityCommandBuffer(World.Manager);
+            var housesJob = JobHandle.Schedule(() => {
+                using (new ProfilerMarker("Creating Houses").Auto()) {
+                    var command = housesCmdBuffer;
+#if DEBUG
+                    const int Count = 115 * 4;
+#else
+                    const int Count = 2000000 * 4;
+#endif
+                    var sqrtCount = (int)MathF.Sqrt(Count);
+                    int totCount = 0;
+                    for (int i = 0; i < Count; i++) {
+                        var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 6000;
+                        if (rand.Next(0, 4) != 0) continue;
+                        if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
+                        var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
+                        command.AddComponent<ECTransform>(newEntity) = new() {
+                            Position = pos,
+                            Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
+                        };
+                        command.AddComponent<ECTeam>(newEntity) = new() {
+                            SlotId = 1,
+                        };
+                        command.MutateComponent<CModel>(newEntity).Variant = i;
+                        //command.RemoveComponent<ECObstruction>(newEntity);
+                        ++totCount;
+                    }
+                    Trace.WriteLine($"Spawned {totCount} houses");
+                }
+            });
+
+            var treesCmdBuffer = new EntityCommandBuffer(World.Manager);
+            var treesJob = JobHandle.Schedule(() => {
+                using (new ProfilerMarker("Creating Trees").Auto()) {
+                    var command = treesCmdBuffer;
+                    for (int i = 0; i < 10; i++) {
+                        Int2 groupMin = 4000;
+                        Int2 groupMax = Landscape.Sizing.SimulationSize - 4000;
+                        var groupPos = new Int2(
+                            rand.Next(groupMin.X, groupMax.X),
+                            rand.Next(groupMin.Y, groupMax.Y)
+                        );
+                        int spread = 10000;
+                        for (int z = 0; z < 5; z++) {
+                            var pos = groupPos + new Int2(rand.Next(-spread, spread), rand.Next(-spread, spread));
+                            if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
+                            var entity = PrefabRegistry.Instantiate(command, tree.Prefab);
+                            command.SetComponent<ECTransform>(entity, new() {
+                                Position = pos,
+                                Orientation = (short)rand.Next(short.MinValue, short.MaxValue),
+                            });
+                        }
+                    }
+                }
+            });
+
             if (true) {
                 using (new ProfilerMarker("Creating Test Entities").Auto()) {
                     tcInstance = PrefabRegistry.Instantiate(World, townCentre.Prefab);
@@ -246,60 +302,13 @@ namespace Game5.Game {
                     World.GetComponentRef<ECTransform>(World.CreateEntity(archerInstance)).Position += new Int2(3000, 2000);
                 }
             }
-
-            using (new ProfilerMarker("Creating Houses").Auto()) {
-                var command = new EntityCommandBuffer(World.Manager);
-#if DEBUG
-                const int Count = 200 * 4;
-#else
-                const int Count = 200000 * 4;
-#endif
-                var sqrtCount = (int)MathF.Sqrt(Count);
-                int totCount = 0;
-                for (int i = 0; i < Count; i++) {
-                    var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 6000;
-                    if (rand.Next(0, 4) != 0) continue;
-                    if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
-                    var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
-                    command.AddComponent<ECTransform>(newEntity) = new() {
-                        Position = pos,
-                        Orientation = (short)(rand.Next(4) * (short.MinValue / 2))
-                    };
-                    command.AddComponent<ECTeam>(newEntity) = new() {
-                        SlotId = 1,
-                    };
-                    command.MutateComponent<CModel>(newEntity).Variant = i;
-                    //command.RemoveComponent<ECObstruction>(newEntity);
-                    ++totCount;
-                }
-                using (new ProfilerMarker("Committing").Auto()) {
-                    command.Commit();
-                }
-                Trace.WriteLine($"Spawned {totCount} houses");
+            using (new ProfilerMarker("Committing").Auto()) {
+                treesJob.Complete();
+                treesCmdBuffer.Commit();
+                housesJob.Complete();
+                housesCmdBuffer.Commit();
             }
 
-            using (new ProfilerMarker("Creating Trees").Auto()) {
-                var command = new EntityCommandBuffer(World.Manager);
-                for (int i = 0; i < 10; i++) {
-                    Int2 groupMin = 4000;
-                    Int2 groupMax = Landscape.Sizing.SimulationSize - 4000;
-                    var groupPos = new Int2(
-                        rand.Next(groupMin.X, groupMax.X),
-                        rand.Next(groupMin.Y, groupMax.Y)
-                    );
-                    int spread = 10000;
-                    for (int z = 0; z < 5; z++) {
-                        var pos = groupPos + new Int2(rand.Next(-spread, spread), rand.Next(-spread, spread));
-                        if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
-                        var entity = PrefabRegistry.Instantiate(command, tree.Prefab);
-                        command.SetComponent<ECTransform>(entity, new() {
-                            Position = pos,
-                            Orientation = (short)rand.Next(short.MinValue, short.MaxValue),
-                        });
-                    }
-                }
-                command.Commit();
-            }
 
             /*using (new ProfilerMarker("Nav Test").Auto()) {
                 //navigationSystem.Update();

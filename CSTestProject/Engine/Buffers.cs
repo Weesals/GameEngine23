@@ -399,6 +399,10 @@ namespace Weesals.Engine {
             }
         }
 
+        public Span<T> GetElementAs<T>(int elementId) {
+            return new Span<T>(Elements[elementId].mData, Count);
+        }
+
         public override string ToString() {
             return $"H{BufferLayout.identifier:x} E{ElementCount} R{Revision}";
         }

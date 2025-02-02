@@ -194,7 +194,7 @@ namespace Weesals.UI {
         }
 
         public CanvasImage Background = new();
-        public ButtonStyle Style = ButtonStyle.Default;
+        public ButtonStyle BtnStyle = ButtonStyle.Default;
 
         [Flags]
         private enum States {
@@ -209,9 +209,9 @@ namespace Weesals.UI {
         public event Action? OnClick;
 
         public Button() {
-            Background.SetSprite(Style.ButtonBG);
+            Background.SetSprite(BtnStyle.ButtonBG);
             Background.SetBlendMode(CanvasBlending.BlendModes.Overlay);
-            Background.Color = Style.NormalColor;
+            Background.Color = BtnStyle.NormalColor;
         }
 
         public override void Initialise(CanvasBinding binding) {
@@ -272,11 +272,11 @@ namespace Weesals.UI {
             var rate = (state & States.Active) != 0 ? 0.01f : 0.1f;
             var ease = Easing.StatefulPowerInOut(rate, 2f).WithDelay(delay);
             Background.Color = Color.Lerp(Background.Color,
-                (state & States.Active) != 0 ? Style.ClickColor :
-                (state & States.Press) != 0 ? Style.PressColor :
-                (state & States.Selected) != 0 ? Style.SelectedColor :
-                (state & States.Hover) != 0 ? Style.HoverColor :
-                Style.NormalColor,
+                (state & States.Active) != 0 ? BtnStyle.ClickColor :
+                (state & States.Press) != 0 ? BtnStyle.PressColor :
+                (state & States.Selected) != 0 ? BtnStyle.SelectedColor :
+                (state & States.Hover) != 0 ? BtnStyle.HoverColor :
+                BtnStyle.NormalColor,
                 ease.Evaluate(tween)
             );
             var tform = Transform;
@@ -298,7 +298,7 @@ namespace Weesals.UI {
         }
         public override SizingResult GetDesiredSize(SizingParameters sizing) {
             var result = base.GetDesiredSize(sizing);
-            result.Margins = Style.Margins;
+            result.Margins = BtnStyle.Margins;
             return result;
         }
     }

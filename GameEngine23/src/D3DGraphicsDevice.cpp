@@ -58,12 +58,14 @@ static std::wstring GetLatestWinPixGpuCapturerPath() {
 D3DGraphicsDevice::D3DGraphicsDevice()
 {
 #if PIX
+    auto* pixZone = SimpleProfilerMarker("Load PIX");
     gPixModule = GetModuleHandle(L"WinPixGpuCapturer.dll");
     if (gPixModule == 0) {
         auto path = GetLatestWinPixGpuCapturerPath();
         if (GetFileAttributes(path.c_str()) == INVALID_FILE_ATTRIBUTES) path.clear();
         if (!path.empty()) gPixModule = LoadLibrary(path.c_str());
     }
+    SimpleProfilerMarkerEnd(pixZone);
 #endif
     CoInitialize(nullptr);
 
@@ -72,10 +74,12 @@ D3DGraphicsDevice::D3DGraphicsDevice()
     // Enable debug mode in debug builds
 #if defined(_DEBUG)
     {
+        auto* d3dDbgZone = SimpleProfilerMarker("Load D3DDebug");
         ComPtr<ID3D12Debug> debugController;
         if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
             debugController->EnableDebugLayer();
         }
+        SimpleProfilerMarkerEnd(d3dDbgZone);
     }
     dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif

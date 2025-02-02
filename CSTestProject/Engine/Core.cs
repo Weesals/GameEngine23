@@ -24,8 +24,10 @@ namespace Weesals.Engine {
         }
 
         public void InitializeGraphics() {
-            platform.InitializeGraphics();
-            graphics = platform.CreateGraphics();
+            using (var marker = new ProfilerMarker("Init Graphics").Auto()) {
+                platform.InitializeGraphics();
+                graphics = platform.CreateGraphics();
+            }
         }
 
         public CSWindow CreateWindow(string name) {

@@ -33,7 +33,7 @@ public:
     std::wstring GetDeviceName() const override;
 
     D3DGraphicsDevice& GetDevice() { return mDevice; }
-    ID3D12Device* GetD3DDevice() const { return mDevice.GetD3DDevice(); }
+    ID3D12Device5* GetD3DDevice() const { return mDevice.GetD3DDevice(); }
     ID3D12DescriptorHeap* GetRTVHeap() const { return mDevice.GetRTVHeap(); }
     ID3D12DescriptorHeap* GetDSVHeap() const { return mDevice.GetDSVHeap(); }
     ID3D12DescriptorHeap* GetSRVHeap() const { return mDevice.GetSRVHeap(); }

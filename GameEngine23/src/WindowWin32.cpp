@@ -12,6 +12,8 @@ WindowWin32::WindowWin32(const std::wstring &name, HWND parent)
 
     static bool classRegistered = false;
     if (!classRegistered) {
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
         classRegistered = true;
         // Register a class for our window to be a member of
         WNDCLASSW wcex = {};

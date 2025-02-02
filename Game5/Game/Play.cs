@@ -214,7 +214,7 @@ namespace Game5.Game
                 Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.45f)
                     * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.15f),*/
                 NearPlane = 5.0f,
-                FarPlane = 10000.0f,
+                FarPlane = 20000.0f,
             };
             //Camera.FOV = 0f;
             //Camera.OrthoSize = 20f;

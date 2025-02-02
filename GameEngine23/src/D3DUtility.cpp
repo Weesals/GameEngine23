@@ -245,3 +245,42 @@ cmdList->CopyTextureRegion(&dstLocation, 0, 0, 0, &srcLocation, &srcBox);
     return we;
 }*/
 
+#if 0
+// Define the subobjects for the state object
+std::vector<D3D12_STATE_SUBOBJECT> subobjects(8);
+
+// Ray generation shader
+D3D12_EXPORT_DESC rayGenExportDesc = { .Name = L"RayGen", .ExportToRename = nullptr, .Flags = D3D12_EXPORT_FLAG_NONE, };
+D3D12_DXIL_LIBRARY_DESC rayGenLibDesc = {};
+rayGenLibDesc.DXILLibrary = GetBytecode(rayGenShader);
+rayGenLibDesc.NumExports = 1;
+rayGenLibDesc.pExports = &rayGenExportDesc;
+subobjects.push_back({ .Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, .pDesc = &rayGenLibDesc });
+
+// Miss shader
+D3D12_EXPORT_DESC missExportDesc = { .Name = L"Miss", .ExportToRename = nullptr, .Flags = D3D12_EXPORT_FLAG_NONE, };
+D3D12_DXIL_LIBRARY_DESC missLibDesc = {};
+missLibDesc.DXILLibrary = GetBytecode(missShader);
+missLibDesc.NumExports = 1;
+missLibDesc.pExports = &missExportDesc;
+subobjects.push_back({ .Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, .pDesc = &missLibDesc });
+
+// Hit shader
+D3D12_EXPORT_DESC hitExportDesc = { .Name = L"Hit", .ExportToRename = nullptr, .Flags = D3D12_EXPORT_FLAG_NONE, };
+D3D12_DXIL_LIBRARY_DESC hitLibDesc = {};
+hitLibDesc.DXILLibrary = GetBytecode(hitShader);
+hitLibDesc.NumExports = 1;
+hitLibDesc.pExports = &hitExportDesc;
+subobjects.push_back({ .Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, .pDesc = &hitLibDesc });
+
+// Create the state object
+D3D12_STATE_OBJECT_DESC stateObjectDesc = {};
+stateObjectDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+stateObjectDesc.NumSubobjects = subobjects.size();
+stateObjectDesc.pSubobjects = subobjects.data();
+
+ComPtr<ID3D12StateObject> raytracingPSO;
+mD3D12.GetD3DDevice()->CreateStateObject(&stateObjectDesc, IID_PPV_ARGS(&raytracingPSO));
+
+
+#endif

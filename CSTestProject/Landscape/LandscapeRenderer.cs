@@ -150,17 +150,21 @@ namespace Weesals.Landscape {
 
         public LandscapeRenderer() {
             loadHandle = JobHandle.Schedule(() => {
-                using var marker = new ProfilerMarker("Gen TerQuad").Auto();
-                tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
-                var landMaterial = new Material("./Assets/landscape3x3.hlsl");
-                landMaterial.SetMeshShader(Resources.LoadShader("./Assets/landscape3x3.hlsl", "MSMain"));
-                landMaterial.SetBuffer("Vertices", tileMesh.VertexBuffer);
-                landMaterial.SetBuffer("Indices", tileMesh.IndexBuffer);
-                WaterMaterial = new("./Assets/water.hlsl", landMaterial);
-                //WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
-                //WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
-                //EdgeRenderer = new LandscapeEdgeRenderer(this);
-                LandMaterial = landMaterial;
+                using var marker = new ProfilerMarker("LandscapeRenderer").Auto();
+                using (new ProfilerMarker("Mesh").Auto()) {
+                    tileMesh = LandscapeUtility.GenerateSubdividedQuad(TileSize, TileSize);
+                }
+                using (new ProfilerMarker("Materials").Auto()) {
+                    var landMaterial = new Material("./Assets/landscape3x3.hlsl");
+                    landMaterial.SetMeshShader(Resources.LoadShader("./Assets/landscape3x3.hlsl", "MSMain"));
+                    landMaterial.SetBuffer("Vertices", tileMesh.VertexBuffer);
+                    landMaterial.SetBuffer("Indices", tileMesh.IndexBuffer);
+                    WaterMaterial = new("./Assets/water.hlsl", landMaterial);
+                    //WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
+                    //WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+                    //EdgeRenderer = new LandscapeEdgeRenderer(this);
+                    LandMaterial = landMaterial;
+                }
                 HighQualityBlend = HighQualityBlend;
                 SecondVariant = SecondVariant;
                 Complexity = Complexity;

@@ -331,6 +331,7 @@ private:
 	static const NativePipeline* RequireMeshPipeline(NativeGraphics* graphics, CSSpan bindings,
 		NativeCompiledShader* meshShader, NativeCompiledShader* pixelShader, void* materialState);
 	static const NativePipeline* RequireComputePSO(NativeGraphics* graphics, NativeCompiledShader* computeShader);
+	static const NativePipeline* RequireRaytracePSO(NativeGraphics* graphics, NativeCompiledShader* rayGenShader, NativeCompiledShader* hitShader, NativeCompiledShader* missShader);
 	static void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 	static void* RequireConstantBuffer(NativeGraphics* graphics, CSSpan span, size_t hash = 0);
 	static void CopyBufferData(NativeGraphics* graphics, const CSBufferLayout* layout, CSSpan ranges);
@@ -338,6 +339,7 @@ private:
 	static void CommitTexture(NativeGraphics* graphics, const NativeTexture* texture);
 	static void Draw(NativeGraphics* graphics, CSPipeline pipeline, CSSpan buffers, CSSpan resources, CSDrawConfig config, int instanceCount);
 	static void Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 groupCount);
+	static void DispatchRaytrace(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 size);
 	static void Reset(NativeGraphics* graphics);
 	static void Clear(NativeGraphics* graphics, CSClearConfig clear);
 	static void Wait(NativeGraphics* graphics);
@@ -348,6 +350,12 @@ private:
 	static uint64_t CreateReadback(NativeGraphics* graphics, NativeRenderTarget* rt);
 	static int GetReadbackResult(NativeGraphics* graphics, uint64_t readback);
 	static int CopyAndDisposeReadback(NativeGraphics* graphics, uint64_t readback, CSSpan data);
+};
+class DLLCLASS CSRaytracing {
+public:
+	static intptr_t CreateBLAS(NativeGraphics* graphics, const CSBufferLayout* vertexBuffer, const CSBufferLayout* indexBuffer);
+	static intptr_t CreateTLAS(NativeGraphics* graphics, const CSBufferLayout* instanceBuffer);
+	static uint64_t GetBLASGPUAddress(intptr_t nativeBlas);
 };
 class DLLCLASS CSGraphicsSurface {
 	NativeSurface* mSurface;

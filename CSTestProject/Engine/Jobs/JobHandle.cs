@@ -250,7 +250,8 @@ namespace Weesals.Engine.Jobs {
         public JobHandle Join(JobHandle other) { return Handle.Join(other); }
 
         public static JobResult<TResult> Schedule(Func<object> value, JobHandle dependency = default) {
-            var handle = JobDependencies.Instance.CreateHandle(JobScheduler.Instance.CreateTask(value), dependency);
+            var task = JobScheduler.Instance.CreateTask(value);
+            var handle = JobDependencies.Instance.CreateHandle(task, dependency);
             return new(handle);
         }
         public static implicit operator JobResult<TResult>(TResult result) {

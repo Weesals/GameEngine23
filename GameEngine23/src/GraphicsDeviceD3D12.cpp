@@ -8,6 +8,7 @@
 #include "GraphicsDeviceD3D12.h"
 #include "D3DResourceCache.h"
 #include "D3DGraphicsSurface.h"
+#include "D3DRaytracing.h"
 #include "D3DShader.h"
 #include "Resources.h"
 
@@ -16,6 +17,11 @@
 
 // Handle dynamically loading WinPixEventRuntime.dll
 #include "PIXDynamic.cpp"
+
+extern void* SimpleProfilerMarker(const char* name);
+extern void SimpleProfilerMarkerEnd(void* zone);
+
+D3DRaytracing raytracing;
 
 // Handles receiving rendering events from the user application
 // and issuing relevant draw commands
@@ -281,6 +287,11 @@ public:
         auto& cache = mDevice->GetResourceCache();
         return cache.RequireConstantBuffer(CreateContext(), data, hash, cbBumpAllocator);
     }
+    UINT64 GetBufferGPUAddress(const BufferLayout& buffer) {
+        auto& cache = mDevice->GetResourceCache();
+        auto binding = cache.RequireBinding(buffer);
+        return binding.mGPUMemory;
+    }
     void CopyBufferData(const BufferLayout& buffer, std::span<const RangeInt> ranges) override {
         auto& cache = mDevice->GetResourceCache();
         cache.UpdateBufferData(CreateContext(), buffer, ranges);
@@ -315,6 +326,7 @@ public:
         }
 
         mGraphicsRoot.mLastPipeline = pipelineState;
+        mComputeRoot.mLastPipeline = nullptr;
         mCmdList->SetPipelineState(pipelineState->mPipelineState.Get());
     }
     void BindComputePipelineState(const D3DResourceCache::D3DPipelineState* pipelineState) {
@@ -326,7 +338,14 @@ public:
         }
 
         mComputeRoot.mLastPipeline = pipelineState;
-        mCmdList->SetPipelineState(pipelineState->mPipelineState.Get());
+        mGraphicsRoot.mLastPipeline = nullptr;
+        if (pipelineState->mPipelineState == nullptr) {
+            auto raytrace = (const D3DResourceCache::D3DPipelineRaytrace*)pipelineState;
+            mCmdList->SetPipelineState1(raytrace->mRaytracePSO.Get());
+        }
+        else {
+            mCmdList->SetPipelineState(pipelineState->mPipelineState.Get());
+        }
     }
 
     virtual const PipelineLayout* RequirePipeline(
@@ -351,6 +370,10 @@ public:
         auto pipelineState = mDevice->GetResourceCache().RequireComputePSO(computeShader);
         return pipelineState->mLayout.get();
     }
+    const PipelineLayout* RequireRaytracePSO(const CompiledShader& rayGenShader, const CompiledShader& hitShader, const CompiledShader& missShader) override {
+        auto pipelineState = mDevice->GetResourceCache().RequireRaytracePSO(rayGenShader, hitShader, missShader);
+        return pipelineState->mLayout.get();
+    }
 
     int BindConstantBuffers(std::pair<int, const D3DConstantBuffer*> constantBinds[32], std::vector<const ShaderBase::ConstantBuffer*> cbuffers, std::span<const void*> resources, int& r) {
         cbBumpAllocator.mBumpConstantBuffer = -1;
@@ -360,15 +383,17 @@ public:
         return (int)cbuffers.size();
     }
 
-    int BindResources(std::pair<int, int> bindPoints[32], std::vector<const ShaderBase::ResourceBinding*> bindings, std::span<const void*> resources, int& r) {
-        const int UAVOffset = 5;        // Should match up with root signature
+    int BindResources(std::tuple<int, int, UINT64> bindPoints[32], std::vector<const ShaderBase::ResourceBinding*> bindings, std::span<const void*> resources, int& r
+        , int srvBindOffset, int uavBindOffset) {
         auto& cache = mDevice->GetResourceCache();
         for (int i = 0; i < bindings.size(); ++i) {
             auto* rb = bindings[i];
             auto* resource = (BufferReference*)&resources[r];
             r += 2;
             int bindPoint = rb->mBindPoint;
+            int bindOffset = 0;
             int srvOffset = -1;
+            UINT64 addr = 0;
             if (resource->mType == BufferReference::BufferTypes::Buffer) {
                 auto* rbinding = cache.GetBinding((uint64_t)resource->mBuffer);
                 assert(rbinding != nullptr); // Did you call CopyBufferData on this resource?
@@ -381,12 +406,13 @@ public:
                 if (rb->mType == ShaderBase::ResourceTypes::R_SBuffer) {
                     srvOffset = cache.GetBufferSRV(*rbinding,
                         offset, count, rbinding->mStride, mFrameHandle);
+                    bindOffset = srvBindOffset;
                 } else if (rb->mType == ShaderBase::ResourceTypes::R_UAVBuffer
                     || rb->mType == ShaderBase::ResourceTypes::R_UAVAppend
                     || rb->mType == ShaderBase::ResourceTypes::R_UAVConsume) {
                     srvOffset = cache.GetBufferUAV(rbinding->mBuffer.Get(),
                         count, rbinding->mStride, D3D12_BUFFER_UAV_FLAG_NONE, mFrameHandle);
-                    bindPoint += UAVOffset;
+                    bindOffset = uavBindOffset;
                     barrierState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
                 }
                 cache.RequireState(CreateContext(), *rbinding, { }, barrierState);
@@ -409,12 +435,13 @@ public:
                     barrierState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
                     srvOffset = cache.GetUAV(d3dTex->mBuffer.Get(), viewFmt,
                         false, rt->GetArrayCount(), mFrameHandle, resOffset, resCount);
-                    bindPoint += UAVOffset;
+                    bindOffset = uavBindOffset;
                 }
                 else if (rb->mType == ShaderBase::ResourceTypes::R_Texture) {
                     if (mDepthBuffer != nullptr && mDepthBuffer->mBuffer.Get() == d3dTex->mBuffer.Get()) barrierState |= D3D12_RESOURCE_STATE_DEPTH_READ;
                     srvOffset = cache.GetTextureSRV(d3dTex->mBuffer.Get(), viewFmt,
                         false, rt->GetArrayCount(), mFrameHandle, resOffset, resCount);
+                    bindOffset = srvBindOffset;
                 }
                 mBarrierStateManager.SetResourceState(
                     d3dTex->mBuffer.Get(), d3dTex->mBarrierHandle,
@@ -434,10 +461,15 @@ public:
                     barrierState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
                     srvOffset = cache.GetUAV(d3dTex->mBuffer.Get(), d3dTex->mFormat,
                         tex->GetSize().z > 1, tex->GetArrayCount(), mFrameHandle, resOffset, resCount);
-                    bindPoint += UAVOffset;
+                    bindOffset = uavBindOffset;
                 }
                 else if (rb->mType == ShaderBase::ResourceTypes::R_Texture) {
                     srvOffset = cache.RequireTextureSRV(*d3dTex, mFrameHandle);
+                    if (d3dTex->mBuffer != nullptr) {
+                        //srvOffset = -2;
+                        //addr = d3dTex->mBuffer->GetGPUVirtualAddress();
+                    }
+                    bindOffset = srvBindOffset;
                 }
                 if (d3dTex->mBarrierHandle != D3D::BarrierHandle::Invalid) {
                     mBarrierStateManager.SetResourceState(
@@ -445,9 +477,19 @@ public:
                         -1, barrierState, D3D::BarrierMeta(tex->GetMipCount()));
                 }
             }
+            else if (resource->mType == BufferReference::BufferTypes::GPUAddress) {
+                auto d3daccl = (D3DAccelerationStructure*)resource->mBuffer;
+                assert(rb->mType == ShaderBase::ResourceTypes::R_RTAS);
+                addr = d3daccl->GetGPUAddress();
+                srvOffset = -2;
+                bindOffset = srvBindOffset;
+            }
             if (srvOffset == -1 && rb->mType == ShaderBase::ResourceTypes::R_Texture) {
                 auto* d3dTex = cache.RequireCurrentTexture(cache.RequireDefaultTexture(), CreateContext());
-                if (d3dTex != nullptr) srvOffset = cache.RequireTextureSRV(*d3dTex, mFrameHandle);
+                if (d3dTex != nullptr) {
+                    srvOffset = cache.RequireTextureSRV(*d3dTex, mFrameHandle);
+                    bindOffset = srvBindOffset;
+                }
             }
             if (srvOffset == -1) {
                 std::string str = "Failed to find resource for " + rb->mName.GetName();
@@ -455,7 +497,7 @@ public:
                 return -1;
             }
             assert(bindPoint >= 0);
-            bindPoints[i] = { bindPoint, srvOffset };
+            bindPoints[i] = { bindPoint + bindOffset, srvOffset, addr };
         }
         return (int)bindings.size();
     }
@@ -472,8 +514,9 @@ public:
         std::pair<int, const D3DConstantBuffer*> constantBinds[32];
         int cCount = BindConstantBuffers(constantBinds, pipelineState->mLayout->mConstantBuffers, resources, r);
         // Require and bind other resources (textures)
-        std::pair<int, int> resourceBinds[32];
-        int rCount = BindResources(resourceBinds, pipelineState->mLayout->mResources, resources, r);
+        std::tuple<int, int, UINT64> resourceBinds[32];
+        int rCount = BindResources(resourceBinds, pipelineState->mLayout->mResources, resources, r,
+            pipelineState->mRootSignature->mNumConstantBuffers, pipelineState->mRootSignature->mNumConstantBuffers + pipelineState->mRootSignature->mSRVCount);
         if (cCount == -1 || rCount == -1) return;
 
         FlushBarriers();
@@ -487,12 +530,20 @@ public:
             mCmdList->SetGraphicsRootConstantBufferView(bindPoint, constantBuffer->GetGPUVirtualAddress() + d3dCB->mOffset);
         }
         for (int i = 0; i < rCount; ++i) {
-            auto handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart(), resourceBinds[i].second);
-            auto bindPoint = resourceBinds[i].first;
+            auto bindPoint = std::get<0>(resourceBinds[i]);
             assert(bindPoint < _countof(mGraphicsRoot.mLastResources));
-            if (mGraphicsRoot.mLastResources[bindPoint].ptr == handle.ptr) continue;
-            mCmdList->SetGraphicsRootDescriptorTable(pipelineState->mRootSignature->mNumConstantBuffers + bindPoint, handle);
-            mGraphicsRoot.mLastResources[bindPoint] = handle;
+            auto srvOffset = std::get<1>(resourceBinds[i]);
+            if (srvOffset == -2) {
+                mCmdList->SetGraphicsRootShaderResourceView(bindPoint, std::get<2>(resourceBinds[i]));
+                mGraphicsRoot.mLastResources[bindPoint] = {};
+            }
+            else {
+                auto handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart(), srvOffset);
+                if (mGraphicsRoot.mLastResources[bindPoint].ptr == handle.ptr) continue;
+                mCmdList->SetGraphicsRootDescriptorTable(bindPoint, handle);
+                //mCmdList->SetGraphicsRootShaderResourceView(bindPoint, handle.ptr);
+                mGraphicsRoot.mLastResources[bindPoint] = handle;
+            }
         }
         if (stencilRef >= 0) mCmdList->OMSetStencilRef((UINT)stencilRef);
     }
@@ -503,8 +554,9 @@ public:
         std::pair<int, const D3DConstantBuffer*> constantBinds[32];
         int cCount = BindConstantBuffers(constantBinds, pipelineState->mLayout->mConstantBuffers, resources, r);
         // Require and bind other resources (textures)
-        std::pair<int, int> resourceBinds[32];
-        int rCount = BindResources(resourceBinds, pipelineState->mLayout->mResources, resources, r);
+        std::tuple<int, int, UINT64> resourceBinds[32];
+        int rCount = BindResources(resourceBinds, pipelineState->mLayout->mResources, resources, r,
+            pipelineState->mRootSignature->mNumConstantBuffers, pipelineState->mRootSignature->mNumConstantBuffers + pipelineState->mRootSignature->mSRVCount);
         if (cCount == -1 || rCount == -1) return;
 
         FlushBarriers();
@@ -518,12 +570,20 @@ public:
             mCmdList->SetComputeRootConstantBufferView(bindPoint, constantBuffer->GetGPUVirtualAddress() + d3dCB->mOffset);
         }
         for (int i = 0; i < rCount; ++i) {
-            auto handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart(), resourceBinds[i].second);
-            auto bindingId = pipelineState->mRootSignature->mNumConstantBuffers + resourceBinds[i].first;
-            assert(bindingId < _countof(mComputeRoot.mLastResources));
-            if (mComputeRoot.mLastResources[bindingId].ptr == handle.ptr) continue;
-            mCmdList->SetComputeRootDescriptorTable(bindingId, handle);
-            mComputeRoot.mLastResources[bindingId] = handle;
+            auto bindPoint = std::get<0>(resourceBinds[i]);
+            assert(bindPoint < _countof(mGraphicsRoot.mLastResources));
+            auto srvOffset = std::get<1>(resourceBinds[i]);
+            if (srvOffset == -2) {
+                mCmdList->SetComputeRootShaderResourceView(bindPoint, std::get<2>(resourceBinds[i]));
+                mComputeRoot.mLastResources[bindPoint] = {};
+            }
+            else {
+                auto handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(mDevice->GetSRVHeap()->GetGPUDescriptorHandleForHeapStart(), srvOffset);
+                assert(bindPoint < _countof(mComputeRoot.mLastResources));
+                if (mComputeRoot.mLastResources[bindPoint].ptr == handle.ptr) continue;
+                mCmdList->SetComputeRootDescriptorTable(bindPoint, handle);
+                mComputeRoot.mLastResources[bindPoint] = handle;
+            }
         }
     }
 
@@ -638,6 +698,32 @@ public:
 
         mCmdList->Dispatch(groups.x, groups.y, groups.z);
     }
+    void DispatchRaytrace(const PipelineLayout* state, std::span<const void*> resources, Int3 size) {
+        auto* pipelineState = (D3DResourceCache::D3DPipelineRaytrace*)state->mPipelineHash;
+        if (pipelineState == nullptr) return;
+
+        BindComputeState(pipelineState, resources);
+
+        auto shaderIDs = pipelineState->mShaderIDs.Get();
+
+        D3D12_DISPATCH_RAYS_DESC dispatchDesc = {
+            .RayGenerationShaderRecord = {
+                .StartAddress = shaderIDs->GetGPUVirtualAddress(),
+                .SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES},
+            .MissShaderTable = {
+                .StartAddress = shaderIDs->GetGPUVirtualAddress() +
+                                D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT,
+                .SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES},
+            .HitGroupTable = {
+                .StartAddress = shaderIDs->GetGPUVirtualAddress() +
+                                2 * D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT,
+                .SizeInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES},
+            .Width = (UINT)size.x,
+            .Height = (UINT)size.y,
+            .Depth = (UINT)size.z,
+        };
+        mCmdList->DispatchRays(&dispatchDesc);
+    }
 
     Readback CreateReadback(const RenderTarget2D* rt) {
         auto d3dRT = mDevice->GetResourceCache().RequireD3DRT(rt);
@@ -651,6 +737,38 @@ public:
     }
     int CopyAndDisposeReadback(Readback& readback, std::span<uint8_t> dest) {
         return mDevice->GetResourceCache().CopyAndDisposeReadback((ID3D12Resource*)readback.mHandle, dest);
+    }
+    template<typename T>
+    static void increment_shared(const std::shared_ptr<T>& ptr) {
+        uint64_t data[4] = { };
+        (std::shared_ptr<T>&)data[0] = ptr;
+    }
+    virtual intptr_t CreateBLAS(const BufferLayout& vertexBuffer, const BufferLayout& indexBuffer) override {
+        auto& cache = mDevice->GetResourceCache();
+        cache.RequireState(CreateContext(), cache.RequireBinding(vertexBuffer), vertexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        cache.RequireState(CreateContext(), cache.RequireBinding(indexBuffer), indexBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        cache.FlushBarriers(CreateContext());
+        auto posElement = vertexBuffer.GetElements()[0];
+        D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE vertAddr = {
+            .StartAddress = GetBufferGPUAddress(vertexBuffer),
+            .StrideInBytes = (UINT64)vertexBuffer.CalculateBufferStride(),
+        };
+        D3D12_GPU_VIRTUAL_ADDRESS indAddr = GetBufferGPUAddress(indexBuffer);
+        auto blas = raytracing.MakeBLAS(mDevice->GetD3DDevice(), mCmdList.Get(),
+            vertAddr, (DXGI_FORMAT)posElement.mFormat, vertexBuffer.mCount,
+            indAddr, (DXGI_FORMAT)indexBuffer.GetElements()[0].mFormat, indexBuffer.mCount);
+        increment_shared(blas);
+        return (intptr_t)blas.get();
+    }
+    virtual intptr_t CreateTLAS(const BufferLayout& instanceBuffer) override {
+        auto& cache = mDevice->GetResourceCache();
+        auto binding = cache.RequireBinding(instanceBuffer);
+        cache.RequireState(CreateContext(), binding, instanceBuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        cache.FlushBarriers(CreateContext());
+        auto tlas = raytracing.MakeTLAS(mDevice->GetD3DDevice(), mCmdList.Get(),
+            binding.mBuffer.Get(), binding.mCount, nullptr);
+        increment_shared(tlas);
+        return (intptr_t)tlas.get();
     }
 
     // Send the commands to the GPU
@@ -674,6 +792,7 @@ GraphicsDeviceD3D12::GraphicsDeviceD3D12()
     : mDevice()
     , mCache(mDevice, mStatistics)
 {
+    auto* zone = SimpleProfilerMarker("Feature Detection");
     D3D12_FEATURE_DATA_D3D12_OPTIONS options = {};
     D3D12_FEATURE_DATA_D3D12_OPTIONS5 features5 = {};
     D3D12_FEATURE_DATA_D3D12_OPTIONS7 features = {};
@@ -691,6 +810,7 @@ GraphicsDeviceD3D12::GraphicsDeviceD3D12()
     mCapabilities.mMeshShaders = features.MeshShaderTier == D3D12_MESH_SHADER_TIER_1;
     mCapabilities.mMinPrecision = options.MinPrecisionSupport;
     mCapabilities.mRaytracingSupported = features5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_0;
+    SimpleProfilerMarkerEnd(zone);
 }
 GraphicsDeviceD3D12::~GraphicsDeviceD3D12() { }
 

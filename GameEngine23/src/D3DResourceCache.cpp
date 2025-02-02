@@ -121,13 +121,13 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     , mRTOffset(0)
     , mDSOffset(0)
 {
+    auto* rootSigZone = SimpleProfilerMarker("Root Signature");
     auto mD3DDevice = mD3D12.GetD3DDevice();
 
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = { .HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1 };
     if (FAILED(mD3DDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
         featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 
-    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = { };
     CD3DX12_STATIC_SAMPLER_DESC samplerDesc[] = {
         CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_POINT),
         CD3DX12_STATIC_SAMPLER_DESC(1, D3D12_FILTER_MIN_MAG_MIP_LINEAR),
@@ -139,72 +139,79 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
         CD3DX12_STATIC_SAMPLER_DESC(7, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP),
     };
 
-    {
-        mRootSignature.mNumConstantBuffers = 4;
-        mRootSignature.mNumResources = 8;
-
-        CD3DX12_ROOT_PARAMETER1 rootParameters[14];
+    auto CreateRootSig = [&](D3DRootSignature& rootSignature, const wchar_t* name, int realSRVCount = 0) {
+        CD3DX12_ROOT_PARAMETER1 rootParameters[16];
         CD3DX12_DESCRIPTOR_RANGE1 srvR[10];
+        rootSignature.mNumResources = rootSignature.mSRVCount + rootSignature.mUAVCount;
         int rootParamId = 0;
-        for (int i = 0; i < mRootSignature.mNumConstantBuffers; ++i)
+        for (int i = 0; i < rootSignature.mNumConstantBuffers; ++i)
             rootParameters[rootParamId++].InitAsConstantBufferView(i);
-        for (int i = 0; i < mRootSignature.mNumResources; ++i) {
-            srvR[i] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
-            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[i]);
+        int descId = 0;
+        for (int i = 0; i < rootSignature.mSRVCount; ++i, ++descId) {
+            if (i < realSRVCount) {
+                rootParameters[rootParamId++].InitAsShaderResourceView(i);
+            }
+            else {
+                srvR[descId] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
+                rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[descId]);
+            }
+        }
+        for (int i = 0; i < rootSignature.mUAVCount; ++i, ++descId) {
+            srvR[descId] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, i);
+            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[descId]);
         }
 
+        CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc = { };
         rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
             D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
             D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
             D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
         );
-
         ComPtr<ID3DBlob> signature;
         ComPtr<ID3DBlob> error;
         auto hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
         if (FAILED(hr)) {
             OutputDebugStringA((char*)error->GetBufferPointer());
         }
-        ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mRootSignature.mRootSignature)));
+        ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature.mRootSignature)));
+        rootSignature.mRootSignature->SetName(name);
+    };
+
+    {
+        mRootSignature.mNumConstantBuffers = 4;
+        mRootSignature.mSRVCount = 8;
+        CreateRootSig(mRootSignature, L"Graphics RootSig");
     }
     {
         mComputeRootSignature.mNumConstantBuffers = 4;
         mComputeRootSignature.mSRVCount = 5;
         mComputeRootSignature.mUAVCount = 5;
-        mComputeRootSignature.mNumResources
-            = mComputeRootSignature.mSRVCount + mComputeRootSignature.mUAVCount;
-
-        CD3DX12_ROOT_PARAMETER1 rootParameters[14];
-        CD3DX12_DESCRIPTOR_RANGE1 srvR[10];
-        int rootParamId = 0;
-        for (int i = 0; i < mComputeRootSignature.mNumConstantBuffers; ++i)
-            rootParameters[rootParamId++].InitAsConstantBufferView(i);
-        int descId = 0;
-        for (int i = 0; i < mComputeRootSignature.mSRVCount; ++i, ++descId) {
-            srvR[descId] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
-            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[descId]);
-        }
-        for (int i = 0; i < mComputeRootSignature.mUAVCount; ++i, ++descId) {
-            srvR[descId] = CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, i);
-            rootParameters[rootParamId++].InitAsDescriptorTable(1, &srvR[descId]);
-        }
-
-        rootSignatureDesc.Init_1_1(rootParamId, rootParameters, _countof(samplerDesc), samplerDesc,
-            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS
-        );
-
+        CreateRootSig(mComputeRootSignature, L"Compute RootSig");
+    }
+    {
+        mRaytraceRootSignature.mNumConstantBuffers = 4;
+        mRaytraceRootSignature.mSRVCount = 4;
+        mRaytraceRootSignature.mUAVCount = 4;
+        CreateRootSig(mRaytraceRootSignature, L"Raytrace RootSig", 1);
+#if false
+        CD3DX12_DESCRIPTOR_RANGE UAVDescriptor;
+        UAVDescriptor.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+        CD3DX12_ROOT_PARAMETER rootParameters[2];
+        rootParameters[0].InitAsShaderResourceView(0);
+        rootParameters[1].InitAsDescriptorTable(1, &UAVDescriptor);
+        CD3DX12_ROOT_SIGNATURE_DESC globalRootSignatureDesc(ARRAYSIZE(rootParameters), rootParameters);
         ComPtr<ID3DBlob> signature;
         ComPtr<ID3DBlob> error;
-        auto hr = D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error);
+        auto hr = D3D12SerializeRootSignature(&globalRootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error);
         if (FAILED(hr)) {
             OutputDebugStringA((char*)error->GetBufferPointer());
         }
-        ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mComputeRootSignature.mRootSignature)));
+        ThrowIfFailed(mD3DDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&mRaytraceRootSignature.mRootSignature)));
+        mRaytraceRootSignature.mRootSignature->SetName(L"Raytrace RootSig");
+#endif
     }
+    SimpleProfilerMarkerEnd(rootSigZone);
 }
 D3DResourceCache::D3DPipelineState* D3DResourceCache::GetOrCreatePipelineState(size_t hash) {
     return pipelineMapping.GetOrCreate(hash);
@@ -929,7 +936,7 @@ struct CBRBAppender {
         for (auto& rb : reflection.mResourceBindings) {
             if (std::any_of(layout.mResources.begin(), layout.mResources.end(),
                 [&](auto* o) { return *o == rb; })) continue;
-            auto& binds = rb.mType <= ShaderBase::R_SBuffer ? rbBinds : uaBinds;
+            auto& binds = rb.mType <= ShaderBase::R_RTAS ? rbBinds : uaBinds;
             if (binds[rb.mBindPoint].IsValid() && binds[rb.mBindPoint] != rb.mName)
                 errors += "RB Collision " + binds[rb.mBindPoint].GetName() + " and " + rb.mName.GetName() + "\n";
             binds[rb.mBindPoint] = rb.mName;
@@ -937,6 +944,9 @@ struct CBRBAppender {
         }
     }
 };
+D3D12_SHADER_BYTECODE GetBytecode(const CompiledShader& shader) {
+    return CD3DX12_SHADER_BYTECODE(shader.GetBinary().data(), shader.GetBinary().size());
+}
 // Ensure a material is ready to be rendererd by the GPU (with the specified vertex layout)
 D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
     const ShaderStages& shaders,
@@ -1001,17 +1011,6 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         }
 #endif
 
-        ComPtr<ID3DBlob> ampBlob, meshBlob, vertBlob, pixBlob;
-        if (shaders.mMeshShader != nullptr) {
-            CreateShaderBlob(shaders.mMeshShader, meshBlob);
-            if (shaders.mAmplificationShader != nullptr) {
-                CreateShaderBlob(shaders.mAmplificationShader, ampBlob);
-            }
-        } else if (shaders.mVertexShader != nullptr) {
-            CreateShaderBlob(shaders.mVertexShader, vertBlob);
-        }
-        CreateShaderBlob(shaders.mPixelShader, pixBlob);
-
         auto rasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         rasterizerState.CullMode = (D3D12_CULL_MODE)materialState.mRasterMode.mCullMode;
         auto blendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -1034,12 +1033,12 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
         // Create the D3D pipeline
         auto device = mD3D12.GetD3DDevice();
         HRESULT hr = 0;
-        if (meshBlob != nullptr) {
+        if (shaders.mMeshShader != nullptr) {
             D3DX12_MESH_SHADER_PIPELINE_STATE_DESC psoDesc = {};
             ApplyCommonFields(psoDesc, 1);
-            if (ampBlob != nullptr) psoDesc.AS = CD3DX12_SHADER_BYTECODE(ampBlob.Get());
-            psoDesc.MS = CD3DX12_SHADER_BYTECODE(meshBlob.Get());
-            psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixBlob.Get());
+            if (shaders.mAmplificationShader != nullptr) psoDesc.AS = GetBytecode(*shaders.mAmplificationShader);
+            psoDesc.MS = GetBytecode(*shaders.mMeshShader);
+            psoDesc.PS = GetBytecode(*shaders.mPixelShader);
             auto meshStreamDesc = CD3DX12_PIPELINE_MESH_STATE_STREAM(psoDesc);
             D3D12_PIPELINE_STATE_STREAM_DESC streamDesc = {};
             streamDesc.SizeInBytes = sizeof(meshStreamDesc);
@@ -1051,8 +1050,8 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequirePipelineState(
             ApplyCommonFields(psoDesc, 0);
             ComputeElementLayout(useBindings, pipelineState->mInputElements);
             psoDesc.InputLayout = { pipelineState->mInputElements.data(), (unsigned int)pipelineState->mInputElements.size() };
-            psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertBlob.Get());
-            psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixBlob.Get());
+            psoDesc.VS = GetBytecode(*shaders.mVertexShader);
+            psoDesc.PS = GetBytecode(*shaders.mPixelShader);
             psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
             hr = device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState->mPipelineState));
         }
@@ -1093,11 +1092,9 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequireComputePSO(const Co
         pipelineState->mHash = hash;
         pipelineState->mRootSignature = &mComputeRootSignature;
 
-        ComPtr<ID3DBlob> computeBlob;
-        CreateShaderBlob(&shader, computeBlob);
         D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
         psoDesc.pRootSignature = pipelineState->mRootSignature->mRootSignature.Get();
-        psoDesc.CS = CD3DX12_SHADER_BYTECODE(computeBlob.Get());
+        psoDesc.CS = GetBytecode(shader);
         mD3D12.GetD3DDevice()
             ->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState->mPipelineState));
         pipelineState->mType = 3;
@@ -1109,6 +1106,97 @@ D3DResourceCache::D3DPipelineState* D3DResourceCache::RequireComputePSO(const Co
         
         CBRBAppender appender(*pipelineState->mLayout);
         appender.AppendCBRBs(shader.GetReflection());
+    }
+    return pipelineState;
+}
+D3DResourceCache::D3DPipelineState* D3DResourceCache::RequireRaytracePSO(const CompiledShader& rayGenShader, const CompiledShader& hitShader, const CompiledShader& missShader) {
+    size_t hash = GenericHash({ rayGenShader.GetBinaryHash(), hitShader.GetBinaryHash(), missShader.GetBinaryHash() });
+    bool wasCreated;
+    auto pipelineState = pipelineMapping.GetOrCreate<D3DPipelineRaytrace>(hash, wasCreated);
+    while (pipelineState->mHash != hash) {
+        assert(pipelineState->mHash == 0);
+
+        pipelineState->mHash = hash;
+        pipelineState->mRootSignature = &mRaytraceRootSignature;
+
+        CD3DX12_STATE_OBJECT_DESC raytracingPipeline = { D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE };
+
+        auto rayGenBytes = GetBytecode(rayGenShader);
+        auto rayHitBytes = GetBytecode(hitShader);
+        auto rayMissBytes = GetBytecode(missShader);
+
+        auto lib = raytracingPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
+        lib->SetDXILLibrary(&rayGenBytes);
+        lib->DefineExport(L"RayGen");
+        lib->DefineExport(L"Hit");
+        lib->DefineExport(L"Miss");
+
+        auto hitGroup = raytracingPipeline.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+        hitGroup->SetClosestHitShaderImport(L"Hit");
+        hitGroup->SetHitGroupExport(L"HitGroup");
+        hitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
+
+        // Shader config
+        // Defines the maximum sizes in bytes for the ray payload and attribute structure.
+        auto shaderConfig = raytracingPipeline.CreateSubobject<CD3DX12_RAYTRACING_SHADER_CONFIG_SUBOBJECT>();
+        UINT payloadSize = 4 * sizeof(float);   // float4 color
+        UINT attributeSize = 2 * sizeof(float); // float2 barycentrics
+        shaderConfig->Config(payloadSize, attributeSize);
+
+        // Global root signature
+        // This is a root signature that is shared across all raytracing shaders invoked during a DispatchRays() call.
+        auto globalRootSignature = raytracingPipeline.CreateSubobject<CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT>();
+        globalRootSignature->SetRootSignature(pipelineState->mRootSignature->mRootSignature.Get());
+
+        // Pipeline config
+        // Defines the maximum TraceRay() recursion depth.
+        auto pipelineConfig = raytracingPipeline.CreateSubobject<CD3DX12_RAYTRACING_PIPELINE_CONFIG_SUBOBJECT>();
+        UINT maxRecursionDepth = 1;
+        pipelineConfig->Config(maxRecursionDepth);
+
+        // Create the state object.
+        ComPtr<ID3D12StateObject> raytracingPSO;
+        ThrowIfFailed(mD3D12.GetD3DDevice()->CreateStateObject(raytracingPipeline, IID_PPV_ARGS(&raytracingPSO)));
+
+        ID3D12Resource* shaderIDs;
+        static const D3D12_RESOURCE_DESC BASIC_BUFFER_DESC {
+            .Dimension = D3D12_RESOURCE_DIMENSION_BUFFER,
+            .Width = 0, // Will be changed in copies
+            .Height = 1,
+            .DepthOrArraySize = 1,
+            .MipLevels = 1,
+            .SampleDesc = DefaultSampleDesc(),
+            .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR };
+        auto idDesc = BASIC_BUFFER_DESC;
+        idDesc.Width = 3 * D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;
+        mD3D12.GetD3DDevice()->CreateCommittedResource(&D3D::UploadHeap, D3D12_HEAP_FLAG_NONE, &idDesc,
+            D3D12_RESOURCE_STATE_COMMON, nullptr,
+            IID_PPV_ARGS(&shaderIDs));
+
+        ID3D12StateObjectProperties* props;
+        raytracingPSO->QueryInterface(&props);
+        uint8_t* data;
+        auto WriteId = [&](const wchar_t* name) {
+            void* id = props->GetShaderIdentifier(name);
+            memcpy(data, id, D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+            data += D3D12_RAYTRACING_SHADER_TABLE_BYTE_ALIGNMENT;
+        };
+        shaderIDs->Map(0, nullptr, (void**)&data);
+        WriteId(L"RayGen");
+        WriteId(L"Miss");
+        WriteId(L"HitGroup");
+        shaderIDs->Unmap(0, nullptr);
+        props->Release();
+
+        pipelineState->mLayout = std::make_unique<PipelineLayout>();
+        pipelineState->mLayout->mName = rayGenShader.GetName();
+        pipelineState->mLayout->mRootHash = (size_t)pipelineState->mRootSignature;
+        pipelineState->mRaytracePSO = raytracingPSO;
+        pipelineState->mShaderIDs = shaderIDs;
+        pipelineState->mLayout->mPipelineHash = (size_t)pipelineState;
+        pipelineState->mType = 4;
+        CBRBAppender appender(*pipelineState->mLayout);
+        appender.AppendCBRBs(rayGenShader.GetReflection());
     }
     return pipelineState;
 }

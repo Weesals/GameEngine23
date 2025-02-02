@@ -259,6 +259,7 @@ namespace Weesals.Engine {
             public CSIdentifier Name;
             public sbyte ParamOffset;
             public sbyte ParamCount;
+            public override string ToString() => Name.ToString();
         }
         List<MaterialPropertyBlock> sources = new();
         List<Value> values = new();
@@ -504,7 +505,7 @@ namespace Weesals.Engine {
         unsafe public Scope Push(Material mat) {
             return Push(new Span<Material>(ref mat));
         }
-        unsafe public Scope Push(Span<Material> materials) {
+        unsafe public Scope Push(scoped Span<Material> materials) {
             // TODO: Avoid excessive moves
             ulong mask = 0;
             int m = 0;

@@ -23,7 +23,7 @@ namespace Weesals.Engine {
     }
 
     public struct ShaderReflection {
-        public enum ResourceTypes : byte { R_Texture, R_SBuffer, };
+        public enum ResourceTypes : byte { R_Texture, R_SBuffer, R_RTAS, R_UAVBuffer, R_UAVAppend, R_UAVConsume, };
         public struct UniformValue {
             public CSIdentifier Name;
             public CSIdentifier Type;

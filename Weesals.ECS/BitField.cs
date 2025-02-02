@@ -29,10 +29,12 @@ namespace Weesals.ECS {
     // Represents up to 4096 bits broken up into up to 64 blocks of 64 bits.
     // BitFields are compared by pointer, so each allocated instance should be unique.
     public unsafe readonly struct BitField : IEquatable<BitField>, IEnumerable<int> {
-        private readonly ulong pageIds;
-        private readonly ulong* pages;
-        public readonly bool IsEmpty => pageIds == 0;
-        public readonly int PageCount => BitOperations.PopCount(pageIds);
+        private readonly ulong* storage;
+        private readonly ulong unsafePageIds => *storage;
+        private readonly ulong pageIds => storage == null ? 0 : *storage;
+        private readonly ulong* pages => storage + 1;
+        public readonly bool IsEmpty => storage == null;
+        public readonly int PageCount => storage == null ? 0 : BitOperations.PopCount(unsafePageIds);
         public readonly int BitCount {
             get {
                 int counter = 0;
@@ -40,25 +42,30 @@ namespace Weesals.ECS {
                 return counter;
             }
         }
-        public BitField(ulong pageIds, ulong* pages) {
-            this.pageIds = pageIds;
-            this.pages = pages;
+        public BitField(ulong* storage) {
+            this.storage = storage;
         }
         public bool Contains(int bit) {
-            if (pages == null) return (pageIds & (1uL << bit)) != 0;
+            if (IsEmpty) return false;
+            //if (IsEmpty) return (pageIds & (1uL << bit)) != 0;    // TODO: Packed bits (if lower bit is set)
+            var pageIds = this.unsafePageIds;
             var pageId = GetPageIdByBit(bit);
             if ((pageIds & (1uL << pageId)) == 0) return false;
             var page = pages[CountBitsUntil(pageIds, pageId)];
             return (page & (1uL << (bit & 63))) != 0;
         }
         public int GetFirstBit() {
+            if (IsEmpty) return -1;
+            var pageIds = this.unsafePageIds;
             var nextPageId = BitOperations.TrailingZeroCount(pageIds);
             if (nextPageId >= 64) return -1;
             var nextPage = pages[CountBitsUntil(pageIds, nextPageId)];
             return nextPageId * 64 + BitOperations.TrailingZeroCount(nextPage);
         }
         public int GetNextBit(int bit) {
+            if (IsEmpty) return -1;
             ++bit;
+            var pageIds = this.unsafePageIds;
             var pageId = GetPageIdByBit(bit);
             if ((pageIds & (1uL << pageId)) != 0) {
                 var page = pages[CountBitsUntil(pageIds, pageId)];
@@ -73,13 +80,15 @@ namespace Weesals.ECS {
         }
         public int GetBitIndex(int bit) {
             int pageId = GetPageIdByBit(bit);
-            var pageIndex = CountBitsUntil(pageIds, pageId);
+            var pageIndex = CountBitsUntil(unsafePageIds, pageId);
             int counter = 0;
             for (int i = 0; i < pageIndex; i++) counter += BitOperations.PopCount(pages[i]);
             counter += BitOperations.PopCount(pages[pageIndex] & ~(~0ul << (bit & 63)));
             return counter;
         }
         public bool TryGetBitIndex(int bit, out int index) {
+            if (IsEmpty) { index = -1; return false; }
+            var pageIds = this.unsafePageIds;
             int pageId = GetPageIdByBit(bit);
             if ((pageIds & (1ul << pageId)) == 0) { index = -1; return false; }
             var pageIndex = CountBitsUntil(pageIds, pageId);
@@ -90,8 +99,11 @@ namespace Weesals.ECS {
             return true;
         }
         public bool ContainsAll(BitField withTypes) {
+            if (IsEmpty || withTypes.IsEmpty) return withTypes.IsEmpty;
             int withPage1I = 0;
-            for (int p = BitOperations.TrailingZeroCount(withTypes.pageIds); p < 64; p = GetNextBit(withTypes.pageIds, p)) {
+            var pageIds = this.unsafePageIds;
+            var withPageIds = withTypes.unsafePageIds;
+            for (int p = BitOperations.TrailingZeroCount(withPageIds); p < 64; p = GetNextBit(withPageIds, p)) {
                 var reqBits = withTypes.pages[withPage1I++];
                 if ((pageIds & (1ul << p)) == 0) return false;
                 var curBits = pages[CountBitsUntil(pageIds, p)];
@@ -100,8 +112,11 @@ namespace Weesals.ECS {
             return true;
         }
         public bool ContainsAny(BitField withTypes) {
+            if (IsEmpty || withTypes.IsEmpty) return false;
             int withPage1I = 0;
-            for (int p = BitOperations.TrailingZeroCount(withTypes.pageIds); p < 64; p = GetNextBit(withTypes.pageIds, p)) {
+            var pageIds = this.unsafePageIds;
+            var withPageIds = withTypes.unsafePageIds;
+            for (int p = BitOperations.TrailingZeroCount(withPageIds); p < 64; p = GetNextBit(withPageIds, p)) {
                 var reqBits = withTypes.pages[withPage1I++];
                 if ((pageIds & (1ul << p)) == 0) continue;
                 var curBits = pages[CountBitsUntil(pageIds, p)];
@@ -110,7 +125,8 @@ namespace Weesals.ECS {
             return false;
         }
         public bool DeepEquals(BitField other) {
-            if (pageIds != other.pageIds) return false;
+            if (storage == other.storage) return true;
+            if (unsafePageIds != other.unsafePageIds) return false;
             int pageCount = PageCount;
             return new Span<ulong>(pages, pageCount).SequenceEqual(new Span<ulong>(other.pages, pageCount));
         }
@@ -119,9 +135,9 @@ namespace Weesals.ECS {
             for (int i = PageCount - 1; i >= 0; i--) hash += pages[i];
             return hash;
         }
-        public bool Equals(BitField other) { return pages == other.pages; }
+        public bool Equals(BitField other) { return storage == other.storage; }
         public override bool Equals(object? obj) { throw new NotImplementedException(); }
-        public override int GetHashCode() { return (int)pages + (int)((nint)pages >> 32); }
+        public override int GetHashCode() { return (int)storage + (int)((nint)storage >> 32); }
         public override string ToString() {
             return PageCount == 0 ? "Empty"
                 : this.Select(i => i.ToString()).Aggregate((i1, i2) => $"{i1},{i2}");
@@ -165,15 +181,15 @@ namespace Weesals.ECS {
             public bool MoveNext() {
                 var next = GetNextBit(page, bitIndex & 63);
                 if (next >= 64) {
-                    var pageIds = Bits1.pageIds | Bits2.pageIds;
+                    var pageIds = Bits1.unsafePageIds | Bits2.unsafePageIds;
                     var pageId = GetPageIdByBit(bitIndex);
                     pageId = GetNextBit(pageIds, pageId);
                     if (pageId >= 64) return false;
                     bitIndex = pageId * 64;
                     page = 0;
-                    if ((Bits1.pageIds & (1ul << pageId)) != 0)
+                    if ((Bits1.unsafePageIds & (1ul << pageId)) != 0)
                         page |= Bits1.pages[Bits1.GetBitIndex(pageId)];
-                    if ((Bits2.pageIds & (1ul << pageId)) != 0)
+                    if ((Bits2.unsafePageIds & (1ul << pageId)) != 0)
                         page |= Bits2.pages[Bits2.GetBitIndex(pageId)];
                     next = GetNextBit(page, 0);
                 }
@@ -210,9 +226,9 @@ namespace Weesals.ECS {
                     if (pageId >= 64) return false;
                     bitIndex = pageId * 64;
                     page = ~0ul;
-                    if ((Bits1.pageIds & (1ul << pageId)) != 0)
+                    if ((Bits1.unsafePageIds & (1ul << pageId)) != 0)
                         page &= Bits1.pages[Bits1.GetBitIndex(pageId)];
-                    if ((Bits2.pageIds & (1ul << pageId)) != 0)
+                    if ((Bits2.unsafePageIds & (1ul << pageId)) != 0)
                         page &= Bits2.pages[Bits2.GetBitIndex(pageId)];
                     next = GetNextBit(page, -1);
                 }
@@ -301,26 +317,28 @@ namespace Weesals.ECS {
             }
             public void Clear() { PageIds = 0; PageCount = 0; }
             public void Append(BitField field) {
-                var allPages = field.pageIds | PageIds;
-                var toAdd = field.pageIds & (~PageIds);
+                if (field.IsEmpty) return;
+                var allPages = field.unsafePageIds | PageIds;
+                var toAdd = field.unsafePageIds & (~PageIds);
                 if (toAdd != 0) InsertPages(toAdd);
-                for (var bits = field.pageIds; bits != 0; bits &= bits - 1) {
+                for (var bits = field.unsafePageIds; bits != 0; bits &= bits - 1) {
                     var pageId = BitOperations.TrailingZeroCount(bits);
                     var dstPageI = CountBitsUntil(PageIds, pageId);
-                    var srcPageI = CountBitsUntil(field.pageIds, pageId);
+                    var srcPageI = CountBitsUntil(field.unsafePageIds, pageId);
                     Pages[dstPageI] |= field.pages[srcPageI];
                 }
                 Debug.Assert(PageIds == allPages);
             }
             public void Remove(BitField field) {
-                var newPages = ~field.pageIds & PageIds;
-                var toRemove = field.pageIds & PageIds;
+                if (field.IsEmpty) return;
+                var newPages = ~field.unsafePageIds & PageIds;
+                var toRemove = field.unsafePageIds & PageIds;
                 if (toRemove == 0) return;
                 int consume = 0;
-                for (var bits = field.pageIds; bits != 0; bits &= bits - 1) {
+                for (var bits = field.unsafePageIds; bits != 0; bits &= bits - 1) {
                     var pageId = BitOperations.TrailingZeroCount(bits);
                     var dstPageI = CountBitsUntil(PageIds, pageId);
-                    var srcPageI = CountBitsUntil(field.pageIds, pageId);
+                    var srcPageI = CountBitsUntil(field.unsafePageIds, pageId);
                     Pages[dstPageI] &= ~field.pages[srcPageI];
                     if (Pages[dstPageI] == 0) {
                         PageIds &= ~(1ul << pageId);
@@ -361,9 +379,10 @@ namespace Weesals.ECS {
         // Allocate this BitField on the heap.
         public unsafe static BitField Allocate(BitField other) {
             int pcount = other.PageCount;
-            var pages = (ulong*)Marshal.AllocHGlobal(sizeof(ulong) * pcount);
-            for (int i = 0; i < pcount; i++) pages[i] = other.pages[i];
-            return new BitField(other.pageIds, pages);
+            var storage = (ulong*)Marshal.AllocHGlobal(sizeof(ulong) * (pcount + 1));
+            *storage = other.unsafePageIds;
+            for (int i = 0; i < pcount; i++) storage[i + 1] = other.pages[i];
+            return new BitField(storage);
         }
     }
 

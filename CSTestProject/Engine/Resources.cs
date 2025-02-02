@@ -208,7 +208,7 @@ namespace Weesals.Engine {
             defaultTexClear.Dispose();
         }
 
-        public static void LoadDefaultUIAssets() {
+        public static void LoadDefaultAssets() {
             using var marker = new ProfilerMarker("Load Default Assets").Auto();
 
             Resources.LoadFont("./Assets/Roboto-Regular.ttf");
@@ -449,11 +449,7 @@ namespace Weesals.Engine {
             }
             return preprocessed;
         }
-        unsafe public static CompiledShader RequireShader(CSGraphics graphics, Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass, out JobHandle handle) {
-            handle = default;
-            if (shader == null) return null;
-
-            // TODO: Cache in 'shader'
+        public static ulong ComputeShaderHash(Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass) {
             ulong hash = shader.Path.ComputeStringHash();
             hash += renderPass.IsValid ? (ulong)renderPass.GetStableHash() : shader.Entry.ComputeStringHash();
             foreach (var macro in macros) {
@@ -464,6 +460,19 @@ namespace Weesals.Engine {
                 hash += macroHash;
             }
             hash += profile.ComputeStringHash();
+            return hash;
+        }
+        public static void DeleteCachedShader(Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass) {
+            var hash = ComputeShaderHash(shader, profile, macros, renderPass);
+            var key = ResourceKey.CreateFileKey(shader.Path, "shader", hash);
+            ResourceCacheManager.DeleteCache(key);
+        }
+        unsafe public static CompiledShader RequireShader(CSGraphics graphics, Shader shader, string profile, Span<KeyValuePair<CSIdentifier, CSIdentifier>> macros, CSIdentifier renderPass, out JobHandle handle) {
+            handle = default;
+            if (shader == null) return null;
+
+            // TODO: Cache in 'shader'
+            var hash = ComputeShaderHash(shader, profile, macros, renderPass);
             var item = loadedShaders.RequireItem(hash);
             if (item.Resource == null) {
                 var key = ResourceKey.CreateFileKey(shader.Path, "shader", hash);

@@ -445,7 +445,7 @@ BasePassOutput PSMain(PSInput input, linear centroid noperspective float4 positi
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
 
-    float3 localViewDirY = normalize(mul(InvModelView, float4(0, 0, 0, 1)).xyz - context.WorldPos).y;
+    float localViewDirY = normalize(mul(InvModelView, float4(0, 0, 0, 1)).xyz - context.WorldPos).y;
     float depthOffset = (1 - terResult.Height) * (DepthScale / localViewDirY);
     depth = (positionCS.z * positionCS.w + depthOffset * Projection._33) / (positionCS.w + depthOffset * Projection._43);
     //depth = positionCS.z + max(0, depthOffset / (positionCS.w * positionCS.w));

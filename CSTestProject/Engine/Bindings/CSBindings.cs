@@ -264,7 +264,7 @@ namespace Weesals.Engine {
         unsafe public static bool operator !=(CSFont left, CSFont right) { return left.mFont != right.mFont; }
     }
     unsafe public partial struct CSBufferReference : IEquatable<CSBufferReference> {
-        public enum BufferTypes : byte { None, Texture, RenderTarget, Buffer, };
+        public enum BufferTypes : byte { None, Texture, RenderTarget, Buffer, GPUAddress, };
         public void* mBuffer;
         public short mSubresourceId;
         public short mSubresourceCount;
@@ -294,6 +294,10 @@ namespace Weesals.Engine {
             mSubresourceCount = (short)length;
             Debug.Assert(from < ushort.MaxValue, "From too large for a view");
             Debug.Assert(length < ushort.MaxValue, "Length too large for a view");
+        }
+        public CSBufferReference(nint gpuaddr) {
+            mBuffer = (void*)gpuaddr;
+            mType = BufferTypes.GPUAddress;
         }
         public CSTexture AsTexture() {
             return mType == BufferTypes.Texture ? new CSTexture((NativeTexture*)mBuffer) : default;
@@ -562,6 +566,14 @@ namespace Weesals.Engine {
                 computeShader.GetNativeShader()
             ));
         }
+        public CSPipeline RequireRaytracePSO(CSCompiledShader raytraceShader) {
+            return new CSPipeline(RequireRaytracePSO(
+                mGraphics,
+                raytraceShader.GetNativeShader(),
+                raytraceShader.GetNativeShader(),
+                raytraceShader.GetNativeShader()
+            ));
+        }
         public void CopyBufferData(CSBufferLayout buffer) {
             Span<RangeInt> ranges = stackalloc RangeInt[] { new(-1, buffer.size) };
             CopyBufferData(buffer, ranges);
@@ -606,6 +618,9 @@ namespace Weesals.Engine {
         }
         public void DispatchCompute(CSPipeline pso, CSSpan resources, Int3 groupCount) {
             Dispatch(mGraphics, pso, resources, groupCount);
+        }
+        public void DispatchRaytrace(CSPipeline pso, CSSpan resources, Int3 groupCount) {
+            DispatchRaytrace(mGraphics, pso, resources, groupCount);
         }
         public MemoryBlock<T> RequireFrameData<T>(List<T> inData) where T : unmanaged {
             return RequireFrameData(CollectionsMarshal.AsSpan(inData));

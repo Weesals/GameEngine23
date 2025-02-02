@@ -19,6 +19,7 @@
 #include "CSBindings.h"
 
 #include <WindowWin32.h>
+#include "D3DRaytracing.h"
 
 class PreprocessedShader {
 public:
@@ -93,6 +94,15 @@ std::string_view GetString(CSString8 string) {
 }
 std::wstring_view ToWString(CSString string) {
 	return std::wstring_view(string.mBuffer, string.mSize);
+}
+
+BufferLayout BufferFromCSBuffer(const CSBufferLayout& csbuffer) {
+	BufferLayout buffer(
+		csbuffer.identifier, csbuffer.size,
+		(BufferLayout::Usage)csbuffer.mUsage, csbuffer.mCount);
+	buffer.mElements = (BufferLayout::Element*)csbuffer.mElements;
+	buffer.mElementCount = csbuffer.mElementCount;
+	return buffer;
 }
 
 CSString8 CSIdentifier::GetName(uint16_t id) {
@@ -321,12 +331,7 @@ const NativePipeline* RequirePipelineFromStages(NativeGraphics* graphics, CSSpan
 	InplaceVector<const BufferLayout*, 10> pobindings;
 	for (int m = 0; m < bindings.mSize; ++m) {
 		auto& csbuffer = ((CSBufferLayout*)bindings.mData)[m];
-		BufferLayout buffer(
-			csbuffer.identifier, csbuffer.size,
-			(BufferLayout::Usage)csbuffer.mUsage, csbuffer.mCount);
-		buffer.mElements = (BufferLayout::Element*)csbuffer.mElements;
-		buffer.mElementCount = csbuffer.mElementCount;
-		bindingsData.push_back(buffer);
+		bindingsData.push_back(BufferFromCSBuffer(csbuffer));
 		pobindings.push_back(&bindingsData.back());
 	}
 	auto pipeline = graphics->mCmdBuffer.RequirePipeline(
@@ -354,6 +359,10 @@ const NativePipeline* CSGraphics::RequireMeshPipeline(NativeGraphics* graphics, 
 }
 const NativePipeline* CSGraphics::RequireComputePSO(NativeGraphics* graphics, NativeCompiledShader* computeShader) {
 	return graphics->mCmdBuffer.RequireComputePSO(*computeShader);
+}
+const NativePipeline* CSGraphics::RequireRaytracePSO(NativeGraphics* graphics
+	, NativeCompiledShader* rayGenShader, NativeCompiledShader* hitShader, NativeCompiledShader* missShader) {
+	return graphics->mCmdBuffer.RequireRaytracePSO(*rayGenShader, *hitShader, *missShader);
 }
 
 void* CSGraphics::RequireFrameData(NativeGraphics* graphics, int byteSize) {
@@ -408,6 +417,13 @@ void CSGraphics::Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan 
 		groupCount
 	);
 }
+void CSGraphics::DispatchRaytrace(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, Int3 size) {
+	graphics->mCmdBuffer.DispatchRaytrace(
+		(const PipelineLayout*)pipeline.GetNativePipeline(),
+		std::span<const void*>((const void**)resources.mData, resources.mSize),
+		size
+	);
+}
 void CSGraphics::Reset(NativeGraphics* graphics) {
 	graphics->mCmdBuffer.Reset();
 }
@@ -440,6 +456,19 @@ int CSGraphics::GetReadbackResult(NativeGraphics* graphics, uint64_t readback) {
 int CSGraphics::CopyAndDisposeReadback(NativeGraphics* graphics, uint64_t readback, CSSpan data) {
 	Readback rb{ readback };
 	return graphics->mCmdBuffer.CopyAndDisposeReadback(rb, std::span<uint8_t>((uint8_t*)data.mData, data.mSize));
+}
+
+intptr_t CSRaytracing::CreateBLAS(NativeGraphics* graphics, const CSBufferLayout* csvertexBuffer, const CSBufferLayout* csindexBuffer) {
+	auto vertBuffer = BufferFromCSBuffer(*csvertexBuffer);
+	auto indexBuffer = BufferFromCSBuffer(*csindexBuffer);
+	return graphics->mCmdBuffer.CreateBLAS(vertBuffer, indexBuffer);
+}
+intptr_t CSRaytracing::CreateTLAS(NativeGraphics* graphics, const CSBufferLayout* instanceBuffer) {
+	return graphics->mCmdBuffer.CreateTLAS(BufferFromCSBuffer(*instanceBuffer));
+}
+uint64_t CSRaytracing::GetBLASGPUAddress(intptr_t nativeBlas) {
+	D3DAccelerationStructure* blas = (D3DAccelerationStructure*)nativeBlas;
+	return blas->GetGPUAddress();
 }
 
 void CSGraphicsSurface::Dispose(NativeSurface* surface) { decrement_shared(surface->This()); }

@@ -98,9 +98,10 @@ namespace Weesals.ECS {
         }
         unsafe public BitField RequireTypeMask(BitField.Generator generator) {
             if (generator.PageCount == 0) return default;
-            ulong* fieldPages = stackalloc ulong[generator.PageCount];
-            for (int i = 0; i < generator.PageCount; i++) fieldPages[i] = generator.Pages[i];
-            return RequireTypeMask(new BitField(generator.PageIds, fieldPages));
+            ulong* fieldPages = stackalloc ulong[generator.PageCount + 1];
+            *fieldPages = generator.PageIds;
+            for (int i = 0; i < generator.PageCount; i++) fieldPages[i + 1] = generator.Pages[i];
+            return RequireTypeMask(new BitField(fieldPages));
         }
         public BitField RequireTypeMask(BitField field) {
             if (!cachedTypeMasks.TryGetValue(new DeepBitField() { Field = field }, out var result)) {

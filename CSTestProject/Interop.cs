@@ -747,6 +747,10 @@ namespace Weesals.Engine
         [return: NativeTypeName("const NativePipeline *")]
         private static extern NativePipeline* RequireComputePSO(NativeGraphics* graphics, NativeCompiledShader* computeShader);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireRaytracePSO@CSGraphics@@CAPEBUPipelineLayout@@PEAVNativeGraphics@@PEAVCompiledShader@@11@Z", ExactSpelling = true)]
+        [return: NativeTypeName("const NativePipeline *")]
+        private static extern NativePipeline* RequireRaytracePSO(NativeGraphics* graphics, NativeCompiledShader* rayGenShader, NativeCompiledShader* hitShader, NativeCompiledShader* missShader);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RequireFrameData@CSGraphics@@CAPEAXPEAVNativeGraphics@@H@Z", ExactSpelling = true)]
         private static extern void* RequireFrameData(NativeGraphics* graphics, int byteSize);
 
@@ -767,6 +771,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Dispatch@CSGraphics@@CAXPEAVNativeGraphics@@VCSPipeline@@UCSSpan@@UInt3@@@Z", ExactSpelling = true)]
         private static extern void Dispatch(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, [NativeTypeName("Int3")] Weesals.Engine.Int3 groupCount);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?DispatchRaytrace@CSGraphics@@CAXPEAVNativeGraphics@@VCSPipeline@@UCSSpan@@UInt3@@@Z", ExactSpelling = true)]
+        private static extern void DispatchRaytrace(NativeGraphics* graphics, CSPipeline pipeline, CSSpan resources, [NativeTypeName("Int3")] Weesals.Engine.Int3 size);
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?Reset@CSGraphics@@CAXPEAVNativeGraphics@@@Z", ExactSpelling = true)]
         private static extern void Reset(NativeGraphics* graphics);
@@ -800,6 +807,22 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CopyAndDisposeReadback@CSGraphics@@CAHPEAVNativeGraphics@@_KUCSSpan@@@Z", ExactSpelling = true)]
         private static extern int CopyAndDisposeReadback(NativeGraphics* graphics, [NativeTypeName("uint64_t")] ulong readback, CSSpan data);
+    }
+
+    public unsafe partial struct CSRaytracing
+    {
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateBLAS@CSRaytracing@@SA_JPEAVNativeGraphics@@PEBUCSBufferLayout@@1@Z", ExactSpelling = true)]
+        [return: NativeTypeName("intptr_t")]
+        public static extern nint CreateBLAS(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* vertexBuffer, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* indexBuffer);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?CreateTLAS@CSRaytracing@@SA_JPEAVNativeGraphics@@PEBUCSBufferLayout@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("intptr_t")]
+        public static extern nint CreateTLAS(NativeGraphics* graphics, [NativeTypeName("const CSBufferLayout *")] CSBufferLayout* instanceBuffer);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetBLASGPUAddress@CSRaytracing@@SA_K_J@Z", ExactSpelling = true)]
+        [return: NativeTypeName("uint64_t")]
+        public static extern ulong GetBLASGPUAddress([NativeTypeName("intptr_t")] nint nativeBlas);
     }
 
     public unsafe partial struct CSGraphicsSurface

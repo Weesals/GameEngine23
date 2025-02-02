@@ -211,6 +211,9 @@ namespace Weesals.Engine {
         unsafe public void SetBuffer(CSIdentifier name, CSBufferLayout buffer) {
             SetValue(name, new CSBufferReference(buffer));
         }
+        unsafe public void SetBuffer(CSIdentifier name, nint gpuaddr) {
+            SetValue(name, new CSBufferReference(gpuaddr));
+        }
         public void ClearValues() {
             Parameters.Clear();
         }

@@ -220,6 +220,7 @@
   <ItemGroup>
     <ClCompile Include="inc\SimpleMath.cpp" />
     <ClCompile Include="src\D3DGraphicsSurface.cpp" />
+    <ClCompile Include="src\D3DRaytracing.cpp" />
     <ClCompile Include="src\D3DShader.cpp" />
     <ClCompile Include="src\D3DUtility.cpp" />
     <ClCompile Include="src\GraphicsDeviceBase.cpp" />

@@ -170,30 +170,30 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
 
     HRESULT hr = S_OK;
 
-    ComPtr<IDxcBlob> dxcOutput;
-    ComPtr<IDxcBlob> dxcReflection;
     while (true) {
-        ComPtr<IDxcBlobEncoding> sourceBlob;
-        dxcUtils->CreateBlob(source.data(), (UINT32)source.size(), 0, &sourceBlob);
-
+        ComPtr<IDxcBlob> dxcOutput;
         ComPtr<IDxcCompiler3> compiler;
         DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
 
         ComPtr<IDxcResult> pResult;
-        if (SUCCEEDED(hr) && sourceBlob != nullptr) {
+        if (SUCCEEDED(hr)) {
             // Create DXC Compiler arguments
             std::vector<LPCWSTR> arguments;
             std::wstring wEntry = ToWide(entry);
             std::wstring wProfile = ToWide(profile);
-            arguments.push_back(L"-E");
-            arguments.push_back(wEntry.c_str());
+            if (!wEntry.empty()) {
+                arguments.push_back(L"-E");
+                arguments.push_back(wEntry.c_str());
+            }
             arguments.push_back(L"-T");
             arguments.push_back(wProfile.c_str());
-            arguments.push_back(L"-HV 2021");
-            //arguments.push_back(L"-Qstrip_debug");
-            //arguments.push_back(L"-Qstrip_reflect");
+            //arguments.push_back(L"-Fo");
+            //arguments.push_back(L"C:\\ShaderPDBs\\_test.pdb");
+            //arguments.push_back(L"-HV 2021");
             arguments.push_back(L"-Zi");
-            arguments.push_back(L"-Qembed_debug");
+            arguments.push_back(L"-Qstrip_debug");
+            //arguments.push_back(L"-Qstrip_reflect");
+            //arguments.push_back(L"-Qembed_debug");
             auto wFilename = std::wstring(dbgFilename.begin(), dbgFilename.end());
             arguments.push_back(wFilename.c_str());
             //std::wstring shaderPDBArg = L"-Fd C:\\ShaderPDBs\\";
@@ -206,7 +206,7 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
             //arguments.push_back(L"/Od"); // Example: Disable optimization
 
             // Compile shader
-            DxcBuffer sourceBuffer = { sourceBlob->GetBufferPointer(), sourceBlob->GetBufferSize(), 0, };
+            DxcBuffer sourceBuffer = { source.data(), (UINT32)source.size(), 0,};
             hr = compiler->Compile(&sourceBuffer,
                 arguments.data(), (UINT32)arguments.size(),
                 nullptr, IID_PPV_ARGS(pResult.GetAddressOf()));
@@ -237,27 +237,25 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
                 }
             }
         }
-        ComPtr<ID3D12ShaderReflection> pShaderReflection = nullptr;
 
         if (pResult != nullptr) {
             ComPtr<IDxcUtils> dxcUtils;
             DxcCreateInstance(CLSID_DxcUtils, IID_PPV_ARGS(&dxcUtils));
 
             ComPtr<IDxcBlob> dxcOutput;
-            ComPtr<IDxcBlob> dxcReflection;
             ComPtr<IDxcBlobUtf16> pDebugDataPath;
             pResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&dxcOutput), &pDebugDataPath);
-            pResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&dxcReflection), nullptr);
 
-            auto dataSize = (UINT32)dxcOutput->GetBufferSize();
-            D3DCreateBlob(dataSize, &mShader);
-            std::memcpy(mShader->GetBufferPointer(), dxcOutput->GetBufferPointer(), dataSize);
-            if (dxcReflection != nullptr) {
+            if (dxcOutput != nullptr) {
+                auto dataSize = (UINT32)dxcOutput->GetBufferSize();
+                D3DCreateBlob(dataSize, &mShader);
+                std::memcpy(mShader->GetBufferPointer(), dxcOutput->GetBufferPointer(), dataSize);
+
                 ComPtr<IDxcContainerReflection> pDxcContainerReflection;
                 DxcCreateInstance(CLSID_DxcContainerReflection, IID_PPV_ARGS(&pDxcContainerReflection));
                 HRESULT hr = pDxcContainerReflection->Load(dxcOutput.Get());
                 if (FAILED(hr)) {
-                    OutputDebugString(L"Failed to create debug reflection");
+                    OutputDebugString(L"=> Failed to create debug reflection\n");
                 }
                 else {
 #define DXIL_FOURCC(ch0, ch1, ch2, ch3) ((uint32_t)(uint8_t)(ch0) | (uint32_t)(uint8_t)(ch1) << 8 | (uint32_t)(uint8_t)(ch2) << 16 | (uint32_t)(uint8_t)(ch3) << 24)
@@ -283,20 +281,114 @@ ComPtr<IDxcResult> D3DShader::CompileFromSource(const std::string_view& source, 
                     std::ofstream pdbFile(pdbOut);
                     pdbFile.write((const char*)pPDB->GetBufferPointer(), pPDB->GetBufferSize());
                 }
+            }
 
-                //D3DReflect(mShader->GetBufferPointer(), mShader->GetBufferSize(), IID_PPV_ARGS(&pShaderReflection));
+            ComPtr<ID3D12ShaderReflection> pShaderReflection;
+            ComPtr<ID3D12LibraryReflection> pLibraryReflection;
+#if true
+            ComPtr<IDxcBlob> dxcReflection;
+            pResult->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&dxcReflection), nullptr);
+            if (dxcReflection != nullptr) {
                 DxcBuffer reflectionBuffer;
                 reflectionBuffer.Ptr = dxcReflection->GetBufferPointer();
                 reflectionBuffer.Size = dxcReflection->GetBufferSize();
                 reflectionBuffer.Encoding = 0;
-                dxcUtils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&pShaderReflection));
-
+                hr = dxcUtils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&pShaderReflection));
+                if (FAILED(hr)) {
+                    hr = dxcUtils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&pLibraryReflection));
+                }
+            }
+#else
+            hr = D3DReflect(dxcOutput->GetBufferPointer(), dxcOutput->GetBufferSize(), IID_PPV_ARGS(&pShaderReflection));
+#endif
+            if (FAILED(hr)) {
+                WCHAR* errorString = nullptr;
+                FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS,
+                    nullptr, hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                    (LPWSTR)&errorString, 0, nullptr);
+                OutputDebugStringW(errorString);
+            }
+            if (pShaderReflection != nullptr) {
                 ReadReflection(pShaderReflection);
+            }
+            else if (pLibraryReflection != nullptr) {
+                ReadReflection(pLibraryReflection);
+            }
+            else {
+                OutputDebugString(L"=> Failed to get reflection\n");
             }
         }
 
         return pResult;
     }
+}
+ShaderBase::ConstantBuffer ReadConstantBuffer(ID3D12ShaderReflectionConstantBuffer* pBufferReflection) {
+    D3D12_SHADER_BUFFER_DESC bufferDesc;
+    pBufferReflection->GetDesc(&bufferDesc);
+
+    if (bufferDesc.Type != D3D_CT_CBUFFER) return {};
+
+    // The data we have extracted for this constant buffer
+    ShaderBase::ConstantBuffer cbuffer;
+    cbuffer.mName = bufferDesc.Name;
+    cbuffer.mSize = bufferDesc.Size;
+    cbuffer.mBindPoint = -1;
+
+    // Iterate variables
+    cbuffer.SetValuesCount(bufferDesc.Variables);
+    for (UINT j = 0; j < bufferDesc.Variables; ++j) {
+        ID3D12ShaderReflectionVariable* pVariableReflection = pBufferReflection->GetVariableByIndex(j);
+
+        D3D12_SHADER_VARIABLE_DESC variableDesc;
+        pVariableReflection->GetDesc(&variableDesc);
+        D3D12_SHADER_TYPE_DESC typeDesc;
+        pVariableReflection->GetType()->GetDesc(&typeDesc);
+
+        // The values for this uniform
+        ShaderBase::UniformValue value{
+            .mName = variableDesc.Name,
+            .mType = typeDesc.Type == D3D_SVT_BOOL ? "bool"
+                : typeDesc.Type == D3D_SVT_INT ? "int"
+                : typeDesc.Type == D3D_SVT_FLOAT ? "float"
+                : typeDesc.Type == D3D_SVT_FLOAT16 ? "half"
+                : "unknown",
+            .mOffset = (int)variableDesc.StartOffset,
+            .mSize = (int)variableDesc.Size,
+            .mRows = (uint8_t)typeDesc.Rows,
+            .mColumns = (uint8_t)typeDesc.Columns,
+            .mFlags = (uint16_t)((variableDesc.uFlags & D3D_SVF_USED) != 0 ? 1 : 0),
+        };
+        cbuffer.GetValues()[j] = (value);
+    }
+    return cbuffer;
+}
+ShaderBase::ResourceBinding ReadResource(D3D12_SHADER_INPUT_BIND_DESC resourceDesc) {
+    ShaderBase::ResourceBinding rbinding = { };
+    rbinding.mName = resourceDesc.Name;
+    rbinding.mBindPoint = resourceDesc.BindPoint;
+    rbinding.mStride = resourceDesc.NumSamples;
+    if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE) {
+        rbinding.mType = ShaderBase::ResourceTypes::R_Texture;
+    }
+    else if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED) {
+        rbinding.mType = ShaderBase::ResourceTypes::R_SBuffer;
+    }
+    else if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWTYPED
+        || resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED
+        || resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER) {
+        rbinding.mType = ShaderBase::ResourceTypes::R_UAVBuffer;
+    }
+    else if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_APPEND_STRUCTURED) {
+        rbinding.mType = ShaderBase::ResourceTypes::R_UAVAppend;
+    }
+    else if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_CONSUME_STRUCTURED) {
+        rbinding.mType = ShaderBase::ResourceTypes::R_UAVConsume;
+    }
+    else if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_RTACCELERATIONSTRUCTURE) {
+        rbinding.mType = ShaderBase::ResourceTypes::R_RTAS;
+    }
+    else return {};
+    return (rbinding);
 }
 void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderReflection) {
     /*ComPtr<ID3D12LibraryReflection> library;
@@ -332,49 +424,15 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
     for (UINT i = 0; i < shaderDesc.ConstantBuffers; ++i) {
         auto pBufferReflection = pShaderReflection->GetConstantBufferByIndex(i);
 
-        D3D12_SHADER_BUFFER_DESC bufferDesc;
-        pBufferReflection->GetDesc(&bufferDesc);
-
-        if (bufferDesc.Type != D3D_CT_CBUFFER) continue;
-
+        auto cbuffer = ReadConstantBuffer(pBufferReflection);
+        if (!cbuffer.mName.IsValid()) continue;
+        auto cbufferName = cbuffer.mName.GetName().c_str();
         D3D12_SHADER_INPUT_BIND_DESC bindDesc;
         for (UINT b = 0; b < shaderDesc.BoundResources; ++b) {
             pShaderReflection->GetResourceBindingDesc(b, &bindDesc);
-            if (strcmp(bindDesc.Name, bufferDesc.Name) == 0) break;
+            if (strcmp(bindDesc.Name, cbufferName) == 0) break;
         }
-
-        // The data we have extracted for this constant buffer
-        ConstantBuffer cbuffer;
-        cbuffer.mName = bufferDesc.Name;
-        cbuffer.mSize = bufferDesc.Size;
         cbuffer.mBindPoint = bindDesc.BindPoint;
-
-        // Iterate variables
-        cbuffer.SetValuesCount(bufferDesc.Variables);
-        for (UINT j = 0; j < bufferDesc.Variables; ++j) {
-            ID3D12ShaderReflectionVariable* pVariableReflection = pBufferReflection->GetVariableByIndex(j);
-
-            D3D12_SHADER_VARIABLE_DESC variableDesc;
-            pVariableReflection->GetDesc(&variableDesc);
-            D3D12_SHADER_TYPE_DESC typeDesc;
-            pVariableReflection->GetType()->GetDesc(&typeDesc);
-
-            // The values for this uniform
-            UniformValue value{
-                .mName = variableDesc.Name,
-                .mType = typeDesc.Type == D3D_SVT_BOOL ? "bool"
-                    : typeDesc.Type == D3D_SVT_INT ? "int"
-                    : typeDesc.Type == D3D_SVT_FLOAT ? "float"
-                    : typeDesc.Type == D3D_SVT_FLOAT16 ? "half"
-                    : "unknown",
-                .mOffset = (int)variableDesc.StartOffset,
-                .mSize = (int)variableDesc.Size,
-                .mRows = (uint8_t)typeDesc.Rows,
-                .mColumns = (uint8_t)typeDesc.Columns,
-                .mFlags = (uint16_t)((variableDesc.uFlags & D3D_SVF_USED) != 0 ? 1 : 0),
-            };
-            cbuffer.GetValues()[j] = (value);
-        }
         mReflection.mConstantBuffers.emplace_back(std::move(cbuffer));
     }
 
@@ -382,48 +440,9 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
     for (UINT i = 0; i < shaderDesc.BoundResources; ++i) {
         D3D12_SHADER_INPUT_BIND_DESC resourceDesc;
         pShaderReflection->GetResourceBindingDesc(i, &resourceDesc);
-        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_TEXTURE) {
-            ResourceBinding rbinding;
-            rbinding.mName = resourceDesc.Name;
-            rbinding.mBindPoint = resourceDesc.BindPoint;
-            rbinding.mStride = -1;
-            rbinding.mType = ResourceTypes::R_Texture;
-            mReflection.mResourceBindings.push_back(rbinding);
-        }
-        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_STRUCTURED) {
-            ResourceBinding bbinding;
-            bbinding.mName = resourceDesc.Name;
-            bbinding.mBindPoint = resourceDesc.BindPoint;
-            bbinding.mStride = resourceDesc.NumSamples;
-            bbinding.mType = ResourceTypes::R_SBuffer;
-            mReflection.mResourceBindings.push_back(bbinding);
-        }
-        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWTYPED
-            || resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED
-            || resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_RWSTRUCTURED_WITH_COUNTER) {
-            ResourceBinding bbinding;
-            bbinding.mName = resourceDesc.Name;
-            bbinding.mBindPoint = resourceDesc.BindPoint;
-            bbinding.mStride = resourceDesc.NumSamples;
-            bbinding.mType = ResourceTypes::R_UAVBuffer;
-            mReflection.mResourceBindings.push_back(bbinding);
-        }
-        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_APPEND_STRUCTURED) {
-            ResourceBinding bbinding;
-            bbinding.mName = resourceDesc.Name;
-            bbinding.mBindPoint = resourceDesc.BindPoint;
-            bbinding.mStride = resourceDesc.NumSamples;
-            bbinding.mType = ResourceTypes::R_UAVAppend;
-            mReflection.mResourceBindings.push_back(bbinding);
-        }
-        if (resourceDesc.Type == D3D_SHADER_INPUT_TYPE::D3D_SIT_UAV_CONSUME_STRUCTURED) {
-            ResourceBinding bbinding;
-            bbinding.mName = resourceDesc.Name;
-            bbinding.mBindPoint = resourceDesc.BindPoint;
-            bbinding.mStride = resourceDesc.NumSamples;
-            bbinding.mType = ResourceTypes::R_UAVConsume;
-            mReflection.mResourceBindings.push_back(bbinding);
-        }
+        ResourceBinding resource = ReadResource(resourceDesc);
+        if (!resource.mName.IsValid()) continue;
+        mReflection.mResourceBindings.push_back(resource);
     }
     for (UINT i = 0; i < shaderDesc.InputParameters; ++i) {
         D3D12_SIGNATURE_PARAMETER_DESC inputDesc;
@@ -440,6 +459,55 @@ void D3DShader::ReadReflection(const ComPtr<ID3D12ShaderReflection>& pShaderRefl
             inputDesc.ComponentType == D3D_REGISTER_COMPONENT_FLOAT32 ? ParameterTypes::P_Float :
             ParameterTypes::P_Unknown;
         mReflection.mInputParameters.push_back(parameter);
+    }
+}
+void D3DShader::ReadReflection(const ComPtr<ID3D12LibraryReflection>& pLibraryReflection) {
+    D3D12_LIBRARY_DESC libraryDesc;
+    pLibraryReflection->GetDesc(&libraryDesc);
+    mReflection.mStatistics = {};
+
+    for (int f = 0; f < (int)libraryDesc.FunctionCount; ++f) {
+        auto* libraryFn = pLibraryReflection->GetFunctionByIndex(f);
+        D3D12_FUNCTION_DESC functionDesc;
+        libraryFn->GetDesc(&functionDesc);
+        for (UINT c = 0; c < functionDesc.ConstantBuffers; ++c) {
+            auto pBufferReflection = libraryFn->GetConstantBufferByIndex(c);
+            auto cbuffer = ReadConstantBuffer(pBufferReflection);
+            if (!cbuffer.mName.IsValid()) continue;
+            assert(cbuffer.mValueCount > 0);
+            auto cbufferName = cbuffer.mName.GetName().c_str();
+            D3D12_SHADER_INPUT_BIND_DESC bindDesc;
+            for (UINT b = 0; b < functionDesc.BoundResources; ++b) {
+                libraryFn->GetResourceBindingDesc(b, &bindDesc);
+                if (strcmp(bindDesc.Name, cbufferName) == 0) {
+                    cbuffer.mBindPoint = bindDesc.BindPoint;
+                    break;
+                }
+            }
+            auto match = std::find_if(mReflection.mConstantBuffers.begin(), mReflection.mConstantBuffers.end(), [&](auto& item) {
+                return item.mName == cbuffer.mName;
+            });
+            if (match != mReflection.mConstantBuffers.end()) {
+                assert(cbuffer.mBindPoint == match->mBindPoint);
+                continue;
+            }
+            mReflection.mConstantBuffers.emplace_back(std::move(cbuffer));
+        }
+        // Get all bound resources
+        for (UINT r = 0; r < functionDesc.BoundResources; ++r) {
+            D3D12_SHADER_INPUT_BIND_DESC resourceDesc;
+            libraryFn->GetResourceBindingDesc(r, &resourceDesc);
+            ResourceBinding resource = ReadResource(resourceDesc);
+            if (!resource.mName.IsValid()) continue;
+            auto match = std::find_if(mReflection.mResourceBindings.begin(), mReflection.mResourceBindings.end(), [&](auto& item) {
+                return item.mName == resource.mName;
+            });
+            if (match != mReflection.mResourceBindings.end()) {
+                assert(resource.mBindPoint == match->mBindPoint);
+                continue;
+            }
+            mReflection.mResourceBindings.push_back(resource);
+        }
     }
 }
 // Compile shader and reflect uniform values / buffers

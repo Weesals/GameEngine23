@@ -87,6 +87,11 @@ public:
         std::vector<D3D12_INPUT_ELEMENT_DESC> mInputElements;
         int mType = 0;
         MaterialState mMaterialState;
+        virtual ~D3DPipelineState() {}
+    };
+    struct D3DPipelineRaytrace : D3DPipelineState {
+        ComPtr<ID3D12Resource> mShaderIDs;
+        ComPtr<ID3D12StateObject> mRaytracePSO;
     };
     struct D3DBinding : public D3DBuffer {
         D3D12_GPU_VIRTUAL_ADDRESS mGPUMemory;
@@ -133,15 +138,19 @@ private:
     public:
         std::mutex mMutex;
         std::unordered_map<K, std::unique_ptr<T>> mMap;
-        T* GetOrCreate(const K key, bool& wasCreated) {
+        template<class TValue>
+        TValue* GetOrCreate(const K key, bool& wasCreated) {
             wasCreated = false;
             std::scoped_lock lock(mMutex);
             auto i = mMap.find(key);
-            if (i != mMap.end()) return i->second.get();
-            auto newItem = new T();
+            if (i != mMap.end()) return dynamic_cast<TValue*>(i->second.get());
+            auto* newItem = new TValue();
             mMap.insert(std::make_pair(key, newItem));
             wasCreated = true;
             return newItem;
+        }
+        T* GetOrCreate(const K key, bool& wasCreated) {
+            return GetOrCreate<T>(key, wasCreated);
         }
         T* GetOrCreate(const K key) {
             bool wasCreated;
@@ -157,6 +166,7 @@ private:
 
     D3DRootSignature mRootSignature;
     D3DRootSignature mComputeRootSignature;
+    D3DRootSignature mRaytraceRootSignature;
     ResourceMap<size_t, D3DPipelineState> pipelineMapping;
     ResourceMap<const Texture*, D3DTexture> textureMapping;
     ResourceMap<const RenderTarget2D*, D3DRenderSurface> rtMapping;
@@ -227,6 +237,7 @@ public:
         std::span<DXGI_FORMAT> frameBufferFormats, DXGI_FORMAT depthBufferFormat
     );
     D3DPipelineState* RequireComputePSO(const CompiledShader& shader);
+    D3DPipelineState* RequireRaytracePSO(const CompiledShader& rayGenShader, const CompiledShader& hitShader, const CompiledShader& missShader);
     struct CBBumpAllocator {
         int mBumpConstantBuffer;
         int mBumpConstantConsume;

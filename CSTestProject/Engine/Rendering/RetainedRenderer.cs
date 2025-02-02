@@ -752,11 +752,6 @@ namespace Weesals.Engine {
             return new(instBegin, queue.InstanceCount - instBegin);
         }
         unsafe private RangeInt AppendInstances(ref PooledList<int> queue, ref PooledList<int> batchIds, BoundingVolumeHierarchy bvh, in Frustum frustum) {
-            var fwdNrmL = frustum.NearPlane.Normal.Length();
-            var fwdNrm = frustum.NearPlane.Normal / fwdNrmL;
-            var fwdPlaneLOD = -frustum.NearPlane.D / fwdNrmL + 400f;
-            //var fwdPlaneCull = fwdPlaneLOD + 500f;
-
             var instBegin = queue.Count;
             // Calculate visible instances
             using (var frustumMarker = ProfileMarker_FrustumCull.Auto()) {
@@ -791,6 +786,10 @@ namespace Weesals.Engine {
             }
             // Compute LODs
             using (var frustumMarker = ProfileMarker_Batches.Auto()) {
+                var fwdNrmL = frustum.NearPlane.Normal.Length();
+                var fwdNrm = frustum.NearPlane.Normal / fwdNrmL;
+                var fwdPlaneLOD = -frustum.NearPlane.D / fwdNrmL + 400f;
+
                 var instanceMeta = BVH.GetInstanceMeta<InstanceCache>();
                 Trace.Assert(batchIds.AddCount(queue.Count - instBegin).Start == instBegin);
                 var queueArr = queue.Data;
@@ -817,12 +816,10 @@ namespace Weesals.Engine {
             return new(instBegin, queue.Count - instBegin);
         }
 
-        private int frame = 0;
         // Generate a drawlist for rendering currently visible objects
         unsafe public void SubmitToRenderQueue(CSGraphics graphics, RenderQueue queue, in Frustum frustum) {
             using var marker = ProfileMarker_SubmitToRQ.Auto();
             Scene.ClearListener(changeListenerId);
-            bool change = false;
 
             // Clear PSO cache if resources were reloaded
             if (Resources.Generation != generation) {
