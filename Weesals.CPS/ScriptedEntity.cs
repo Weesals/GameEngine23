@@ -9,12 +9,6 @@ namespace Weesals.CPS {
     public interface IService {
     }
 
-    public class ScriptedEntity {
-
-        public string Name;
-
-    }
-
     public struct BlockInvocation : IComparable<BlockInvocation> {
         public int BlockId;
         public int OrderId;
@@ -41,7 +35,7 @@ namespace Weesals.CPS {
     public class ScriptedRegistry : IService {
         public SortedList<int, ClassBlocks> ClassBlocks = new();
         public void RegisterBlock(int classI, int blockI) {
-            if (ClassBlocks.TryGetValue(classI, out var classBlock)) {
+            if (!ClassBlocks.TryGetValue(classI, out var classBlock)) {
                 classBlock = new() { ClassI = classI, };
                 ClassBlocks.Add(classI, classBlock);
             }
@@ -53,8 +47,6 @@ namespace Weesals.CPS {
         public class ClassParameters {
             public string Name;
             public string[] Extends;
-            //public string[] InputParameters;
-            //public string[] OutputParameters;
             public int RootBlock;
         }
         public CompileResult Compile(ref Parser code, ref CompileContext context) {
@@ -125,7 +117,7 @@ namespace Weesals.CPS {
                     context.BlockWriter.PushDependencyStack();
                 }
                 var result = context.CompileExpression<StackType>(ref code);
-                code.Match(';');
+                context.Compiler.RequireToken(ref code, ';', "statement");
                 var pc = context.BlockWriter.FlushExpression(ref context.ExpressionWriter);
                 if (op != 0) {
                     context.BlockWriter.PopDependencyStack();

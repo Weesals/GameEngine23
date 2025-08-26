@@ -1,21 +1,18 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections;
+using System.Diagnostics;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace Weesals.CPS {
     public struct Parser : IEquatable<string> {
-        public string String;
+        public readonly string String;
+        public readonly int End;
         public int I;
-        public int End;
-        public bool IsValid => End > 0;
 
+        public bool IsValid => End > 0;
         public bool IsAtEnd => I >= End;
         public int Length => End - I;
 
-        public char this[int index] { get { return String[I + index]; } }
+        public char this[int index] => String[I + index];
 
         public Parser(string str, int start = 0, int end = -1) {
             if (end == -1) end = str.Length;
@@ -25,18 +22,17 @@ namespace Weesals.CPS {
         }
 
         public bool Require(char chr) {
-            if (!Match(chr)) {
-                //Debug.LogError("Failed to match " + chr);
-                return false;
-            }
-            return true;
+            var match = Match(chr);
+            if (!match) Debug.Assert(false, "Failed to match " + chr);
+            return match;
         }
         public string AsString() {
-            // TODO: Use SJson.StringIterator
-            return String.Substring(I, End - I);
+            var str = TakeString();
+            Debug.Assert(I == End);
+            return str;
         }
         public ReadOnlySpan<char> AsSpan() { return String.AsSpan(I, End - I); }
-        public override string ToString() { return AsString(); }
+        public override string ToString() { return String.Substring(I, End - I); }
         public bool Equals(string? other) { return other!.Length == Length && string.CompareOrdinal(String, I, other, 0, Length) == 0; }
         public static implicit operator ReadOnlySpan<char>(Parser p) { return p.AsSpan(); }
 
@@ -49,10 +45,6 @@ namespace Weesals.CPS {
             if (strBuilder == null) strBuilder = new(); else strBuilder.Clear();
             for (; strIt.MoveNext();) strBuilder.Append(strIt.Current);
             return strBuilder.ToString();
-            /*Debug.Assert(I <= End, "Invalid I value");
-            var len = Mathf.Min(End - I, maxLength);
-            if (len == 0) return defaultValue;
-            return String.Substring(I, len);*/
         }
 
         public bool PeekMatch(char match) {
@@ -114,6 +106,7 @@ namespace Weesals.CPS {
             I = strIt.Index;
             return strBuilder.ToString();
         }
+        [ThreadStatic]
         private static StringBuilder strBuilder;
 
         public struct Number {
@@ -183,8 +176,8 @@ namespace Weesals.CPS {
         public struct Parameter {
             public Parser Named;
             public Parser Value;
-            public bool IsValid { get { return Value.IsValid && Value.Length > 0; } }
-            public static implicit operator Parser(Parameter param) { return param.Value; }
+            public bool IsValid => Value.IsValid && Value.Length > 0;
+            public static implicit operator Parser(Parameter param) => param.Value;
         }
         public Parameter TakeParameter() {
             int n = -1;
@@ -212,7 +205,7 @@ namespace Weesals.CPS {
         }
 
 
-        public static int ParseBrackets(string path, int s) { return ParseBrackets(path, s, path.Length); }
+        public static int ParseBrackets(string path, int s) => ParseBrackets(path, s, path.Length);
         public static int ParseBrackets(string path, int s, int end) {
             int brack = 0;
             for (; s < end; ++s) {
@@ -234,9 +227,9 @@ namespace Weesals.CPS {
             }
             return s;
         }
-        public static int ParseString(string path, int s) { return ParseString(path, s, path.Length); }
+        public static int ParseString(string path, int s) => ParseString(path, s, path.Length);
         public static int ParseString(string path, int s, int end) {
-            //Debug.Assert(path[s] == '"', "String must begin with '\"'");
+            Debug.Assert(path[s] == '"', "String must begin with '\"'");
             for (++s; s < end; ++s) {
                 if (path[s] == '\\') { ++s; continue; }
                 if (path[s] == '"') { break; }
@@ -264,7 +257,7 @@ namespace Weesals.CPS {
             }
         }
 
-        private static bool IsNewline(char c) { return c == '\r' || c == '\n'; }
+        private static bool IsNewline(char c) => c == '\r' || c == '\n';
 
 
         /// <summary>
@@ -322,5 +315,6 @@ namespace Weesals.CPS {
 
 
         public static readonly Parser Empty = new Parser(string.Empty, 0, 0);
+        public static readonly Parser Invalid = new Parser(string.Empty, 0, -2);
     }
 }

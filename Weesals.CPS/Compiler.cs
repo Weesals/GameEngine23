@@ -45,7 +45,7 @@ namespace Weesals.CPS {
         public void CompileBlock(ref Parser code) {
             var isBlock = code.Match('{');
             Compiler.CompileStatements(ref code);
-            if (isBlock) code.Match('}');
+            if (isBlock) Compiler.RequireToken(ref code, '}', "block");
         }
         public bool MatchFunction(ref Parser code, string name, out Parser parameters) {
             var match = code.MatchFunction(name, out parameters);
@@ -388,7 +388,7 @@ namespace Weesals.CPS {
     public class CompileErrorDebugger : ITokenReceiver {
         public void Error(Token error) {
             var code = error.Code;
-            if (code.Length > 20) code.End = code.I + 40;
+            if (code.Length > 20) code = new(code.String, code.I, code.I + 40);
             var line = error.Code.String.Substring(0, error.Code.I).AsSpan().Count('\n') + 1;
             Console.Error.WriteLine($"{error.Error} @{error.Code.I} L{line}" +
                 (code.IsValid ? " \"" + code.ToString().Replace("\r", "").Replace("\n", "") + "\"" : ""));
@@ -417,7 +417,7 @@ namespace Weesals.CPS {
             TokenReceiver = receiver;
         }
         public void LogError(Token token) {
-            if (TokenReceiver != null) TokenReceiver.Error(token);
+            TokenReceiver?.Error(token);
         }
 
         public void AddInstruction(IInstructionCompiler compiler) {
@@ -445,23 +445,20 @@ namespace Weesals.CPS {
                 int i = code.I;
                 var result = CompileStatement(ref code);
                 if (code.I <= i) {
-                    if (TokenReceiver != null) TokenReceiver.Error(new Token(code, "Failed to progress parse"));
+                    TokenReceiver?.Error(new Token(code, "Failed to progress parse"));
                     break;
                 }
                 if (!result.IsValid) {
-                    if (TokenReceiver != null) TokenReceiver.Error(new Token(code, "Failed to compile instruction"));
+                    TokenReceiver?.Error(new Token(code, "Failed to compile instruction"));
                     break;
                 }
             }
         }
         public CompileResult CompileStatement(ref Parser instance) {
-            var result = CompileAPICall(ref instance, StackType.None);
-            if (result) {
-                // Each statement should end with this
-                instance.Match(';');
-                return result;
+            CompileResult result = CompileResult.Invalid;
+            if ((result = CompileAPICall(ref instance, StackType.None)).IsValid) {
             }
-            return CompileResult.Invalid;
+            return result;
         }
         public CompileResult CompileExpression<T>(ref Parser instance) {
             CompileResult result = default;
@@ -479,7 +476,7 @@ namespace Weesals.CPS {
                 if (!instance.IsAtEnd) {
                     var tresult = expressionCompiler.CompileTerm(ref instance, StackType.None);
                     if (!tresult.IsValid) {
-                        if (TokenReceiver != null) TokenReceiver.Error(new Token(instance, "Failed to parse term"));
+                        TokenReceiver?.Error(new Token(instance, "Failed to parse term"));
                         break;
                     }
                     result += tresult;
@@ -493,7 +490,7 @@ namespace Weesals.CPS {
                     break;
                 }
                 if (!expressionCompiler.ParseOperation(ref instance, ref result)) {
-                    if (TokenReceiver != null) TokenReceiver.Error(new Token(instance, "Failed to find operator"));
+                    TokenReceiver?.Error(new Token(instance, "Failed to find operator"));
                     break;
                 }
             }
@@ -567,9 +564,9 @@ namespace Weesals.CPS {
                 return result;
             }
             private StringBuilder builder = new();
-            public CompileResult CompileConstant(ref Parser instance) {
+            public CompileResult CompileConstant(ref Parser code) {
                 ref var programWriter = ref compiler.expressionWriter.programWriter;
-                var n = instance.TakeNumber();
+                var n = code.TakeNumber();
                 if (n.IsValid) {
                     if (n.IsInteger) {
                         programWriter.PushConstantInt(n.ReadInteger());
@@ -578,58 +575,55 @@ namespace Weesals.CPS {
                         programWriter.PushConstantFixed((int)(n.ReadFloat() * (1 << 16)));
                         return new CompileResult(1);
                     } else throw new NotImplementedException();
-                } else if (instance.PeekMatch('"')) {
-                    var strIt = new Parser.StringIterator(instance.String, instance.I, instance.End);
+                } else if (code.PeekMatch('"')) {
+                    var strIt = new Parser.StringIterator(code.String, code.I, code.End);
                     builder.Clear();
                     while (strIt.MoveNext()) builder.Append(strIt.Current);
-                    instance.I = strIt.Index;
-                    if (instance.I < instance.End && instance.String[instance.I] == '"') ++instance.I;
-                    else if (compiler.TokenReceiver != null) compiler.TokenReceiver.Error(new Token(instance, "Expected '\"' after string token."));
+                    code.I = strIt.Index;
+                    compiler.RequireToken(ref code, '"', "string");
                     var termId = compiler.RequireTerm(builder.ToString());
                     programWriter.PushConstantObject(termId);
                     return new CompileResult(1);
-                } else if (instance.Match("true")) {
+                } else if (code.Match("true")) {
                     programWriter.PushConstantInt(1);
                     return new CompileResult(1);
-                } else if (instance.Match("false")) {
+                } else if (code.Match("false")) {
                     programWriter.PushConstantInt(0);
                     return new CompileResult(1);
-                } else if (instance.Match("null")) {
+                } else if (code.Match("null")) {
                     programWriter.PushConstantObject(-1);
                     return new CompileResult(1);
                 }
-                return default;
+                return CompileResult.Invalid;
             }
             private CompileResult CompileArray(ref Parser code) {
-                if (code.Match('[')) {
-                    ref var programWriter = ref compiler.expressionWriter.programWriter;
-                    CompileResult result = default;
-                    while (true) {
-                        var param = code.TakeParameter();
-                        if (!param.IsValid) break;
-                        result += compiler.CompileExpression<StackType>(ref param.Value);
-                    }
-                    code.Match(']');
-                    programWriter.PushToArray(result.Parameters);
-                    result = new CompileResult(1);
-                    return result;
+                if (!code.Match('[')) return CompileResult.Invalid;
+                ref var programWriter = ref compiler.expressionWriter.programWriter;
+                CompileResult result = default;
+                while (true) {
+                    var param = code.TakeParameter();
+                    if (!param.IsValid) break;
+                    result += compiler.CompileExpression<StackType>(ref param.Value);
                 }
-                return default;
+                compiler.RequireToken(ref code, ']', "array");
+                programWriter.PushToArray(result.Parameters);
+                result = new CompileResult(1);
+                return result;
             }
             private CompileResult CompileObject(ref Parser code) {
-                if (!code.Match('{')) return default;
+                if (!code.Match('{')) return CompileResult.Invalid;
                 compiler.CompileStatements(ref code);
-                code.Match('}');
+                compiler.RequireToken(ref code, '}', "object");
                 return CompileResult.Valid;
             }
-            private CompileResult CompileVariable(ref Parser instance) {
-                var ninst = instance;
+            private CompileResult CompileVariable(ref Parser code) {
+                var ninst = code;
                 var name = ninst.MatchWord().AsSpan();
                 var variableId = compiler.blockWriter.RequireDependencyI(name);
-                if (variableId == -1) return default;
+                if (variableId == -1) return CompileResult.Invalid;
                 ref var programWriter = ref compiler.expressionWriter.programWriter;
                 programWriter.PushLoadVariable(variableId);
-                instance = ninst;
+                code = ninst;
                 return new CompileResult(1);
             }
         }
@@ -640,6 +634,12 @@ namespace Weesals.CPS {
                 if (result.IsValid) return result;
             }
             return CompileResult.Invalid;
+        }
+
+        public bool RequireToken(ref Parser code, char chr, string caregory) {
+            if (code.Match(chr)) return true;
+            TokenReceiver?.Error(new Token(code, $"Expected '{chr}' after {caregory}."));
+            return false;
         }
 
     }
