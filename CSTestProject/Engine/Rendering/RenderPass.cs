@@ -189,15 +189,18 @@ namespace Weesals.Engine {
             BindRenderTargets(graphics, ref context);
             OverrideMaterial.SetValue(RootMaterial.iRes, (Vector2)context.Viewport.Size);
         }
+        protected Material RequireBlitMaterial(BlendMode blend) {
+            if (blitMaterial == null) {
+                blitMaterial = new Material("./Assets/blit.hlsl");
+                blitMaterial.SetDepthMode(DepthMode.MakeOff());
+            }
+            blitMaterial.SetBlendMode(blend);
+            return blitMaterial;
+        }
         unsafe protected void DrawQuad(CSGraphics graphics, CSBufferReference texture, Material material = null) {
             using var marker = ProfileMarker_DrawQuad.Auto();
             if (material == null) {
-                if (blitMaterial == null) {
-                    blitMaterial = new Material("./Assets/blit.hlsl");
-                    blitMaterial.SetBlendMode(BlendMode.MakeOpaque());
-                    blitMaterial.SetDepthMode(DepthMode.MakeOff());
-                }
-                material = blitMaterial;
+                material = RequireBlitMaterial(BlendMode.MakeOpaque());
             }
             if (quadMesh == null) {
                 quadMesh = new Mesh("Quad");

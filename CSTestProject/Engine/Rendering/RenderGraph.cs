@@ -751,7 +751,12 @@ namespace Weesals.Engine {
                 }
                 // Clean up temporary RTs
                 foreach (var item in tempTargets) {
-                    Debug.Assert(!buffers[item].Target.IsValid);
+                    ref var buffer = ref buffers[item];
+                    if (buffer.Target.IsValid) {
+                        Debug.Fail($"Buffer {buffer.Name} was not disposed!");
+                        RenderTargetPool.ReturnPooled(buffer.Target.Texture);
+                        buffer.Target.Texture = default;
+                    }
                 }
             }
             public void Dispose() {

@@ -117,7 +117,7 @@ void PSMain(PSInput input, out BasePassOutput result
     clip(albedo.a - 0.5);
     PBRInput pbrInput = PBRDefault();
     pbrInput.Albedo = albedo.rgb;
-    pbrInput.Alpha = tex.a;
+    pbrInput.Alpha = 1.0;//tex.a;
     pbrInput.Specular = 0.06;
     pbrInput.Roughness = 0.7;
     pbrInput.Emissive = instance.Highlight;
