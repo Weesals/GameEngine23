@@ -12,6 +12,9 @@
 #if !defined(ENABLEPARALLAX)
 # define ENABLEPARALLAX 0
 #endif
+#if !defined(SELECTED)
+#define SELECTED 0
+#endif
 
 #include <common.hlsl>
 #include <temporal.hlsl>
@@ -450,6 +453,14 @@ BasePassOutput PSMain(PSInput input, linear centroid noperspective float4 positi
     depth = (positionCS.z * positionCS.w + depthOffset * Projection._33) / (positionCS.w + depthOffset * Projection._43);
     //depth = positionCS.z + max(0, depthOffset / (positionCS.w * positionCS.w));
     //pbrInput.Albedo = frac(depth * 100);
+
+    if (SELECTED)
+    {
+        float2 grid2 = abs(0.5 - frac(input.positionOS.xz - 0.5));
+        float grid = min(grid2.x, grid2.y);
+        grid = saturate(1 - grid / fwidth(grid));
+        pbrInput.Emissive.rgb = lerp(pbrInput.Emissive.rgb, 1.0, grid);
+    }
 
     return PBROutput(pbrInput, viewDir);
 }

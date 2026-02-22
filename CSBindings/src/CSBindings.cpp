@@ -571,7 +571,11 @@ void CSWindow::SetWindowFrame(const NativeWindow* window, const RectInt* frame, 
 }
 void CSWindow::RegisterMovedCallback(const NativeWindow* window, void (*Callback)(), bool enable) {
 	auto win32 = ((WindowWin32*)window);
-	win32->RegisterMovedCallback(Callback, enable);
+	win32->RegisterMovedCallback(std::move(Callback), enable);
+}
+void CSWindow::RegisterSizingCallback(const NativeWindow* window, void (*Callback)(), bool enable) {
+	auto win32 = ((WindowWin32*)window);
+	win32->RegisterSizingCallback(std::move(Callback), enable);
 }
 
 CSSpanSPtr CSInput::GetPointers(NativeInput* input) {

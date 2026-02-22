@@ -394,6 +394,7 @@ private:
 	static CSWindowFrame GetWindowFrame(const NativeWindow* window);
 	static void SetWindowFrame(const NativeWindow* window, const RectInt* frame, bool maximized);
 	static void RegisterMovedCallback(const NativeWindow* window, void (*Callback)(), bool enable);
+	static void RegisterSizingCallback(const NativeWindow* window, void (*Callback)(), bool enable);
 };
 
 struct CSPointer {

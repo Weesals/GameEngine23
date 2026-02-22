@@ -6,6 +6,24 @@
 
 WCHAR szWindowClass[] = L"RTSWINDOW";
 
+template<class T>
+void AddRemove(WindowWin32::CallbackList<T>& list, T&& callback, bool enable) {
+    auto pos = std::find(list.begin(), list.end(), callback);
+    if (enable) {
+        assert(pos == list.end());
+        list.push_back(callback);
+    }
+    else {
+        list.erase(pos, pos + 1);
+    }
+}
+template<class T>
+void Invoke(WindowWin32::CallbackList<T>& list) {
+    for (auto& callback : list) {
+        callback();
+    }
+}
+
 WindowWin32::WindowWin32(const std::wstring &name, HWND parent)
 {
     hInstance = GetModuleHandle(NULL);
@@ -56,6 +74,7 @@ WindowWin32::WindowWin32(const std::wstring &name, HWND parent)
     // Set a pointer to this object so that messages can be forwarded
     SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)this);
 
+    auto style = GetWindowStyle(hWnd);
     EnableMouseInPointer(TRUE);
 }
 
@@ -99,8 +118,11 @@ void WindowWin32::SetVisible(bool visible) {
     ShowWindow(hwnd, visible ? SW_SHOW : SW_HIDE);
 }
 
-void WindowWin32::RegisterMovedCallback(void (*Callback)(), bool enable) {
-    mMovedCallbacks.push_back(Callback);
+void WindowWin32::RegisterMovedCallback(void (*&&Callback)(), bool enable) {
+    AddRemove(mMovedCallbacks, std::move(Callback), enable);
+}
+void WindowWin32::RegisterSizingCallback(void (*&&Callback)(), bool enable) {
+    AddRemove(mSizingCallbacks, std::move(Callback), enable);
 }
 
 int WindowWin32::MessagePump() {
@@ -146,7 +168,7 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         //char buffer[32]; sprintf_s(buffer, "CHTEST %llx %d\n", hWnd, window->mInput != nullptr);
         //OutputDebugStringA(buffer);
         if (window->mInput == nullptr) return HTTRANSPARENT;
-        return HTCLIENT;
+        //return HTCLIENT;
     }
     /*std::stringstream str;
     str << " >> " << std::hex << " M ";
@@ -245,12 +267,13 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
     case WM_SIZE:
     case WM_MOVE: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
-        if (window != nullptr) {
-            for (auto& callback : window->mMovedCallbacks) {
-                callback();
-            }
-        }
+        if (window != nullptr) Invoke(window->mMovedCallbacks);
     } break;
+    case WM_SIZING: {
+        auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
+        if (window != nullptr) Invoke(window->mSizingCallbacks);
+        break;
+    }
     // Receive mouse events
     case WM_POINTERDOWN: case WM_POINTERUP: {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));

@@ -1,4 +1,5 @@
-﻿using Navigation;
+﻿using Game5.Rendering;
+using Navigation;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -76,8 +77,8 @@ namespace Game5.Game {
 
         public int GetTeam(ulong id) {
             var entity = EntityProxyExt.UnpackEntity(id);
-            if (World.IsValid(entity))
-                return World.GetComponent<ECTeam>(entity).SlotId;
+            if (World.IsValid(entity) && World.TryGetComponent<ECTeam>(entity, out var team))
+                return team.SlotId;
             return -1;
         }
 
@@ -100,22 +101,23 @@ namespace Game5.Game {
 
         public EntityFootprint GetEntityFootprint(ulong id = 0) {
             var entity = EntityProxyExt.UnpackEntity(id);
-            if (entity.IsValid) {
-                var protoData = World.GetComponent<PrototypeData>(entity);
+            if (entity.IsValid && World.TryGetComponent<PrototypeData>(entity, out var protoData)) {
                 return protoData.Footprint;
             }
             return default;
         }
     }
 
-    public class LandscapeProxy : LandscapeRenderer, IEntityFootprint, IItemPositionRO {
+    public class LandscapeProxy : LandscapeRenderer, IEntityFootprint, SelectionRenderer.ICustomSelectionRenderer, IItemPositionRO {
         public EntityFootprint GetEntityFootprint(ulong id = 0) {
             return new EntityFootprint() {
                 Size = Bounds.Size.toxz() * SimulationWorld.InvWorldScale,
                 Shape = EntityFootprint.Shapes.Box,
             };
         }
-
+        public void RegisterRenderSelection(bool enable) {
+            Selected = enable;
+        }
         Vector3 IItemPositionRO.GetPosition(ulong id) => new(Bounds.Centre.X, 0f, Bounds.Centre.Z);
         Quaternion IItemPositionRO.GetRotation(ulong id) => Quaternion.Identity;
     }

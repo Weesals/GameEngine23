@@ -99,8 +99,8 @@ float4 PSMain(PSInput input) : SV_TARGET {
         float3 cloudEnd = rayStart.xyz + viewDir * cloudEndDst;
 
         PrimeClouds(cloudStart, cloudEnd - cloudStart);
-        GlobalMipBias = log2(cloudStartDst / 500.0f);
-        GlobalDensityBias += 2 * pow(cloudStartDst / 5000.0f, 4);
+        GlobalMipBias = log2(cloudStartDst / 10000.0f);
+        GlobalDensityBias += 2 * pow(cloudStartDst / 10000.0f, 4);
     
         float stepLength = min(dot(cloudEnd - cloudStart, viewDir) * (1.0 / cloudSampleCount), 20.0);
         float3 rayStep = viewDir * stepLength;
@@ -275,6 +275,13 @@ float4 PSMain(PSInput input) : SV_TARGET {
     //r.rgb = SkyColor;
     //r.a = 1.0;
     r.rgb *= LuminanceFactor;
+
+    {
+        float3 dbguv = rayStart.xyz + viewDir * (0 - rayStart.y) / viewDir.y;
+        dbguv = ApplyWind(dbguv);
+        dbguv = WorldToCloudUVs(dbguv);
+        //r.rg = frac(dbguv.xz);
+    }
     //r += ddx_fine(r) * 0.25 * ((input.position.x % 2) > 0.5 ? -1 : 1);
     //r += ddy_fine(r) * 0.25 * ((input.position.y % 2) > 0.5 ? -1 : 1);
     return r;

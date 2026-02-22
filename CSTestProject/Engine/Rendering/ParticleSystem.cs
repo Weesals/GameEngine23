@@ -455,6 +455,7 @@ namespace Weesals.Engine {
                     SetTargets(graphics);
                     graphics.Clear();
                 }
+                graphics.SetViewport(new(Int2.Zero, PositionBuffer.Size));
                 int oldCycle = (int)(time / 500.0f);
                 time += dt;
                 int newCycle = (int)(time / 500.0f);
@@ -688,10 +689,11 @@ namespace Weesals.Engine {
 
         private Random random = new();
         private AllocGroup allocated = AllocGroup.Invalid;
-        private List<AllocatedBlock> blocks = new();
+        private int blockArrDeadCount = 0;
+        private List<AllocatedBlock> blocks = new(16);
         private List<Emitter> emitters = new();
 
-        public bool HasParticles => blocks.Count > 0 || (allocated.ConsumeCount > 0 && !GetIsExpired(allocated.Alloc.ExpireTimeMS));
+        public bool HasParticles => blocks.Count > blockArrDeadCount || (allocated.ConsumeCount > 0 && !GetIsExpired(allocated.Alloc.ExpireTimeMS));
 
         unsafe public ParticleSystem(string name, string particleShader) {
             Name = name;
@@ -743,13 +745,21 @@ namespace Weesals.Engine {
             emitterData.BufferLayout.revision |= BufferDirtyFlag;
             return emitter;
         }
+        public void MarkEmitterDirty(Emitter emitter) {
+            emitterData.BufferLayout.revision |= BufferDirtyFlag;
+        }
         private bool GetIsExpired(int expireTimeMS) {
             var delta = Manager.TimeMS - expireTimeMS;
             return delta >= 0;
         }
+        private void PurgeDeadBlocks() {
+            if (blockArrDeadCount > 0) blocks.RemoveRange(0, blockArrDeadCount);
+            blockArrDeadCount = 0;
+        }
         public bool RemoveBlock(uint blockId) {
-            if (blocks.Count > 0 && blocks[0].BlockId == blockId) {
-                blocks.RemoveAt(0);
+            if (blocks.Count > blockArrDeadCount && blocks[blockArrDeadCount].BlockId == blockId) {
+                if (blockArrDeadCount > 64) PurgeDeadBlocks();
+                ++blockArrDeadCount;
                 return true;
             }
             if (allocated.BlockId == blockId) {
@@ -761,6 +771,7 @@ namespace Weesals.Engine {
         public RangeInt UpdateExpired(CSGraphics graphics, DynamicMesh mesh, float dt) {
             var rangeBegin = mesh.IndexCount;
             int i = 0;
+            PurgeDeadBlocks();
             for (; i < blocks.Count; i++) {
                 var block = blocks[i];
                 if (!GetIsExpired(block.ExpireTimeMS)) break;
@@ -801,6 +812,17 @@ namespace Weesals.Engine {
                     emitterData.BufferLayout.revision |= BufferDirtyFlag;
                 }
             }
+
+            // Check for emitter value changes
+            var emitterHash = 0;
+            foreach (var emitter in emitters) {
+                emitterHash += emitter.Position.GetHashCode();
+                emitterHash += emitter.Lifetime.GetHashCode();
+            }
+            if (((emitterData.BufferLayout.revision ^ emitterHash) & ~BufferDirtyFlag) != 0)
+                emitterData.BufferLayout.revision |= BufferDirtyFlag;
+
+            // If emitter data changed, update emitter data in buffer
             if ((emitterData.BufferLayout.revision & BufferDirtyFlag) != 0) {
                 emitterData.BufferLayout.revision &= ~BufferDirtyFlag;
                 int emitterCount = emitters.Count;// Math.Min(emitters.Count, 255);
@@ -842,6 +864,7 @@ namespace Weesals.Engine {
         }
 
         unsafe public int SetActiveBlocks(ref BufferLayoutPersistent activeBlocks) {
+            PurgeDeadBlocks();
             int begin = activeBlocks.Count;
             int count = blocks.Count + (allocated.ConsumeCount > 0 ? 1 : 0);
             activeBlocks.BufferLayout.mCount += count;
@@ -902,8 +925,11 @@ namespace Weesals.Engine {
             graphics.SetSurface(Surface);
             var rt = Surface.GetBackBuffer();
             graphics.SetRenderTargets(new Span<CSRenderTarget>(ref rt), default);
+            graphics.SetViewport(new(Int2.Zero, rt.Size));
             graphics.Clear();
-            canvas.SetSize(WindowSize);
+            canvas.SetSize(rt.Size);
+            canvas.PreUpdate(dt);
+            canvas.RequireLayout();
             canvas.Update(dt);
             canvas.RequireComposed();
             canvas.Render(graphics);

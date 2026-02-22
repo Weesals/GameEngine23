@@ -168,7 +168,9 @@ public:
             D3D12_CLEAR_VALUE clearValue = isDepth ? CD3DX12_CLEAR_VALUE(texDesc.Format, 1.0f, 0)
                 : CD3DX12_CLEAR_VALUE(texDesc.Format, clearColor);
 
-            OutputDebugStringA("Allocating texture\n");
+            char buffer[1024];
+            sprintf_s(buffer, _countof(buffer), "Allocating RenderTarget (%d x %d, D=%d, M=%d)\n", target->GetResolution().x, target->GetResolution().y, target->GetArrayCount(), target->GetMipCount());
+            OutputDebugStringA(buffer);
             assert(d3dRt->mFormat != (DXGI_FORMAT)(-1));
 
             // Create the render target
@@ -234,7 +236,7 @@ public:
         InplaceVector<D3D12_CPU_DESCRIPTOR_HANDLE, 8> targets;
         for (int i = 0; i < (int)frameBuffers.size(); ++i) {
             auto& surface = cache.RequireTextureRTV(mFrameBuffers[i], mFrameHandle);
-            assert((uint32_t)surface.mRTVOffset < 4096);
+            assert((uint32_t)surface.mRTVOffset < 8192);
             targets.push_back(CD3DX12_CPU_DESCRIPTOR_HANDLE(mDevice->GetRTVHeap()->GetCPUDescriptorHandleForHeapStart(), surface.mRTVOffset));
         }
         auto depthRTV = mDepthBuffer != nullptr ? cache.RequireTextureRTV(mDepthBuffer, mFrameHandle).mRTVOffset : -1;
@@ -399,7 +401,7 @@ public:
                 assert(rbinding != nullptr); // Did you call CopyBufferData on this resource?
                 D3D12_RESOURCE_STATES barrierState = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
                 // Explicit offset/count or get buffer count (skipping first item for "count" storage)
-                int offset = resource->mSubresourceId;
+                int offset = (uint16_t)resource->mSubresourceId;
                 int count = resource->mSubresourceCount != -1 ? (uint16_t)resource->mSubresourceCount
                     : rbinding->mCount != -1 ? rbinding->mCount - offset
                     : rbinding->mSize / rbinding->mStride - (++offset);

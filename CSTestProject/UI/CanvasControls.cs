@@ -90,6 +90,20 @@ namespace Weesals.UI {
             TextElement.Dispose(Canvas);
             base.Uninitialise(binding);
         }
+        public void SetTextColor(Color? color) {
+            if (color.HasValue) {
+                explicitFields |= ExplicitFields.Color;
+            } else {
+                var origFields = explicitFields;
+                explicitFields &= ~ExplicitFields.Color;
+                if (origFields == explicitFields || !IsInCanvas) return;
+                color = Style.Foreground;
+            }
+            if (TextElement.Color != color.Value) {
+                TextElement.Color = color.Value;
+                MarkComposePartialDirty();
+            }
+        }
         protected override void NotifyLayoutChanged() {
             base.NotifyLayoutChanged();
             TextElement.MarkLayoutDirty();
@@ -141,7 +155,10 @@ namespace Weesals.UI {
     public abstract class Selectable : CanvasRenderable, ISelectable {
         protected bool selected;
         public bool IsSelected => selected;
-        public virtual void OnSelected(ISelectionGroup group, bool _selected) { selected = _selected; }
+        public virtual void OnSelected(ISelectionGroup group, bool _selected) {
+            selected = _selected;
+            MarkComposeDirty();
+        }
         public void OnPointerDown(PointerEvent events) {
             if (events.HasButton(0)) this.Select();
         }
@@ -1177,6 +1194,7 @@ namespace Weesals.UI {
             mBinding = binding;
         }
         public override void InsertChild(int index, CanvasRenderable child) {
+            if (child.Canvas != Canvas) return;
             if (mChildren == null) mChildren = new();
             mChildren.Add(child);
         }

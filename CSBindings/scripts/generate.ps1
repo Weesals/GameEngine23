@@ -1,5 +1,5 @@
 # Read the contents of the .rsp file
-$arguments = "generate.rsp"
+$arguments = "generate.rsp" 
 
 # clang -std=c++20 -Xclang -ast-dump -fsyntax-only @$arguments
 

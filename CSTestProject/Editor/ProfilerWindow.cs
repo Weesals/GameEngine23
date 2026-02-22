@@ -11,7 +11,7 @@ using Weesals.UI;
 namespace Weesals.Editor {
     public class ProfilerWindow : ApplicationWindow {
 
-        public Canvas Canvas = new();
+        public Canvas Canvas = new() { Name = "ProfilerCanvas" };
         public EventSystem EventSystem;
         private ProfilerContent profileContent;
 

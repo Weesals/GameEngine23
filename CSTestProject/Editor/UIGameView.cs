@@ -22,7 +22,7 @@ namespace Weesals.Editor {
                 Text = new(name) {
                     FontSize = 14,
                     Alignment = TextAlignment.Left,
-                    TextColor = Color.DarkGray,
+                    //TextColor = Color.DarkGray,
                     DisplayParameters = TextDisplayParameters.Flat,
                 };
                 AppendChild(Text);
@@ -32,7 +32,7 @@ namespace Weesals.Editor {
                 if (IsSelected == _selected) return;
                 base.OnSelected(group, _selected);
                 FindParent<UIHierarchy>()?.NotifyEntitySelected(Entity, IsSelected);
-                Text.TextColor = IsSelected ? Color.Orange : Color.DarkGray;
+                Text.SetTextColor(IsSelected ? Color.Orange : null);
             }
             public override SizingResult GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
@@ -65,7 +65,7 @@ namespace Weesals.Editor {
             base.Uninitialise(binding);
         }
         public void UpdateValues() {
-            if (World.Manager.EntityStorage.GetMaximumEntityId() > 100) return;
+            if (World.Manager.EntityStorage.GetMaximumEntityId() > 1000) return;
             int i = 0;
             if (World != null) {
                 foreach (var entity in World.GetEntities()) {
@@ -77,6 +77,7 @@ namespace Weesals.Editor {
                         list.InsertChild(i, btn);
                     }
                     ++i;
+                    //if (i > 100) break;
                 }
             }
             while (i < list.Children.Count) {
@@ -113,6 +114,7 @@ namespace Weesals.Editor {
         public IGameRoot? GameRoot;
         public Camera? Camera => GameRoot?.Camera;
         public ScenePassManager? Scene => GameRoot?.Scene;
+        public int RenderHash => GameRoot.RenderHash + renderHash;
 
         public Action<PointerEvent, AssetReference> OnReceiveDrag;
         public Action<RectI> OnViewportChanged;
@@ -124,6 +126,7 @@ namespace Weesals.Editor {
         private float timeSinceFPSUpdate = 0f;
         private int ticksSinceFPSUpdate = 0;
         private float timeSinceRender = 0f;
+        private int renderHash = 0;
 
         public UIGameView(Editor editor) : base(editor, "Game") {
             EnableBackground = false;
@@ -172,7 +175,6 @@ namespace Weesals.Editor {
         public void Update(float dt) {
             timeSinceRender += dt;
             timeSinceFPSUpdate += dt;
-            ++ticksSinceFPSUpdate;
             if (Canvas.GetIsComposeDirty() || timeSinceFPSUpdate > 0.125f) {
                 float fps = ticksSinceFPSUpdate / Math.Max(timeSinceFPSUpdate, 0.0001f);
                 if (UnityEngine.Time.frameCount < 10) {
@@ -183,6 +185,7 @@ namespace Weesals.Editor {
                 timeSinceFPSUpdate = 0f;
                 ticksSinceFPSUpdate = 0;
             }
+            if (EnableRealtime) renderHash++;
             /*var newColor = HasDirtyFlag(DirtyFlags.Compose) ? Color.Red : Style.Foreground;
             if (TitleText.Color != newColor) {
                 TitleText.Color = newColor;
@@ -191,6 +194,7 @@ namespace Weesals.Editor {
         }
 
         public void RenderGame(CSGraphics graphics) {
+            ++ticksSinceFPSUpdate;
             // Render the game world and UI
             using (ProfileMarker_OnRender.Auto()) {
                 OnRender?.Invoke(timeSinceRender, graphics);

@@ -170,8 +170,8 @@ namespace Weesals.ECS {
         }
 
         public Entity Instantiate(EntityCommandBuffer command, EntityPrefab prefab) {
-            var entity = command.CreateDeferredEntity();
             var prefabData = World.GetComponent<Prefab>(prefab.Index);
+            var entity = command.CreateDeferredEntity(prefabData.Name);
             foreach (var typeId in prefabData.TypeBitField) {
                 var array = World.GetRawComponent(new TypeId(typeId), prefab.Index, out var row);
                 var cmpRef = command.AddComponent(entity, new TypeId(typeId));

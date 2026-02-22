@@ -1,5 +1,6 @@
 -std=c++20
 --additional
+	-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
 	-Wno-deprecated-declarations
 	-Wno-expansion-to-defined
 	-Wno-extern-c-compat

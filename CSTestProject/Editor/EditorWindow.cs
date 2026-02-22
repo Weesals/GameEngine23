@@ -166,6 +166,7 @@ namespace Weesals.Editor {
         private static ProfilerMarker ProfileMarker_Render = new("Editor Render");
         private static ProfilerMarker ProfileMarker_AcquireFrame = new("Acquire Frame");
         private static ProfilerMarker ProfileMarker_GameViewUpdate = new("GameView");
+        private static ProfilerMarker ProfileMarker_Present = new("Present");
         private static ProfilerMarker ProfileMarker_RenderCanvas = new("Canvas");
         public Editor Editor;
         public UIInspector Inspector;
@@ -180,18 +181,19 @@ namespace Weesals.Editor {
         public ref Action<float, CSGraphics> OnRender => ref GameView.OnRender;
 
         private FlexLayout flex;
-        private bool windowMoved = false;
+        private bool requirePrefSave = false;
 
         public struct Preferences {
             public RectI WindowFrame;
             public bool Maximized;
+            public bool FullScreen;
         }
 
         public bool FullScreen {
-            get => flex.Children.Contains(Hierarchy.Parent);
+            get => !flex.Children.Contains(Hierarchy.Parent);
             set {
                 if (FullScreen == value) return;
-                if (FullScreen) {
+                if (value) {
                     flex.RemoveChild(ProjectView.Parent);
                     flex.RemoveChild(Hierarchy.Parent);
                     flex.RemoveChild(Inspector.Parent);
@@ -200,12 +202,13 @@ namespace Weesals.Editor {
                     flex.AppendRight(new ProxyWindowCanvas(Hierarchy), 0.15f);
                     flex.AppendRight(new ProxyWindowCanvas(Inspector), 0.25f);
                 }
+                requirePrefSave = true;
             }
         }
 
         public EditorWindow() {
             Editor = new();
-            Canvas = new();
+            Canvas = new() { Name = "EditorCanvas" };
             EventSystem = new EventSystem(Canvas);
             flex = new FlexLayout();
             flex.OnChildAdded += Flex_OnChild;
@@ -213,8 +216,7 @@ namespace Weesals.Editor {
             GameView = new(Editor) { };
             Hierarchy = new(Editor) { };
             ProjectView = new UIProjectView(Editor);
-            flex.AppendRight(new ProxyWindowCanvas(GameView) { GetRenderHash = () => GameView.GameRoot.RenderHash, });
-            FullScreen = false;
+            flex.AppendRight(new ProxyWindowCanvas(GameView) { GetRenderHash = () => GameView.RenderHash, });
 
             Canvas.AppendChild(flex);
 
@@ -255,20 +257,26 @@ namespace Weesals.Editor {
                 var json = new SJson(File.ReadAllText("./Config/window.txt"));
                 pref.WindowFrame = new RectI(json["x"], json["y"], json["w"], json["h"]);
                 pref.Maximized = json["max"];
+                pref.FullScreen = json["fs"];
             } catch { }
             return pref;
         }
         public void ApplyPreferences(CSWindow window, Preferences pref) {
             window.SetWindowFrame(pref.WindowFrame, pref.Maximized);
+            FullScreen = pref.FullScreen;
         }
         public void SavePreferences(Preferences pref) {
             Directory.CreateDirectory("./Config/");
             var frame = pref.WindowFrame;
-            File.WriteAllText("./Config/window.txt", $@"{{ x:{frame.X}, y:{frame.Y}, w:{frame.Width}, h:{frame.Height}, max:{pref.Maximized} }}");
+            File.WriteAllText("./Config/window.txt", $@"{{ x:{frame.X}, y:{frame.Y}, w:{frame.Width}, h:{frame.Height}, max:{pref.Maximized}, fs:{pref.FullScreen} }}");
         }
 
         public override void RegisterRootWindow(CSWindow window) {
-            window.RegisterMovedCallback(() => { windowMoved = true; }, true);
+            window.RegisterMovedCallback(() => { requirePrefSave = true; }, true);
+            window.RegisterSizingCallback(() => {
+                Update(0f);
+                Render(0f, Core.ActiveInstance.GetGraphics());
+            }, true);
 
             base.RegisterRootWindow(window);
             EventSystem.SetInput(Input);
@@ -313,11 +321,11 @@ namespace Weesals.Editor {
 
         public override void Update(float dt) {
             using var marker = ProfileMarker_Update.Auto();
-            if (windowMoved) {
+            if (requirePrefSave) {
                 var frame = Window.GetWindowFrame();
                 Debug.WriteLine("Window moved");
-                SavePreferences(new() { WindowFrame = frame.Position, Maximized = frame.Maximized != 0 });
-                windowMoved = false;
+                SavePreferences(new() { WindowFrame = frame.Position, Maximized = frame.Maximized != 0, FullScreen = FullScreen, });
+                requirePrefSave = false;
             }
 
             Weesals.Engine.Input.Initialise(Input);
@@ -373,8 +381,10 @@ namespace Weesals.Editor {
                 graphics.Execute();
             }
 
-            foreach (var proxy in requirePresent) {
-                proxy.Surface.Present();
+            using (ProfileMarker_Present.Auto()) {
+                foreach (var proxy in requirePresent) {
+                    proxy.Surface.Present();
+                }
             }
         }
 

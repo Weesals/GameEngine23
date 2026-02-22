@@ -155,7 +155,7 @@ namespace Weesals.Editor {
                 public override void OnSelected(ISelectionGroup group, bool _selected) {
                     base.OnSelected(group, _selected);
                     Icon.Color = IsSelected ? new Color(0xffaaaaaa) : Color.Gray;
-                    Text.TextColor = IsSelected ? Color.Orange : Color.Black;
+                    Text.SetTextColor(IsSelected ? Color.Orange : null);
                     MarkComposeDirty();
                 }
                 public void OnPointerClick(PointerEvent events) {

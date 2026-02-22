@@ -718,7 +718,7 @@ namespace Weesals.ECS {
         public Entity CreateEntity() => Manager.CreateEntity();
         public Entity CreateEntity(string name) => Manager.CreateEntity(name);
         public Entity CreateEntity(Entity prefab) {
-            var entity = Manager.CreateEntity();
+            var entity = Manager.CreateEntity(Manager.GetEntityMeta(prefab).Name);
             var prefabAddr = Manager.RequireEntityAddress(prefab);
             using var mover = Manager.BeginMoveEntity(entity, prefabAddr.ArchetypeId);
             foreach (var prefabCmp in Manager.GetEntityComponents(prefab)) {

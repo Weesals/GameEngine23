@@ -167,3 +167,20 @@ Team2.Villager #1 #2 #3 #4 #5 #6
 - Capacity #1 #2 #4
 
 Need to track what Capacity was at #4
+
+
+
+
+
+Q4 2025 attempt:
+Split code into blocks, where each block is essentially a mini function, with fixed inputs/outputs:
+- Inputs: Variables
+- Outputs: Variables, ChildInvoke, ParentBreak(N)
+How to handle variables that can optionally be written (if child block is/not invoked)?
+
+Always allocate full sibling block instances [array of -1s]
+Each sibling contains logic to find all of its input variables:
+- Series of conditions: [Step -2 => If contains child :: Child 3 => If contains child :: Child 1 => Output 1], [Parent => Step -2 => Child 1 => Output 1]
+- Conditions are shared! Should reference a shared table in parent
+  - Note: Same variable can have multiple lookups
+  - Note: Lookups can (should?) reference other lookups

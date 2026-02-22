@@ -707,7 +707,8 @@ namespace Weesals.UI {
             if (!IsDirty) return;
             var tlayout = layout;
             var tsince = DateTime.UtcNow - beginTime;
-            var scale = Easing.BubbleIn(0.3f).WithFromTo(0.5f, 1.0f).Evaluate((float)tsince.TotalSeconds);
+            var easeLerp = Easing.Clamp01(Easing.InverseLerp(0.3f, 0f, (float)tsince.TotalSeconds));
+            var scale = 1f - 0.1f * MathF.Sin((float)tsince.TotalSeconds * 50f) * easeLerp * easeLerp * easeLerp;
             tlayout = tlayout.Scale(scale);
             frame.UpdateLayout(canvas, tlayout);
             if (tsince < TimeSpan.FromSeconds(0.3f)) MarkLayoutDirty();
@@ -885,6 +886,8 @@ namespace Weesals.UI {
         SparseIndices mUnusedIndices = new();
         TransientElementCache transientCache = new();
         CanvasMeshBuffer mBuilder;
+        public bool HasMaterials => materialStack.Count > 0;
+        public bool HasTransformer => transformers.Count > 0;
         public CanvasCompositor(CanvasMeshBuffer builder) {
 			mBuilder = builder;
             mIndices = new BufferLayoutPersistent(BufferLayoutPersistent.Usages.Index);
@@ -1191,6 +1194,8 @@ namespace Weesals.UI {
         public ref struct Context {
 			ref Builder mBuilder;
             public LinkedListNode<Node> mNode;
+            public bool HasMaterials => mBuilder.mCompositor.HasMaterials;
+            public bool HasTransformer => mBuilder.mCompositor.HasTransformer;
             public Context(ref Builder builder, LinkedListNode<Node> node) {
                 mBuilder = ref builder;
 				mNode = node;

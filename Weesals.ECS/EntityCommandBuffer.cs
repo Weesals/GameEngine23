@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 namespace Weesals.ECS {
     public class EntityCommandBuffer {
 
+        public const uint DeferredEntityBit = 0x80000000;
+
         public readonly EntityManager Stage;
         public EntityContext Context => Stage.Context;
 
@@ -22,6 +24,7 @@ namespace Weesals.ECS {
             public BitField SetSparseTypes;
             public BitField RemoveSparseTypes;
             public Entity Entity;
+            public string EntityName;
         }
 
         private EntityMutation[] mutations = Array.Empty<EntityMutation>();
@@ -58,8 +61,8 @@ namespace Weesals.ECS {
             PushActiveEntity();
             for (int i = 0; i < entityIndexLookup.Count; i++) {
                 ref var mutation = ref mutations[i];
-                if ((mutation.Entity.Index & 0x80000000) != 0 && mutation.Entity.Version == 0xffffffff) {
-                    mutation.Entity = Stage.CreateEntity();
+                if ((mutation.Entity.Index & DeferredEntityBit) != 0 && mutation.Entity.Version == 0xffffffff) {
+                    mutation.Entity = Stage.CreateEntity(mutation.EntityName);
                 }
                 if ((int)mutation.Entity.Index < 0) {
                     mutation.Entity.Index = ~mutation.Entity.Index;
@@ -134,12 +137,14 @@ namespace Weesals.ECS {
         public Entity CreateEntity() {
             return Stage.CreateEntity();
         }
-        public Entity CreateDeferredEntity() {
+        public Entity CreateDeferredEntity(string name) {
             var entity = new Entity() {
-                Index = (uint)entityIndexLookup.Count | 0x80000000,
+                Index = (uint)entityIndexLookup.Count | DeferredEntityBit,
                 Version = 0xffffffff,
             };
             SetActiveEntity(entity);
+            ref var mutation = ref mutations[active.EntityIndex];
+            mutation.EntityName = name;
             return entity;
         }
         public void DeleteEntity(Entity entity) {

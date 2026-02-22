@@ -13,6 +13,10 @@ using Weesals.UI;
 namespace Game5.Rendering {
     public class SelectionRenderer {
 
+        public interface ICustomSelectionRenderer {
+            void RegisterRenderSelection(bool enable);
+        }
+
         public readonly SelectionManager Selection;
 
         private Mesh reticuleMesh;
@@ -42,6 +46,10 @@ namespace Game5.Rendering {
         }
 
         private void Selection_OnEntitySelected(ItemReference entity, bool selected) {
+            if (entity.Owner is ICustomSelectionRenderer customRenderer) {
+                customRenderer.RegisterRenderSelection(selected);
+                return;
+            }
             if (selected) {
                 selectionData.Add(new SelectionData() {
                     Item = entity,

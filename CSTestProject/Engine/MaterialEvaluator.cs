@@ -433,7 +433,7 @@ namespace Weesals.Engine {
 		    return id;
 	    }
 	    int ObserveValue(MaterialPropertyBlock properties, int itemId) {
-            ref var item = ref properties.GetParametersRaw().GetItemsRaw()[itemId];
+            ref readonly var item = ref properties.GetParametersRaw().GetItemInfo(itemId);
             var v = new Value() {
                 EvalValue = new MaterialEvaluator.Value() {
 		            OutputOffset = InvalidOffset,

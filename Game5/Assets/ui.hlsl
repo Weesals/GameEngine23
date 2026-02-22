@@ -53,6 +53,5 @@ float4 PSMain(PSInput input) : SV_TARGET
     if (any(input.position.xy < CullRect.xy) || any(input.position.xy > CullRect.zw))
         t.a = 0.0;
     t.a *= color.a;
-    //t.rg = input.uv;
     return t;
 }

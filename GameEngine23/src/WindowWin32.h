@@ -16,6 +16,8 @@
 class WindowWin32 :
     public WindowBase
 {
+    template<class T>
+    class CallbackList : public std::vector<T> { };
     HINSTANCE hInstance;
     HWND hWnd;
 
@@ -25,7 +27,8 @@ class WindowWin32 :
     std::shared_ptr<Pointer> mMousePointer;
     std::unordered_map<int, std::shared_ptr<Pointer>> mPointersById;
 
-    std::vector<void(*)()> mMovedCallbacks;
+    CallbackList<void(*)()> mMovedCallbacks;
+    CallbackList<void(*)()> mSizingCallbacks;
 
     std::shared_ptr<Pointer> RequireMousePointer();
     std::shared_ptr<Pointer> RequirePointer(int id);
@@ -47,7 +50,8 @@ public:
 
     void SetVisible(bool visible) override;
 
-    void RegisterMovedCallback(void (*Callback)(), bool enable);
+    void RegisterMovedCallback(void (*&&Callback)(), bool enable);
+    void RegisterSizingCallback(void (*&&Callback)(), bool enable);
 
     // Process window messages and then return control to the callee
     // Non-zero values mean the window was closed

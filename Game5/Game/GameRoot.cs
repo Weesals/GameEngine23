@@ -27,7 +27,7 @@ namespace Game5.Game {
 
         public readonly Scene Scene;
 
-        public readonly Canvas Canvas = new();
+        public readonly Canvas Canvas = new() { Name = "GameCanvas" };
         public readonly EventSystem EventSystem;
         public readonly Updatables Updatables = new();
 
@@ -64,6 +64,7 @@ namespace Game5.Game {
         public ScenePassManager ScenePasses => scenePasses;
 
         public TemporalJitter TemporalPass => temporalJitter;
+        public DeferredPass DeferredPass => deferredPass;
 
         public Play Play;
 

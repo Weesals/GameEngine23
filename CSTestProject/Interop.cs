@@ -923,6 +923,9 @@ namespace Weesals.Engine
 
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RegisterMovedCallback@CSWindow@@CAXPEBVWindowBase@@P6AXXZ_N@Z", ExactSpelling = true)]
         private static extern void RegisterMovedCallback([NativeTypeName("const NativeWindow *")] WindowBase* window, [NativeTypeName("void (*)()")] delegate* unmanaged[Cdecl]<void> Callback, [NativeTypeName("bool")] byte enable);
+
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?RegisterSizingCallback@CSWindow@@CAXPEBVWindowBase@@P6AXXZ_N@Z", ExactSpelling = true)]
+        private static extern void RegisterSizingCallback([NativeTypeName("const NativeWindow *")] WindowBase* window, [NativeTypeName("void (*)()")] delegate* unmanaged[Cdecl]<void> Callback, [NativeTypeName("bool")] byte enable);
     }
 
     public partial struct CSPointer

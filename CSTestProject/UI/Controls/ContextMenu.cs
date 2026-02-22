@@ -9,7 +9,7 @@ using Weesals.Engine;
 namespace Weesals.UI.Controls {
     public class ContextMenu : ApplicationWindow {
 
-        public Canvas Canvas = new();
+        public Canvas Canvas = new() { Name = "MenuCanvas" };
         public EventSystem EventSystem;
 
         private ListLayout itemsList;

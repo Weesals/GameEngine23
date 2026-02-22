@@ -65,6 +65,7 @@ namespace Weesals.ECS {
         public static implicit operator Entity(EntityComponentAccessor<C1, C2> accessor) => accessor.Entity;
         public static implicit operator C1(EntityComponentAccessor<C1, C2> accessor) => accessor.Component1;
         public static implicit operator C2(EntityComponentAccessor<C1, C2> accessor) => accessor.Component2;
+        public void Deconstruct(out C1 v1, out C2 v2) => (v1, v2) = (Component1, Component2);
     }
     public readonly struct EntityComponentAccessor<C1, C2, C3> {
         private readonly ComponentAccessor accessor;
@@ -92,6 +93,7 @@ namespace Weesals.ECS {
         public static implicit operator C1(EntityComponentAccessor<C1, C2, C3> accessor) => accessor.Component1;
         public static implicit operator C2(EntityComponentAccessor<C1, C2, C3> accessor) => accessor.Component2;
         public static implicit operator C3(EntityComponentAccessor<C1, C2, C3> accessor) => accessor.Component3;
+        public void Deconstruct(out C1 v1, out C2 v2, out C3 v3) => (v1, v2, v3) = (Component1, Component2, Component3);
     }
 
     public readonly struct TableComponentAccessor<C1> : IEnumerable<EntityComponentAccessor<C1>> {
@@ -225,6 +227,7 @@ namespace Weesals.ECS {
                 TableEnumerator = tableAccessor.GetEnumerator();
             }
         }
+        // This method enables the (var1, var2) syntax
         public TypedQueryIterator<C1, C2> GetEnumerator() { return this; }
         IEnumerator<EntityComponentAccessor<C1, C2>> IEnumerable<EntityComponentAccessor<C1, C2>>.GetEnumerator() => this;
         IEnumerator IEnumerable.GetEnumerator() => this;

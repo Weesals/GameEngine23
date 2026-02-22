@@ -147,6 +147,11 @@ namespace Weesals.Landscape {
             get => parallax;
             set => LandMaterial.SetMacro("ENABLEPARALLAX", (parallax = value) ? "1" : CSIdentifier.Invalid);
         }
+        [EditorField]
+        public bool Selected {
+            get => LandMaterial.GetMacro("SELECTED") != CSIdentifier.Invalid;
+            set => LandMaterial.SetMacro("SELECTED", value ? "1" : CSIdentifier.Invalid);
+        }
 
         public LandscapeRenderer() {
             loadHandle = JobHandle.Schedule(() => {

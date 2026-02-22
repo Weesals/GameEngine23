@@ -671,6 +671,11 @@ namespace Weesals.Engine {
             var addr = (delegate* unmanaged[Cdecl]<void>)Marshal.GetFunctionPointerForDelegate(callback);
             RegisterMovedCallback(mWindow, addr, (byte)(enable ? 1 : 0));
         }
+        unsafe public void RegisterSizingCallback(Action callback, bool enable) {
+            var handle = GCHandle.Alloc(callback);
+            var addr = (delegate* unmanaged[Cdecl]<void>)Marshal.GetFunctionPointerForDelegate(callback);
+            RegisterMovedCallback(mWindow, addr, (byte)(enable ? 1 : 0));
+        }
     }
     public partial struct Platform {
         unsafe public void Dispose() { Dispose(mPlatform); mPlatform = null; }

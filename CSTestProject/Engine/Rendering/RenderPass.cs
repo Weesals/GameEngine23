@@ -544,7 +544,6 @@ namespace Weesals.Engine {
     }
     public class DeferredPass : RenderPass {
         public ScenePassManager ScenePasses;
-        Material deferredMaterial;
         public DeferredPass(ScenePassManager scene) : base("DeferredLit") {
             ScenePasses = scene;
             Inputs = new[] {
@@ -558,9 +557,9 @@ namespace Weesals.Engine {
                 new PassOutput("SceneDepth", 0),
                 new PassOutput("SceneColor", writeChannels: PassOutput.Channels.Data).SetTargetDesc(new TextureDesc() { Size = -1, Format = BufferFormat.FORMAT_R10G10B10A2_UNORM, MipCount = 1, }),
             };
-            deferredMaterial = new Material("./Assets/deferred.hlsl", GetPassMaterial());
-            deferredMaterial.SetBlendMode(BlendMode.MakeOpaque());
-            deferredMaterial.SetDepthMode(DepthMode.MakeReadOnly());
+            DefaultMaterial = new Material("./Assets/deferred.hlsl", GetPassMaterial());
+            DefaultMaterial.SetBlendMode(BlendMode.MakeOpaque());
+            DefaultMaterial.SetDepthMode(DepthMode.MakeReadOnly());
         }
         public override void Render(CSGraphics graphics, ref Context context) {
             base.Render(graphics, ref context);
@@ -568,25 +567,25 @@ namespace Weesals.Engine {
             float near = Math.Abs(proj.M43 / proj.M33);
             float far = Math.Abs(proj.M43 / (proj.M33 - 1));
             Vector2 ZBufferParams = new(1.0f / far - 1.0f / near, 1.0f / near);
-            deferredMaterial.SetValue("ZBufferParams", ZBufferParams);
-            deferredMaterial.SetValue("ViewToProj", new Vector4(
+            DefaultMaterial.SetValue("ZBufferParams", ZBufferParams);
+            DefaultMaterial.SetValue("ViewToProj", new Vector4(
                 +2.0f / proj.M11,
                 +2.0f / proj.M22,
                 -(1.0f + proj.M31) / proj.M11,
                 -(1.0f + proj.M32) / proj.M22
             ));
-            deferredMaterial.SetValue("View", ScenePasses.View);
-            deferredMaterial.SetValue("Projection", proj);
-            DrawQuad(graphics, default, deferredMaterial);
+            DefaultMaterial.SetValue("View", ScenePasses.View);
+            DefaultMaterial.SetValue("Projection", proj);
+            DrawQuad(graphics, default, DefaultMaterial);
         }
         public void SetAOEnabled(bool enable) {
-            deferredMaterial.SetMacro("ENABLEAO", enable ? "1" : null!);
+            DefaultMaterial.SetMacro("ENABLEAO", enable ? "1" : null!);
         }
         public void SetFogEnabled(bool enable) {
-            deferredMaterial.SetMacro("ENABLEFOG", enable ? "1" : null!);
+            DefaultMaterial.SetMacro("ENABLEFOG", enable ? "1" : null!);
         }
         public void UpdateShadowParameters(ShadowPass shadowPass) {
-            shadowPass.ApplyParameters(ScenePasses.View, deferredMaterial);
+            shadowPass.ApplyParameters(ScenePasses.View, DefaultMaterial);
         }
     }
     public class SkyboxPass : RenderPass {

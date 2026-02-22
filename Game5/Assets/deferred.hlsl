@@ -5,6 +5,7 @@
 #include <volumetrics.hlsl>
 
 static const float groundCloudShadowSampleCount = 2;
+static const int SSShadowCount = 3;
 
 Texture2D<float4> SceneColor : register(t0);
 Texture2D<float1> SceneDepth : register(t1);
@@ -176,21 +177,25 @@ float4 PSMain(PSInput input) : SV_Target {
         shadow = PCFSample2(ShadowMap, ShadowSampler, shadowPos, 512);
         //shadow = lerp(shadow, frac(dot(frac(floor(shadowPos.xy * 256) / 2.0), 1)) * 2, 0.2);
         shadow = all(shadowPos.xy > 0) && all(shadowPos.xy < 1) ? shadow : 1;
+#if SHADOWDEBUG
         float3 albedoCol = frac(min(min(shadowPos.x, shadowPos.y), 1 - max(shadowPos.x, shadowPos.y)) * float3(4, 10, 20));
         albedoCol = lerp(1, albedoCol, all(saturate(shadowPos) == shadowPos) ? 1 : 0.5);
         albedoCol = lerp(1, albedoCol, 0.3);
         if (all(saturate(shadowPos) == shadowPos))
         {
-            albedoCol = frac(shadowPos * 16);
+            albedoCol = frac(shadowPos * 10);
+            float dst = min(min(shadowPos.x, shadowPos.y), 1 - max(shadowPos.x, shadowPos.y));
+            if (dst < 0.2) albedoCol = lerp(float3(1, 1, 0), albedoCol, 0.5);
+            if (dst < 0.1) albedoCol = float3(1, 0, 0);
         }
-        //Albedo *= albedoCol;
+        Albedo *= albedoCol;
+#endif
         float ssShadThick = depth * 0.01;     //1.08
         float3 ssShadPos = viewPos + _ViewSpaceLightDir0 * (depth * 0.02);
         float4 ssVPos = mul(Projection, float4(ssShadPos, 1));
         ssVPos.xyz /= ssVPos.w;
         ssVPos.y = -ssVPos.y;
         float jitter = IGN(input.position.xy);
-        const int SSShadowCount = 3;
         [unroll]
         for(int i = 0; i < SSShadowCount; ++i) {
             float3 samplePos = float3(ssVPos.xy * 0.5 + 0.5, ssVPos.z);

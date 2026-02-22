@@ -90,6 +90,7 @@ float MaskClouds(float3 p, float clouds) {
 }
 
 float SampleClouds(float3 p, float3 uv) {
+    //return saturate(SampleCloudsRaw(uv, false, false) * 5 - 2);
     float clouds = SampleCloudsRaw(uv);
     
     clouds = MaskClouds(p, clouds);

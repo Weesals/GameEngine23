@@ -104,6 +104,11 @@ namespace Game5.Game
                 }
             }
         }
+        [EditorField]
+        public bool ShadowDebugVis {
+            get => GameRoot.DeferredPass.DefaultMaterial.GetMacro("SHADOWDEBUG").IsValid;
+            set => GameRoot.DeferredPass.DefaultMaterial.SetMacro("SHADOWDEBUG", value ? "1" : CSIdentifier.Invalid);
+        }
 
         float time = 0;
 
@@ -183,6 +188,8 @@ namespace Game5.Game
             loadHandle = loadHandle.Join(JobHandle.Schedule(() => {
                 playerColorManager = new();
                 selectionRenderer = new(SelectionManager);
+                // TODO: Only invalidate if the selection would be visible (if a changed entity is within frustum is probably enough)
+                SelectionManager.OnSelectionChanged += (e) => { root.RenderRevision++; };
             }));
 
             JobHandle visualsJob = default;
@@ -272,9 +279,9 @@ namespace Game5.Game
             //var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
             //particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
 
-            foreach (var accessor in World.QueryAll<ECTransform, ECParticleBinding>()) {
-                ((ECParticleBinding)accessor).Emitter.Position =
-                    ((ECTransform)accessor).GetWorldPosition();
+            foreach (var (transform, emitter) in World.QueryAll<ECTransform, ECParticleBinding>()) {
+                emitter.Emitter.Position =
+                    transform.GetWorldPosition();
             }
             using (ProfileMarker_AnimationUpdate.Auto()) {
                 var moveTypeId = World.Context.RequireComponentTypeId<ECActionMove>();
@@ -299,7 +306,7 @@ namespace Game5.Game
         }
 
         public void SetAutoQuality(CSGraphics graphics) {
-            if (!graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase)) {
+            if (!graphics.GetDeviceName().ToString().Contains("intel", StringComparison.InvariantCultureIgnoreCase) || true) {
                 EnableFog = true;
                 EnableAO = true;
                 EnableFoliage = true;
@@ -362,10 +369,12 @@ namespace Game5.Game
             foreach (var cell in rayIt) {
                 var entities = entityMap.AllEntities.GetEntitiesEnumerator(cell, 0);
                 if (!entities.HasAny) continue;
-                Gizmos.DrawWireCube(
-                    SimulationWorld.SimulationToWorld(EntityMapSystem.ChunkToSim(cell), EntityMapSystem.Separation / 2),
-                    Vector3.One * (EntityMapSystem.Separation * SimulationWorld.WorldScale * 0.9f)
-                );
+                if (DrawVisibilityVolume) {
+                    Gizmos.DrawWireCube(
+                        SimulationWorld.SimulationToWorld(EntityMapSystem.ChunkToSim(cell), EntityMapSystem.Separation / 2),
+                        Vector3.One * (EntityMapSystem.Separation * SimulationWorld.WorldScale * 0.9f)
+                    );
+                }
                 foreach (var entity in entities) {
                     if (!World.TryGetComponent<ECTransform>(entity, out var epos)) continue;
                     if (!World.TryGetComponent<CModel>(entity, out var emodel)) continue;

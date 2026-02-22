@@ -566,6 +566,9 @@ int D3DResourceCache::GetBufferSRV(D3DBinding& d3dBin, int offset, int count, in
                     .StructureByteStride = (UINT)stride, .Flags = D3D12_BUFFER_SRV_FLAG_NONE,
                 },
             };
+            //assert(srvDesc.Buffer.FirstElement < d3dBin.mCount);
+            //assert(srvDesc.Buffer.FirstElement + srvDesc.Buffer.NumElements < d3dBin.mCount);
+            assert((srvDesc.Buffer.FirstElement + srvDesc.Buffer.NumElements) * srvDesc.Buffer.StructureByteStride <= d3dBin.mStride * d3dBin.mCount);
 
             // Get the CPU handle to the descriptor in the heap
             CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle(mD3D12.GetSRVHeap()->GetCPUDescriptorHandleForHeapStart(), item.mData.mSRVOffset);

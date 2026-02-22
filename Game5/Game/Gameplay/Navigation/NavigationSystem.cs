@@ -180,7 +180,8 @@ namespace Game5.Game {
         }
 
         void IEarlyUpdateSystem.OnEarlyUpdate() {
-            FlushChanges();
+            // This fails because the changes are purged and missed in OnUpdate()
+            //FlushChanges();
         }
 
         protected override void OnUpdate() {

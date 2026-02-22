@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Weesals.Engine.Profiling;
 using Weesals.Engine.Serialization;
 using Weesals.Utility;
+using ParameterItem = Weesals.Engine.Parameters.Item;
 
 namespace Weesals.Engine {
     public struct Parameters {
@@ -36,6 +37,7 @@ namespace Weesals.Engine {
             }
             ref var item = ref Items[index];
             if (item.Type == null || (item.Type == typeof(T) ? item.Count != data.Length : item.Count * Marshal.SizeOf(item.Type) != sizeof(T) * data.Length)) {
+                Debug.Assert(item.Count == 0, "Deleting parameter item data is not yet supported");
                 Debug.Assert(item.ByteOffset == -1);
                 int size = sizeof(T) * data.Length;
                 if (dataConsumed + size > Data.Length) {
@@ -53,6 +55,7 @@ namespace Weesals.Engine {
         public bool ClearValue(CSIdentifier identifier) {
             var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
             if (index < 0) return false;
+            Debug.Assert(Items[index].Count == 0, "Deleting parameter item data is not yet supported");
             ArrayExt.RemoveAt(ref Items, ref itemCount, index);
             return true;
         }
@@ -61,12 +64,8 @@ namespace Weesals.Engine {
             if (index < 0) return -1;
             return index;
         }
-        public Item GetValueItem(CSIdentifier identifier) {
-            var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
-            if (index < 0) return Item.Default;
-            return Items[index];
-        }
-        unsafe public Span<byte> GetItemData(Item item) {
+        public ref readonly Item GetItemInfo(int index) => ref Items[index];
+        unsafe public Span<byte> GetValueData(Item item) {
             return Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
         }
         unsafe public Span<byte> GetValueData(CSIdentifier identifier) {
@@ -74,15 +73,6 @@ namespace Weesals.Engine {
             if (index < 0) return default;
             var item = Items[index];
             return Data.AsSpan(item.ByteOffset, item.Count * Marshal.SizeOf(item.Type));
-        }
-        public int GetItemIdentifiers(Span<CSIdentifier> outlist) {
-	        int count = 0;
-	        foreach (var item in Items) {
-		        if (count > outlist.Length) break;
-		        outlist[count] = item.Identifier;
-		        ++count;
-	        }
-	        return count;
         }
         public Span<byte> GetDataRaw() {
 	        return Data;
@@ -429,6 +419,13 @@ namespace Weesals.Engine {
 
             MarkChanged();
         }
+        public CSIdentifier GetMacro(CSIdentifier name) {
+            if (Macros == null) return CSIdentifier.Invalid;
+            var index = 0;
+            for (; index < Macros.Count; ++index) if (Macros[index].Key == name) break;
+            if (index < Macros.Count) return Macros[index].Value;
+            return CSIdentifier.Invalid;
+        }
         public void ClearMacro(CSIdentifier name) {
             if (Macros == null) return;
             var index = 0;
@@ -533,7 +530,7 @@ namespace Weesals.Engine {
                         item.Type == typeof(CSBufferReference) ? "BR"u8 :
                         null;
                     if (typeName == null) continue;
-                    scoped var data = parameters.GetItemData(item);
+                    scoped var data = parameters.GetValueData(item);
                     if (item.Type == typeof(CSBufferReference)) {
                         var bufferReference = MemoryMarshal.Read<CSBufferReference>(data);
                         if (bufferReference.mType == CSBufferReference.BufferTypes.Texture) {
