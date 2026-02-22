@@ -15,6 +15,7 @@ static const float finalCloudShadowSampleCount = 1;
 static const float finalCloudSkySampleCount = 1;
 static const float cloudShadowJitterBias = 0.4;
 static const bool enableShadowReceive = false;
+static const int HeightFogShadowCount = 4;
 
 struct VSInput {
     float4 position : POSITION;
@@ -215,7 +216,6 @@ float4 PSMain(PSInput input) : SV_TARGET {
         GlobalMipBias = 2.0;
         
         float2 shadow = 0.0;
-        const int HeightFogShadowCount = 2;
         if (HeightFogShadowCount == 0) shadow = 1.0;
         for (int i = 0; i < HeightFogShadowCount; ++i) {
             const float invCount = rcp(HeightFogShadowCount);

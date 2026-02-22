@@ -275,18 +275,6 @@ namespace Game5.Game {
             Scene.RootMaterial.SetValue("Time", UnityEngine.Time.time);
         }
 
-        Camera tCamera = new Camera() {
-            FOV = 3.14f * 0.15f,
-                /*Position = new Vector3(-0f, 25f, -0f),
-                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.25f)
-                    * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.2f),*/
-                Position = new Vector3(12f, 7f, 25f),
-                Orientation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 3.14f * 0.45f)
-                    * Quaternion.CreateFromAxisAngle(Vector3.UnitX, 3.14f * 0.10f),
-                NearPlane = 5.0f,
-                FarPlane = 10000.0f,
-            };
-
         public void PreRender() {
             using var updateMarker = ProfileMarker_PreRender.Auto();
 
@@ -298,12 +286,6 @@ namespace Game5.Game {
             if (scenePasses.SetViewProjection(camera.GetViewMatrix(), camera.GetProjectionMatrix())) {
                 RenderRevision++;
             }
-
-            tCamera = Play.Camera;
-            if (Input.GetKeyDown(KeyCode.O)) {
-                tCamera.Orientation *= Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.01f);
-            }
-            var tViewProj = tCamera.GetViewMatrix() * tCamera.GetProjectionMatrix();
 
             var clippedFrustum = scenePasses.Frustum;
             var farClip = (-clippedFrustum.NearPlane.D / clippedFrustum.NearPlane.Normal.Length() + 500f) * clippedFrustum.FarPlane.Normal.Length();

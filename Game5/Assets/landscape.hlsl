@@ -7,6 +7,10 @@
 #include <basepass.hlsl>
 #include <noise.hlsl>
 
+#if !defined(SELECTED)
+#define SELECTED 0
+#endif
+
 static const half HeightBlend = 5.0;
 static const half WeightBlend = 2.0;
 
@@ -132,6 +136,14 @@ BasePassOutput PSMain(PSInput input) {
     pbrInput.Normal = mul((float3x3)ModelView, pbrInput.Normal);
     pbrInput.Normal = normalize(pbrInput.Normal);
     
+    if (SELECTED)
+    {
+        float2 grid2 = abs(0.5 - frac(input.positionOS.xz - 0.5));
+        float grid = min(grid2.x, grid2.y);
+        grid = saturate(1 - grid / fwidth(grid));
+        pbrInput.Emissive.rgb = lerp(pbrInput.Emissive.rgb, 1.0, grid * 0.15);
+    }
+
     float3 viewPos = mul(ModelView, float4(input.positionOS, 1.0)).xyz;
     float3 viewDir = normalize(viewPos);
     return PBROutput(pbrInput, viewDir);

@@ -303,6 +303,7 @@ namespace Game5.Game
                 ref var tform = ref World.GetComponentRef<ECTransform>(entity);
                 tform.Position.X += 1000;
             }*/
+            Camera.NearPlane = MathF.Max(MathF.Min(5f, Camera.Position.Y / 4.0f), 0.1f);
         }
 
         public void SetAutoQuality(CSGraphics graphics) {
