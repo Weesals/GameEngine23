@@ -61,6 +61,7 @@ namespace Weesals.ECS {
         public ArchetypeId ArchetypeId;
         public TypeId TypeId;
         public int Revision;
+        public override string ToString() => $"R#{Revision}<Arch#{ArchetypeId} Type#{TypeId}>";
     }
     public struct RevisionStorage {
         public const int PageShift = 6;
@@ -77,6 +78,8 @@ namespace Weesals.ECS {
             public int Revision => revisionData & ~FlushedFlag;
             public bool HasRevision => revisionData >= 0;
             public bool IsMonitored => monitorRef > 0;
+            // We can have many monitors at different revisions
+            // we need to store change pages for each revision
             public Range RevisionRange => revisionRange;
             public ref RevisionChannel GetChannel(RevisionStorage storage, RevisionTypes type)
                 => ref GetChannel(storage, revisionRange.End - 1, type);
@@ -236,6 +239,7 @@ namespace Weesals.ECS {
             public int MoveNextPage() => MoveNextPageIntl() ? GetCurrentPageId() : -1;
             public int GetCurrentPageId() => pageOffset >> 6;
             public ulong GetCurrentPage() => page;
+            public override string ToString() => DynamicBitField.ToString(this);
         }
         public Enumerator GetEnumerator(RevisionChannel channel) {
             return new(pages.GetEnumerator(channel.PageRange));
@@ -515,7 +519,7 @@ namespace Weesals.ECS {
         private RevisionStorage.ColumnRevision GetRevision(RevisionMonitor monitor, scoped ref Archetype archetype) {
             var archColumnIndex = archetype.GetColumnId(monitor.TypeId);
             ref var archColumn = ref archetype.GetColumn(ref this, archColumnIndex);
-            if (monitor.Revision == archColumn.Revision.Revision) return RevisionStorage.ColumnRevision.Default;
+            //if (monitor.Revision == archColumn.Revision.Revision) return RevisionStorage.ColumnRevision.Default;
             return archColumn.Revision;
         }
         public RevisionStorage.Enumerator GetRevisionChannel(RevisionMonitor monitor, scoped ref Archetype archetype, RevisionStorage.RevisionTypes type) {

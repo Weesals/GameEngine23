@@ -152,22 +152,43 @@ namespace Weesals.UI {
             return result;
         }
     }
-    public abstract class Selectable : CanvasRenderable, ISelectable {
-        protected bool selected;
-        public bool IsSelected => selected;
+    public abstract class Selectable : CanvasRenderable, ISelectable, IPointerEnterHandler, IPointerExitHandler {
+        protected enum Flags { None = 0, Hovering = 1, Selected = 2, }
+        protected Flags flags;
+        protected bool HasFlag(Flags flag) { return (flags & flag) != 0; }
+        protected void SetFlag(Flags flag) { flags |= flag; MarkComposeDirty(); }
+        protected void ClearFlag(Flags flag) { flags &= ~flag; MarkComposeDirty(); }
+        public bool IsHovering => HasFlag(Flags.Hovering);
+        public bool IsSelected => HasFlag(Flags.Selected);
         public virtual void OnSelected(ISelectionGroup group, bool _selected) {
-            selected = _selected;
+            if (_selected) SetFlag(Flags.Selected); else ClearFlag(Flags.Selected);
             MarkComposeDirty();
         }
+        public void OnPointerEnter(PointerEvent events) => SetFlag(Flags.Hovering);
+        public void OnPointerExit(PointerEvent events) => ClearFlag(Flags.Hovering);
         public void OnPointerDown(PointerEvent events) {
             if (events.HasButton(0)) this.Select();
         }
         protected virtual void DrawSelectionFrame(ref CanvasCompositor.Context composer) {
+            Color bgColor = Color.Clear;
+            if (IsSelected || IsHovering) {
+                bgColor = Style.Background;
+                if (IsHovering) bgColor = Color.Lerp(bgColor, Style.Foreground, 0.1f);
+                //if (IsSelected) bgColor = Color.Lerp(bgColor, Style.Foreground, 0.5f);
+            }
+            if (bgColor.A > 0) {
+                ref var background = ref composer.CreateTransient<CanvasImage>(Canvas, () => new CanvasImage());
+                background.Color = bgColor;
+                if (HasDirtyFlag(DirtyFlags.Layout)) background.MarkLayoutDirty();
+                if (background.HasDirtyFlags) MarkComposeDirty();
+                if (background.HasDirtyFlags) background.UpdateLayout(Canvas, mLayoutCache);
+                background.Append(ref composer);
+            }
             if (IsSelected) {
                 ref var background = ref composer.CreateTransient<CanvasSelection>(Canvas);
                 if (HasDirtyFlag(DirtyFlags.Layout)) background.MarkLayoutDirty();
-                if (background.IsDirty) MarkComposeDirty();
-                if (background.IsDirty) background.UpdateLayout(Canvas, mLayoutCache.Inset(-1));
+                if (background.HasDirtyFlags) MarkComposeDirty();
+                if (background.HasDirtyFlags) background.UpdateLayout(Canvas, mLayoutCache);
                 background.Append(ref composer);
             }
         }
@@ -860,6 +881,8 @@ namespace Weesals.UI {
         }
         List<Division> divisions = new();
 
+        public float Separation = 0f;
+
         public FlexLayout() {
             divisions.Add(new Division() { Size = 1.0f, Children = 0, });
             Debug.Assert(IsHorizontal(GetDepth(0)));
@@ -899,7 +922,7 @@ namespace Weesals.UI {
         }
         public override void RemoveChild(CanvasRenderable child) {
             var index = mChildren!.IndexOf(child);
-            cache.Process(divisions);
+            cache.Process(divisions, default);
             int divisionI = cache.Items[index].DivisionIndex;
             var parentI = GetParent(divisionI);
             var division = divisions[divisionI];
@@ -928,7 +951,7 @@ namespace Weesals.UI {
         public void InsertBelow(CanvasRenderable other, CanvasRenderable child, float height = 0.5f) {
             var index = mChildren!.IndexOf(other);
             base.InsertChild(index + 1, child);
-            cache.Process(divisions);
+            cache.Process(divisions, default);
             int divisionI = cache.Items[index].DivisionIndex;
             MakeOrientation(ref divisionI, false);
             InsertDivision(divisionI, height);
@@ -936,7 +959,7 @@ namespace Weesals.UI {
         public void InsertRight(CanvasRenderable other, CanvasRenderable child, float width = 0.5f) {
             var index = mChildren!.IndexOf(other);
             base.InsertChild(index + 1, child);
-            cache.Process(divisions);
+            cache.Process(divisions, default);
             int divisionI = cache.Items[index].DivisionIndex;
             MakeOrientation(ref divisionI, true);
             InsertDivision(divisionI, width);
@@ -1002,7 +1025,8 @@ namespace Weesals.UI {
                 stack.Clear();
                 Items.Clear();
             }
-            public void Process(List<Division> divisions) {
+            // TODO: Need to incorporate separationN
+            public void Process(List<Division> divisions, Vector2 separationN) {
                 Clear();
                 Axes.Add(0.0f);
                 Axes.Add(0.0f);
@@ -1066,17 +1090,19 @@ namespace Weesals.UI {
         FlexCache cache = new();
         public override void UpdateChildLayouts() {
             //base.UpdateChildLayouts();
-            cache.Process(divisions);
+            cache.Process(divisions, new Vector2(Separation, Separation) / mLayoutCache.GetSize());
             var axes = cache.Axes;
             for (int c = 0; c < cache.Items.Count; ++c) {
                 var child = cache.Items[c];
                 var layout = mLayoutCache;
                 layout = layout.MinMaxNormalized(axes[child.AxisL], axes[child.AxisT], axes[child.AxisR], axes[child.AxisB]);
+                if (axes[child.AxisL] != 0f) layout.SliceLeft(Separation);
+                if (axes[child.AxisT] != 0f) layout.SliceTop(Separation);
                 mChildren[c].UpdateLayout(layout);
             }
         }
     }
-    public class ScrollView : CanvasRenderable, ICanvasLayout, IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollHandler, ITweenable, IHitTestGroup {
+    public class ScrollView : CanvasRenderable, ICanvasLayout, IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollBeginHandler, IScrollHandler, ITweenable, IHitTestGroup {
         protected enum Flags { None = 0, Dragging = 1, }
         public Vector2 ScrollMask = new Vector2(1f, 1f);
         public RectF Margins = new RectF(0f, 0f, 0f, 0f);
@@ -1108,9 +1134,13 @@ namespace Weesals.UI {
             ClearFlag(Flags.Dragging);
         }
 
+        public void OnScrollBegin(PointerEvent events, bool begin) {
+            if (begin) SetFlag(Flags.Dragging); else ClearFlag(Flags.Dragging);
+            if (!begin) Canvas.Tweens.RegisterTweenable(this);
+        }
         public void OnScroll(PointerEvent events) {
             ApplyDeltaScroll(-(Vector2)events.ScrollDelta / 2f);
-            Canvas.Tweens.RegisterTweenable(this, events.Type != PointerEvent.Types.Touchpad ? 0.2f : 0f);
+            if (!HasFlag(Flags.Dragging)) Canvas.Tweens.RegisterTweenable(this, events.Type != PointerEvent.Types.Touchpad ? 0.2f : 0f);
         }
 
         private void SetScroll(Vector2 value) {
@@ -1167,7 +1197,9 @@ namespace Weesals.UI {
                 var clampEase = Easing.StatefulPowerInOut(0.5f, 2f);
                 var targetScroll = Vector2.Clamp(newScroll, scrollMin, scrollMax);
                 Scroll = Vector2.Lerp(newScroll, targetScroll, clampEase.Evaluate(tween));
-                return clampEase.GetIsComplete(tween);
+                if (!clampEase.GetIsComplete(tween)) return false;
+                velocity = default;
+                return true;
             }
             return true;
         }

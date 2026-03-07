@@ -88,6 +88,7 @@ namespace Weesals.Editor {
         public readonly Editor Editor;
         public CanvasImage TitleBG = new();
         public CanvasText TitleText = new();
+        //public CanvasImage BorderBG = new();
         public CanvasImage PanelBG = new();
 
         public string Title { get => TitleText.Text; set { if (TitleText.Text == value) return; TitleText.Text = value; MarkLayoutDirty(); MarkComposeDirty(); } }
@@ -115,12 +116,15 @@ namespace Weesals.Editor {
             base.Initialise(binding);
             TitleBG.Initialize(Canvas);
             TitleText.Initialize(Canvas);
+            //BorderBG.Initialize(Canvas);
             PanelBG.Initialize(Canvas);
             TitleBG.Color = Style.Background;
+            //BorderBG.Color = Color.Black;
             PanelBG.Color = Style.Background;
             TitleText.Color = Style.Foreground;
         }
         public override void Uninitialise(CanvasBinding binding) {
+            //BorderBG.Dispose(Canvas);
             PanelBG.Dispose(Canvas);
             TitleBG.Dispose(Canvas);
             TitleText.Dispose(Canvas);
@@ -131,6 +135,7 @@ namespace Weesals.Editor {
             TitleBG.MarkLayoutDirty();
             TitleText.MarkLayoutDirty();
             PanelBG.MarkLayoutDirty();
+            //BorderBG.MarkLayoutDirty();
         }
         public override void UpdateChildLayouts() {
             if (mChildren!.Count == 0) return;
@@ -142,16 +147,22 @@ namespace Weesals.Editor {
         private void UpdateElementLayouts() {
             var layout = mLayoutCache;
             var tabHeader = layout.SliceTop(TitleText.GetPreferredHeight() + 5);
-            layout = layout.Inset(1, 0, 1, 1);
+            //layout = layout.Inset(1, 0, 1, 1);
             TitleBG.UpdateLayout(Canvas, tabHeader);
             TitleText.UpdateLayout(Canvas, tabHeader);
-            if (EnableBackground) PanelBG.UpdateLayout(Canvas, layout);
+            if (EnableBackground) {
+                //BorderBG.UpdateLayout(Canvas, layout);
+                PanelBG.UpdateLayout(Canvas, layout);
+            }
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
             UpdateElementLayouts();
             TitleBG.Append(ref composer);
             TitleText.Append(ref composer);
-            if (EnableBackground) PanelBG.Append(ref composer);
+            if (EnableBackground) {
+                //BorderBG.Append(ref composer);
+                PanelBG.Append(ref composer);
+            }
             base.Compose(ref composer);
         }
         public override void ComposePartial() {
@@ -181,7 +192,7 @@ namespace Weesals.Editor {
         public ref Action<float, CSGraphics> OnRender => ref GameView.OnRender;
 
         private FlexLayout flex;
-        private bool requirePrefSave = false;
+        private DateTime requirePrefSave = DateTime.MaxValue;
 
         public struct Preferences {
             public RectI WindowFrame;
@@ -202,7 +213,7 @@ namespace Weesals.Editor {
                     flex.AppendRight(new ProxyWindowCanvas(Hierarchy), 0.15f);
                     flex.AppendRight(new ProxyWindowCanvas(Inspector), 0.25f);
                 }
-                requirePrefSave = true;
+                RequireSave();
             }
         }
 
@@ -210,7 +221,7 @@ namespace Weesals.Editor {
             Editor = new();
             Canvas = new() { Name = "EditorCanvas" };
             EventSystem = new EventSystem(Canvas);
-            flex = new FlexLayout();
+            flex = new FlexLayout() { Separation = 1.0f, };
             flex.OnChildAdded += Flex_OnChild;
             Inspector = new(Editor) { };
             GameView = new(Editor) { };
@@ -261,9 +272,12 @@ namespace Weesals.Editor {
             } catch { }
             return pref;
         }
-        public void ApplyPreferences(CSWindow window, Preferences pref) {
+        public void ApplyPreferences(CSWindow window, Preferences pref, bool allowSave = true) {
+            // Note: "allowSave" does not work - we always get a callback of the window moving/sizing and a save event
+            var prefSave = this.requirePrefSave;
             window.SetWindowFrame(pref.WindowFrame, pref.Maximized);
             FullScreen = pref.FullScreen;
+            if (allowSave) this.requirePrefSave = prefSave;
         }
         public void SavePreferences(Preferences pref) {
             Directory.CreateDirectory("./Config/");
@@ -272,15 +286,22 @@ namespace Weesals.Editor {
         }
 
         public override void RegisterRootWindow(CSWindow window) {
-            window.RegisterMovedCallback(() => { requirePrefSave = true; }, true);
+            window.RegisterMovedCallback(() => { RequireSave(); }, true);
             window.RegisterSizingCallback(() => {
                 Update(0f);
                 Render(0f, Core.ActiveInstance.GetGraphics());
+                RequireSave();
             }, true);
 
             base.RegisterRootWindow(window);
             EventSystem.SetInput(Input);
         }
+
+        private void RequireSave(int delayMS = 100) {
+            var datetime = DateTime.UtcNow + TimeSpan.FromMilliseconds(delayMS);
+            if (datetime < requirePrefSave) requirePrefSave = datetime;
+        }
+
         protected override void CreateSurface() {
             foreach (var child in flex.Children) {
                 Flex_OnChild(child, true);
@@ -321,11 +342,11 @@ namespace Weesals.Editor {
 
         public override void Update(float dt) {
             using var marker = ProfileMarker_Update.Auto();
-            if (requirePrefSave) {
+            if (DateTime.UtcNow > requirePrefSave) {
                 var frame = Window.GetWindowFrame();
                 Debug.WriteLine("Window moved");
                 SavePreferences(new() { WindowFrame = frame.Position, Maximized = frame.Maximized != 0, FullScreen = FullScreen, });
-                requirePrefSave = false;
+                requirePrefSave = DateTime.MaxValue;
             }
 
             Weesals.Engine.Input.Initialise(Input);

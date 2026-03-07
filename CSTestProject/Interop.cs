@@ -953,6 +953,8 @@ namespace Weesals.Engine
         public uint mPreviousButtonState;
 
         public int mMouseScroll;
+
+        public int mGestureActiveFlags;
     }
 
     public partial struct CSKey

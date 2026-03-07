@@ -110,8 +110,7 @@ namespace Game5.UI {
                 };
                 int id = i;
                 imgBtn.OnClick += () => {
-                    var protoData = Play.Simulation.ProtoSystem.GetPrototypeData(new EntityPrefab(id));
-                    placement.BeginPlacement(protoData);
+                    placement.BeginPlacement(new EntityPrefab(id));
                 };
                 list.AppendChild(imgBtn);
             }

@@ -24,9 +24,10 @@ namespace Weesals.Editor {
                     Alignment = TextAlignment.Left,
                     //TextColor = Color.DarkGray,
                     DisplayParameters = TextDisplayParameters.Flat,
+                    Transform = CanvasTransform.MakeDefault().WithOffsets(5f, 0f, 0f, 0f),
                 };
                 AppendChild(Text);
-                SetTransform(CanvasTransform.MakeDefault().WithOffsets(5f, 0f, 0f, 0f));
+                SetTransform(CanvasTransform.MakeDefault().WithOffsets(0f, 0f, 0f, 0f));
             }
             public override void OnSelected(ISelectionGroup group, bool _selected) {
                 if (IsSelected == _selected) return;

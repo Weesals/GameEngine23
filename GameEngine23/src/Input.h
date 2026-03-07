@@ -21,6 +21,7 @@ struct Pointer
 	unsigned int mCurrentButtonState;
 	unsigned int mPreviousButtonState;
 	int mMouseScroll;
+	int mGestureActiveFlags;	// TODO: Make into flags
 
 	Pointer(unsigned int deviceId)
 		: mDeviceId(deviceId)
@@ -28,6 +29,7 @@ struct Pointer
 		, mCurrentButtonState(0)
 		, mPreviousButtonState(0)
 		, mMouseScroll(0)
+		, mGestureActiveFlags(0)
 	{
 	}
 

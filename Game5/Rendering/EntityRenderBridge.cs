@@ -432,6 +432,7 @@ namespace Weesals.Rendering {
         }
         public void UpdateModel(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
+            if (!World.IsValid(binding.SceneEntities[entityAddr.Row])) return;      // Remove this
             ref var sceneProxy = ref World//RenderWorld
                 .GetComponentRef<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance != null) {
@@ -448,6 +449,7 @@ namespace Weesals.Rendering {
         }
         public void UpdateTransform(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
+            if (!World.IsValid(binding.SceneEntities[entityAddr.Row])) return;      // Remove this
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
             if (sceneProxy.Instance == null) return;
@@ -469,6 +471,7 @@ namespace Weesals.Rendering {
         }
         unsafe public void UpdateSelected(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
+            if (!World.IsValid(binding.SceneEntities[entityAddr.Row])) return;      // Remove this
             var selected = binding.SelectedLookup.GetValueRO(World.Manager, entityAddr);
             var sceneProxy = World//RenderWorld
                 .GetComponent<SceneRenderable>(binding.SceneEntities[entityAddr.Row]);
@@ -479,6 +482,7 @@ namespace Weesals.Rendering {
         }
         private void UpdateAnimation(EntityAddress entityAddr) {
             var binding = Bindings[entityAddr.ArchetypeId];
+            if (!World.IsValid(binding.SceneEntities[entityAddr.Row])) return;      // Remove this
             var emodel = binding.ModelLookup.GetValueRO(World.Manager, entityAddr);
             ref var archetype = ref World.Manager.GetArchetype(entityAddr.ArchetypeId);
             var eanim = binding.AnimationLookup.GetValueRO(ref World.Manager.ColumnStorage, ref archetype, entityAddr.Row);

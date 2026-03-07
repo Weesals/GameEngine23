@@ -29,6 +29,11 @@ namespace Weesals.UI {
             public float Timer;
         }
         private List<Instance> instances = new();
+        public bool GetIsTweening(ITweenable tweenable) {
+            for (int i = 0; i < instances.Count; i++)
+                if (instances[i].Tweenable == tweenable) return true;
+            return false;
+        }
         public void RegisterTweenable(ITweenable tweenable, float delay = 0f) {
             int i = 0;
             for (; i < instances.Count; i++) {
@@ -76,7 +81,8 @@ namespace Weesals.UI {
         public Action<CSGraphics>? OnRender;
         public CanvasRepaintDelegate OnRepaint;
 
-        public int Revision => Builder.VertexRevision + Compositor.GetIndices().BufferLayout.revision;
+        private int revisionOffset;
+        public int Revision => Builder.VertexRevision + Compositor.GetIndices().BufferLayout.revision + revisionOffset;
 
         private List<CanvasRenderable> partialUpdates = new();
 
@@ -203,6 +209,10 @@ namespace Weesals.UI {
 
         public void AppendPartialDirty(CanvasRenderable renderable) {
             partialUpdates.Add(renderable);
+        }
+
+        public void OverwriteRevision(int revision) {
+            revisionOffset += revision - Revision;
         }
     }
 

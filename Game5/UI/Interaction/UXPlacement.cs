@@ -27,7 +27,7 @@ namespace Game5.UI.Interaction {
             public void Dispose() { Instances.Dispose(); }
         }
         public class Instance {
-            public PrototypeData Prototype;
+            public EntityPrefab Prefab;
             public Placement Placement = Placement.Default;
             public Renderable Visuals;
         }
@@ -38,36 +38,39 @@ namespace Game5.UI.Interaction {
             PlayUI = playUI;
         }
 
-        public void BeginPlacement(PrototypeData proto) {
+        public void BeginPlacement(EntityPrefab prefab) {
             CancelPlacement();
             var renderable = new Renderable();
             instance = new() {
-                Prototype = proto,
+                Prefab = prefab,
                 Visuals = renderable,
             };
-            var emodel = Play.Simulation.PrefabRegistry.GetComponent<CModel>(proto.Prefab);
-            if (emodel.Model != null) {
-                foreach (var mesh in emodel.Model.Meshes) {
-                    var meshInstance = Play.Scene.CreateInstance(mesh.BoundingBox);
-                    renderable.Instances.Add(meshInstance);
-                    Play.ScenePasses.AddInstance(meshInstance, mesh);
+            var emodel = Play.Simulation.PrefabRegistry.GetComponent<CModel>(prefab);
+            var modelPrefab = Play.EntityVisuals.GetVisuals(emodel.PrefabName, emodel.Variant);
+            if (modelPrefab != null) {
+                foreach (var model in modelPrefab.Models) {
+                    foreach (var mesh in model.Meshes) {
+                        var meshInstance = Play.Scene.CreateInstance(mesh.BoundingBox);
+                        renderable.Instances.Add(meshInstance);
+                        Play.ScenePasses.AddInstance(meshInstance, mesh);
+                    }
                 }
             }
         }
         public Entity PerformPlacement() {
             if (instance != null && instance.Placement.Container.IsValid) {
-                var mover = Play.Simulation.PrefabRegistry.BeginInstantiate(Play.Simulation.World, instance.Prototype.Prefab);
-                var target = Play.Simulation.EntityProxy.MakeHandle(mover.Entity);
+                var mover = Play.Simulation.PrefabRegistry.BeginInstantiate(Play.Simulation.World, instance.Prefab);
+                mover.Commit();
                 var tform = Play.World.TryGetComponentRef<ECTransform>(mover.Entity);
                 if (tform.HasValue) {
                     tform.Value.Position = instance.Placement.Position;
                     tform.Value.Orientation = instance.Placement.Orientation;
                 } else {
+                    var target = Play.Simulation.EntityProxy.MakeHandle(mover.Entity);
                     var rot = MathF.PI * instance.Placement.Orientation / (float)short.MinValue;
                     target.SetWorldPosition(SimulationWorld.SimulationToWorld(instance.Placement.Position));
                     target.SetWorldRotation(Quaternion.CreateFromAxisAngle(Vector3.UnitY, rot));
                 }
-                mover.Commit();
                 return mover.Entity;
             }
             DestroyInstance();

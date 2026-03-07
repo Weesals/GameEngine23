@@ -42,6 +42,7 @@ namespace Weesals.ECS {
         }
         public RevisionStorage.Enumerator GetCreated(EntityManager manager) => GetEnumerator(manager, RevisionStorage.RevisionTypes.Created);
         public RevisionStorage.Enumerator GetDestroyed(EntityManager manager) => GetEnumerator(manager, RevisionStorage.RevisionTypes.Destroyed);
+        public override string ToString() => RevisionMonitor.ToString();
     }
     // Flag when a component changes on any archetype
     public class ComponentMutateListener : ArchetypeListener, IDisposable {
@@ -165,12 +166,16 @@ namespace Weesals.ECS {
         public void NotifyCreated(scoped ref ColumnStorage columnStorage, int row) {
             if (!Revision.IsMonitored) return;
             if (!Revision.HasRevision) columnStorage.RevisionStorage.Begin(ref Revision);
+            // Set for all active revision monitors (at different revision ids)
             ref var revisionStorage = ref columnStorage.RevisionStorage;
             foreach (var r in Revision.RevisionRange) {
+                // If creating a new entry at this id, do not allow historic mutate or delete events
+                // (this will cause the self to mutate or delete)
                 ref var modifiedChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Modified);
                 columnStorage.RevisionStorage.ClearEntry(ref modifiedChannel, row);
                 ref var destroyedChannel = ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Destroyed);
                 columnStorage.RevisionStorage.ClearEntry(ref destroyedChannel, row);
+                // Set the create flag for all active revisions
                 columnStorage.RevisionStorage.SetEntry(ref Revision.GetChannel(columnStorage.RevisionStorage, r, RevisionStorage.RevisionTypes.Created), row);
             }
         }

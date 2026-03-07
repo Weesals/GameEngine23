@@ -387,6 +387,9 @@ namespace Weesals.Engine {
         public Color WithAlpha(byte a) {
             return new Color() { R = R, G = G, B = B, A = a, };
         }
+        public Color WithAlphaF(float a) {
+            return new Color() { R = R, G = G, B = B, A = (byte)Math.Clamp(a * 255, 0, 255), };
+        }
         public static implicit operator Vector4(Color c) {
             return new Vector4(c.R, c.G, c.B, c.A) * (1.0f / 255.0f);
         }

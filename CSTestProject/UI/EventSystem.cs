@@ -28,12 +28,15 @@ namespace Weesals.UI {
         }
         public readonly EventSystem System;
         [Flags]
-        public enum States { None = 0, Active = 1, Hover = 2, Press = 4, Drag = 8, ExplicitActive = 16, };
+        public enum States { None = 0, Active = 1, Hover = 2, Press = 4, Drag = 8, ExplicitActive = 16, }
+        [Flags]
+        public enum StateFlags { None = 0, Scrolling = 1, }
         public struct StateData {
             public uint Buttons;
             public float DragDistance;
             public Vector2 Position;
             public Int2 Scroll;
+            public StateFlags Flags;
         }
         public uint DeviceId;
         public Types Type;
@@ -57,6 +60,8 @@ namespace Weesals.UI {
         public bool WasDrag => PreviousDragDistance >= 5f && PreviousButtonState != 0;
         public bool IsButtonDown => ButtonState != 0;
         public Int2 ScrollDelta => ScrollState - PreviousScrollState;
+        public bool ScrollActive => (Current.Flags & StateFlags.Scrolling) != 0;
+        public bool PreviousScrollActive => (Previous.Flags & StateFlags.Scrolling) != 0;
         public PointerEvent(EventSystem system, uint deviceId) {
             System = system;
             DeviceId = deviceId;
@@ -83,6 +88,7 @@ namespace Weesals.UI {
             EventSystem.PointerUpdate update = new(this);
             System.UpdatePointerPre(this, other.CurrentPosition, other.ButtonState, update);
             Current.Scroll = other.Current.Scroll;
+            Current.Flags = other.Current.Flags;
             return update;
         }
         internal void StepPost(PointerEvent other, EventSystem.PointerUpdate update) {
@@ -550,6 +556,36 @@ namespace Weesals.UI {
         }
         private Dictionary<INestedEventSystem, DeferredState> activeDeferred = new();
 
+
+        private class ActionCaller<T> where T : class {
+            private Dictionary<PointerEvent, T> activeEvents = new();
+            public Action<PointerEvent, T> OnBegin;
+            public Action<PointerEvent, T> OnEnd;
+            public ActionCaller(Action<PointerEvent, T> onBegin, Action<PointerEvent, T> onEnd) {
+                OnBegin = onBegin;
+                OnEnd = onEnd;
+            }
+            public void Begin(PointerEvent events) {
+                if (HierarchyExt.TryGetRecursive(events.Targets.EffectiveDefer, out T handler)) {
+                    OnBegin(events, handler);
+                    activeEvents[events] = handler;
+                }
+            }
+            public void End(PointerEvent events) {
+                if (activeEvents.TryGetValue(events, out var handler)) {
+                    OnEnd(events, handler);
+                    activeEvents.Remove(events);
+                }
+            }
+            public T? GetHandler(PointerEvent events) {
+                return activeEvents.TryGetValue(events, out var handler) ? handler : null;
+            }
+            public void BeginEnd(PointerEvent events, bool active) {
+                if (active) Begin(events); else End(events);
+            }
+        }
+        private ActionCaller<IScrollBeginHandler> activeScrollHandlers = new((e, c) => c.OnScrollBegin(e, true), (e, c) => c.OnScrollBegin(e, false));
+
         public EventSystem(Canvas canvas) {
             input = default;
             Canvas = canvas;
@@ -691,7 +727,10 @@ namespace Weesals.UI {
 
                 PointerUpdate update = new(events);
                 UpdatePointerPre(events, pointer.mPositionCurrent + pointerOffset, pointer.mCurrentButtonState, update);
+                // TODO: This feels wrong to be here.
                 events.Current.Scroll.Y = pointer.mMouseScroll;
+                events.Current.Flags = 0;
+                if ((pointer.mGestureActiveFlags & 1) != 0) events.Current.Flags |= PointerEvent.StateFlags.Scrolling;
 
                 UpdatePointerPost(events, pointer.mCurrentButtonState, update);
                 if ((activePointers & (1ul << i)) == 0) {
@@ -759,10 +798,18 @@ namespace Weesals.UI {
                 }
             }
 
+            var beginFlags = events.Current.Flags & ~events.Previous.Flags;
+            var endFlags = ~events.Current.Flags & events.Previous.Flags;
+            if ((beginFlags & PointerEvent.StateFlags.Scrolling) != 0) {
+                activeScrollHandlers.Begin(events);
+            }
             if (events.ScrollDelta != default) {
-                if (HierarchyExt.TryGetRecursive(events.Targets.EffectiveDefer, out IScrollHandler scrollHandler)) {
-                    scrollHandler.OnScroll(events);
-                }
+                var scrollHandler = activeScrollHandlers.GetHandler(events) as IScrollHandler;
+                if (scrollHandler == null) HierarchyExt.TryGetRecursive(events.Targets.EffectiveDefer, out scrollHandler);
+                if (scrollHandler != null) scrollHandler.OnScroll(events);
+            }
+            if ((endFlags & PointerEvent.StateFlags.Scrolling) != 0) {
+                activeScrollHandlers.End(events);
             }
 
             if (events.Active is IUpdateInteractionHandler updater) {
@@ -1044,6 +1091,9 @@ namespace Weesals.UI {
     }
     public interface IScrollHandler : IEventSystemHandler {
         void OnScroll(PointerEvent events);
+    }
+    public interface IScrollBeginHandler : IEventSystemHandler {
+        void OnScrollBegin(PointerEvent events, bool begin);
     }
 
     public struct KeyEvent {

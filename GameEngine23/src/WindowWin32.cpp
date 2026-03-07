@@ -4,6 +4,9 @@
 #include <sstream>
 #include "GraphicsDeviceD3D12.h"
 
+#include <hidsdi.h>
+#pragma comment (lib, "Hid.lib")
+
 WCHAR szWindowClass[] = L"RTSWINDOW";
 
 template<class T>
@@ -23,6 +26,25 @@ void Invoke(WindowWin32::CallbackList<T>& list) {
         callback();
     }
 }
+
+static std::weak_ptr<Pointer> scrollingPointer;
+static bool isScrolling = false;
+static int pointerContactCount = 0;
+static clock_t pointerContactTime = 0;
+static auto SetIsScrolling = [&](bool scrolling) {
+    if (isScrolling == scrolling) return;
+    auto pointer = scrollingPointer.lock();
+    if (isScrolling && pointer != nullptr) pointer->mGestureActiveFlags &= ~1;
+    isScrolling = scrolling;
+    if (isScrolling && pointer != nullptr) pointer->mGestureActiveFlags |= 1;
+};
+static auto NotifyScrollPointer = [&](const std::shared_ptr<Pointer>& pointer) {
+    if (scrollingPointer.lock() == pointer) return;
+    auto wasScrolling = isScrolling;
+    if (wasScrolling) SetIsScrolling(false);
+    scrollingPointer = pointer;
+    if (wasScrolling) SetIsScrolling(true);
+};
 
 WindowWin32::WindowWin32(const std::wstring &name, HWND parent)
 {
@@ -76,6 +98,14 @@ WindowWin32::WindowWin32(const std::wstring &name, HWND parent)
 
     auto style = GetWindowStyle(hWnd);
     EnableMouseInPointer(TRUE);
+
+    // Enable WM_INPUT
+    RAWINPUTDEVICE Rid[1];
+    Rid[0].usUsagePage = 0x0D;
+    Rid[0].usUsage = 0x05; // Touchpad
+    Rid[0].dwFlags = RIDEV_INPUTSINK;
+    Rid[0].hwndTarget = hWnd;
+    RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
 }
 
 WindowWin32::~WindowWin32()
@@ -135,24 +165,26 @@ int WindowWin32::MessagePump() {
         // (cannot be 1)
         if (msg.message == WM_QUIT) return msg.wParam == 0 ? 1 : (int)msg.wParam;
     }
+    if (pointerContactCount >= 2 && clock() - pointerContactTime > 10 * CLOCKS_PER_SEC / 1000) {
+        pointerContactCount = 0;
+        NotifyScrollPointer(nullptr);
+    }
+    SetIsScrolling(pointerContactCount >= 2);
     return 0;
 }
 
-void WindowWin32::Close()
-{
+void WindowWin32::Close() {
     CloseWindow(hWnd);
     DestroyWindow(hWnd);
 }
 
-std::shared_ptr<Pointer> WindowWin32::RequireMousePointer()
-{
+std::shared_ptr<Pointer> WindowWin32::RequireMousePointer() {
     if (mMousePointer == nullptr && mInput != nullptr) {
         mMousePointer = RequirePointer(-1);
     }
     return mMousePointer;
 }
-std::shared_ptr<Pointer> WindowWin32::RequirePointer(int id)
-{
+std::shared_ptr<Pointer> WindowWin32::RequirePointer(int id) {
     auto pointer = mPointersById.find(id);
     if (pointer == mPointersById.end()) {
         if (mInput == nullptr) return nullptr;
@@ -161,8 +193,7 @@ std::shared_ptr<Pointer> WindowWin32::RequirePointer(int id)
     return pointer->second;
 }
 
-LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_NCHITTEST) {
         auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
         //char buffer[32]; sprintf_s(buffer, "CHTEST %llx %d\n", hWnd, window->mInput != nullptr);
@@ -304,7 +335,37 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         if (pointer == nullptr) break;
         ReceivePointerMove(hWnd, pointer, pointerInfo);
         pointer->ReceiveMouseScroll(GET_WHEEL_DELTA_WPARAM(wParam));
+        if (isScrolling) NotifyScrollPointer(pointer);
         UpdatePointerInfo(window, pointer, pointerInfo);
+    } break;
+    case WM_INPUT: {
+        UINT dwSize = sizeof(RAWINPUT);
+        RAWINPUT rawInput;
+        GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &rawInput, &dwSize, sizeof(RAWINPUTHEADER));
+
+        if (rawInput.header.dwType == RIM_TYPEHID) {
+            BYTE parsedDataBuffer[2048];
+            dwSize = _countof(parsedDataBuffer);
+            PHIDP_PREPARSED_DATA pPreparsedData = (PHIDP_PREPARSED_DATA)parsedDataBuffer;
+            GetRawInputDeviceInfo(rawInput.header.hDevice, RIDI_PREPARSEDDATA, pPreparsedData, &dwSize);
+
+            ULONG contactCount = 0;
+            auto result = HidP_GetUsageValue(HidP_Input, 0x0D, 0, 0x54, &contactCount, pPreparsedData,
+                (PCHAR)rawInput.data.hid.bRawData, rawInput.data.hid.dwSizeHid);
+
+            HWND rootWnd = hWnd;
+            for (auto parent = hWnd; parent != 0; parent = GetParent(parent)) {
+                rootWnd = parent;
+            }
+            auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(rootWnd, GWLP_USERDATA));
+            auto pointer = window->RequireMousePointer();
+            if (pointer == nullptr) break;
+            if ((int)contactCount >= pointerContactCount) {
+                pointerContactCount = (int)contactCount;
+                pointerContactTime = clock();
+            }
+            return 0;
+        }
     } break;
     /*case WM_LBUTTONDOWN: {
         _MouseButtonEvent(hWnd, wParam, lParam, 0x01, true);

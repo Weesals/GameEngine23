@@ -111,6 +111,7 @@ namespace Weesals.UI {
         public RectF UVRect { get => uvrect; set { if (uvrect == value) return; uvrect = value; dirty |= DirtyFlags.UV; } }
         public RectF Border { get => border; set { if (border == value) return; border = value; dirty |= DirtyFlags.UV; } }
         public Color Color { get => blending.Color; set { if (blending.Color == value) return; blending.Color = value; dirty |= DirtyFlags.Color; } }
+        public float SpriteScale { get => spriteScale; set { if (spriteScale == value) return; spriteScale = value; dirty |= DirtyFlags.Position; } }
         public bool IsNinePatch => (drawFlags & DrawFlags.NinePatch) != 0;
         public bool IsInitialized => element.IsValid;
         public bool HasDirtyFlags => dirty != DirtyFlags.None;
@@ -688,31 +689,33 @@ namespace Weesals.UI {
     public struct CanvasSelection : ICanvasElement, ICanvasTransient {
         DateTime beginTime;
         CanvasImage frame = new CanvasImage();
-        public bool IsDirty { get; private set; }
+        public bool HasDirtyFlags { get; private set; }
         public CanvasSelection() { }
         public void Initialize(Canvas canvas) {
             beginTime = DateTime.UtcNow;
             frame.Initialize(canvas);
             frame.SetSprite(Resources.TryLoadSprite("ButtonFrame"));
-            IsDirty = true;
+            frame.SpriteScale *= 0.5f;
+            HasDirtyFlags = true;
         }
         public void Dispose(Canvas canvas) {
             frame.Dispose(canvas);
-            IsDirty = true;
+            HasDirtyFlags = true;
         }
         public void Reset(Canvas canvas) {
         }
-        public void MarkLayoutDirty() { frame.MarkLayoutDirty(); IsDirty = true; }
+        public void MarkLayoutDirty() { frame.MarkLayoutDirty(); HasDirtyFlags = true; }
         public void UpdateLayout(Canvas canvas, in CanvasLayout layout) {
-            if (!IsDirty) return;
+            if (!HasDirtyFlags) return;
             var tlayout = layout;
             var tsince = DateTime.UtcNow - beginTime;
             var easeLerp = Easing.Clamp01(Easing.InverseLerp(0.3f, 0f, (float)tsince.TotalSeconds));
-            var scale = 1f - 0.1f * MathF.Sin((float)tsince.TotalSeconds * 50f) * easeLerp * easeLerp * easeLerp;
+            var scale = 1f + 0.05f * MathF.Sin((float)tsince.TotalSeconds * 40f) * easeLerp * easeLerp * easeLerp;
             tlayout = tlayout.Scale(scale);
+            frame.Color = frame.Color.WithAlphaF((float)tsince.TotalSeconds * 10f);
             frame.UpdateLayout(canvas, tlayout);
             if (tsince < TimeSpan.FromSeconds(0.3f)) MarkLayoutDirty();
-            if (tsince > TimeSpan.FromSeconds(0.3f)) IsDirty = false;
+            if (tsince > TimeSpan.FromSeconds(0.3f)) HasDirtyFlags = false;
         }
         public void Append(ref CanvasCompositor.Context compositor) {
             frame.Append(ref compositor);

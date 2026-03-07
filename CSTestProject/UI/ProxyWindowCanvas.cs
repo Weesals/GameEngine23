@@ -12,7 +12,7 @@ namespace Weesals.UI {
         public CSWindow Window;
         public CSGraphicsSurface Surface;
 
-        private int lastRenderRevision;
+        protected int lastRenderRevision;
         public new int Revision => base.Revision + (GetRenderHash?.Invoke() ?? 0);
         public bool RequireRender => lastRenderRevision != Revision;
 
@@ -46,12 +46,17 @@ namespace Weesals.UI {
             if (Window.IsValid) Window.Dispose();
         }
 
+        private RectI GetWindowRect() {
+            var layout = GetComputedLayout();
+            var minPnt = layout.Position.toxy();
+            var maxPnt = layout.Position.toxy() + layout.GetSize();
+            return RectI.FromMinMax(minPnt, maxPnt);
+        }
+
         public void CreateNestedWindow(CSWindow parent) {
             Debug.Assert(!Surface.IsValid);
             Debug.Assert(!Window.IsValid);
-            var layout = GetComputedLayout();
-            var layoutRect = new RectI((int)layout.Position.X, (int)layout.Position.Y,
-                    (int)layout.GetWidth(), (int)layout.GetHeight());
+            var layoutRect = GetWindowRect();
             Window = parent.CreateChildWindow(layoutRect);
             SetSize(layoutRect.Size);
             MarkComposeDirty();
@@ -64,9 +69,7 @@ namespace Weesals.UI {
         }
 
         private void UpdateSizing() {
-            var layout = GetComputedLayout();
-            var layoutRect = new RectI((int)layout.Position.X, (int)layout.Position.Y,
-                    (int)layout.GetWidth(), (int)layout.GetHeight());
+            var layoutRect = GetWindowRect();
             if (!Window.IsValid) return;
             Window.SetWindowFrame(layoutRect, false);
             SetSize(layoutRect.Size);

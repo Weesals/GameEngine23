@@ -863,6 +863,24 @@ namespace Weesals.ECS {
         }
         public PageEnumerator GetPageEnumerator() => new PageEnumerator(this);
 
+        public override string ToString() => ToString(GetEnumerator());
+
+        public static string ToString<En>(En enumerator) where En : IPagedEnumerator {
+            var builder = new StringBuilder();
+            builder.Append("[");
+            var count = 0;
+            while (enumerator.MoveNextPage() != -1) {
+                if (count >= 25) { builder.Append(",..."); break; }
+                foreach (var bit in new BitEnumerator(enumerator.GetCurrentPage())) {
+                    if (count > 0) builder.Append(",");
+                    builder.Append(bit + (enumerator.GetCurrentPageId() << 6));
+                    ++count;
+                }
+            }
+            builder.Append("]");
+            return builder.ToString();
+        }
+
         public static DynamicBitField Empty = new();
     }
 }

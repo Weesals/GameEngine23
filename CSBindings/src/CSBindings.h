@@ -407,6 +407,7 @@ struct CSPointer {
 	unsigned int mCurrentButtonState;
 	unsigned int mPreviousButtonState;
 	int mMouseScroll;
+	int mGestureActiveFlags;
 };
 struct CSKey {
 	unsigned char mKeyId;

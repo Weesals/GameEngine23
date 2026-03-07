@@ -53,7 +53,7 @@ class Program {
             // Initialize editor
             EditorWindow? editorWindow = editorWindowHandle.Complete();
             var editorPref = editorWindow.ReadPreferences();
-            editorWindow.ApplyPreferences(editorWin, editorPref);
+            editorWindow.ApplyPreferences(editorWin, editorPref, allowSave: false);
 
             // Wait for game root before binding editor and showing window
             rootJob.Complete();
