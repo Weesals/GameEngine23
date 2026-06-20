@@ -63,7 +63,7 @@ namespace Game5.UI {
             //AppendChild(btn);
 
             var spriteRenderer = new SpriteRenderer();
-            SpriteAtlas atlas;
+            Sprite[] atlas;
             using (new ProfilerMarker("Generate Atlas").Auto()) {
                 atlas = spriteRenderer.Generate(new[] {
                     Resources.LoadTexture("./Assets/ui/T_Bow.png"),
@@ -105,7 +105,7 @@ namespace Game5.UI {
                 Axis = CanvasAxes.Horizontal,
             };
             for (int i = 0; i < 5; ++i) {
-                var imgBtn = new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
+                var imgBtn = new ImageButton(atlas[i % atlas.Length]) {
                     Transform = CanvasTransform.MakeDefault().Inset(1),
                 };
                 int id = i;

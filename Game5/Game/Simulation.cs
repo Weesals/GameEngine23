@@ -181,7 +181,7 @@ namespace Game5.Game {
 
         Entity tcInstance;
         public void GenerateWorld() {
-            var rand = new Random(0);
+            var rand = new Random(7);
             /*using var tmpEntities = new PooledList<Entity>();
             for (int i = 0; i < 10; i++) {
                 while (tmpEntities.Count > 0 && rand.NextSingle() < 0.6f) {
@@ -221,6 +221,7 @@ namespace Game5.Game {
             var archer = PrefabLoader.LoadPrototype("./Assets/Prefabs/Archer.json");
             var chicken = PrefabLoader.LoadPrototype("./Assets/Prefabs/Chicken.json");
             var house = PrefabLoader.LoadPrototype("./Assets/Prefabs/House.json");
+            var granary = PrefabLoader.LoadPrototype("./Assets/Prefabs/Granary.json");
             var townCentre = PrefabLoader.LoadPrototype("./Assets/Prefabs/TownCentre.json");
             var tree = PrefabLoader.LoadPrototype("./Assets/Prefabs/Tree.json");
 
@@ -230,7 +231,7 @@ namespace Game5.Game {
             var housesJob = JobHandle.Schedule(() => {
                 using (new ProfilerMarker("Creating Houses").Auto()) {
                     var command = housesCmdBuffer;
-#if DEBUG
+#if DEBUG || true
                     const int Count = 115 * 4;
 #else
                     const int Count = 2000000 * 4;
@@ -241,7 +242,7 @@ namespace Game5.Game {
                         var pos = 2000 + new Int2(i / sqrtCount, i % sqrtCount) * 6000;
                         if (rand.Next(0, 4) != 0) continue;
                         if (Math.Abs(Landscape.GetHeightMap().GetHeightAtF(SimulationWorld.SimulationToWorld(pos).toxz())) > 0.01f) continue;
-                        var newEntity = PrefabRegistry.Instantiate(command, house.Prefab);
+                        var newEntity = PrefabRegistry.Instantiate(command, rand.Next(0, 2) == 0 ? house.Prefab : granary.Prefab);
                         command.AddComponent<ECTransform>(newEntity) = new() {
                             Position = pos,
                             Orientation = (short)(rand.Next(4) * (short.MinValue / 2))

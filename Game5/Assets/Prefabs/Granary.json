@@ -1,0 +1,15 @@
+/*Prefab*/ {
+  "Name": "Granary",
+  "PrototypeData": {
+    "Footprint": {
+      "Size": 4000,
+      "Height": 200,
+      "Shape": "Box"
+    }
+  },
+  "CModel": { "PrefabName": "Granary" },
+  "CHitPoints": { "Current": 10 },
+  "ECTransform": {},
+  "ECTeam": { "SlotId": 0 },
+  "ECObstruction": {}
+}

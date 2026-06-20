@@ -479,7 +479,7 @@ namespace Game5.Game {
             hierarchySelection.OnSelectionChanged += (selection) => {
                 using var scope = new SelectionManager.Scope(editorSelection);
                 foreach (var item in selection) {
-                    if (item.Owner is UIHierarchy.EntityView entityView) {
+                    if (item.Owner is UIHierarchyView.EntityView entityView) {
                         scope.Append(Play.Simulation.EntityProxy.MakeHandle(entityView.Entity)); continue;
                     }
                     scope.Append(item);

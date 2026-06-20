@@ -42,6 +42,8 @@ namespace System {
                 MathF.Sqrt(v1.LengthSquared() * v2.LengthSquared()) + Vector3.Dot(v1, v2));
             return Quaternion.Normalize(q);
         }
+
+        public static float Clamp(float v, float min, float max) => v < min ? min : v > max ? max : v;
     }
 }
 
@@ -460,6 +462,8 @@ namespace Weesals.Engine {
         public bool Overlaps(RectF other) { return X < other.Right && Y < other.Bottom && Right > other.X && Bottom > other.Y; }
         public RectF Inset(float v) { return Inset(new Vector2(v, v)); }
         public RectF Inset(Vector2 v) { return new RectF(Min + v, Size - v * 2f); }
+
+        public bool Contains(Vector2 vec) => vec.X >= Left && vec.X <= Right && vec.Y >= Top && vec.Y <= Bottom;
 
         public override bool Equals(object? obj) { return obj is RectF i && Equals(i); }
         public bool Equals(RectF other) { return X == other.X && Y == other.Y && Width == other.Width && Height == other.Height; }

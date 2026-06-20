@@ -407,3 +407,5 @@ FodyWeavers.xsd
 /Game5/DataCache
 **/Config
 /Game5/WinPixEventRuntime.dll
+/Weesals.ECS/Properties/launchSettings.json
+/Weesals.ECS/Properties/launchSettings.json

@@ -37,8 +37,15 @@ namespace Weesals.UI {
 
     public class SpriteAtlas {
         public readonly Sprite[] Sprites;
-        public SpriteAtlas(Sprite[] sprites) {
+        public readonly string[] SpriteNames;
+        public SpriteAtlas(Sprite[] sprites, string[] spriteNames) {
             Sprites = sprites;
+            SpriteNames = spriteNames;
+        }
+        public bool TryGetSpriteByName(string spriteName, out Sprite? sprite) {
+            for (int i = 0; i < SpriteNames.Length; i++) if (SpriteNames[i] == spriteName) { sprite = Sprites[i]; return true; }
+            sprite = default;
+            return false;
         }
     }
 
@@ -52,7 +59,7 @@ namespace Weesals.UI {
             }
             public static OrderByHeight Default = new();
         }
-        public unsafe SpriteAtlas Generate(IList<CSTexture> insprites) {
+        public unsafe Sprite[] Generate(IList<CSTexture> insprites) {
             var sprites = new Sprite[insprites.Count];
             var atlas = CSTexture.Create("Sprite Atlas");
             atlas.SetSize(1024);
@@ -94,7 +101,7 @@ namespace Weesals.UI {
                 pos.X += size.X + Padding;
             }
             atlas.MarkChanged();
-            return new SpriteAtlas(sprites);
+            return sprites;
         }
 
         private unsafe void Blit(CSTexture dst, Int2 dstOff, CSTexture src, Int2 srcOff, Int2 size) {

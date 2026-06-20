@@ -712,7 +712,7 @@ namespace Weesals.UI {
             var easeLerp = Easing.Clamp01(Easing.InverseLerp(0.3f, 0f, (float)tsince.TotalSeconds));
             var scale = 1f + 0.05f * MathF.Sin((float)tsince.TotalSeconds * 40f) * easeLerp * easeLerp * easeLerp;
             tlayout = tlayout.Scale(scale);
-            frame.Color = frame.Color.WithAlphaF((float)tsince.TotalSeconds * 10f);
+            frame.Color = frame.Color.WithAlphaF(1f - MathExt.Clamp((float)tsince.TotalSeconds * 10f, 0f, 1f) * 0.7f);
             frame.UpdateLayout(canvas, tlayout);
             if (tsince < TimeSpan.FromSeconds(0.3f)) MarkLayoutDirty();
             if (tsince > TimeSpan.FromSeconds(0.3f)) HasDirtyFlags = false;

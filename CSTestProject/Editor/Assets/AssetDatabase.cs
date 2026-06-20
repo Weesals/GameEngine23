@@ -65,6 +65,19 @@ namespace Weesals.Editor.Assets {
             return assetReferences.TryGetValue(identifier, out var meta) ? meta : default;
         }
 
+        public static string ReadAllText(string? path) {
+            return File.ReadAllText(ResolvePath(path));
+        }
+
+        public static string SanitizePath(string path) {
+            if (path.StartsWith("./Assets/")) path = path.Substring(8);
+            return path;
+        }
+        public static string ResolvePath(string path) {
+            if (path.StartsWith("./Assets/")) ; // Do nothing
+            else if (path.StartsWith('/') || path.StartsWith('\\')) path = "./Assets" + path;
+            return path;
+        }
     }
 
     public interface IAssetImporter {
@@ -86,7 +99,7 @@ namespace Weesals.Editor.Assets {
                     return font;
                 }
             }
-            var natFont = CSResources.LoadFont(path);
+            var natFont = CSResources.LoadFont(AssetDatabase.ResolvePath(path));
             font = new Font();
             font.Texture = natFont.GetTexture();
             font.LineHeight = natFont.GetLineHeight();
@@ -136,7 +149,7 @@ namespace Weesals.Editor.Assets {
                 }
             }
             using var marker = ProfileMarker_Serialize.Auto();
-            texture = CSResources.LoadTexture(path);
+            texture = CSResources.LoadTexture(AssetDatabase.ResolvePath(path));
             if (texture.IsValid) {
                 if (texture.Format != format) {
                     bool isMul4 = (texture.Size.X & 3) == 0 && (texture.Size.Y & 3) == 0;
@@ -350,6 +363,108 @@ namespace Weesals.Editor.Assets {
                 hash += (ulong)File.GetLastWriteTimeUtc(compiledshader.IncludeFiles[i]).Ticks;
             }
             return hash;
+        }
+    }
+    public class SpriteAtlasImporter : IAssetImporter<SpriteAtlas> {
+        private struct SpriteData {
+            public RectF Borders;
+            public RectF Margins;
+            public float Scale;
+            public static readonly SpriteData Default = new() { Borders = RectF.Unit01, Margins = default, Scale = 1f };
+        }
+        unsafe public SpriteAtlas LoadAsset(ResourceKey key) {
+            var path = key.SourcePath;
+            SpriteAtlas atlas = default;
+            using (var entry = ResourceCacheManager.TryLoad(key)) {
+                /*if (entry.IsValid) {
+                    var spriteRenderer = new SpriteRenderer();
+                    var spritePaths = new List<KeyValuePair<string, string>>();
+                    List<Sprite> sprites = new();
+                    using (var reader = new StreamReader(entry.FileStream)) {
+                        var json = new SJson(reader.ReadToEnd());
+                        foreach (var jSprite in json.GetFields()) {
+                            var name = jSprite.Key.ToString();
+                            var spritePath = jSprite.Value.ToString();
+                            spritePaths.Add(new(name, spritePath));
+                            var originalSprites = new CSTexture[spritePaths.Count];
+                            for (int i = 0; i < spritePaths.Count; i++) {
+                                originalSprites[i] = Resources.LoadTexture(spritePaths[i].Value, BufferFormat.FORMAT_R8G8B8A8_UNORM);
+                            }
+                            atlas = spriteRenderer.Generate(originalSprites);
+                        }
+                    }
+                    return atlas;
+                }*/
+            }
+            Span<float> values = stackalloc float[4];
+            int ReadValues(Span<float> values, SJson json) {
+                int i = 0;
+                if (json.IsNumeric) { values[0] = json; return 1; }
+                if (json.IsArray) for (var en = json.GetEnumerator(); en.MoveNext();) values[i++] = en.Current;
+                return i;
+            }
+            RectF GetRect(Span<float> values, float scale, float maxBias) {
+                RectF rect = default;
+                if (values.Length == 1)
+                    return RectF.FromMinMax(values[0] * scale, values[0] * scale, maxBias - values[0] * scale, maxBias - values[0] * scale);
+                else if (values.Length == 2)
+                    return RectF.FromMinMax(values[0] * scale, values[1] * scale, maxBias - values[0] * scale, maxBias - values[1] * scale);
+                else if (values.Length == 4)
+                    return RectF.FromMinMax(values[0] * scale, values[1] * scale, maxBias - values[2] * scale, maxBias - values[3] * scale);
+                else throw new Exception();
+            }
+
+            var json = new SJson(AssetDatabase.ReadAllText(path));
+            var spriteInfo = new List<(string Name, string Path, SpriteData Data)>();
+            var basePath = Path.GetDirectoryName(path);
+            foreach (var jSprite in json.GetFields()) {
+                var name = jSprite.Key.ToString();
+                string spritePath = null;
+                var spriteData = SpriteData.Default;
+                if (jSprite.Value.IsString) spritePath = jSprite.Value.ToString();
+                else {
+                    foreach (var jField in jSprite.Value.GetFields()) {
+                        if (jField.Key.Equals("path")) {
+                            spritePath = jField.Value.ToString();
+                        } else if (jField.Key.Equals("scale")) {
+                            spriteData.Scale = jField.Value;
+                        } else if (jField.Key.Equals("borders")) {
+                            int count = ReadValues(values, jField.Value);
+                            spriteData.Borders = GetRect(values.Slice(0, count), 1f, 1f);
+                        } else if (jField.Key.Equals("margins")) {
+                            int count = ReadValues(values, jField.Value);
+                            spriteData.Margins = GetRect(values.Slice(0, count), -1f, 0f);
+                        }
+                    }
+                }
+                if (!spritePath.StartsWith('/')) spritePath = Path.Combine(basePath, spritePath);
+                spriteInfo.Add(new(name, spritePath, spriteData));
+            }
+            var originalSprites = new CSTexture[spriteInfo.Count];
+            for (int i = 0; i < spriteInfo.Count; i++) {
+                originalSprites[i] = Resources.LoadTexture(spriteInfo[i].Path, BufferFormat.FORMAT_R8G8B8A8_UNORM);
+            }
+            var spriteRenderer = new SpriteRenderer();
+            var packedSprites = spriteRenderer.Generate(originalSprites);
+            var spriteNames = new string[spriteInfo.Count];
+            for (int i = 0; i < spriteInfo.Count; i++) spriteNames[i] = spriteInfo[i].Name;
+            atlas = new(packedSprites, spriteNames);
+            for (int i = 0; i < atlas.Sprites.Length; i++) {
+                var sprite = atlas.Sprites[i];
+                var data = spriteInfo[i].Data;
+                sprite.Borders = data.Borders;
+                sprite.Margins = data.Margins;
+                sprite.Scale = data.Scale;
+            }
+
+            /*using (var entry = ResourceCacheManager.TrySave(key)) {
+                if (entry.IsValid) {
+                    using (var writer = new BinaryWriter(entry.FileStream)) {
+                        atlas.Serialize(writer);
+                    }
+                }
+            }*/
+            return atlas;
         }
     }
 

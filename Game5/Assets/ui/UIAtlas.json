@@ -1,0 +1,51 @@
+{
+  "ButtonBG": {
+    "path": "/ui/T_ButtonBG.png",
+    "borders": 0.3
+  },
+  "ButtonFrame": {
+    "path": "/ui/T_ButtonFrame.png",
+    "borders": 0.3
+  },
+  "TextBox": {
+    "path": "/ui/T_TextBox.png",
+    "borders": 0.3,
+    "scale": 0.5
+  },
+  "FileIcon": {
+    "path": "/ui/T_FileIcon.png"
+  },
+  "FolderIcon": {
+    "path": "/ui/T_FolderIcon.png"
+  },
+  "FileShader": {
+    "path": "/ui/T_FileShader.png"
+  },
+  "FileText": {
+    "path": "/ui/T_FileTxt.png"
+  },
+  "FileModel": {
+    "path": "/ui/T_FileModel.png"
+  },
+  "FileImage": {
+    "path": "/ui/T_FileImage.png"
+  },
+  "Tick": {
+    "path": "/ui/T_Tick.png"
+  },
+  "HeaderBG": {
+    "path": "/ui/T_HeaderBG.png",
+    "borders": 0.2,
+    "scale": 0.5
+  },
+  "PanelBG": {
+    "path": "/ui/T_PanelBG.png",
+    "borders": 0.2,
+    "scale": 0.5
+  },
+  "RoundedBox4": {
+    "path": "/ui/RoundedBox4.png",
+    "borders": 0.4,
+    "margins": 0.0625
+  }
+}

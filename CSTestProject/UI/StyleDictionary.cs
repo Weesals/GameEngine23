@@ -11,6 +11,8 @@ namespace Weesals.UI {
         public delegate ResolvedStyle Resolver(ResolvedStyle parent);
 
         public struct ResolvedStyle {
+            public Color KeyBackground;
+            public Color KeyForeground;
             public Color Background;
             public Color Foreground;
         }
@@ -29,7 +31,10 @@ namespace Weesals.UI {
                 ParentStyleId = -1,
                 ReferenceCount = 1,
                 IsResolved = true,
-                CachedStyle = new ResolvedStyle() { Background = Color.Black, Foreground = Color.White, },
+                CachedStyle = new ResolvedStyle() {
+                    KeyForeground = Color.Orange, KeyBackground = Color.Blue,
+                    Background = Color.Black, Foreground = Color.White,
+                },
             });
         }
 

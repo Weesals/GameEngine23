@@ -69,7 +69,7 @@ public static class EntityProxyExt {
 namespace Weesals.Editor {
     public class EditorStyle {
         public Color Background = new(20, 20, 20, 255);
-        public Color Panel = new(56, 56, 56, 255);
+        public Color Panel = new(32, 32, 46, 255);
         public Color PanelHeaderTextColor = new(230, 230, 230, 255);
         public Color PanelDark = new(51, 51, 51, 255);
         public Color Field = new(42, 42, 42, 255);
@@ -118,7 +118,7 @@ namespace Weesals.Editor {
             TitleText.Initialize(Canvas);
             //BorderBG.Initialize(Canvas);
             PanelBG.Initialize(Canvas);
-            TitleBG.Color = Style.Background;
+            TitleBG.Color = Color.Lerp(Style.Background, Style.Foreground, 0.2f);
             //BorderBG.Color = Color.Black;
             PanelBG.Color = Style.Background;
             TitleText.Color = Style.Foreground;
@@ -182,7 +182,7 @@ namespace Weesals.Editor {
         public Editor Editor;
         public UIInspector Inspector;
         public UIGameView GameView;
-        public UIHierarchy Hierarchy;
+        public UIHierarchyView Hierarchy;
         public UIProjectView ProjectView;
         public EventSystem EventSystem;
         public Canvas Canvas;

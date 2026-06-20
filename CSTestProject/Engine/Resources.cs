@@ -174,6 +174,7 @@ namespace Weesals.Engine {
         }
         static Dictionary<ValueTuple<string, string>, Shader> shaders = new();
         static Dictionary<string, Sprite> loadedSprites = new();
+        static Dictionary<ulong, SpriteAtlas> loadedSpriteAtlases = new();
 
         //static Dictionary<ulong, Model> loadedModels = new();
         static Dictionary<ulong, PreprocessedShader> preprocessedShader = new();
@@ -190,6 +191,7 @@ namespace Weesals.Engine {
         private static FontImporter fontImporter = new();
         private static TextureImporter textureImporter = new();
         private static ShaderImporter shaderImporter = new();
+        private static SpriteAtlasImporter spriteAtlasImporter = new();
 
         private static CSTexture defaultTexWhite;
         private static CSTexture defaultTexBlack;
@@ -213,41 +215,9 @@ namespace Weesals.Engine {
 
             Resources.LoadFont("./Assets/Roboto-Regular.ttf");
 
-            var spriteRenderer = new SpriteRenderer();
-
-            var spritePaths = new KeyValuePair<string, string>[] {
-                new("ButtonBG", "./Assets/ui/T_ButtonBG.png"),
-                new("ButtonFrame", "./Assets/ui/T_ButtonFrame.png"),
-                new("TextBox", "./Assets/ui/T_TextBox.png"),
-                new("FileIcon", "./Assets/ui/T_FileIcon.png"),
-                new("FolderIcon", "./Assets/ui/T_FolderIcon.png"),
-                new("FileShader", "./Assets/ui/T_FileShader.png"),
-                new("FileText", "./Assets/ui/T_FileTxt.png"),
-                new("FileModel", "./Assets/ui/T_FileModel.png"),
-                new("FileImage", "./Assets/ui/T_FileImage.png"),
-                new("Tick", "./Assets/ui/T_Tick.png"),
-                new("HeaderBG", "./Assets/ui/T_HeaderBG.png"),
-                new("PanelBG", "./Assets/ui/T_PanelBG.png"),
-                new("RoundedBox4", "./Assets/ui/RoundedBox4.png")
-            };
-            var originalSprites = new CSTexture[spritePaths.Length];
-            for (int i = 0; i < spritePaths.Length; i++) {
-                originalSprites[i] = Resources.LoadTexture(spritePaths[i].Value, BufferFormat.FORMAT_R8G8B8A8_UNORM);
-            }
-
-            var atlas = spriteRenderer.Generate(originalSprites);
-            atlas.Sprites[0].Borders = RectF.Unit01.Inset(0.3f);
-            atlas.Sprites[1].Borders = RectF.Unit01.Inset(0.3f);
-            atlas.Sprites[2].Borders = RectF.Unit01.Inset(0.3f);
-            atlas.Sprites[2].Scale = 0.5f;
-            atlas.Sprites[10].Borders = RectF.Unit01.Inset(0.2f);
-            atlas.Sprites[11].Borders = RectF.Unit01.Inset(0.2f);
-            atlas.Sprites[10].Scale = 0.5f;
-            atlas.Sprites[11].Scale = 0.5f;
-            atlas.Sprites[12].Borders = RectF.Unit01.Inset(0.4f);
-            atlas.Sprites[12].Margins = RectF.FromMinMax(-1f / 16, -1f / 16, 1f / 16, 1f / 16);
-            for (int i = 0; i < atlas.Sprites.Length; i++) {
-                loadedSprites.Add(spritePaths[i].Key, atlas.Sprites[i]);
+            var uiAtlas = Resources.TryLoadSpriteAtlas("/ui/UIAtlas.json");
+            for (int i = 0; i < uiAtlas.Sprites.Length; i++) {
+                loadedSprites.Add(uiAtlas.SpriteNames[i], uiAtlas.Sprites[i]);
             }
         }
 
@@ -272,6 +242,7 @@ namespace Weesals.Engine {
         public static Model LoadModel(string path, out JobHandle handle)
             => LoadModel(path, FBXImporter.LoadConfig.Default, out handle);
         public static Model LoadModel(string path, FBXImporter.LoadConfig config, out JobHandle handle) {
+            path = AssetDatabase.SanitizePath(path);
             handle = default;
             var pathHash = ResourceKey.GeneratePathHash(path);
             var item = loadedModels.RequireItem(pathHash);
@@ -295,7 +266,7 @@ namespace Weesals.Engine {
                                 }
                             }
                             if (item.Resource == null) {
-                                item.Resource = FBXImporter.Import(path, config, out item.LoadHandle);
+                                item.Resource = FBXImporter.Import(AssetDatabase.ResolvePath(path), config, out item.LoadHandle);
                                 item.LoadHandle.Then((object? modelObj) => {
                                     lock (loadedModels) {
                                         using var entry = ResourceCacheManager.TrySave(key);
@@ -320,7 +291,28 @@ namespace Weesals.Engine {
             return item.Resource;
         }
 
+        public static SpriteAtlas TryLoadSpriteAtlas(string atlasPath) {
+            var pathHash = ResourceKey.GeneratePathHash(atlasPath);
+            if (loadedSpriteAtlases.TryGetValue(pathHash, out var atlas)) return atlas;
+            lock (loadedSpriteAtlases) {
+                if (loadedSpriteAtlases.TryGetValue(pathHash, out atlas)) return atlas;
+                var key = ResourceKey.CreateFileKey(atlasPath, "atlas");
+                atlas = spriteAtlasImporter.LoadAsset(key);
+                loadedSpriteAtlases.Add(pathHash, atlas);
+                RegisterLoadedAsset(key, spriteAtlasImporter, 0);
+            }
+            return atlas;
+        }
+
         public static Sprite? TryLoadSprite(string path) {
+            if (path.Contains(':')) {
+                var colonI = path.IndexOf(':');
+                var atlasPath = path.Substring(0, colonI);
+                var spriteName = path.Substring(colonI + 1);
+                var atlas = TryLoadSpriteAtlas(atlasPath);
+                if (atlas.TryGetSpriteByName(spriteName, out var atlasSprite)) return atlasSprite;
+                return null;
+            }
             if (!loadedSprites.TryGetValue(path, out var sprite)) {
                 return default;
             }
@@ -328,6 +320,7 @@ namespace Weesals.Engine {
         }
 
         unsafe public static Font LoadFont(string path) {
+            path = AssetDatabase.SanitizePath(path);
             var pathHash = ResourceKey.GeneratePathHash(path);
             if (loadedFonts.TryGetValue(pathHash, out var font)) return font;
             lock (loadedFonts) {
@@ -341,6 +334,7 @@ namespace Weesals.Engine {
         }
 
         public static CSTexture LoadTexture(string path, BufferFormat format = BufferFormat.FORMAT_BC1_UNORM) {
+            path = AssetDatabase.SanitizePath(path);
             var pathHash = ResourceKey.GeneratePathHash(path) + (ulong)format;
             var item = loadedTextures.RequireItem(pathHash);
             if (item.Loaded) return item.Resource;

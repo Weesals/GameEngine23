@@ -68,7 +68,7 @@ namespace Weesals.Editor {
             for (int i = 0; i < Fields.Length - 1; i++) {
                 values[index++] = head = Fields[i].GetValue(head)!;
             }
-            if (Property != null) Property.SetValue(head, value);
+            if (Property != null && Property.CanWrite) Property.SetValue(head, value);
             else head = value!;
             for (int i = Fields.Length - 1; i >= 0; --i) {
                 var item = index == 0 ? Owner : values[--index];

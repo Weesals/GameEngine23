@@ -24,6 +24,7 @@ namespace Weesals.UI {
         bool UpdateTween(Tween tween);
     }
     public class TweenManager {
+        public enum RestartBehaviours { Overwrite, NoLaterThan, NoEarlierThan }
         public struct Instance {
             public ITweenable Tweenable;
             public float Timer;
@@ -34,14 +35,21 @@ namespace Weesals.UI {
                 if (instances[i].Tweenable == tweenable) return true;
             return false;
         }
-        public void RegisterTweenable(ITweenable tweenable, float delay = 0f) {
+        public void RegisterTweenable(ITweenable tweenable, float delay = 0f, RestartBehaviours restart = RestartBehaviours.Overwrite) {
             int i = 0;
             for (; i < instances.Count; i++) {
                 if (instances[i].Tweenable == tweenable) break;
             }
             if (i >= instances.Count) instances.Add(new Instance() { Tweenable = tweenable, });
             var instance = instances[i];
-            instance.Timer = -delay;
+            switch (restart) {
+                case RestartBehaviours.Overwrite: instance.Timer = -delay; break;
+                // This was decided to still init delay to 0 in ScrollView, because scrolls should begin immediately
+                // but an in-progress scroll can be reset to a timer of ~0.1 (no reason for NoEarlierThan to be handled the same)
+                case RestartBehaviours.NoLaterThan: instance.Timer = MathF.Min(instance.Timer, -delay); break;
+                case RestartBehaviours.NoEarlierThan: instance.Timer = MathF.Max(instance.Timer, -delay); break;
+                default: throw new NotImplementedException();
+            }
             instances[i] = instance;
         }
         public void Update(float dt) {

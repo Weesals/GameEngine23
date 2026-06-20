@@ -23,11 +23,12 @@ namespace Weesals.Editor {
                     Text = new(name) {
                         FontSize = 14,
                         Alignment = TextAlignment.Left,
+                        Transform = CanvasTransform.MakeDefault().WithOffsets(5f, 0f, 0f, 0f),
                     };
                     AppendChild(Text);
                     var depth = 0;
                     for (var p = ParentFolder; p != null; p = p.ParentFolder) ++depth;
-                    SetTransform(CanvasTransform.MakeDefault().WithOffsets(5f + 5f * depth, 0f, 0f, 0f));
+                    SetTransform(CanvasTransform.MakeDefault().WithOffsets(0f + 5f * depth, 0f, 0f, 0f));
                 }
                 public override void Initialise(CanvasBinding binding) {
                     base.Initialise(binding);
@@ -146,6 +147,7 @@ namespace Weesals.Editor {
                     Text = new(Path.GetFileName(filename)) {
                         FontSize = 12,
                         DisplayParameters = TextDisplayParameters.Flat,
+                        Alignment = TextAlignment.Centre,
                     };
                     Icon.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 1f, 1f).WithOffsets(10f, 0f, -10f, -32f));
                     Text.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 1f, 1f, 1f).WithOffsets(0f, -32f, 0f, 0f));
@@ -155,7 +157,7 @@ namespace Weesals.Editor {
                 public override void OnSelected(ISelectionGroup group, bool _selected) {
                     base.OnSelected(group, _selected);
                     Icon.Color = IsSelected ? new Color(0xffaaaaaa) : Color.Gray;
-                    Text.SetTextColor(IsSelected ? Color.Orange : null);
+                    Text.SetTextColor(IsSelected ? Style.KeyForeground : null);
                     MarkComposeDirty();
                 }
                 public void OnPointerClick(PointerEvent events) {

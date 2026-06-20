@@ -32,6 +32,10 @@ namespace Weesals.UI {
             if (sprite != null)
                 Element = new CanvasImage(sprite.Texture, sprite.UVRect);
         }
+        public void SetSprite(Sprite sprite) {
+            Element.SetTexture(sprite.Texture);
+            Element.UVRect = sprite.UVRect;
+        }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
             Element.Initialize(Canvas);
@@ -169,12 +173,12 @@ namespace Weesals.UI {
         public void OnPointerDown(PointerEvent events) {
             if (events.HasButton(0)) this.Select();
         }
-        protected virtual void DrawSelectionFrame(ref CanvasCompositor.Context composer) {
+        protected virtual void DrawSelection(ref CanvasCompositor.Context composer) {
             Color bgColor = Color.Clear;
             if (IsSelected || IsHovering) {
-                bgColor = Style.Background;
+                //bgColor = Style.Background;
+                if (IsSelected) bgColor = Color.Lerp(bgColor, Style.KeyBackground, 0.5f);
                 if (IsHovering) bgColor = Color.Lerp(bgColor, Style.Foreground, 0.1f);
-                //if (IsSelected) bgColor = Color.Lerp(bgColor, Style.Foreground, 0.5f);
             }
             if (bgColor.A > 0) {
                 ref var background = ref composer.CreateTransient<CanvasImage>(Canvas, () => new CanvasImage());
@@ -193,7 +197,7 @@ namespace Weesals.UI {
             }
         }
         public override void Compose(ref CanvasCompositor.Context composer) {
-            DrawSelectionFrame(ref composer);
+            DrawSelection(ref composer);
             base.Compose(ref composer);
         }
     }
@@ -1139,8 +1143,16 @@ namespace Weesals.UI {
             if (!begin) Canvas.Tweens.RegisterTweenable(this);
         }
         public void OnScroll(PointerEvent events) {
-            ApplyDeltaScroll(-(Vector2)events.ScrollDelta / 2f);
-            if (!HasFlag(Flags.Dragging)) Canvas.Tweens.RegisterTweenable(this, events.Type != PointerEvent.Types.Touchpad ? 0.2f : 0f);
+            if (events.Type != PointerEvent.Types.Touchpad && !HasFlag(Flags.Dragging)) {
+                AnimateSetScroll(Scroll + velocity * 0.25f + -(Vector2)events.ScrollDelta / 2f);
+            } else {
+                ApplyDeltaScroll(-(Vector2)events.ScrollDelta / 2f);
+                if (!HasFlag(Flags.Dragging)) Canvas.Tweens.RegisterTweenable(this, 0f);
+            }
+        }
+        public void AnimateSetScroll(Vector2 value) {
+            velocity = (value - Scroll) * 4f;       // *4 is because vel easing reduces to 0.25
+            Canvas.Tweens.RegisterTweenable(this, -0.1f, TweenManager.RestartBehaviours.NoLaterThan);
         }
 
         private void SetScroll(Vector2 value) {
@@ -1190,11 +1202,12 @@ namespace Weesals.UI {
             if (!HasFlag(Flags.Dragging)) {
                 var scrollMin = Vector2.Zero;
                 var scrollMax = Vector2.Max(Vector2.Zero, contentSize + Margins.Size - mLayoutCache.GetSize());
-                var velEase = Easing.PowerOut(0.5f, 2f);
-                var velDelta = velocity * (velEase.Evaluate(tween.Time1) - velEase.Evaluate(tween.Time0)) * 0.25f;
-                var newScroll = MoveClamped(Scroll, velDelta, scrollMin, scrollMax);
+                var velEase = Easing.PowerOut(0.3f, 2f);
+                var velDelta = velocity * velEase.Evaluate(tween.Time1);
+                velocity -= velDelta;
+                var newScroll = MoveClamped(Scroll, velDelta * 0.25f, scrollMin, scrollMax);
 
-                var clampEase = Easing.StatefulPowerInOut(0.5f, 2f);
+                var clampEase = Easing.StatefulPowerInOut(0.3f, 2f);
                 var targetScroll = Vector2.Clamp(newScroll, scrollMin, scrollMax);
                 Scroll = Vector2.Lerp(newScroll, targetScroll, clampEase.Evaluate(tween));
                 if (!clampEase.GetIsComplete(tween)) return false;

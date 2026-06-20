@@ -13,26 +13,31 @@ using Weesals.UI;
 using Weesals.Utility;
 
 namespace Weesals.Editor {
-    public class UIHierarchy : TabbedWindow, IUpdatable, ISelectionProxy {
+    public class UIHierarchyView : TabbedWindow, IUpdatable, ISelectionProxy {
         public class EntityView : Selectable {
             public readonly Entity Entity;
+            public Image Icon;
             public TextBlock Text;
             public EntityView(Entity entity, string name) {
                 Entity = entity;
+                Icon = new() {
+                    Transform = CanvasTransform.MakeAnchored(new(20, 20), new(0f, 0.5f), new(5f, 0f)),
+                };
                 Text = new(name) {
                     FontSize = 14,
                     Alignment = TextAlignment.Left,
                     //TextColor = Color.DarkGray,
                     DisplayParameters = TextDisplayParameters.Flat,
-                    Transform = CanvasTransform.MakeDefault().WithOffsets(5f, 0f, 0f, 0f),
+                    Transform = CanvasTransform.MakeDefault().WithOffsets(30f, 0f, 0f, 0f),
                 };
+                AppendChild(Icon);
                 AppendChild(Text);
                 SetTransform(CanvasTransform.MakeDefault().WithOffsets(0f, 0f, 0f, 0f));
             }
             public override void OnSelected(ISelectionGroup group, bool _selected) {
                 if (IsSelected == _selected) return;
                 base.OnSelected(group, _selected);
-                FindParent<UIHierarchy>()?.NotifyEntitySelected(Entity, IsSelected);
+                FindParent<UIHierarchyView>()?.NotifyEntitySelected(Entity, IsSelected);
                 Text.SetTextColor(IsSelected ? Color.Orange : null);
             }
             public override SizingResult GetDesiredSize(SizingParameters sizing) {
@@ -51,7 +56,7 @@ namespace Weesals.Editor {
         public SelectionManager SelectionManager { get; private set; }
         public ISelectionGroup SelectionGroup => SelectionManager;
 
-        public UIHierarchy(Editor editor) : base(editor, "Hierarchy") {
+        public UIHierarchyView(Editor editor) : base(editor, "Hierarchy") {
             SelectionManager = new SelectionManager(editor.ProjectSelection.EventSystem);
 
             scrollView.AppendChild(list);
@@ -66,7 +71,7 @@ namespace Weesals.Editor {
             base.Uninitialise(binding);
         }
         public void UpdateValues() {
-            if (World.Manager.EntityStorage.GetMaximumEntityId() > 1000) return;
+            //if (World.Manager.EntityStorage.GetMaximumEntityId() > 1000) return;
             int i = 0;
             if (World != null) {
                 foreach (var entity in World.GetEntities()) {
@@ -75,10 +80,15 @@ namespace Weesals.Editor {
                         item = null;
                     if (item == null) {
                         btn = new EntityView(entity, World.GetEntityName(entity));
+                        if (World.HasComponent<ECParticleBinding>(entity)) {
+                            btn.Icon.SetSprite(Resources.TryLoadSprite("/Editor/Icons/EditorSprites.json:Particles"));
+                        } else {
+                            btn.Icon.SetSprite(Resources.TryLoadSprite("/Editor/Icons/EditorSprites.json:Model"));
+                        }
                         list.InsertChild(i, btn);
                     }
                     ++i;
-                    //if (i > 100) break;
+                    if (i > 1000) break;
                 }
             }
             while (i < list.Children.Count) {
@@ -86,6 +96,22 @@ namespace Weesals.Editor {
             }
         }
         private void NotifyEntitySelected(Entity entity, bool selected) {
+            if (selected) {
+                UpdateValues();
+                RequireLayout();
+                var view = GetEntityView(entity);
+                var scroll = scrollView.Scroll;
+                var itemLayout = view.GetComputedLayout();
+                var contentLayout = scrollView.GetComputedLayout();
+                var contentSize = scrollView.ContentSize;
+                var desiredScroll = scroll + itemLayout.TransformPosition2DN(new(0.5f, 0.5f)).toxy() - contentLayout.TransformPosition2DN(new(0.5f, 0.5f)).toxy();
+                desiredScroll = Vector2.Clamp(desiredScroll, Vector2.Zero, scrollView.ContentSize - contentLayout.GetSize());
+                var contentWindow = new RectF(scroll - contentLayout.GetSize() / 2f, contentLayout.GetSize());
+                if (!contentWindow.Contains(desiredScroll)) {
+                    scroll = desiredScroll;// Vector2.Clamp(desiredScroll, contentWindow.Min, contentWindow.Max);
+                    scrollView.AnimateSetScroll(scroll);
+                }
+            }
             OnEntitySelected?.Invoke(entity, selected);
         }
         public void Update(float dt) {
@@ -151,9 +177,9 @@ namespace Weesals.Editor {
             var gameLayout = GetContentsLayout();
             var canvasOffset = Canvas.GetComputedLayout().Position;
             gameLayout.Position -= canvasOffset;
-            return new RectI(
-                (int)gameLayout.Position.X, (int)gameLayout.Position.Y,
-                (int)gameLayout.GetWidth(), (int)gameLayout.GetHeight());
+            var min = Int2.RoundToInt(gameLayout.TransformPosition2DN(new(0f, 0f)).toxy());
+            var max = Int2.RoundToInt(gameLayout.TransformPosition2DN(new(1f, 1f)).toxy());
+            return RectI.FromMinMax(min.X, min.Y, max.X, max.Y);
         }
 
         public bool InitializePotentialDrop(PointerEvent events, CanvasRenderable source) {
