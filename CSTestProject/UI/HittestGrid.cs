@@ -36,8 +36,9 @@ namespace Weesals.UI {
             Size = size;
             Resolution = 4096;  // A big enough resolution to work (inefficiently) if nothing gets specified
         }
-        public void SetResolution(Int2 size) {
-            Resolution = size;
+        public void SetResolution(Int2 resolution) {
+            Resolution = Int2.Max(resolution, Size);
+            // TODO: This should invalidate everything
         }
 
         private RectI ToLocalRect(RectI rect) {
@@ -50,6 +51,7 @@ namespace Weesals.UI {
             return RectI.FromMinMax(min.X, min.Y, max.X + 1, max.Y + 1);
         }
         private Int2 ToLocalInt(Int2 pnt) {
+            if (Resolution == default) return default;
             pnt = pnt * Size / Resolution;
             pnt = Int2.Clamp(pnt, 0, Size - 1);
             return pnt;

@@ -141,7 +141,7 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
 
     auto CreateRootSig = [&](D3DRootSignature& rootSignature, const wchar_t* name, int realSRVCount = 0) {
         CD3DX12_ROOT_PARAMETER1 rootParameters[16];
-        CD3DX12_DESCRIPTOR_RANGE1 srvR[10];
+        CD3DX12_DESCRIPTOR_RANGE1 srvR[32];
         rootSignature.mNumResources = rootSignature.mSRVCount + rootSignature.mUAVCount;
         int rootParamId = 0;
         for (int i = 0; i < rootSignature.mNumConstantBuffers; ++i)
@@ -181,6 +181,7 @@ D3DResourceCache::D3DResourceCache(D3DGraphicsDevice& d3d12, RenderStatistics& s
     {
         mRootSignature.mNumConstantBuffers = 4;
         mRootSignature.mSRVCount = 8;
+        mRootSignature.mUAVCount = 0;
         CreateRootSig(mRootSignature, L"Graphics RootSig");
     }
     {

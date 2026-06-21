@@ -186,6 +186,8 @@ namespace Weesals.Utility {
         private ProfilerMarker ProfileMarker_Add = new("BVH.Add");
         private ProfilerMarker ProfileMarker_Move = new("BVH.Move");
         private ProfilerMarker ProfileMarker_Remove = new("BVH.Rem");
+        private ProfilerMarker ProfileMarker_PushRoot = new("PushRoot");
+        private ProfilerMarker ProfileMarker_SplitLeaf = new("SplitLeaf");
 
         public Scene Scene;
 
@@ -282,6 +284,7 @@ namespace Weesals.Utility {
         unsafe public Mutation Add(Int2 pos, SceneInstance instance) {
             using var marker = ProfileMarker_Add.Auto();
             if (!root.Contains(pos)) {
+                using var marker_pushRoot = ProfileMarker_PushRoot.Auto();
                 if (nodes[root.Index].ChildIndex < 0) {
                     var rootMax = root.Offset + (int)root.Size;
                     root.Offset = Int2.Min(root.Offset, pos);
@@ -318,6 +321,7 @@ namespace Weesals.Utility {
                 if (leafIndex < 0) break;   // Not a leaf
                 var leaf = leaves[leafIndex];
                 if (leaf.ItemsCount < 64) break;    // Leaf is not at capacity
+                using var marker_splitLeaf = ProfileMarker_SplitLeaf.Auto();
                 var childInstances = instances.Slice(leaf.Items);
                 leaves.Return(leafIndex);
                 node.ChildIndex = 0;

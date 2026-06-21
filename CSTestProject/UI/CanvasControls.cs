@@ -1107,7 +1107,11 @@ namespace Weesals.UI {
         }
     }
     public class ScrollView : CanvasRenderable, ICanvasLayout, IBeginDragHandler, IDragHandler, IEndDragHandler, IScrollBeginHandler, IScrollHandler, ITweenable, IHitTestGroup {
-        protected enum Flags { None = 0, Dragging = 1, }
+        protected enum Flags {
+            None = 0,
+            Dragging = 1,       // If the user is doing a scoped scroll operation (trackpad)
+            TrackPanning = 2,   // If the scoped scroll is awaiting momentum
+        }
         public Vector2 ScrollMask = new Vector2(1f, 1f);
         public RectF Margins = new RectF(0f, 0f, 0f, 0f);
         protected Flags flags;
@@ -1119,13 +1123,14 @@ namespace Weesals.UI {
 
         private Vector2 contentSize;
         public Vector2 ContentSize => contentSize;
+        private Vector2 maximumScroll => Vector2.Max(default, contentSize - (mLayoutCache.GetSize() - Margins.Size));
 
         protected Vector2 velocity;
         protected Vector2 scroll;
         public Vector2 Scroll { get => scroll; set => SetScroll(value); }
 
         public void OnBeginDrag(PointerEvent events) {
-            if (!events.GetIsButtonDown(1) && events.Type != PointerEvent.Types.Touch) { events.Yield(); return; }
+            if (!events.GetIsButtonDown(1) && events.DeviceType != PointerEvent.Types.Touch) { events.Yield(); return; }
             SetFlag(Flags.Dragging);
         }
         public void OnDrag(PointerEvent events) {
@@ -1139,15 +1144,29 @@ namespace Weesals.UI {
         }
 
         public void OnScrollBegin(PointerEvent events, bool begin) {
-            if (begin) SetFlag(Flags.Dragging); else ClearFlag(Flags.Dragging);
-            if (!begin) Canvas.Tweens.RegisterTweenable(this);
+            if (begin) SetFlag(Flags.Dragging | Flags.TrackPanning); else ClearFlag(Flags.Dragging);
+            if (!begin) Canvas.Tweens.RegisterTweenable(this);  // To allow spring-back
+        }
+        bool IsScrollValid(Vector2 scrollDelta) {
+            var newScroll = Scroll + scrollDelta;
+            return
+                (scrollDelta.X != 0f && newScroll.X >= 0f && newScroll.X <= maximumScroll.X) ||
+                (scrollDelta.Y != 0f && newScroll.Y >= 0f && newScroll.Y <= maximumScroll.Y);
         }
         public void OnScroll(PointerEvent events) {
-            if (events.Type != PointerEvent.Types.Touchpad && !HasFlag(Flags.Dragging)) {
-                AnimateSetScroll(Scroll + velocity * 0.25f + -(Vector2)events.ScrollDelta / 2f);
+            var scrollDelta = -(Vector2)events.ScrollDelta / 2f;
+            if (events.DeviceType == PointerEvent.Types.Touchpad) {
+                if (HasFlag(Flags.TrackPanning)) {
+                    if (IsScrollValid(scrollDelta) || HasFlag(Flags.Dragging)) {
+                        ApplyDeltaScroll(scrollDelta);
+                        if (!HasFlag(Flags.Dragging)) Canvas.Tweens.RegisterTweenable(this, 0f);
+                    } else {
+                        AnimateSetScroll(Scroll + velocity * 0.25f + scrollDelta * 2);
+                        ClearFlag(Flags.TrackPanning);
+                    }
+                }
             } else {
-                ApplyDeltaScroll(-(Vector2)events.ScrollDelta / 2f);
-                if (!HasFlag(Flags.Dragging)) Canvas.Tweens.RegisterTweenable(this, 0f);
+                AnimateSetScroll(Scroll + velocity * 0.25f + scrollDelta);
             }
         }
         public void AnimateSetScroll(Vector2 value) {
@@ -1161,7 +1180,7 @@ namespace Weesals.UI {
         }
         private void ApplyDeltaScroll(Vector2 delta) {
             var scroll = this.scroll;
-            var scrollable = Vector2.Max(default, contentSize - (mLayoutCache.GetSize() - Margins.Size));
+            var scrollable = maximumScroll;
             scroll = MoveClamped(scroll, delta, default, scrollable);
             SetScroll(scroll);
         }
@@ -1201,7 +1220,7 @@ namespace Weesals.UI {
         public bool UpdateTween(Tween tween) {
             if (!HasFlag(Flags.Dragging)) {
                 var scrollMin = Vector2.Zero;
-                var scrollMax = Vector2.Max(Vector2.Zero, contentSize + Margins.Size - mLayoutCache.GetSize());
+                var scrollMax = maximumScroll;
                 var velEase = Easing.PowerOut(0.3f, 2f);
                 var velDelta = velocity * velEase.Evaluate(tween.Time1);
                 velocity -= velDelta;

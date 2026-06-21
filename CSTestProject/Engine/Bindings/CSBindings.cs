@@ -327,6 +327,7 @@ namespace Weesals.Engine {
             mBufferStride = (ushort)stride;
             mData = data;
         }
+        public override string ToString() => mBindName.ToString();
     }
     unsafe public partial struct CSBufferLayout {
         public Span<CSBufferElement> Elements => GetElements();
@@ -665,6 +666,7 @@ namespace Weesals.Engine {
             }
         }
         unsafe public CSWindowFrame GetWindowFrame() { return GetWindowFrame(mWindow); }
+        unsafe public bool GetIsFocused() { return GetIsFocused(mWindow) != 0; }
         unsafe public void SetWindowFrame(RectI frame, bool maximized) { SetWindowFrame(mWindow, &frame, (byte)(maximized ? 1 : 0)); }
         unsafe public void RegisterMovedCallback(Action callback, bool enable) {
             var handle = GCHandle.Alloc(callback);
@@ -726,6 +728,13 @@ namespace Weesals.Engine {
         public override int GetHashCode() {
             return HashCode.Combine(mSrcAlphaBlend, mDestAlphaBlend, mSrcColorBlend, mDestColorBlend, mBlendAlphaOp, mBlendColorOp);
         }
+        public override string ToString() =>
+            this == MakeOpaque() ? "Opaque" :
+            this == MakeAlphaBlend() ? "AlphaBlend" :
+            this == MakeAdditive() ? "Additive" :
+            this == MakePremultiplied() ? "Premultiplied" :
+            this == MakeNone() ? "None" :
+            $"{mSrcColorBlend} {mDestColorBlend}";
 
         public static bool operator ==(BlendMode left, BlendMode right) { return left.Equals(right); }
         public static bool operator !=(BlendMode left, BlendMode right) { return !(left == right); }

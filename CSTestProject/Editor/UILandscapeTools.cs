@@ -39,6 +39,8 @@ namespace Weesals.Editor {
         public UILandscapeTools() {
             var list = new ListLayout() { Axis = CanvasAxes.Vertical, };
 
+            list.AppendChild(new TextBlock("Landscape"));
+
             var modes = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ListLayout.ScaleModes.StretchOrClamp, ItemSize = 1.0f, };
             list.AppendChild(modes);
 

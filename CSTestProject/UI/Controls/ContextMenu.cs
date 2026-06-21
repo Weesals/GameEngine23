@@ -31,11 +31,13 @@ namespace Weesals.UI.Controls {
             itemsList.AppendChild(button);
         }
 
-        public void Show() {
+        public void Show(Vector2 screenPosition) {
             if (!Window.IsValid) {
                 var window = Core.ActiveInstance.CreateWindow("Context");
                 window.SetStyle("borderless");
-                window.SetSize((Vector2)Canvas.GetDesiredSize(SizingParameters.Default));
+                //window.SetSize((Vector2));
+                var windowFrame = new RectI(screenPosition, Int2.RoundToInt(Canvas.GetDesiredSize(SizingParameters.Default)));
+                window.SetWindowFrame(windowFrame, false);
                 RegisterRootWindow(window);
             }
             Window.SetVisible(true);
@@ -45,13 +47,18 @@ namespace Weesals.UI.Controls {
             base.Update(dt);
             EventSystem.Update(dt);
             if (!Window.IsValid) return;
+            if (!Window.GetIsFocused()) { Dispose(); return; }
             Canvas.SetSize(WindowSize);
             Canvas.Update(dt);
             Canvas.RequireComposed();
         }
 
-        private void Button_Clicked() {
+        public override void Dispose() {
             Window.Dispose();
+            base.Dispose();
+        }
+
+        private void Button_Clicked() {
             Dispose();
         }
 
@@ -64,6 +71,7 @@ namespace Weesals.UI.Controls {
             graphics.Reset();
             graphics.SetSurface(Surface);
             graphics.SetRenderTargets(Surface.GetBackBuffer(), default);
+            graphics.SetViewport(new(default, Surface.GetResolution()));
             graphics.Clear(new(Color.Black, 1f));
             Canvas.Render(graphics);
             graphics.Execute();

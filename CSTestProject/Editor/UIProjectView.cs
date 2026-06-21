@@ -59,7 +59,9 @@ namespace Weesals.Editor {
                             process.Start();
                         });
                         contextMenu.AppendItem("Option3", () => { });
-                        contextMenu.Show();
+                        var window = FindParent<ProxyWindowCanvas>()?.Window;
+                        var windowFrame = window.Value.GetWindowFrame();
+                        contextMenu.Show((Vector2)(windowFrame.ClientOffset) + events.CurrentPosition);
                         return;
                     }
                     base.OnPointerDown(events);
@@ -109,7 +111,7 @@ namespace Weesals.Editor {
                 if (selectedFolder == selectable.Owner) SetSelected(default);
             }
         }
-        public class FileGrid : CanvasRenderable {
+        public class FileGrid : CanvasRenderable, IPointerClickHandler {
             public class FileType {
                 public Sprite? Icon;
                 public static FileType Folder = new() { Icon = Resources.TryLoadSprite("FolderIcon"), };
@@ -225,6 +227,10 @@ namespace Weesals.Editor {
                     ));
                 }
             }
+
+            public void OnPointerClick(PointerEvent events) {
+                SelectableExt.GetSelectionGroup(this)!.ClearSelected();
+            }
         }
 
         FolderList folderList = new();
@@ -237,6 +243,10 @@ namespace Weesals.Editor {
             folderList.SetTransform(CanvasTransform.MakeDefault().WithAnchors(0f, 0f, 0f, 1f).WithOffsets(0f, 0f, 150f, 0f));
             fileGrid.SetTransform(CanvasTransform.MakeDefault().WithOffsets(150f, 0f, 0f, 0f));
             folderList.SetRoot("./Assets/");
+            folderList.AppendChild(new Image() {
+                Color = Color.White.WithAlphaF(0.1f),
+                Transform = CanvasTransform.MakeDefault().WithOffsets(-2f, 0f, 0f, 0f).WithAnchors(1f, 0f, 1f, 1f),
+            });
             AppendChild(folderList);
             AppendChild(fileGrid);
         }

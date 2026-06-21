@@ -134,7 +134,7 @@ namespace Weesals.ECS {
             return newStart;
         }
         public int RequireResize(int start, int length, int newLength, int minBound = 0, int maxBound = int.MaxValue) {
-            var newOffset = TryExtend(start, length, newLength);
+            var newOffset = TryExtend(start, length, newLength, minBound, maxBound);
             if (newOffset != -1) return newOffset;
             newOffset = FindAndSetRange(newLength);
             ClearRange(start, length);

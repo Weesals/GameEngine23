@@ -39,7 +39,7 @@ namespace Weesals.UI {
             public StateFlags Flags;
         }
         public uint DeviceId;
-        public Types Type;
+        public Types DeviceType;
         public StateData Current;
         public StateData Previous;
         public EventTargets Targets;
@@ -151,14 +151,15 @@ namespace Weesals.UI {
     }
     public static class SelectableExt {
         public static ISelectionGroup? GetSelectionGroup(this ISelectable selectable) {
-            if (selectable is CanvasRenderable renderable) {
-                for (object? parent = renderable; parent != null; parent = HierarchyExt.TryGetParent(parent)) {
-                    if (parent is ISelectionGroup group) return group;
-                    if (parent is ISelectionProxy proxy) return proxy.SelectionGroup;
-                }
-                return renderable.Canvas?.SelectionGroup;
-            }
+            if (selectable is CanvasRenderable renderable) return GetSelectionGroup(renderable);
             return default;
+        }
+        public static ISelectionGroup? GetSelectionGroup(this CanvasRenderable renderable) {
+            for (object? parent = renderable; parent != null; parent = HierarchyExt.TryGetParent(parent)) {
+                if (parent is ISelectionGroup group) return group;
+                if (parent is ISelectionProxy proxy) return proxy.SelectionGroup;
+            }
+            return renderable.Canvas?.SelectionGroup;
         }
         public static void Select(this ISelectable selectable) {
             GetSelectionGroup(selectable)?.SetSelected(new(selectable));
@@ -711,12 +712,13 @@ namespace Weesals.UI {
                 var pointer = pointers[i];
                 if (!pointerEvents.TryGetValue(pointer.mDeviceId, out var events)) {
                     events = new PointerEvent(this, pointer.mDeviceId) {
-                        Type = (PointerEvent.Types)pointer.mDeviceType,
+                        //Type = (PointerEvent.Types)pointer.mDeviceType,
                         CurrentPosition = pointer.mPositionCurrent + pointerOffset,
                         ScrollState = new Int2(0, pointer.mMouseScroll),
                     };
                     pointerEvents.Add(pointer.mDeviceId, events);
                 }
+                events.DeviceType = (PointerEvent.Types)pointer.mDeviceType;
                 events.Modifiers = modifiers;
 
                 // Find active element (hover is default state so will always happen at least once)

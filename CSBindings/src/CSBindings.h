@@ -392,6 +392,7 @@ private:
 	static void SetVisible(NativeWindow* window, bool visible);
 	static void SetInput(NativeWindow* window, NativeInput* input);
 	static CSWindowFrame GetWindowFrame(const NativeWindow* window);
+	static bool GetIsFocused(const NativeWindow* window);
 	static void SetWindowFrame(const NativeWindow* window, const RectInt* frame, bool maximized);
 	static void RegisterMovedCallback(const NativeWindow* window, void (*Callback)(), bool enable);
 	static void RegisterSizingCallback(const NativeWindow* window, void (*Callback)(), bool enable);

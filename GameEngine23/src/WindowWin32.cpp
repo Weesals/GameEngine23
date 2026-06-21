@@ -30,7 +30,10 @@ void Invoke(WindowWin32::CallbackList<T>& list) {
 static std::weak_ptr<Pointer> scrollingPointer;
 static bool isScrolling = false;
 static int pointerContactCount = 0;
+static int pointerContactCountCur = 0;
 static clock_t pointerContactTime = 0;
+static clock_t pointerPresentTime = 0;
+bool GetIsTouchpadPresent() { return pointerContactCount >= 0; }
 static auto SetIsScrolling = [&](bool scrolling) {
     if (isScrolling == scrolling) return;
     auto pointer = scrollingPointer.lock();
@@ -165,10 +168,19 @@ int WindowWin32::MessagePump() {
         // (cannot be 1)
         if (msg.message == WM_QUIT) return msg.wParam == 0 ? 1 : (int)msg.wParam;
     }
-    if (pointerContactCount >= 2 && clock() - pointerContactTime > 10 * CLOCKS_PER_SEC / 1000) {
+    if (pointerContactCountCur >= pointerContactCount || clock() - pointerContactTime > 20 * CLOCKS_PER_SEC / 1000) {
+        auto prevContactCount = pointerContactCount;
+        pointerContactCount = pointerContactCountCur;
+        pointerContactTime = clock();
+        if (prevContactCount >= 2 && pointerContactCount < 2) {
+            NotifyScrollPointer(nullptr);
+        }
+    }
+    pointerContactCountCur = -1;
+    /*if (pointerContactCount >= 2 && clock() - pointerContactTime > 10 * CLOCKS_PER_SEC / 1000) {
         pointerContactCount = 0;
         NotifyScrollPointer(nullptr);
-    }
+    }*/
     SetIsScrolling(pointerContactCount >= 2);
     return 0;
 }
@@ -265,7 +277,11 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
         //OutputDebugStringA(str.str().c_str());
     };
     static auto UpdatePointerInfo = [](WindowWin32* window, const std::shared_ptr<Pointer>& pointer, POINTER_INFO& pointerInfo) {
-        pointer->mDeviceType = pointerInfo.pointerType;
+        bool useTouchpad = GetIsTouchpadPresent() || clock() - pointerPresentTime < 100 * CLOCKS_PER_SEC / 1000;
+        if (useTouchpad) pointerPresentTime = clock();
+        pointer->mDeviceType =
+            pointerInfo.pointerType == PT_MOUSE && useTouchpad ? PT_TOUCHPAD :
+            pointerInfo.pointerType;
     };
     static auto ReceivePointerMove = [](HWND hWnd, const std::shared_ptr<Pointer>& pointer, POINTER_INFO& pointerInfo) {
         //POINT p = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
@@ -349,21 +365,27 @@ LRESULT CALLBACK WindowWin32::_WndProc(HWND hWnd, UINT message, WPARAM wParam, L
             PHIDP_PREPARSED_DATA pPreparsedData = (PHIDP_PREPARSED_DATA)parsedDataBuffer;
             GetRawInputDeviceInfo(rawInput.header.hDevice, RIDI_PREPARSEDDATA, pPreparsedData, &dwSize);
 
+            HIDP_CAPS caps;
+            if (HidP_GetCaps(pPreparsedData, &caps) != HIDP_STATUS_SUCCESS) break;
+            if (caps.UsagePage != 0x0D || caps.Usage != 0x05) break;
+
             ULONG contactCount = 0;
             auto result = HidP_GetUsageValue(HidP_Input, 0x0D, 0, 0x54, &contactCount, pPreparsedData,
                 (PCHAR)rawInput.data.hid.bRawData, rawInput.data.hid.dwSizeHid);
+            if (result != HIDP_STATUS_SUCCESS) break;
 
-            HWND rootWnd = hWnd;
+            /*HWND rootWnd = hWnd;
             for (auto parent = hWnd; parent != 0; parent = GetParent(parent)) {
                 rootWnd = parent;
             }
             auto window = reinterpret_cast<WindowWin32*>(GetWindowLongPtr(rootWnd, GWLP_USERDATA));
             auto pointer = window->RequireMousePointer();
-            if (pointer == nullptr) break;
-            if ((int)contactCount >= pointerContactCount) {
+            if (pointer == nullptr) break;*/
+            pointerContactCountCur = std::max(pointerContactCountCur, (int)contactCount);
+            /*if (contactCount > 0) {
                 pointerContactCount = (int)contactCount;
                 pointerContactTime = clock();
-            }
+            }*/
             return 0;
         }
     } break;

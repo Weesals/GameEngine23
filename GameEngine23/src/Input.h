@@ -25,6 +25,7 @@ struct Pointer
 
 	Pointer(unsigned int deviceId)
 		: mDeviceId(deviceId)
+		, mDeviceType(-1)
 		, mTotalDrag(0.0f)
 		, mCurrentButtonState(0)
 		, mPreviousButtonState(0)

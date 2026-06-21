@@ -333,6 +333,9 @@ namespace Game5.Game {
             // TODO: Check visibility and dont process culled
             Play.RenderUpdate(graphics, dt);
 
+            // Do not render with an invalid resolution
+            if (GameViewport.Size.X <= 0 || GameViewport.Size.Y <= 0) return;
+
             // TODO: Avoid calling this twice when TAA is enabled
             ScenePasses.SetupRender(GameViewport.Size);
 

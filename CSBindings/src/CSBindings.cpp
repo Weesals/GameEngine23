@@ -544,6 +544,10 @@ CSWindowFrame CSWindow::GetWindowFrame(const NativeWindow* window) {
 		placement.showCmd == SW_MAXIMIZE
 	};
 }
+bool CSWindow::GetIsFocused(const NativeWindow* window) {
+	auto hwnd = ((WindowWin32*)window)->GetHWND();
+	return GetFocus() == hwnd;
+}
 void CSWindow::SetWindowFrame(const NativeWindow* window, const RectInt* frame, bool maximized) {
 	auto hwnd = ((WindowWin32*)window)->GetHWND();
 	WINDOWPLACEMENT placement = { sizeof(WINDOWPLACEMENT), };

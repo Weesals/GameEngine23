@@ -389,6 +389,7 @@ namespace Weesals.Editor {
                 if (element is not ProxyWindowCanvas proxy) continue;
                 if (!proxy.RequireRender) continue;
                 if (!proxy.Surface.IsValid) continue;
+                if (proxy.GetSize().X <= 0 || proxy.GetSize().Y <= 0) continue;
                 graphics.Reset();
                 using (ProfileMarker_AcquireFrame.Auto()) {
                     graphics.SetSurface(proxy.Surface);

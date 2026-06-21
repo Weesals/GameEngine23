@@ -38,14 +38,14 @@ namespace Weesals.Engine {
             public int Size;
             public int BindPoint;
             public UniformValue[] Values;
-            public override string ToString() { return $"{Name} +{Size}"; }
+            public override string ToString() => $"{Name} +{Size}";
         }
         public partial struct ResourceBinding {
             public CSIdentifier Name;
             public int BindPoint;
             public int Stride;
             public ResourceTypes Type;
-            public override string ToString() { return $"{Name} @{BindPoint}"; }
+            public override string ToString() => $"{Name} @{BindPoint}";
         }
         public partial struct InputParameter {
             public enum Types : byte { P_Unknown, P_UInt, P_SInt, P_Float, };
@@ -55,6 +55,7 @@ namespace Weesals.Engine {
             public int Register;
             public byte Mask;
             public Types Type;
+            public override string ToString() => $"{Type} {Name} : {Semantic}";
         }
 
         public ConstantBuffer[] ConstantBuffers;

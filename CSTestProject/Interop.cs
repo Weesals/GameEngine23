@@ -918,6 +918,10 @@ namespace Weesals.Engine
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetWindowFrame@CSWindow@@CA?AUCSWindowFrame@@PEBVWindowBase@@@Z", ExactSpelling = true)]
         private static extern CSWindowFrame GetWindowFrame([NativeTypeName("const NativeWindow *")] WindowBase* window);
 
+        [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?GetIsFocused@CSWindow@@CA_NPEBVWindowBase@@@Z", ExactSpelling = true)]
+        [return: NativeTypeName("bool")]
+        private static extern byte GetIsFocused([NativeTypeName("const NativeWindow *")] WindowBase* window);
+
         [DllImport("CSBindings", CallingConvention = CallingConvention.Cdecl, EntryPoint = "?SetWindowFrame@CSWindow@@CAXPEBVWindowBase@@PEBURectInt@@_N@Z", ExactSpelling = true)]
         private static extern void SetWindowFrame([NativeTypeName("const NativeWindow *")] WindowBase* window, [NativeTypeName("const RectInt *")] Weesals.Engine.RectI* frame, [NativeTypeName("bool")] byte maximized);
 
