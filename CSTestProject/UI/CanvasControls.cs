@@ -67,6 +67,23 @@ namespace Weesals.UI {
             }
             base.ComposePartial();
         }
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            switch (AspectMode) {
+                case AspectModes.PreserveAspectContain:
+                case AspectModes.PreserveAspectClip: {
+                    if (!Texture.IsValid) break;
+                    var size = Texture.GetTextureResolution();
+                    if (size.Y <= 0f) break;
+                    sizing.PreferredSize.X = MathF.Max(sizing.PreferredSize.X, sizing.MinimumSize.Y * size.X / size.Y);
+                    sizing.PreferredSize.Y = MathF.Max(sizing.PreferredSize.Y, sizing.MinimumSize.X * size.Y / size.X);
+                    sizing.PreferredSize.X = MathF.Min(sizing.PreferredSize.X, sizing.MaximumSize.Y * size.X / size.Y);
+                    sizing.PreferredSize.Y = MathF.Min(sizing.PreferredSize.Y, sizing.MaximumSize.X * size.Y / size.X);
+                }
+                break;
+            }
+            var result = base.GetDesiredSize(sizing);
+            return result;
+        }
     }
     public class TextBlock : CanvasRenderable {
         public enum ExplicitFields { None = 0, Color = 1, }
@@ -1282,6 +1299,20 @@ namespace Weesals.UI {
             //using var tform = composer.PushTransformer(CloneTransform);
             using var usemat = composer.PushMaterial(transformMaterial);
             base.Compose(ref composer);
+        }
+    }
+    // TODO: This doesnt really work. Assigning an Image with an aspect ratio as a child
+    // should fit the preferred size with min/max bounds respecting aspect.
+    // Currently preferred size can ONLY increase, but it needs to decrease for images.
+    public class SizedContainer : CanvasRenderable {
+        public Vector2 MinimumSize = new(0f);
+        public Vector2 MaximumSize = new(float.MaxValue);
+        public Vector2 PreferredSize = new(20f);
+        public override SizingResult GetDesiredSize(SizingParameters sizing) {
+            sizing.MinimumSize = Vector2.Max(MinimumSize, sizing.MinimumSize);
+            sizing.MaximumSize = Vector2.Min(MaximumSize, sizing.MaximumSize);
+            sizing.PreferredSize = PreferredSize;
+            return base.GetDesiredSize(sizing);
         }
     }
 }

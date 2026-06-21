@@ -31,6 +31,9 @@ namespace Weesals.Landscape {
             EdgeMaterial = new("./Assets/landscapeEdge.hlsl", landscape.LandMaterial);
             EdgeMaterial.SetMacro("EDGE", "1");
             EdgeMaterial.SetTexture("EdgeTex", Resources.LoadTexture("./Assets/T_WorldsEdge.jpg"));
+            EdgeMaterial.SetRasterMode(RasterMode.MakeNoCull());
+            EdgeMaterial.SetBlendMode(BlendMode.MakeOpaque());
+            EdgeMaterial.SetDepthMode(DepthMode.MakeDefault());
             //EdgeMaterial.SetRasterMode(RasterMode.MakeNoCull());
 
             WaterEdgeMaterial = new Material(landscape.WaterMaterial);

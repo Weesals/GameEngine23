@@ -406,16 +406,16 @@ namespace Weesals.UI {
         public virtual SizingResult GetDesiredSize(SizingParameters sizing) {
             if (IgnoreLayout) sizing = SizingParameters.Default;
             var childSizing = sizing;
-            childSizing.Unapply(Transform);
-            var childSize = Vector2.Zero;
             if (mChildren != null) {
+                childSizing.Unapply(Transform);
+                var childSize = Vector2.Zero;
                 for (int i = 0; i < mChildren.Count; i++) {
                     if (mChildren[i].IgnoreLayout) continue;
                     childSize = Vector2.Max(childSize, mChildren[i].GetDesiredSize(childSizing));
                 }
+                childSizing.PreferredSize = Vector2.Max(childSizing.PreferredSize, childSize);
+                childSizing.Apply(Transform);
             }
-            childSizing.PreferredSize = Vector2.Max(childSizing.PreferredSize, childSize);
-            childSizing.Apply(Transform);
             return Vector2.Clamp(childSizing.PreferredSize, sizing.MinimumSize, sizing.MaximumSize);
         }
 

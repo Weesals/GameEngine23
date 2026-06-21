@@ -121,7 +121,39 @@ namespace Weesals.Editor {
                 public static FileType ModelFile = new() { Icon = Resources.TryLoadSprite("FileModel"), };
                 public static FileType ImageFile = new() { Icon = Resources.TryLoadSprite("FileImage"), };
             }
-            public class FileView : Selectable, IPointerClickHandler, IBeginDragHandler, ICustomTransformer {
+            public class FileInspector : ICustomInspector {
+                public CanvasRenderable Initialize(object target) {
+                    if (target is FileView fileView) {
+                        if (fileView.Type == FileType.ImageFile) {
+                            Image img = null;
+                            TextButton alphaToggle = null;
+                            bool enableAlpha = false;
+                            void SetEnableAlpha(bool enable) {
+                                enableAlpha = enable;
+                                img.Element.RequireMaterial().SetBlendMode(enableAlpha ? BlendMode.MakeAlphaBlend() : BlendMode.MakeOpaque());
+                                alphaToggle.TextColor = enableAlpha ? Color.Orange : Color.White;
+                            }
+                            var list = new ListLayout() { Axis = CanvasAxes.Vertical, };
+                            var modes = new ListLayout() { Axis = CanvasAxes.Horizontal, };
+                            modes.AppendChild(alphaToggle = new TextButton("Alpha"));
+                            alphaToggle.OnClick += () => { SetEnableAlpha(!enableAlpha); };
+                            list.AppendChild(modes);
+                            var container = new SizedContainer() { PreferredSize = new(float.MaxValue), };
+                            container.MaximumSize.Y = 200f;
+                            img = new Image(Resources.LoadTexture(fileView.Filename)) {
+                                AspectMode = Image.AspectModes.PreserveAspectContain,
+                            };
+                            container.AppendChild(img);
+                            list.AppendChild(container);
+                            SetEnableAlpha(false);
+                            return list;
+                        }
+                    }
+                    return null;
+                }
+                public void Uninitialize(object target) { }
+            }
+            public class FileView : Selectable, IPointerClickHandler, IBeginDragHandler, ICustomTransformer, IUseCustomInspector {
                 public class FileAnimator : ICustomTransformer {
                     public DateTime BeginTime;
                     public TimeSpan TimeSince => DateTime.UtcNow - BeginTime;
@@ -140,6 +172,9 @@ namespace Weesals.Editor {
                 public Image Icon;
                 public TextBlock Text;
                 private FileAnimator? animator;
+
+                ICustomInspector IUseCustomInspector.InspectorEditor => new FileInspector();
+
                 public FileView(string filename, FileType type) {
                     Filename = filename;
                     Type = type;

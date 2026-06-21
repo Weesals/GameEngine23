@@ -21,6 +21,14 @@ using Weesals.Utility;
 
 namespace Weesals.Editor {
 
+    public interface ICustomInspector {
+        CanvasRenderable Initialize(object target);
+        void Uninitialize(object target);   // TODO: This is never called.
+    }
+    public interface IUseCustomInspector {
+        ICustomInspector InspectorEditor { get; }
+    }
+
     public interface IInspectorGameOverlay {
         CanvasRenderable GameViewOverlay { get; }
     }
@@ -438,6 +446,14 @@ namespace Weesals.Editor {
             List.ClearChildren();
             foreach (var editable in Editables) {
                 List.AppendChild(new TextBlock(editable.GetType().Name) { });
+                if (editable is IUseCustomInspector hasCustomInspector) {
+                    var inspector = hasCustomInspector.InspectorEditor;
+                    var element = inspector?.Initialize(editable);
+                    if (element != null) {
+                        List.AppendChild(element);
+                        continue;
+                    }
+                }
                 var properties = new UIPropertiesList() { Name = "Editables Inspector" };
                 properties.AppendPropertiesFrom(editable);
                 List.AppendChild(properties);

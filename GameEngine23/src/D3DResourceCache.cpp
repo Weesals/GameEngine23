@@ -862,22 +862,23 @@ D3DResourceCache::CommandAllocator* D3DResourceCache::RequireAllocator() {
     }
     std::shared_ptr<CommandAllocator> allocator = std::make_shared<CommandAllocator>();
     ThrowIfFailed(mD3D12.GetD3DDevice()->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator->mCmdAllocator)));
-    char name[32]; sprintf_s(name, "CmdAl %d", (int)allocator->mId);
-    allocator->mCmdAllocator->SetPrivateData(WKPDID_D3DDebugObjectName, (UINT)strlen(name), name);
     allocator->mFenceValue = 1;
     allocator->mLockFrame = 0;
     // Create fence for frame synchronisation
     ThrowIfFailed(mD3D12.GetD3DDevice()->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&allocator->mFence)));
     allocator->mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     if (allocator->mFenceEvent == nullptr) ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
-
+    {
+        static std::mutex cmdAllocMutex;
+        std::scoped_lock lock(cmdAllocMutex);
+        allocator->mId = (int)mCommandAllocators.size();
+        mCommandAllocators.push_back(allocator);
+    }
+    char name[32]; sprintf_s(name, "CmdAl %d", (int)allocator->mId);
+    allocator->mCmdAllocator->SetPrivateData(WKPDID_D3DDebugObjectName, (UINT)strlen(name), name);
     char msg[32]; sprintf_s(msg, "Creating %s\n", name);
     OutputDebugStringA(msg);
 
-    static std::mutex cmdAllocMutex;
-    std::scoped_lock lock(cmdAllocMutex);
-    allocator->mId = (int)mCommandAllocators.size();
-    mCommandAllocators.push_back(allocator);
     return allocator.get();
 }
 LockMask lastInflightFrames = 0;

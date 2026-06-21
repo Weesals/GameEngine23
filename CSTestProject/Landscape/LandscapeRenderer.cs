@@ -167,7 +167,7 @@ namespace Weesals.Landscape {
                     WaterMaterial = new("./Assets/water.hlsl", landMaterial);
                     //WaterMaterial.SetBlendMode(BlendMode.MakeAlphaBlend());
                     //WaterMaterial.SetDepthMode(DepthMode.MakeReadOnly());
-                    //EdgeRenderer = new LandscapeEdgeRenderer(this);
+                    EdgeRenderer = new LandscapeEdgeRenderer(this);
                     LandMaterial = landMaterial;
                 }
                 HighQualityBlend = HighQualityBlend;
