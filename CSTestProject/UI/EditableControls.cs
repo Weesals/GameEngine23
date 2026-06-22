@@ -69,7 +69,11 @@ namespace Weesals.UI {
             base.Compose(ref composer);
         }
         public override SizingResult GetDesiredSize(SizingParameters sizing) {
-            return base.GetDesiredSize(sizing) + new Vector2(8f, 8f);
+            var margin = new Vector2(8f, 8f);
+            sizing.MinimumSize -= margin;
+            sizing.MaximumSize -= margin;
+            sizing.PreferredSize -= margin;
+            return base.GetDesiredSize(sizing) + margin;
         }
 
         private void SetCursorIndex(int index) {

@@ -97,12 +97,14 @@ namespace Weesals.UI {
         }
     }
     public struct SizingResult {
+        public int Priority;
         public Vector2 Size;
         public Vector4 Margins;
         public Vector2 TotalSize => Size + new Vector2(Margins.X + Margins.Z, Margins.Y + Margins.W);
 
         public float X { get => Size.X; set => Size.X = value; }
         public float Y { get => Size.Y; set => Size.Y = value; }
+        public override string ToString() => Size.ToString();
         public static implicit operator SizingResult(Vector2 s) => new() { Size = s, };
         public static implicit operator Vector2(SizingResult r) => r.Size;
     }
@@ -413,7 +415,8 @@ namespace Weesals.UI {
                     if (mChildren[i].IgnoreLayout) continue;
                     childSize = Vector2.Max(childSize, mChildren[i].GetDesiredSize(childSizing));
                 }
-                childSizing.PreferredSize = Vector2.Max(childSizing.PreferredSize, childSize);
+                //childSizing.PreferredSize = Vector2.Max(childSizing.PreferredSize, childSize);
+                childSizing.PreferredSize = childSize;
                 childSizing.Apply(Transform);
             }
             return Vector2.Clamp(childSizing.PreferredSize, sizing.MinimumSize, sizing.MaximumSize);

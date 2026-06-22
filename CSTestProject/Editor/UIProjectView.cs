@@ -64,7 +64,10 @@ namespace Weesals.Editor {
                         contextMenu.Show((Vector2)(windowFrame.ClientOffset) + events.CurrentPosition);
                         return;
                     }
+                    var folderList = FindParent<FolderList>();
+                    var expand = !IsSelected || !folderList.GetIsExpanded(this);
                     base.OnPointerDown(events);
+                    folderList.SetExpanded(this, expand);
                 }
             }
 
@@ -78,20 +81,72 @@ namespace Weesals.Editor {
                 scrollView.AppendChild(folderList);
                 AppendChild(scrollView);
             }
+            private int GetFolderIndex(FolderView folder) {
+                var folderChildren = folderList.Children;
+                for (int i = 0; i < folderChildren.Count; i++) if (folderChildren[i] == folder) return i;
+                return -1;
+            }
+            private RangeInt GetDescendentRange(FolderView folder) {
+                var folderChildren = folderList.Children;
+                var folderIndex = GetFolderIndex(folder);
+                var childIndex = folderIndex + 1;
+                var parent = folder;
+                for (; ; ++childIndex) {
+                    if (childIndex >= folderChildren.Count) break;
+                    if (folderChildren[childIndex] is not FolderView childView) break;
+                    for (; childView.ParentFolder != parent; parent = parent!.ParentFolder) {
+                        if (parent == folder) { parent = null; break; }
+                    }
+                    if (parent == null) break;
+                    parent = childView;
+                }
+                return new(folderIndex, childIndex - folderIndex);
+            }
+            public bool GetIsExpanded(FolderView folder) {
+                var folderChildren = folderList.Children;
+                var childIndex = GetFolderIndex(folder) + 1;
+                return childIndex < folderChildren.Count && (folderChildren[childIndex] as FolderView).ParentFolder == folder;
+            }
+            public bool SetExpanded(FolderView folder, bool expanded) {
+                var folderChildren = folderList.Children;
+                var childIndex = GetFolderIndex(folder) + 1;
+                var isExpanded = childIndex < folderChildren.Count && (folderChildren[childIndex] as FolderView).ParentFolder == folder;
+                if (isExpanded == expanded) return false;
+                if (expanded) {
+                    foreach (var childPath in Directory.EnumerateDirectories(folder.Filename)) {
+                        folderList.InsertChild(childIndex, new FolderView(childPath, Path.GetFileName(childPath), folder));
+                        ++childIndex;
+                    }
+                } else {
+                    var range = GetDescendentRange(folder);
+                    for (int i = range.End - 1; i > range.Start; i--) {
+                        folderList.RemoveChild(folderChildren[i]);
+                    }
+                }
+                return true;
+            }
             public void SetRoot(string rootPath) {
                 folderList.ClearChildren();
                 var root = new FolderView(rootPath, "Project");
                 folderList.AppendChild(root);
-                foreach (var folder in Directory.EnumerateDirectories(rootPath)) {
-                    folderList.AppendChild(new FolderView(folder, Path.GetFileName(folder), root));
-                }
+                SetExpanded(root, true);
             }
 
             public void SetContentPath(string path) {
-                foreach (var child in folderList.Children) {
-                    if (child is FolderView folderView && folderView.Filename == path) {
-                        folderView.Select();
+                var folderChildre = folderList.Children;
+                int folderIndex = 0;
+                FolderView? parent = null;
+                while (true) {
+                    if (folderList.Children[folderIndex] is not FolderView folderView) continue;
+                    if (folderView.ParentFolder == parent && path.StartsWith(folderView.Filename)) {
+                        parent = folderView;
+                        if (folderView.Filename == path) break;
+                        SetExpanded(parent, true);
                     }
+                    ++folderIndex;
+                }
+                if (parent != null) {
+                    parent.Select();
                 }
             }
             public void SetSelected(ItemReference selectable) {
@@ -134,6 +189,7 @@ namespace Weesals.Editor {
                                 alphaToggle.TextColor = enableAlpha ? Color.Orange : Color.White;
                             }
                             var list = new ListLayout() { Axis = CanvasAxes.Vertical, };
+                            list.AppendChild(new TextBlock(Path.GetFileName(fileView.Filename) + " <Texture>"));
                             var modes = new ListLayout() { Axis = CanvasAxes.Horizontal, };
                             modes.AppendChild(alphaToggle = new TextButton("Alpha"));
                             alphaToggle.OnClick += () => { SetEnableAlpha(!enableAlpha); };
@@ -145,7 +201,16 @@ namespace Weesals.Editor {
                             };
                             container.AppendChild(img);
                             list.AppendChild(container);
+                            list.Transform = CanvasTransform.MakeDefault().WithOffsets(10f, 0f, 0f, 0f);
                             SetEnableAlpha(false);
+                            return list;
+                        }
+                        if (fileView.Type == FileType.ShaderFile) {
+                            var list = new ListLayout() { Axis = CanvasAxes.Vertical, };
+                            list.AppendChild(new TextBlock(Path.GetFileName(fileView.Filename) + " <Shader>"));
+                            //var vshader = Resources.LoadShader(fileView.Filename, "VSMain");
+                            //var fshader = Resources.LoadShader(fileView.Filename, "FSMain");
+                            //list.AppendChild(new TextBlock($" Vertex: {}"));
                             return list;
                         }
                     }

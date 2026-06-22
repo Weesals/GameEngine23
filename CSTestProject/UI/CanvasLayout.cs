@@ -165,6 +165,7 @@ namespace Weesals.UI {
         public override int GetHashCode() {
             return HashCode.Combine(AxisX, AxisY, AxisZ, Position);
         }
+        public override string ToString() => $"{Position} {GetSize()}";
     }
 
     public struct CanvasTransform : IEquatable<CanvasTransform> {

@@ -114,7 +114,7 @@ namespace Weesals.Editor {
             }
             public override SizingResult GetDesiredSize(SizingParameters sizing) {
                 var size = base.GetDesiredSize(sizing);
-                size.X = sizing.ClampWidth(Math.Max(size.X, 200.0f));
+                size.X = sizing.ClampWidth(Math.Max(size.X, 180.0f));
                 return size;
             }
         }
@@ -124,7 +124,7 @@ namespace Weesals.Editor {
             public Action OnValueChanged;
             public PropertyLabel(PropertyPath path) : base(path.GetPropertyName()) {
                 Binding = path;
-                TextElement.Alignment = TextAlignment.Left;
+                TextElement.Anchor = new(0f, 0.5f);
             }
             public void OnBeginDrag(PointerEvent events) {
                 if (!events.GetIsButtonDown(0)) { events.Yield(); return; }
@@ -149,8 +149,9 @@ namespace Weesals.Editor {
                 } catch { }
             }
             public override SizingResult GetDesiredSize(SizingParameters sizing) {
+                sizing.MinimumSize.X = Math.Max(sizing.MinimumSize.X, 100.0f);
                 var size = base.GetDesiredSize(sizing);
-                size.X = Math.Max(size.X, 100.0f);
+                size.Priority--;
                 return size;
             }
         }
@@ -279,6 +280,7 @@ namespace Weesals.Editor {
         private List<Bindables> bindables = new();
         public UIPropertiesList() {
             Axis = CanvasAxes.Vertical;
+            Transform = CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f);
         }
         public override void Initialise(CanvasBinding binding) {
             base.Initialise(binding);
@@ -296,7 +298,7 @@ namespace Weesals.Editor {
             var row = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
             var label = new PropertyLabel(path) { FontSize = 14, };
             if (onChanged != null) label.OnValueChanged += () => { onChanged(); };
-            label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
+            label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(0f, 0f, 0f, 0f));
             row.AppendChild(label);
 
             var type = path.GetPropertyType();
@@ -327,7 +329,7 @@ namespace Weesals.Editor {
         public void AppendSelector(PropertyPath dataList, PropertyPath path, Action onChanged = null) {
             var row = new ListLayout() { Axis = CanvasAxes.Horizontal, ScaleMode = ScaleModes.StretchOrClamp, };
             var label = new PropertyLabel(path) { FontSize = 14, };
-            label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(10f, 0f, -10f, 0f));
+            label.SetTransform(CanvasTransform.MakeDefault().WithOffsets(0f, 0f, 0f, 0f));
             row.AppendChild(label);
             var selector = new DropDownSelector(dataList, path) { };
             row.AppendChild(selector);

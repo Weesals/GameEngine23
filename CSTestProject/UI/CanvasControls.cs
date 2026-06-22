@@ -146,7 +146,8 @@ namespace Weesals.UI {
             var anchorDelta = Transform.AnchorMax - Transform.AnchorMin;
             if (anchorDelta.X > 0f) size.X /= anchorDelta.X;
             if (anchorDelta.Y > 0f) size.Y /= anchorDelta.Y;
-            return size;
+            sizing.SetPreferredSize(size);
+            return base.GetDesiredSize(sizing);
         }
         public override string ToString() { return $"Text<{Text}>"; }
     }
@@ -448,6 +449,11 @@ namespace Weesals.UI {
         public ToggleButton() : this(Resources.TryLoadSprite("Tick")!) { }
         public ToggleButton(CSTexture texture) : base(texture) { }
         public ToggleButton(Sprite sprite) : base(sprite) { }
+        public override void Initialise(CanvasBinding binding) {
+            Background.SetSprite(Resources.TryLoadSprite("ButtonFrame"));
+            Background.SpriteScale = 0.5f;
+            base.Initialise(binding);
+        }
         public override void InvokeClick() {
             base.InvokeClick();
             State = !State;
@@ -792,7 +798,7 @@ namespace Weesals.UI {
             public float MaximumHeight;
             public float FlexibleSize;
         }
-        private ListSizing ComputeDesiredSizing(SizingParameters childSizing, Span<RectF> localRects, out Vector4 margin) {
+        private ListSizing ComputeDesiredSizing(SizingParameters childSizing, Span<RectF> localRects, Span<int> localPriorities, out Vector4 margin) {
             margin = Vector4.Zero;
 
             var children = mChildren!;
@@ -817,6 +823,7 @@ namespace Weesals.UI {
                 margin.W = MathF.Max(margin.W, localMargin.W);
 
                 localRects[c] = new(result.TotalSize, 0f, itemSizeLX, itemSizeLY);
+                localPriorities[c] = itemSize.Priority;
                 result.TotalSize += itemSizeLX;
                 result.FlexibleSize += itemSizeLX;
                 result.MaximumHeight = MathF.Max(result.MaximumHeight, itemSizeLY);
@@ -830,10 +837,10 @@ namespace Weesals.UI {
             return sizeScale;
         }
 
-        public ListSizing ComputeSizing(Vector2 size, Span<RectF> localRects, out Vector4 margin) {
+        public ListSizing ComputeSizing(Vector2 size, Span<RectF> localRects, Span<int> localPriorities, out Vector4 margin) {
             var childSizing = SizingParameters.Default;
             childSizing.SetFixedSize(Axis.OtherAxis(), size[Axis.OtherAxis().ToVectorComponent()]);
-            var listSizing = ComputeDesiredSizing(childSizing, localRects, out margin);
+            var listSizing = ComputeDesiredSizing(childSizing, localRects, localPriorities, out margin);
             if (ScaleMode == ScaleModes.StretchOrClamp && listSizing.FlexibleSize == 0f) {
                 listSizing.TotalSize = size[Axis.ToVectorComponent()];
                 listSizing.FlexibleSize = listSizing.TotalSize - Separation * (localRects.Length - 1);
@@ -847,12 +854,40 @@ namespace Weesals.UI {
             }
             var sizeScale = ComputeScaling(size, listSizing.FlexibleSize);
             if (sizeScale != 1f) {
-                float offset = 0f;
-                for (int i = 0; i < localRects.Length; i++) {
-                    ref var rect = ref localRects[i];
-                    rect.X += offset;
-                    offset += rect.Width * (sizeScale - 1f);
-                    rect.Width *= sizeScale;
+                float ApplyScale(Span<RectF> localRects, Span<int> localPriorities, int priority, float scale) {
+                    float offset = 0f;
+                    for (int i = 0; i < localRects.Length; i++) {
+                        ref var rect = ref localRects[i];
+                        rect.X += offset;
+                        if (localPriorities[i] == priority) {
+                            offset += rect.Width * (scale - 1f);
+                            rect.Width *= scale;
+                        }
+                    }
+                    return offset;
+                }
+                ulong priorities = 0uL;
+                for (int i = 0; i < localPriorities.Length; i++) {
+                    priorities |= 1uL << (localPriorities[i] + 32);
+                }
+                if (BitOperations.PopCount(priorities) <= 1) {
+                    // Fast-path if we only have 1 priority
+                    ApplyScale(localRects, localPriorities, BitOperations.LeadingZeroCount(priorities) - 31, sizeScale);
+                } else {
+                    // Otherwise process low priorities first
+                    // TODO: Should respect min/max size (maybe?) otherwise it always completes for lowest priority
+                    var scaleDelta = listSizing.FlexibleSize * (1f - sizeScale);
+                    foreach (var priority in new BitEnumerator(priorities)) {
+                        float priorityWidth = 0f;
+                        for (int i = 0; i < localRects.Length; i++) {
+                            ref var rect = ref localRects[i];
+                            if (localPriorities[i] == priority - 32) priorityWidth += rect.Width;
+                        }
+                        if (priorityWidth <= 0f) continue;
+                        var priorityScale = Math.Max(0f, 1f - scaleDelta / priorityWidth);
+                        scaleDelta += ApplyScale(localRects, localPriorities, priority - 32, priorityScale);
+                        if (Math.Abs(scaleDelta) < 0.001f) break;
+                    }
                 }
             }
             return listSizing;
@@ -862,7 +897,8 @@ namespace Weesals.UI {
             if (mChildren == null) return;
             var layout = mLayoutCache;
             Span<RectF> localRects = stackalloc RectF[mChildren.Count];
-            ComputeSizing(layout.GetSize(), localRects, out var margin);
+            Span<int> localPriorities = stackalloc int[mChildren.Count];
+            ComputeSizing(layout.GetSize(), localRects, localPriorities, out var margin);
             ref var axisVec4 = ref (Axis == CanvasAxes.Horizontal ? ref layout.AxisX : ref layout.AxisY);
             var axisVec = axisVec4.toxyz();
             for (int c = 0; c < mChildren.Count; ++c) {
@@ -881,11 +917,12 @@ namespace Weesals.UI {
             if (mChildren == null || mChildren.Count == 0) return sizing.ClampSize(default);
 
             Span<RectF> localRects = stackalloc RectF[mChildren.Count];
+            Span<int> localPriorities = stackalloc int[mChildren.Count];
             var resultSizing = sizing;
             resultSizing.Unapply(Transform);
             var childSizing = SizingParameters.Default;
             childSizing.CopyAxis(Axis.OtherAxis(), resultSizing);
-            var listSizing = ComputeDesiredSizing(childSizing, localRects, out var margin);
+            var listSizing = ComputeDesiredSizing(childSizing, localRects, localPriorities, out var margin);
             resultSizing.SetClampedPreferredSize(Axis, listSizing.TotalSize);
             resultSizing.SetClampedPreferredSize(Axis.OtherAxis(), listSizing.MaximumHeight);
             resultSizing.Apply(Transform);
