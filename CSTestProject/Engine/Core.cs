@@ -6,12 +6,15 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Weesals.Engine.Jobs;
 using Weesals.Engine.Profiling;
 
 namespace Weesals.Engine {
     public class Core : IDisposable {
         private Platform platform;
         private CSGraphics graphics;
+
+        public static JobHandle GraphicsJob;
 
         unsafe public Core() {
             using (var marker = new ProfilerMarker("Creating Core").Auto()) {
@@ -35,7 +38,7 @@ namespace Weesals.Engine {
                 return platform.CreateWindow(name);
             }
         }
-        public CSGraphics GetGraphics() { return graphics; }
+        public CSGraphics GetGraphics() { GraphicsJob.Complete(); GraphicsJob = default; return graphics; }
         public CSResources GetResources() { return platform.GetResources(); }
         public CSInput CreateInput() { return platform.CreateInput(); }
 

@@ -309,7 +309,9 @@ public:
 
     void BindPipelineState(const D3DResourceCache::D3DPipelineState* pipelineState) {
         if (mGraphicsRoot.mLastPipeline == pipelineState) return;
+#if _DEBUG
         mDevice->CheckDeviceState();
+#endif
         // Require and bind a pipeline matching the material config and mesh attributes
         if (mGraphicsRoot.mLastRootSig != pipelineState->mRootSignature) {
             mGraphicsRoot.mLastRootSig = pipelineState->mRootSignature;
@@ -377,7 +379,7 @@ public:
         return pipelineState->mLayout.get();
     }
 
-    int BindConstantBuffers(std::pair<int, const D3DConstantBuffer*> constantBinds[32], std::vector<const ShaderBase::ConstantBuffer*> cbuffers, std::span<const void*> resources, int& r) {
+    int BindConstantBuffers(std::pair<int, const D3DConstantBuffer*> constantBinds[32], const std::vector<const ShaderBase::ConstantBuffer*>& cbuffers, std::span<const void*> resources, int& r) {
         cbBumpAllocator.mBumpConstantBuffer = -1;
         for (int i = 0; i < cbuffers.size(); ++i) {
             constantBinds[i] = { cbuffers[i]->mBindPoint, (D3DConstantBuffer*)resources[r++] };
@@ -385,7 +387,7 @@ public:
         return (int)cbuffers.size();
     }
 
-    int BindResources(std::tuple<int, int, UINT64> bindPoints[32], std::vector<const ShaderBase::ResourceBinding*> bindings, std::span<const void*> resources, int& r
+    int BindResources(std::tuple<int, int, UINT64> bindPoints[32], const std::vector<const ShaderBase::ResourceBinding*>& bindings, std::span<const void*> resources, int& r
         , int srvBindOffset, int uavBindOffset) {
         auto& cache = mDevice->GetResourceCache();
         for (int i = 0; i < bindings.size(); ++i) {

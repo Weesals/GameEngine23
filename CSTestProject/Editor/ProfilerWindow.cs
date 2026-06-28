@@ -146,8 +146,10 @@ namespace Weesals.Editor {
             graphics.Reset();
             graphics.SetSurface(Surface);
             graphics.SetRenderTargets(Surface.GetBackBuffer(), default);
-            graphics.Clear();
+            graphics.SetViewport(new(default, Surface.GetResolution()));
+            graphics.Clear(new CSClearConfig(Color.Black, 1f));
             Canvas.SetSize(WindowSize);
+            Canvas.PreUpdate(dt);
             Canvas.Update(dt);
             Canvas.RequireComposed();
             Canvas.Render(graphics);

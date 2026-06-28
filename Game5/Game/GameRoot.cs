@@ -212,13 +212,13 @@ namespace Game5.Game {
             Play.Update(dt);
             PreRender();
 
-            if (Input.GetKeyPressed(KeyCode.F4) && profilerWindow == null) {
+            if (Input.GetKeyPressed(KeyCode.F4) && (profilerWindow == null || !profilerWindow.Window.IsAlive())) {
                 profilerWindow = new();
                 var window = Core.ActiveInstance.CreateWindow("Profiler");
                 window.SetVisible(true);
                 profilerWindow?.RegisterRootWindow(window);
             }
-            if (Input.GetKeyPressed(KeyCode.F3) && previewWindow == null) {
+            if (Input.GetKeyPressed(KeyCode.F3) && (previewWindow == null || !previewWindow.Window.IsAlive())) {
                 previewWindow = new(Play.ParticleManager);
                 var window = Core.ActiveInstance.CreateWindow("Particles");
                 window.SetVisible(true);

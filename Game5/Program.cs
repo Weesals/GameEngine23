@@ -23,7 +23,7 @@ class Program {
     public static void Main() {
         var scope = ProfileMarker_MainStartup.Auto();
         var coreJob = JobHandle.Schedule(static () => Core.ActiveInstance = new Core());
-        var grapJob = coreJob.Then(static () => Core.ActiveInstance.InitializeGraphics());
+        Core.GraphicsJob = coreJob.Then(static () => Core.ActiveInstance.InitializeGraphics());
         var loadJob = JobHandle.Schedule(Resources.LoadDefaultAssets);
         scope.Dispose();
 
@@ -40,10 +40,9 @@ class Program {
         }, JobHandle.CombineDependencies(loadJob, coreJob));
 
         // Auto configure quality level
-        grapJob = JobHandle.CombineDependencies(rootJob, grapJob)
-            .Then(() => {
-                root.Play.SetAutoQuality(Core.ActiveInstance.GetGraphics());
-            });
+        var playJob = JobHandle.Schedule(() => {
+            root.Play.SetAutoQuality(Core.ActiveInstance.GetGraphics());
+        }, JobHandle.CombineDependencies(rootJob, Core.GraphicsJob));
 
         // Need Core to create window
         coreJob.Complete();
@@ -59,14 +58,16 @@ class Program {
 
             // Wait for game root before binding editor and showing window
             rootJob.Complete();
-            grapJob.Complete();
+            //grapJob.Complete();
             editorWindow.RegisterRootWindow(editorWin);
             using (var marker = new ProfilerMarker("Attach Editor").Auto()) {
-                grapJob = grapJob.Then(() => {
-                    editorWin.SetVisible(true);
-                });
+                JobHandle.RunOnMain((context) => {
+                    using (var marker = new ProfilerMarker("Editor.SetVisible").Auto()) {
+                        editorWin.SetVisible(true);
+                    }
+                }, JobHandle.CombineDependencies(playJob, Core.GraphicsJob));
                 root.AttachToEditor(editorWindow);
-                grapJob.Complete();
+                //grapJob.Complete();
             }
         } else {
             rootJob.Complete();

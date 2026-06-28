@@ -134,11 +134,16 @@ namespace Weesals.UI {
         public new void SetSize(Int2 size) {
             base.SetSize(size);
             if (!Window.IsValid) return;
-            if (!Surface.IsValid && size.X > 0) {
-                Surface = Core.ActiveInstance.GetGraphics().CreateSurface(Window);
-            }
             if (Surface.IsValid && Surface.GetResolution() != size) {
                 Surface.SetResolution(size);
+            }
+        }
+
+        public void RequireSurface(CSGraphics graphics) {
+            var layoutRect = GetWindowRect();
+            if (!Surface.IsValid && layoutRect.Width > 0) {
+                Surface = Core.ActiveInstance.GetGraphics().CreateSurface(Window);
+                Surface.SetResolution(layoutRect.Size);
             }
         }
 

@@ -178,6 +178,8 @@ namespace Weesals.Editor {
         private static ProfilerMarker ProfileMarker_AcquireFrame = new("Acquire Frame");
         private static ProfilerMarker ProfileMarker_GameViewUpdate = new("GameView");
         private static ProfilerMarker ProfileMarker_Present = new("Present");
+        private static ProfilerMarker ProfileMarker_RenderWindow = new("RenderWindow");
+        private static ProfilerMarker ProfileMarker_GraphicsExecute = new("GraphicsExecute");
         private static ProfilerMarker ProfileMarker_RenderCanvas = new("Canvas");
 
         public class EditorCanvas : Canvas, IProxyWindowContainer {
@@ -420,19 +422,24 @@ namespace Weesals.Editor {
             foreach (var element in proxyWindows) {
                 if (element is not ProxyWindowCanvas proxy) continue;
                 if (!proxy.RequireRender) continue;
-                if (!proxy.Surface.IsValid) continue;
+                //if (!proxy.Surface.IsValid) continue;
                 if (proxy.GetSize().X <= 0 || proxy.GetSize().Y <= 0) continue;
-                graphics.Reset();
-                using (ProfileMarker_AcquireFrame.Auto()) {
-                    graphics.SetSurface(proxy.Surface);
+                using (ProfileMarker_RenderWindow.Auto()) {
+                    graphics.Reset();
+                    proxy.RequireSurface(graphics);
+                    using (ProfileMarker_AcquireFrame.Auto()) {
+                        graphics.SetSurface(proxy.Surface);
+                    }
+                    graphics.SetRenderTargets(proxy.Surface.GetBackBuffer(), default);
+                    graphics.SetViewport(new(default, proxy.GetSize()));
+                    proxy.Render(graphics);
+                    proxy.NotifyRendered();
+                    requirePresent.Add(proxy);
+                    // Flush render command buffer
+                    using (ProfileMarker_GraphicsExecute.Auto()) {
+                        graphics.Execute();
+                    }
                 }
-                graphics.SetRenderTargets(proxy.Surface.GetBackBuffer(), default);
-                graphics.SetViewport(new(default, proxy.GetSize()));
-                proxy.Render(graphics);
-                proxy.NotifyRendered();
-                requirePresent.Add(proxy);
-                // Flush render command buffer
-                graphics.Execute();
             }
 
             using (ProfileMarker_Present.Auto()) {
