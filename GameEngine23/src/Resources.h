@@ -58,6 +58,7 @@ private:
     };
     // TODO: Use hat trie instead of map
     static std::unordered_map<std::string, Identifier, string_hash, std::equal_to<>> gStringToId;
+    static std::unordered_map<std::wstring, Identifier, string_hash, std::equal_to<>> gWStringToId;
     static std::vector<std::string> gIdToString;
     static std::vector<std::wstring> gIdToWString;
 

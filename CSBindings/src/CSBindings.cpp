@@ -82,12 +82,7 @@ public:
 };
 
 std::string AllocString(CSString string) {
-	std::wstring_view str(string.mBuffer, string.mSize);
-	std::string outstr;
-	outstr.reserve(string.mSize);
-	std::transform(str.begin(), str.end(),
-		std::back_inserter(outstr), [=](auto c) { return (char)c; });
-	return outstr;
+	return std::string(string.mBuffer, string.mBuffer + string.mSize);
 }
 std::string_view GetString(CSString8 string) {
 	return std::string_view(string.mBuffer, string.mSize);
@@ -114,7 +109,7 @@ CSString CSIdentifier::GetWName(uint16_t id) {
 	return CSString(name.c_str(), (int)name.size());
 }
 uint16_t CSIdentifier::GetIdentifier(CSString str) {
-	return Identifier::RequireStringId(AllocString(str));
+	return Identifier::RequireStringId(ToWString(str));
 }
 uint16_t CSIdentifier::GetIdentifier(CSString8 str) {
 	return Identifier::RequireStringId(GetString(str));

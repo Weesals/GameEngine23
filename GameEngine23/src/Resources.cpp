@@ -5,6 +5,7 @@
 #include <mutex>
 
 std::unordered_map<std::string, Identifier, Identifier::string_hash, std::equal_to<>> Identifier::gStringToId{ { "invalid", 0 } };
+std::unordered_map<std::wstring, Identifier, Identifier::string_hash, std::equal_to<>> Identifier::gWStringToId{ };
 std::vector<std::string> Identifier::gIdToString{ "invalid" };
 std::vector<std::wstring> Identifier::gIdToWString{ L"invalid" };
 
@@ -19,18 +20,24 @@ Identifier Identifier::RequireStringId(const std::string_view& name) {
     std::lock_guard<std::mutex> lock(gInsertMutex);
     auto i = gStringToId.find(name);
     if (i == gStringToId.end()) {
-        i = gStringToId.insert({ std::string(name), (int)gIdToString.size() }).first;
+        i = gStringToId.emplace(name, (int)gIdToString.size()).first;
         gIdToString.push_back(std::string(name));
     }
     return i->second;
 }
 Identifier Identifier::RequireStringId(const std::wstring_view& wname) {
+    {   // Try to lookup if cached first
+        std::lock_guard<std::mutex> lock(gInsertMutex);
+        auto i = gWStringToId.find(wname);
+        if (i != gWStringToId.end()) return i->second;
+    }
     std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converter;
     std::string name = converter.to_bytes(wname.data());
     auto identifier = RequireStringId(name);
     std::lock_guard<std::mutex> lock(gInsertMutex);
     if (identifier.mId >= gIdToWString.size()) gIdToWString.resize(gIdToString.size());
     gIdToWString[identifier] = wname;
+    gWStringToId.emplace(wname, identifier);
     return identifier;
 }
 void Identifier::Purge() {
