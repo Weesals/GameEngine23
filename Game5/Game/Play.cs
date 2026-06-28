@@ -36,9 +36,11 @@ namespace Game5.Game
 {
     public class Play : IDisposable {
 
-        private static ProfilerMarker ProfileMarker_PlayUpdate = new ProfilerMarker("Play.Update");
-        private static ProfilerMarker ProfileMarker_SimulationUpdate = new ProfilerMarker("SimUpdate");
-        private static ProfilerMarker ProfileMarker_AnimationUpdate = new ProfilerMarker("AnimUpdate");
+        private static ProfilerMarker ProfileMarker_PlayUpdate = new("Play.Update");
+        private static ProfilerMarker ProfileMarker_SimulationUpdate = new("SimUpdate");
+        private static ProfilerMarker ProfileMarker_MaterialGlobals = new("MaterialGlobals");
+        private static ProfilerMarker ProfileMarker_ParticleTransforms = new("ParticleTransforms");
+        private static ProfilerMarker ProfileMarker_AnimationUpdate = new("AnimUpdate");
 
         public Camera Camera { get; private set; }
         public readonly GameRoot GameRoot;
@@ -267,8 +269,10 @@ namespace Game5.Game
             }
             EntityHighlighting.Update((uint)(time * 1000f));
 
-            Scene.RootMaterial.SetValue("Time", time);
-            Scene.RootMaterial.SetValue("CloudDensity", FogIntensity);
+            using (ProfileMarker_MaterialGlobals.Auto()) {
+                Scene.RootMaterial.SetValue("Time", time);
+                Scene.RootMaterial.SetValue("CloudDensity", FogIntensity);
+            }
 
             if (Input.GetKeyPressed(KeyCode.Z)) landscapeRenderer.SecondVariant = !landscapeRenderer.SecondVariant;
 
@@ -279,9 +283,10 @@ namespace Game5.Game
             //var mpos = Camera.ViewportToRay(Input.GetMousePosition() / (Vector2)GameRoot.Canvas.GetSize()).ProjectTo(new Plane(Vector3.UnitY, 0f));
             //particleManager.RootMaterial.SetValue("AvoidPoint", mpos);
 
-            foreach (var (transform, emitter) in World.QueryAll<ECTransform, ECParticleBinding>()) {
-                emitter.Emitter.Position =
-                    transform.GetWorldPosition();
+            using (ProfileMarker_ParticleTransforms.Auto()) {
+                foreach (var (transform, emitter) in World.QueryAll<ECTransform, ECParticleBinding>()) {
+                    emitter.Emitter.Position = transform.GetWorldPosition();
+                }
             }
             using (ProfileMarker_AnimationUpdate.Auto()) {
                 var moveTypeId = World.Context.RequireComponentTypeId<ECActionMove>();

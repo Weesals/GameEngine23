@@ -206,6 +206,7 @@ namespace Game5.Game {
 
             Updatables.Invoke(dt);
 
+            Canvas.PreUpdate(dt);
             Canvas.Update(dt);
 
             Play.Update(dt);

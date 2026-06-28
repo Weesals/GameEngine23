@@ -537,10 +537,14 @@ namespace Weesals.Engine.Importers {
                                     keyframe.Value.X = EvaluateCurve(fbxCurveX, time, ref itX);
                                     keyframe.Value.Y = EvaluateCurve(fbxCurveY, time, ref itY);
                                     keyframe.Value.Z = EvaluateCurve(fbxCurveZ, time, ref itZ);
+                                    //keyframe.Value = Vector3.Transform(keyframe.Value, globalTransform);
+                                    //keyframe.Value *= 0.1f;
                                 }
                                 if (fbxCurveNode.Name[0] == 'T') {
                                     bone.Position = curve;
-                                } else if (fbxCurveNode.Name[0] == 'S') bone.Scale = curve;
+                                } else if (fbxCurveNode.Name[0] == 'S') {
+                                    bone.Scale = curve;
+                                }
                             }
                         }
                         float duration = 0f;

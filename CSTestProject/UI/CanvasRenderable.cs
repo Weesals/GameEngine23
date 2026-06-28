@@ -285,7 +285,7 @@ namespace Weesals.UI {
                 NotifyLayoutChanged();
                 return true;
             }
-            if (!hitBinding.IsValid && hitBinding.IsEnabled) {
+            if (!hitBinding.IsValid && hitBinding.IsEnabled && IsInCanvas) {
                 UpdateHitBinding();
             }
             return false;
@@ -375,6 +375,8 @@ namespace Weesals.UI {
             if (HasStateFlag(StateFlags.HasCanvasLayout)) {
                 MarkChildrenDirty();
                 Parent!.MarkSizingDirty();
+            } else {
+                //MarkLayoutDirty();
             }
         }
         protected void MarkComposeDirty() {

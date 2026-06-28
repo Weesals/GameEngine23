@@ -83,14 +83,14 @@ namespace Game5.UI {
 #if false
             var vlist = new ListLayout() {
                 Axis = CanvasAxes.Vertical,
-                Transform = CanvasTransform.MakeAnchored(new Vector2(1024, 512), new Vector2(0.0f, 1.0f)),
+                Transform = CanvasTransform.MakeAnchored(new Vector2(1024, 1024), new Vector2(0.0f, 1.0f)),
             };
-            for (int i = 0; i < 50; ++i) {
+            for (int i = 0; i < 100; ++i) {
                 var hlist = new ListLayout() {
                     Axis = CanvasAxes.Horizontal,
                 };
                 for (int x = 0; x < 100; x++) {
-                    hlist.AppendChild(new ImageButton(atlas.Sprites[i % atlas.Sprites.Length]) {
+                    hlist.AppendChild(new ImageButton(atlas[i % atlas.Length]) {
                         Transform = CanvasTransform.MakeDefault().Inset(0),
                     });
                 }

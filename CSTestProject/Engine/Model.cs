@@ -127,6 +127,9 @@ namespace Weesals.Engine {
                                         }
                                     }
                                 }
+                                using (var sBin = sArmature.CreateRawBinary()) {
+                                    sBin.SerializeUnmanaged(ref skinned.Transform);
+                                }
                             }
                             skinned.Material.SetVertexShader(Resources.LoadShader("./Assets/skinned.hlsl", "VSMain"));
                             skinned.Material.SetPixelShader(Resources.LoadShader("./Assets/skinned.hlsl", "PSMain"));

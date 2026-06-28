@@ -116,10 +116,7 @@ public struct SJson : IEnumerable<SJson>, IEquatable<string> {
     // Remove quotes and special characaters
     public override string ToString() {
         var it = new StringIterator(Data, Start, End);
-        if (!it.IsQuoted) return Data.Substring(Start, End - Start);
-        var builder = new System.Text.StringBuilder();
-        while (it.MoveNext()) builder.Append(it.Current);
-        return builder.ToString();
+        return it.ToString();
     }
     public StringIterator GetStringIterator() { return new(Data, Start, End); }
     public ReadOnlySpan<char> AsSpanRaw() { return Data.AsSpan(Start, End - Start); }
@@ -219,6 +216,12 @@ public struct SJson : IEnumerable<SJson>, IEquatable<string> {
                 return true;
             }
             return true;
+        }
+        public override string ToString() {
+            if (!IsQuoted) return Str.Substring(it, end - it);
+            var builder = new System.Text.StringBuilder();
+            for (var copy = this; copy.MoveNext();) builder.Append(copy.Current);
+            return builder.ToString();
         }
     }
 

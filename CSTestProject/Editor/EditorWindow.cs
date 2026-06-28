@@ -179,6 +179,13 @@ namespace Weesals.Editor {
         private static ProfilerMarker ProfileMarker_GameViewUpdate = new("GameView");
         private static ProfilerMarker ProfileMarker_Present = new("Present");
         private static ProfilerMarker ProfileMarker_RenderCanvas = new("Canvas");
+
+        public class EditorCanvas : Canvas, IProxyWindowContainer {
+            public readonly EditorWindow EditorWindow;
+            CSWindow IProxyWindowContainer.Window => EditorWindow.Window;
+            public EditorCanvas(EditorWindow window) { EditorWindow = window; Name = "EditorCanvas"; }
+        }
+
         public Editor Editor;
         public UIInspector Inspector;
         public UIGameView GameView;
@@ -187,6 +194,10 @@ namespace Weesals.Editor {
         public EventSystem EventSystem;
         public Canvas Canvas;
         public AssetDatabase AssetDatabase;
+
+        private List<ProxyWindowCanvas> proxyWindows = new();
+        private ProxyWindowCanvas gameViewProxyCanvas;
+        private TabbedWindow fullscreenTombstone;
 
         public Action<float> OnUpdate;
         public ref Action<float, CSGraphics> OnRender => ref GameView.OnRender;
@@ -201,17 +212,20 @@ namespace Weesals.Editor {
         }
 
         public bool FullScreen {
-            get => !flex.Children.Contains(Hierarchy.Parent);
+            get => !flex.IsInCanvas;
             set {
                 if (FullScreen == value) return;
+                using var marker = new ProfilerMarker("Fullscreen Toggle").Auto();
+                using var hold = new ProxyWindowCanvas.InitHold(gameViewProxyCanvas);
+                gameViewProxyCanvas.UpdateSizing(true);
                 if (value) {
-                    flex.RemoveChild(ProjectView.Parent);
-                    flex.RemoveChild(Hierarchy.Parent);
-                    flex.RemoveChild(Inspector.Parent);
+                    flex.ReplaceChild(gameViewProxyCanvas, fullscreenTombstone);
+                    Canvas.RemoveChild(flex);
+                    Canvas.AppendChild(gameViewProxyCanvas);
                 } else {
-                    flex.InsertBelow(GameView.Parent, new ProxyWindowCanvas(ProjectView), 0.3f);
-                    flex.AppendRight(new ProxyWindowCanvas(Hierarchy), 0.15f);
-                    flex.AppendRight(new ProxyWindowCanvas(Inspector), 0.25f);
+                    Canvas.RemoveChild(gameViewProxyCanvas);
+                    flex.ReplaceChild(fullscreenTombstone, gameViewProxyCanvas);
+                    Canvas.AppendChild(flex);
                 }
                 RequireSave();
             }
@@ -219,7 +233,7 @@ namespace Weesals.Editor {
 
         public EditorWindow() {
             Editor = new();
-            Canvas = new() { Name = "EditorCanvas" };
+            Canvas = new EditorCanvas(this);
             EventSystem = new EventSystem(Canvas);
             flex = new FlexLayout() { Separation = 1.0f, };
             flex.OnChildAdded += Flex_OnChild;
@@ -227,9 +241,16 @@ namespace Weesals.Editor {
             GameView = new(Editor) { };
             Hierarchy = new(Editor) { };
             ProjectView = new UIProjectView(Editor);
-            flex.AppendRight(new ProxyWindowCanvas(GameView) { GetRenderHash = () => GameView.RenderHash, });
+            fullscreenTombstone = new(Editor, "Fullscreen Tombstone");
+            flex.AppendRight(gameViewProxyCanvas = new ProxyWindowCanvas(GameView) { GetRenderHash = () => GameView.RenderHash, });
+            flex.AppendBelow(new ProxyWindowCanvas(ProjectView), 0.3f);
+            flex.AppendRight(new ProxyWindowCanvas(Hierarchy), 0.15f);
+            flex.AppendRight(new ProxyWindowCanvas(Inspector), 0.25f);
 
             Canvas.AppendChild(flex);
+            foreach (var child in flex.Children) {
+                if (child is ProxyWindowCanvas proxy) proxyWindows.Add(proxy);
+            }
 
             Editor.ProjectSelection.OnSelectionChanged += (selection) => {
                 foreach (var selected in selection) {
@@ -303,16 +324,21 @@ namespace Weesals.Editor {
         }
 
         protected override void CreateSurface() {
-            foreach (var child in flex.Children) {
-                Flex_OnChild(child, true);
+            foreach (var proxy in proxyWindows) {
+                if (proxy.IsInCanvas)
+                    proxy.CreateNestedWindow(Window);
             }
+            /*foreach (var child in flex.Children) {
+                Flex_OnChild(child, true);
+            }*/
         }
 
         private void Flex_OnChild(CanvasRenderable child, bool enable) {
             // If invalid window, this will be called again when the window is created
             if (!Window.IsValid) return;
             if (child is ProxyWindowCanvas proxy) {
-                proxy.CreateNestedWindow(Window);
+                //if (enable) proxy.CreateNestedWindow(Window);
+                //else proxy.DestroyNestedWindow();
                 return;
             }
         }
@@ -343,22 +369,28 @@ namespace Weesals.Editor {
         public override void Update(float dt) {
             using var marker = ProfileMarker_Update.Auto();
             if (DateTime.UtcNow > requirePrefSave) {
+                using var saveMarker = new ProfilerMarker("Save preferences").Auto();
                 var frame = Window.GetWindowFrame();
-                Debug.WriteLine("Window moved");
                 SavePreferences(new() { WindowFrame = frame.Position, Maximized = frame.Maximized != 0, FullScreen = FullScreen, });
                 requirePrefSave = DateTime.MaxValue;
             }
 
-            Weesals.Engine.Input.Initialise(Input);
-            if (Input.GetKeyPressed(KeyCode.F11) && !Input.GetKeyDown(KeyCode.Alt)) FullScreen = !FullScreen;
-            if (Input.GetKeyPressed(KeyCode.D) && Input.GetKeyDown(KeyCode.Control)) EventSystem.EnableDebug ^= true;
+            using (new ProfilerMarker("Input").Auto()) {
+                Weesals.Engine.Input.Initialise(Input);
+                if (Input.GetKeyPressed(KeyCode.F11) && !Input.GetKeyDown(KeyCode.Alt)) FullScreen = !FullScreen;
+                if (Input.GetKeyPressed(KeyCode.D) && Input.GetKeyDown(KeyCode.Control)) EventSystem.EnableDebug ^= true;
+            }
 
-            Canvas.SetSize(WindowSize);
-            Canvas.PreUpdate(dt);
-            Canvas.RequireLayout();
-            EventSystem.Update(dt);
-            Canvas.Update(dt);
-            Canvas.RequireComposed();
+            using (new ProfilerMarker("Canvas").Auto()) {
+                Canvas.SetSize(WindowSize);
+                Canvas.PreUpdate(dt);
+                Canvas.RequireLayout();
+                using (new ProfilerMarker("Event System").Auto()) {
+                    EventSystem.Update(dt);
+                }
+                Canvas.Update(dt);
+                Canvas.RequireComposed();
+            }
             OnUpdate?.Invoke(dt);
         }
 
@@ -385,7 +417,7 @@ namespace Weesals.Editor {
 
             HashSet<ProxyWindowCanvas> requirePresent = new HashSet<ProxyWindowCanvas>();
 
-            foreach (var element in flex.Children) {
+            foreach (var element in proxyWindows) {
                 if (element is not ProxyWindowCanvas proxy) continue;
                 if (!proxy.RequireRender) continue;
                 if (!proxy.Surface.IsValid) continue;

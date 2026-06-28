@@ -6,6 +6,7 @@ using Weesals.Engine.Profiling;
 using Weesals;
 using Game5.Game;
 using Game5;
+using Weesals.UI;
 
 /*
  * Mouse scroll to zoom (and pinch?)
@@ -17,6 +18,7 @@ using Game5;
 class Program {
     private static ProfilerMarker ProfileMarker_MainStartup = new("Startup");
     private static ProfilerMarker ProfileMarker_Readbacks = new("Readbacks");
+    private static ProfilerMarker ProfileMarker_RenderWindows = new("RenderWindows");
 
     public static void Main() {
         var scope = ProfileMarker_MainStartup.Auto();
@@ -118,19 +120,22 @@ class Program {
 
             // Allow windows to throttle rendering
             int renderingWindows = 0;
-            foreach (var window in ApplicationWindow.ActiveWindows) {
-                if (!window.IsRenderable) continue;
-                var renDT = window.AdjustRenderDT(dt, 0,
-                    FrameThrottler.IsOnBattery ? 1f : 0.05f);
-                if (renDT == -1f) continue;
-                window.Render(renDT, graphics);
-                renderingWindows++;
+            using (ProfileMarker_RenderWindows.Auto()) {
+                foreach (var window in ApplicationWindow.ActiveWindows) {
+                    if (!window.IsRenderable) continue;
+                    var renDT = window.AdjustRenderDT(dt, 0,
+                        FrameThrottler.IsOnBattery ? 1f : 0.05f);
+                    if (renDT == -1f) continue;
+                    window.Render(renDT, graphics);
+                    renderingWindows++;
+                }
             }
 
             RenderTargetPool.Instance.PruneOldFromPool();
 
-            if (renderingWindows == 0) {
-                Thread.Sleep(6);
+            var hasActiveTweens = TweenManager.ConsumeHasActiveInstances();
+            if (!hasActiveTweens && renderingWindows == 0) {
+                using (new ProfilerMarker("Idle Sleep").Auto()) Thread.Sleep(6);
             }
 
             foreach (var window in ApplicationWindow.ActiveWindows) {

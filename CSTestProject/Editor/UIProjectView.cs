@@ -79,7 +79,18 @@ namespace Weesals.Editor {
 
             public FolderList() {
                 scrollView.AppendChild(folderList);
+                var optionsControl = new XAJSControl("/ui/FolderOptions.json");
+                scrollView.Transform = CanvasTransform.MakeDefault()
+                    .WithAnchors(new(0f, 0f), new(1f, 1f))
+                    .WithOffsets(new(0f, 0f), new(0f, -22f));
+                optionsControl.Transform = CanvasTransform.MakeDefault()
+                    .WithAnchors(new(0f, 1f), new(1f, 1f))
+                    .WithOffsets(new(0f, -22f), new(0f, 0f));
+                optionsControl.RegisterOnCommand("New", (source) => {
+                    Debug.WriteLine("NEw clicked");
+                });
                 AppendChild(scrollView);
+                AppendChild(optionsControl);
             }
             private int GetFolderIndex(FolderView folder) {
                 var folderChildren = folderList.Children;

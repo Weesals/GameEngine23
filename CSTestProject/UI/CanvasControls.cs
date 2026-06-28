@@ -234,12 +234,13 @@ namespace Weesals.UI {
             public Color ClickColor;
             public Vector4 Margins;
             public static readonly ButtonStyle SkeuoStyle = new() {
-                ButtonBG = Resources.TryLoadSprite("ButtonBG"),
-                NormalColor = new Color(0xff888888),
-                SelectedColor = new Color(0xffaaaaaa),
-                HoverColor = new Color(0xffaaaaaa),
-                PressColor = new Color(0xff777777),
-                ClickColor = new Color(0xffffffff),
+                ButtonBG = Resources.TryLoadSprite("ButtonBG2"),
+                NormalColor = new Color(0xff808080),
+                SelectedColor = new Color(0xffa0a0a0),
+                HoverColor = new Color(0xff777777),
+                PressColor = new Color(0xffcccccc),
+                ClickColor = new Color(0xffaaaaaa),
+                Margins = new Vector4(1f, 1f, 1f, 1f),
             };
             public static readonly ButtonStyle FlatStyle = new() {
                 ButtonBG = Resources.TryLoadSprite("RoundedBox4"),
@@ -250,7 +251,7 @@ namespace Weesals.UI {
                 ClickColor = new Color(0xffaaaaaa),
                 Margins = new Vector4(1f, 1f, 1f, 1f),
             };
-            public static readonly ButtonStyle Default = FlatStyle;
+            public static readonly ButtonStyle Default = SkeuoStyle;
         }
 
         public CanvasImage Background = new();
@@ -450,7 +451,7 @@ namespace Weesals.UI {
         public ToggleButton(CSTexture texture) : base(texture) { }
         public ToggleButton(Sprite sprite) : base(sprite) { }
         public override void Initialise(CanvasBinding binding) {
-            Background.SetSprite(Resources.TryLoadSprite("ButtonFrame"));
+            Background.SetSprite(Resources.TryLoadSprite("TextBox"));
             Background.SpriteScale = 0.5f;
             base.Initialise(binding);
         }
@@ -1006,6 +1007,14 @@ namespace Weesals.UI {
             base.InsertChild(-1, child);
             AppendDivision(0, width);
         }
+        public void AppendBelow(CanvasRenderable child, float width = 0.2f) {
+            base.InsertChild(-1, child);
+            var index = mChildren.IndexOf(child);
+            cache.Process(divisions, default);
+            int divisionI = cache.Items[index - 1].DivisionIndex;
+            MakeOrientation(ref divisionI, false);
+            InsertDivision(divisionI, width);
+        }
         public void InsertBelow(CanvasRenderable other, CanvasRenderable child, float height = 0.5f) {
             var index = mChildren!.IndexOf(other);
             base.InsertChild(index + 1, child);
@@ -1021,6 +1030,12 @@ namespace Weesals.UI {
             int divisionI = cache.Items[index].DivisionIndex;
             MakeOrientation(ref divisionI, true);
             InsertDivision(divisionI, width);
+        }
+
+        public void ReplaceChild(CanvasRenderable replace, CanvasRenderable with) {
+            var index = mChildren.IndexOf(replace);
+            base.RemoveChild(replace);
+            base.InsertChild(index, with);
         }
 
         private void MakeOrientation(ref int divisionI, bool horizontal) {

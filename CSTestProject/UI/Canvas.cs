@@ -16,7 +16,7 @@ namespace Weesals.UI {
         public float Time => Time1;
         public float DeltaTime => Time1 - Time0;
         float ITimedEvent.TimeSinceEvent => Time;
-
+        public bool FramePasses(float time) => Time0 <= time && Time1 > time;
         public static readonly Tween Complete = new Tween() { Time0 = 1000000f, Time1 = float.MaxValue, };
     }
     public interface ITweenable {
@@ -30,6 +30,7 @@ namespace Weesals.UI {
             public float Timer;
         }
         private List<Instance> instances = new();
+        private static int activeInstances = 0;
         public bool GetIsTweening(ITweenable tweenable) {
             for (int i = 0; i < instances.Count; i++)
                 if (instances[i].Tweenable == tweenable) return true;
@@ -51,6 +52,7 @@ namespace Weesals.UI {
                 default: throw new NotImplementedException();
             }
             instances[i] = instance;
+            ++activeInstances;
         }
         public void Update(float dt) {
             for (int i = 0; i < instances.Count; i++) {
@@ -60,9 +62,17 @@ namespace Weesals.UI {
                 instances[i] = instance;
                 if (tween.Time0 == tween.Time1) continue;
                 tween.Time1 = Math.Max(0f, instance.Timer);
-                if (!instance.Tweenable.UpdateTween(tween)) continue;
-                instances.RemoveAt(i--);
+                if (!instance.Tweenable.UpdateTween(tween)) {
+                    ++activeInstances;
+                } else {
+                    instances.RemoveAt(i--);
+                }
             }
+        }
+        public static bool ConsumeHasActiveInstances() {
+            var ret = activeInstances > 0;
+            activeInstances = 0;
+            return ret;
         }
     }
     public class Canvas : CanvasRenderable, IDisposable {

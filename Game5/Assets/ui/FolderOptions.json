@@ -1,0 +1,16 @@
+{
+  "type": "ListLayout",
+  ".Axis": "Horizontal",
+  "Children": [
+    {
+      "type": "TextButton",
+      ".Text": "+ New",
+      "Command": "New"
+    },
+    {
+      "type": "TextButton",
+      ".Text": "- Delete",
+      "Command": "Delete"
+    }
+  ]
+}

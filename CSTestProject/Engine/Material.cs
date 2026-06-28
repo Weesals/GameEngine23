@@ -29,25 +29,28 @@ namespace Weesals.Engine {
         private byte[] Data = Array.Empty<byte>();
         private int dataConsumed;
         public Parameters() { }
-        unsafe public Span<byte> SetValue<T>(CSIdentifier identifier, ReadOnlySpan<T> data) where T : unmanaged {
+        unsafe public Span<byte> SetValue<T>(CSIdentifier identifier, scoped ReadOnlySpan<T> data) where T : unmanaged {
             var index = Items.AsSpan(0, itemCount).BinarySearch(new Item() { Identifier = identifier, });
             if (index < 0) {
                 index = ~index;
                 ArrayExt.InsertAt(ref Items, ref itemCount, index, new Item() { Identifier = identifier, ByteOffset = -1, });
             }
             ref var item = ref Items[index];
-            if (item.Type == null || (item.Type == typeof(T) ? item.Count != data.Length : item.Count * Marshal.SizeOf(item.Type) != sizeof(T) * data.Length)) {
-                Debug.Assert(item.Count == 0, "Deleting parameter item data is not yet supported");
-                Debug.Assert(item.ByteOffset == -1);
-                int size = sizeof(T) * data.Length;
-                if (dataConsumed + size > Data.Length) {
-                    Array.Resize(ref Data, (int)BitOperations.RoundUpToPowerOf2((uint)(dataConsumed + size)));
+            var newType = typeof(T);
+            if (item.Type != newType || item.Count != data.Length) {
+                if (item.Type == null || (item.Type == newType ? item.Count != data.Length : item.Count * Marshal.SizeOf(item.Type) != sizeof(T) * data.Length)) {
+                    Debug.Assert(item.Count == 0, "Deleting parameter item data is not yet supported");
+                    Debug.Assert(item.ByteOffset == -1);
+                    int size = sizeof(T) * data.Length;
+                    if (dataConsumed + size > Data.Length) {
+                        Array.Resize(ref Data, (int)BitOperations.RoundUpToPowerOf2((uint)(dataConsumed + size)));
+                    }
+                    item.ByteOffset = dataConsumed;
+                    dataConsumed += size;
                 }
-                item.ByteOffset = dataConsumed;
-                dataConsumed += size;
+                item.Type = newType;
+                item.Count = data.Length;
             }
-            item.Type = typeof(T);
-            item.Count = data.Length;
             var outBytes = Data.AsSpan(item.ByteOffset);
             MemoryMarshal.AsBytes(data).CopyTo(outBytes);
             return outBytes;
@@ -171,10 +174,10 @@ namespace Weesals.Engine {
 
         public ref Parameters GetParametersRaw() { return ref Parameters; }
 
-        public Span<byte> SetArrayValue<T>(CSIdentifier name, Span<T> v) where T : unmanaged {
+        public Span<byte> SetArrayValue<T>(CSIdentifier name, scoped Span<T> v) where T : unmanaged {
             return SetArrayValue(name, (ReadOnlySpan<T>)v);
         }
-        public Span<byte> SetArrayValue<T>(CSIdentifier name, ReadOnlySpan<T> v) where T : unmanaged {
+        public Span<byte> SetArrayValue<T>(CSIdentifier name, scoped ReadOnlySpan<T> v) where T : unmanaged {
             var r = Parameters.SetValue(name, v);
             MarkChanged();
             return r;
@@ -188,9 +191,7 @@ namespace Weesals.Engine {
 
         // Set various uniform values
         unsafe public Span<byte> SetValue<T>(CSIdentifier name, T v) where T : unmanaged {
-#pragma warning disable CS9087 // This returns a parameter by reference but it is not a ref parameter
             return SetArrayValue(name, new ReadOnlySpan<T>(ref v));
-#pragma warning restore CS9087 // This returns a parameter by reference but it is not a ref parameter
         }
         unsafe public Span<byte> SetTexture(CSIdentifier name, CSTexture tex) {
             return SetValue(name, new CSBufferReference(tex));

@@ -2,11 +2,15 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Weesals.Engine;
 
 namespace Weesals.UI {
+    public interface IProxyWindowContainer {
+        CSWindow Window { get; }
+    }
     public class ProxyWindowCanvas : Canvas {
 
         public CSWindow Window;
@@ -17,6 +21,21 @@ namespace Weesals.UI {
         public bool RequireRender => lastRenderRevision != Revision;
 
         public Func<int>? GetRenderHash;
+
+        public struct InitHold : IDisposable {
+            public ProxyWindowCanvas Proxy;
+            public InitHold(ProxyWindowCanvas proxy) {
+                Proxy = proxy;
+                Proxy.initHolds++;
+            }
+            public void Dispose() {
+                if (--Proxy.initHolds == 0 && Proxy.IsInCanvas != Proxy.Window.IsValid) {
+                    if (Proxy.IsInCanvas) Proxy.CreateNestedWindow();
+                    else Proxy.DestroyNestedWindow();
+                }
+            }
+        }
+        private int initHolds = 0;
 
         public ProxyWindowCanvas() : base(false) {
         }
@@ -33,6 +52,7 @@ namespace Weesals.UI {
             }
             base.Initialise(binding);
             MarkComposeDirty();
+            if (initHolds == 0) CreateNestedWindow();
         }
         public override void Uninitialise(CanvasBinding binding) {
             var parentCanvas = binding.mParent?.Canvas;
@@ -42,8 +62,7 @@ namespace Weesals.UI {
                 parentCanvas.OnRender -= Render;
             }
             base.Uninitialise(binding);
-            if (Surface.IsValid) Surface.Dispose();
-            if (Window.IsValid) Window.Dispose();
+            if (initHolds == 0) DestroyNestedWindow();
         }
 
         private RectI GetWindowRect() {
@@ -53,13 +72,22 @@ namespace Weesals.UI {
             return RectI.FromMinMax(minPnt, maxPnt);
         }
 
+        public void CreateNestedWindow() {
+            var proxyContainer = FindParent<IProxyWindowContainer>();
+            if (proxyContainer.Window.IsValid)
+                CreateNestedWindow(proxyContainer.Window);
+        }
         public void CreateNestedWindow(CSWindow parent) {
             Debug.Assert(!Surface.IsValid);
             Debug.Assert(!Window.IsValid);
             var layoutRect = GetWindowRect();
             Window = parent.CreateChildWindow(layoutRect);
-            SetSize(layoutRect.Size);
-            MarkComposeDirty();
+            UpdateSizing();
+            //MarkComposeDirty();
+        }
+        public void DestroyNestedWindow() {
+            if (Surface.IsValid) { Surface.Dispose(); Surface = default; }
+            if (Window.IsValid) { Window.Dispose(); Window = default; }
         }
 
         protected override void NotifyLayoutChanged() {
@@ -68,20 +96,49 @@ namespace Weesals.UI {
             MarkComposeDirty();
         }
 
-        private void UpdateSizing() {
+        public void UpdateSizing(bool animate = false) {
             var layoutRect = GetWindowRect();
             if (!Window.IsValid) return;
-            Window.SetWindowFrame(layoutRect, false);
+            if (animate || Canvas.Tweens.GetIsTweening(frameTween)) {
+                frameTween ??= new(this);
+                Canvas.Tweens.RegisterTweenable(frameTween, 0f);
+            } else {
+                Window.SetWindowFrame(layoutRect, false);
+            }
             SetSize(layoutRect.Size);
         }
+        public class WindowFrameTween : ITweenable {
+            public ProxyWindowCanvas Proxy;
+            private static Random gRand = new();
+            public WindowFrameTween(ProxyWindowCanvas proxy) {
+                Proxy = proxy;
+            }
+            public bool UpdateTween(Tween tween) {
+                var layoutRect = Proxy.GetWindowRect();
+                var currentFrame = Proxy.Window.GetWindowFrame();
+                var ease = Easing.StatefulPowerInOut(0.2f, 2f);
+                var lerps = ease.Evaluate(tween);
+                var min = Vector2.Lerp(currentFrame.Position.TopLeft, layoutRect.Min, lerps);
+                var max = Vector2.Lerp(currentFrame.Position.BottomRight, layoutRect.Max, lerps);
+                min += Vector2.One * gRand.NextSingle();
+                max += Vector2.One * gRand.NextSingle();
+                var blendedRect = RectI.FromMinMax(Int2.FloorToInt(min), Int2.FloorToInt(max));
+                Proxy.Window.SetWindowFrame(blendedRect, false);
+                // Doesn't work because layout is updated immediately
+                //if (tween.FramePasses(0.15f)) Proxy.SetSize(layoutRect.Size);
+                return ease.GetIsComplete(tween);
+            }
+        }
+        private WindowFrameTween frameTween;
 
         public new void SetSize(Int2 size) {
             base.SetSize(size);
             if (!Window.IsValid) return;
-            if (Surface.IsValid) {
-                Surface.SetResolution(size);
-            } else if (size.X > 0) {
+            if (!Surface.IsValid && size.X > 0) {
                 Surface = Core.ActiveInstance.GetGraphics().CreateSurface(Window);
+            }
+            if (Surface.IsValid && Surface.GetResolution() != size) {
+                Surface.SetResolution(size);
             }
         }
 

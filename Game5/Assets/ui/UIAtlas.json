@@ -3,6 +3,11 @@
     "path": "/ui/T_ButtonBG.png",
     "borders": 0.3
   },
+  "ButtonBG2": {
+    "path": "/ui/T_ButtonBG2.png",
+    "borders": 0.3,
+    "scale": 0.5
+  },
   "ButtonFrame": {
     "path": "/ui/T_ButtonFrame.png",
     "borders": 0.3

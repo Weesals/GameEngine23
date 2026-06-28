@@ -753,9 +753,11 @@ namespace Weesals.Engine.Jobs {
         public bool GetHasQueuedTasks() {
             if (mainThreadTasks.Count > 0) return true;
             foreach (var job in jobThreads) {
-                if (job.CurrentTasks.Count == 0) continue;
-                if (job.CurrentTasks.Count > 1) return true;
-                if (job.CurrentTasks.TryPeek(out var taskId)) {
+                var tasks = job.CurrentTasks;
+                if (tasks == null) continue;
+                if (tasks.Count == 0) continue;
+                if (tasks.Count > 1) return true;
+                if (tasks.TryPeek(out var taskId)) {
                     ref var task = ref jobArray[taskId];
                     if (task.RunCount < JobThread.GetRunCount(task)) return true;
                 }
