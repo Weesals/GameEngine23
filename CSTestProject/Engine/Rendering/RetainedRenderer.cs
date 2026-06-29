@@ -319,7 +319,7 @@ namespace Weesals.Engine {
             return TransformBounds(*(Matrix4x4*)GetInstanceData(instance).Data, instanceBounds[instance]);
         }
 
-        public static BoundingBox TransformBounds(Matrix4x4 mat, BoundingBox boundingBox) {
+        public static BoundingBox TransformBounds(in Matrix4x4 mat, BoundingBox boundingBox) {
             var pos = Vector3.Transform(boundingBox.Centre, mat);
             var ext = boundingBox.Extents;
             var mx = Vector3.Abs(new Vector3(mat.M11, mat.M12, mat.M13));

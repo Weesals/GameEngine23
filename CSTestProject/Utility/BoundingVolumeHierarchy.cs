@@ -516,7 +516,7 @@ namespace Weesals.Utility {
             }
         }
         public FrustumEnumerator CreateFrustumEnumerator(Frustum frustum) {
-            return new(this, frustum);
+            return new(this, frustum, root.Index);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -525,7 +525,7 @@ namespace Weesals.Utility {
         public BoundingBox GetActiveBounds(Frustum frustum) {
             Vector3 min = new Vector3(float.MaxValue);
             Vector3 max = new Vector3(float.MinValue);
-            var en = new FrustumEnumerator(this, frustum);
+            var en = new FrustumEnumerator(this, frustum, root.Index);
             while (en.MoveNext()) {
                 if (en.GetInstanceRange().Length == 0) continue;
                 var bounds = en.ActiveBoundingBox;
@@ -546,21 +546,21 @@ namespace Weesals.Utility {
             public bool IsParentFullyInFrustum => (stack[stackCount + 1] & 0x8) != 0;
             public bool IsFullyInFrustum => (stack[stackCount + 1] & 0x4) != 0;
             public BoundingBox ActiveBoundingBox => BVH.branches[stack[stackCount + 1] >> 4].Bounds;
-            public FrustumEnumerator(BoundingVolumeHierarchy bvh, Frustum frustum) {
+            public FrustumEnumerator(BoundingVolumeHierarchy bvh, Frustum frustum, int rootIndex) {
                 BVH = bvh;
                 Frustum = frustum;
                 Addr = bvh.root;
-                stack[stackCount = 0] = BVH.root.Index << 4;
-                if (BVH.root.Index < 0) stackCount = -1;
+                stack[stackCount = 0] = rootIndex << 4;
+                if (rootIndex < 0) stackCount = -1;
             }
             public bool MoveNext() {
                 while (stackCount >= 0) {
                     var top = stack[stackCount];
                     var parent = BVH.nodes[top >> 4];
                     if (parent.ChildIndex > 0) {
-                        //new Vector<Vector3>()
                         // Iterate past this child
                         var childIndex = (top & 0x03);
+                        // At end, replace self
                         if (childIndex == 0x03) --stackCount;
                         else stack[stackCount] = top + 1;
                         // Determine childs visibility
@@ -572,7 +572,7 @@ namespace Weesals.Utility {
                         }
                     } else {
                         --stackCount;
-                        if (parent.ChildIndex != 0) {
+                        if (parent.ChildIndex < 0) {
                             // Is leaf with contents
                             valueIndex = ~parent.ChildIndex;
                             if (BVH.leaves[valueIndex].Items.Length != 0) return true;

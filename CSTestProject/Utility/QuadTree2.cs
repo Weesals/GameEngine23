@@ -10,8 +10,9 @@ namespace Weesals.Utility {
     public class QuadTree2 {
 
         public struct Node {
+            // If positive: Contains branches. If negative: Contains leaf
+            // Zero reserved for root - should not appear
             public int ChildIndex;
-            public RangeInt ChildRange => ChildIndex > 0 ? new RangeInt(ChildIndex, 4) : default;
             public Node(int childIndex) { ChildIndex = childIndex; }
             public override string ToString() => ChildIndex.ToString();
             public static Node Create() { return new() { ChildIndex = 0, }; }
@@ -100,7 +101,7 @@ namespace Weesals.Utility {
             ref var node = ref nodes[nodeIndex];
             Debug.Assert(node.ChildIndex == 0);
             node.ChildIndex = newRange.Start;
-            nodes.Slice(node.ChildRange).AsSpan().Fill(Node.Create());
+            nodes.Slice(newRange).AsSpan().Fill(Node.Create());
             return ref node;
         }
 

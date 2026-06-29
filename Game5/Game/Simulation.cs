@@ -232,7 +232,8 @@ namespace Game5.Game {
                 using (new ProfilerMarker("Creating Houses").Auto()) {
                     var command = housesCmdBuffer;
 #if DEBUG || true
-                    const int Count = 115 * 4;
+                    const int Count = 11500 * 4;
+                    //const int Count = 115 * 4;
 #else
                     const int Count = 2000000 * 4;
 #endif
